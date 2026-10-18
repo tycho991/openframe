@@ -2,12 +2,12 @@
 
 ## 1. Projektgerüst und Werkzeuge
 
-- [ ] 1.1 JDK 17 (Temurin) in `.mise.toml` pinnen, Gradle-Wrapper, `settings.gradle.kts` mit `:core` und `:android` und `gradle/libs.versions.toml` anlegen; prüfen: `mise install && ./gradlew help` läuft durch
-- [ ] 1.2 Modul `:core` als Kotlin/JVM-Bibliothek (Kotlin 2.x, Toolchain 17, `kotlinx-coroutines`, `kotlinx-serialization`, JUnit 5) mit einem Platzhaltertest anlegen; prüfen: `./gradlew :core:test` grün
-- [ ] 1.3 Gradle-Check gegen `android.*`-Importe in `:core` an `check` hängen; prüfen: ein absichtlich eingefügter Import lässt `./gradlew :core:check` mit verständlicher Meldung scheitern
+- [x] 1.1 JDK 17 (Temurin) in `.mise.toml` pinnen, Gradle-Wrapper, `settings.gradle.kts` mit `:core` und `:android` und `gradle/libs.versions.toml` anlegen; prüfen: `mise install && ./gradlew help` läuft durch
+- [x] 1.2 Modul `:core` als Kotlin/JVM-Bibliothek (Kotlin 2.x, Toolchain 17, `kotlinx-coroutines`, `kotlinx-serialization`, JUnit 5) mit einem Platzhaltertest anlegen; prüfen: `./gradlew :core:test` grün
+- [x] 1.3 Gradle-Check gegen `android.*`-Importe in `:core` an `check` hängen; prüfen: ein absichtlich eingefügter Import lässt `./gradlew :core:check` mit verständlicher Meldung scheitern
 - [ ] 1.4 Modul `:android` mit Paket-ID `io.github.tycho991.openframe`, `minSdk 21`, neuestem stabilem `targetSdk`, `largeHeap` und leerer Activity anlegen; prüfen: `./gradlew :android:assembleDebug` erzeugt eine APK, `aapt dump badging` zeigt Paket-ID und `minSdk 21`
 - [ ] 1.5 Spotless/ktlint und Android Lint einrichten, einschließlich der Prüfung, dass keine API über `minSdk` genutzt wird; prüfen: `./gradlew check` grün, ein Stilverstoß lässt es scheitern
-- [ ] 1.6 `webadmin/` mit Vite, Svelte 5, TypeScript, ESLint, Prettier und Vitest anlegen, `package-lock.json` einchecken; prüfen: `npm ci && npm run lint && npm test && npm run build` in `webadmin/` grün
+- [x] 1.6 `webadmin/` mit Vite, Svelte 5, TypeScript, ESLint, Prettier und Vitest anlegen, `package-lock.json` einchecken; prüfen: `npm ci && npm run lint && npm test && npm run build` in `webadmin/` grün
 - [ ] 1.7 GitHub-Actions-Workflow `ci.yml` (Gradle `check` + `assembleDebug`, Web-UI-Lint/-Test/-Build) und Renovate-Regeln für Gradle und npm ergänzen; prüfen: Workflow läuft auf einem Push-Branch grün
 
 ## 2. API-Vertrag und HTTP-Schicht

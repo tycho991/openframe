@@ -1,2 +1,15 @@
 # Persoenliche Freigaben von Claude Code, gehoeren nicht ins Repo
 .claude/settings.local.json
+
+# Gradle und Android
+.gradle/
+build/
+local.properties
+.kotlin/
+*.apk
+
+# Web-UI
+node_modules/
+webadmin/dist/
+webadmin/test-results/
+webadmin/playwright-report/
