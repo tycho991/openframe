@@ -21,7 +21,12 @@ jobs:
       - uses: jdx/mise-action@v5
       - uses: gradle/actions/setup-gradle@v5
       - name: Prüfen und bauen
-        run: ./gradlew check :android:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew check :android:assembleDebug --console=plain 2>&1 | tee build.log
+      - name: Fehler zusammenfassen
+        if: failure()
+        run: grep -nE "^e: |^ERROR|error:|What went wrong|FAILED|Test.*FAILED|Lint found" -A6 build.log | head -300
       - name: APK prüfen
         run: |
           apk=android/build/outputs/apk/debug/android-debug.apk
