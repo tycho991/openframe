@@ -1,0 +1,38 @@
+name: openspec-drift
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      OPENSPEC_TELEMETRY: "0"
+      DO_NOT_TRACK: "1"
+      MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Die Vorlage selbst hat noch kein openspec/ - dann gibt es nichts zu pruefen
+      - uses: jdx/mise-action@v5          # installiert node und openspec aus .mise.toml
+        if: hashFiles('openspec/config.yaml') != ''
+
+      - name: Skills neu erzeugen
+        if: hashFiles('openspec/config.yaml') != ''
+        run: mise run openspec-sync
+
+      - name: Skills muessen zu Version und Profil passen
+        if: hashFiles('openspec/config.yaml') != ''
+        run: |
+          git add -A
+          git diff --cached --stat --exit-code
+
+      - name: Skill-Namen pruefen
+        run: |
+          rc=0
+          for f in .claude/skills/*/SKILL.md; do
+            [ -e "$f" ] || continue
+            name=$(basename "$(dirname "$f")")
+            echo "$name" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$' || { echo "::error file=$f::ungueltiger Skill-Name $name"; rc=1; }
+            grep -Eq '^description:[[:space:]]*[^[:space:]]' "$f" || { echo "::error file=$f::description fehlt"; rc=1; }
+          done
+          exit $rc
