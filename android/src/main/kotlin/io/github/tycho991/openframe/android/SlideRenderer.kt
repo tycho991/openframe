@@ -164,6 +164,7 @@ class SlideRenderer(
                     .withEndAction { done(old) }
                     .start()
             }
+
             Transition.SLIDE -> {
                 val direction = if (step < 0) -1f else 1f
                 back.translationX = width * direction
@@ -175,9 +176,17 @@ class SlideRenderer(
                     .withLayer()
                     .withEndAction { done(old) }
                     .start()
-                front.animate().translationX(-width * direction).setDuration(durationMs).withLayer().start()
+                front
+                    .animate()
+                    .translationX(-width * direction)
+                    .setDuration(durationMs)
+                    .withLayer()
+                    .start()
             }
-            Transition.NONE -> Unit
+
+            Transition.NONE -> {
+                Unit
+            }
         }
     }
 

@@ -171,11 +171,15 @@ class DisplayActivity : Activity() {
                 downY = event.y
                 if (inCorner(event.x, event.y)) main.postDelayed(longPress, CORNER_PRESS_MS)
             }
+
             MotionEvent.ACTION_MOVE -> {
                 val slop = ViewConfiguration.get(this).scaledTouchSlop
                 if (abs(event.x - downX) > slop || abs(event.y - downY) > slop) main.removeCallbacks(longPress)
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> main.removeCallbacks(longPress)
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                main.removeCallbacks(longPress)
+            }
         }
         if (!menuOpen) gestures.onTouchEvent(event)
         return super.dispatchTouchEvent(event)
@@ -259,7 +263,15 @@ class DisplayActivity : Activity() {
             SlideState.Empty -> renderer.clear()
             SlideState.Loading -> Unit
         }
-        core?.let { c -> c.pairing.setShownOnFrame(hintVisible || (showingEmpty && c.clients.clients.value.isEmpty())) }
+        core?.let { c ->
+            c.pairing.setShownOnFrame(
+                hintVisible || (
+                    showingEmpty &&
+                        c.clients.clients.value
+                            .isEmpty()
+                ),
+            )
+        }
         updateEmpty()
     }
 
@@ -274,7 +286,15 @@ class DisplayActivity : Activity() {
         hint.visibility = if (visible) View.VISIBLE else View.GONE
         main.removeCallbacks(hideHint)
         if (visible && autoHide) main.postDelayed(hideHint, HINT_MS)
-        core?.let { c -> c.pairing.setShownOnFrame(visible || (showingEmpty && c.clients.clients.value.isEmpty())) }
+        core?.let { c ->
+            c.pairing.setShownOnFrame(
+                visible || (
+                    showingEmpty &&
+                        c.clients.clients.value
+                            .isEmpty()
+                ),
+            )
+        }
         updateHint()
     }
 
@@ -304,7 +324,10 @@ class DisplayActivity : Activity() {
                 text(R.string.empty_no_network, folder)
             }
         val code = c.pairing.display.value.code
-        val showCode = code != null && c.clients.clients.value.isEmpty() && !c.settings.localOnly.value
+        val showCode =
+            code != null &&
+                c.clients.clients.value
+                    .isEmpty() && !c.settings.localOnly.value
         emptyCode.text = code?.chunked(3)?.joinToString(" ") ?: ""
         emptyCode.visibility = if (showCode) View.VISIBLE else View.GONE
         emptyCodeLabel.visibility = emptyCode.visibility
@@ -384,9 +407,20 @@ class DisplayActivity : Activity() {
     /** Sprache am Rahmen: `auto` folgt dem System, sonst gilt die gewählte, ohne Neustart. */
     private fun locale(language: FrameLanguage): Locale =
         when (language) {
-            FrameLanguage.AUTO -> Resources.getSystem().configuration.let { @Suppress("DEPRECATION") it.locale }
-            FrameLanguage.DE -> Locale.GERMAN
-            FrameLanguage.EN -> Locale.ENGLISH
+            FrameLanguage.AUTO -> {
+                Resources.getSystem().configuration.let {
+                    @Suppress("DEPRECATION")
+                    it.locale
+                }
+            }
+
+            FrameLanguage.DE -> {
+                Locale.GERMAN
+            }
+
+            FrameLanguage.EN -> {
+                Locale.ENGLISH
+            }
         }
 
     private fun localizedResources(language: FrameLanguage): Resources {

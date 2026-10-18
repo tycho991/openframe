@@ -51,7 +51,11 @@ class AndroidMediaEngineTest {
         val landscape = engine.probe(fixture("landscape.jpg"))
         assertEquals(ImageFormat.JPEG, landscape.format)
         assertEquals(400 to 300, landscape.width to landscape.height)
-        val expected = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }.parse("2024:07:14 12:30:00")!!
+        val expected =
+            SimpleDateFormat(
+                "yyyy:MM:dd HH:mm:ss",
+                Locale.US,
+            ).apply { timeZone = TimeZone.getDefault() }.parse("2024:07:14 12:30:00")!!
         assertEquals(expected.time, landscape.takenAt?.toEpochMilli())
         assertEquals(300 to 400, engine.probe(fixture("rotated6.jpg")).let { it.width to it.height })
         assertEquals(300 to 400, engine.probe(fixture("rotated8.jpg")).let { it.width to it.height })

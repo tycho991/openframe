@@ -56,6 +56,8 @@ dependencies {
 // Die Web-UI wird vor dem Zusammenstellen der Assets gebaut und unter assets/webadmin/ in die APK gelegt.
 val webadminDir: Directory = rootProject.layout.projectDirectory.dir("webadmin")
 
+val noNode = "openframe: Node/npm nicht gefunden. Erst \"mise install\" ausführen. Ohne Web-UI wird keine APK gebaut."
+
 val buildWebadmin by tasks.registering(Exec::class) {
     group = "build"
     description = "Baut die Web-UI mit npm (Node aus .mise.toml)."
@@ -73,8 +75,7 @@ val buildWebadmin by tasks.registering(Exec::class) {
     commandLine(
         "sh",
         "-c",
-        "command -v npm >/dev/null 2>&1 || { echo 'openframe: Node/npm nicht gefunden. Erst \"mise install\" ausführen, dann erneut bauen. Ohne Web-UI wird keine APK gebaut.' >&2; exit 1; }; " +
-            "npm ci --no-audit --no-fund && npm run build",
+        "command -v npm >/dev/null 2>&1 || { echo '$noNode' >&2; exit 1; }; npm ci --no-audit --no-fund && npm run build",
     )
 }
 
