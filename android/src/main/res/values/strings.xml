@@ -1,4 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">openframe</string>
+    <string name="notification_channel">Server</string>
+    <string name="notification_title">openframe is running</string>
+    <string name="notification_text">The admin page is reachable on your network.</string>
+    <string name="loading">Preparing photos …</string>
+    <string name="empty_title">No photos yet</string>
+    <string name="empty_body">Open %1$s in a browser to upload photos, or copy them over USB into the folder %2$s.</string>
+    <string name="empty_no_network">No network. Copy photos over USB into the folder %1$s.</string>
+    <string name="pairing_code">Pairing code</string>
+    <string name="hint_address">Admin page</string>
+    <string name="hint_no_network">No network</string>
+    <string name="hint_pause">Pause</string>
+    <string name="hint_resume">Resume</string>
+    <string name="hint_local_only">Local only: not reachable from the network</string>
+    <string name="menu_title">Frame</string>
+    <string name="menu_local_only_on">Local only: on</string>
+    <string name="menu_local_only_off">Local only: off</string>
+    <string name="menu_reset">Unpair all devices</string>
+    <string name="menu_info">Info</string>
+    <string name="menu_close">Close</string>
+    <string name="confirm_reset">Unpair all devices? Every browser has to pair again with a new code.</string>
+    <string name="confirm_reset_yes">Unpair all</string>
+    <string name="cancel">Cancel</string>
+    <string name="info_text">openframe %1$s\nDevice: %2$s, Android %3$s\nAddress: %4$s\nFrame ID: %5$s</string>
 </resources>

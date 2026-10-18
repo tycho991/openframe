@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gemeinsames Aussehen am Rahmen: schwarzer Grund, helle Schrift mit Schatten, ruhige Akzentfarbe. -->
+    <color name="frame_background">#000000</color>
+    <color name="frame_text">#FFFFFFFF</color>
+    <color name="frame_text_muted">#CCFFFFFF</color>
+    <color name="frame_accent">#FF5FB39B</color>
+    <color name="frame_panel">#B3101010</color>
+    <color name="frame_shadow">#B3000000</color>
+
+    <style name="Theme.OpenFrame" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/frame_background</item>
+        <item name="android:colorAccent">@color/frame_accent</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <style name="Theme.OpenFrame.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/frame_accent</item>
+    </style>
+
+    <style name="FrameText">
+        <item name="android:textColor">@color/frame_text</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:shadowColor">@color/frame_shadow</item>
+        <item name="android:shadowRadius">6</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">1</item>
+    </style>
+
+    <style name="FrameText.Title">
+        <item name="android:textSize">32sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="FrameText.Body">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textColor">@color/frame_text_muted</item>
+        <item name="android:lineSpacingMultiplier">1.15</item>
+    </style>
+
+    <style name="FrameText.Code">
+        <item name="android:textSize">44sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.2</item>
+        <item name="android:textColor">@color/frame_accent</item>
+    </style>
+</resources>

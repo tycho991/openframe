@@ -145,6 +145,24 @@ class SlideshowControllerTest {
         }
 
     @Test
+    fun `Naechstes Foto ist vorbereitet`() =
+        runTest {
+            val s = Setup(this, photos)
+            assertEquals(
+                photos[1],
+                s.controller.nextUp.value
+                    ?.first,
+            )
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(
+                photos[2],
+                s.controller.nextUp.value
+                    ?.first,
+            )
+        }
+
+    @Test
     fun `Naechste Fotos werden vorab gerendert`() =
         runTest {
             val s = Setup(this, photos)

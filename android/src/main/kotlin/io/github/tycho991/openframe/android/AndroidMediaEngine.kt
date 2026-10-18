@@ -107,8 +107,7 @@ class AndroidMediaEngine(
     private fun exif(file: File): ExifInterface? = runCatching { ExifInterface(file.path) }.getOrNull()
 
     private fun takenAt(exif: ExifInterface): java.time.Instant? =
-        null.also { }
-            ?: parseExifDate(exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(ExifInterface.TAG_DATETIME))
+        parseExifDate(exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(ExifInterface.TAG_DATETIME))
 
     companion object {
         private const val HEIF_MIN_SDK = 28

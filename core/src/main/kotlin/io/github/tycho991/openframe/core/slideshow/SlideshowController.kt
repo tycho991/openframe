@@ -118,6 +118,14 @@ class SlideshowController(
     val state: StateFlow<SlideState> = _state.asStateFlow()
     val paused: StateFlow<Boolean> = _paused.asStateFlow()
 
+    private val _nextUp = MutableStateFlow<Pair<PhotoEntry, File>?>(null)
+
+    /**
+     * Das Foto, das beim nächsten Wechsel vorwärts voraussichtlich kommt, mit fertiger
+     * Anzeigegröße. Die Anzeige decodiert es vorab, damit der Übergang ohne Wartezeit beginnt.
+     */
+    val nextUp: StateFlow<Pair<PhotoEntry, File>?> = _nextUp.asStateFlow()
+
     fun start() {
         scope.launch {
             combine(visible, settings.map { it.order }.distinctUntilChanged()) { photos, order -> Command.Library(photos, order) }
@@ -194,6 +202,7 @@ class SlideshowController(
         when {
             command.photos.isEmpty() -> {
                 timer?.cancel()
+                _nextUp.value = null
                 _state.value = SlideState.Empty
             }
 
@@ -265,6 +274,7 @@ class SlideshowController(
         _state.value = SlideState.Showing(entry, file, step, seq)
         armTimer()
         val upcoming = playlist.upcoming(PREFETCH_AHEAD)
+        _nextUp.value = upcoming.firstNotNullOfOrNull { e -> images.ready(e)?.let { e to it } }
         images.prefetch(upcoming.take(NEXT_AHEAD), RenderPriority.NEXT)
         images.prefetch(upcoming.drop(NEXT_AHEAD), RenderPriority.PREFETCH)
     }
