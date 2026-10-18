@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.android
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -164,7 +165,11 @@ class DisplayActivity : Activity() {
         super.onDestroy()
     }
 
-    /** Als HOME-Launcher führt die Zurück-Taste nirgendwohin, sie schließt nur den Hinweis. */
+    /**
+     * Als HOME-Launcher führt die Zurück-Taste nirgendwohin, sie schließt nur den Hinweis.
+     * Ab API 33 über den OnBackInvokedCallback in onCreate; darunter gibt es ohne AndroidX nur diesen Weg.
+     */
+    @SuppressLint("GestureBackNavigation")
     override fun onKeyDown(
         keyCode: Int,
         event: KeyEvent,
