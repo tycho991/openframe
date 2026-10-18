@@ -5,10 +5,10 @@
 - [x] 1.1 JDK 17 (Temurin) in `.mise.toml` pinnen, Gradle-Wrapper, `settings.gradle.kts` mit `:core` und `:android` und `gradle/libs.versions.toml` anlegen; prüfen: `mise install && ./gradlew help` läuft durch
 - [x] 1.2 Modul `:core` als Kotlin/JVM-Bibliothek (Kotlin 2.x, Toolchain 17, `kotlinx-coroutines`, `kotlinx-serialization`, JUnit 5) mit einem Platzhaltertest anlegen; prüfen: `./gradlew :core:test` grün
 - [x] 1.3 Gradle-Check gegen `android.*`-Importe in `:core` an `check` hängen; prüfen: ein absichtlich eingefügter Import lässt `./gradlew :core:check` mit verständlicher Meldung scheitern
-- [ ] 1.4 Modul `:android` mit Paket-ID `io.github.tycho991.openframe`, `minSdk 21`, neuestem stabilem `targetSdk`, `largeHeap` und leerer Activity anlegen; prüfen: `./gradlew :android:assembleDebug` erzeugt eine APK, `aapt dump badging` zeigt Paket-ID und `minSdk 21`
-- [ ] 1.5 Spotless/ktlint und Android Lint einrichten, einschließlich der Prüfung, dass keine API über `minSdk` genutzt wird; prüfen: `./gradlew check` grün, ein Stilverstoß lässt es scheitern
+- [x] 1.4 Modul `:android` mit Paket-ID `io.github.tycho991.openframe`, `minSdk 21`, neuestem stabilem `targetSdk`, `largeHeap` und leerer Activity anlegen; prüfen: `./gradlew :android:assembleDebug` erzeugt eine APK, `aapt dump badging` zeigt Paket-ID und `minSdk 21`
+- [x] 1.5 Spotless/ktlint und Android Lint einrichten, einschließlich der Prüfung, dass keine API über `minSdk` genutzt wird; prüfen: `./gradlew check` grün, ein Stilverstoß lässt es scheitern
 - [x] 1.6 `webadmin/` mit Vite, Svelte 5, TypeScript, ESLint, Prettier und Vitest anlegen, `package-lock.json` einchecken; prüfen: `npm ci && npm run lint && npm test && npm run build` in `webadmin/` grün
-- [ ] 1.7 GitHub-Actions-Workflow `ci.yml` (Gradle `check` + `assembleDebug`, Web-UI-Lint/-Test/-Build) und Renovate-Regeln für Gradle und npm ergänzen; prüfen: Workflow läuft auf einem Push-Branch grün
+- [x] 1.7 GitHub-Actions-Workflow `ci.yml` (Gradle `check` + `assembleDebug`, Web-UI-Lint/-Test/-Build) und Renovate-Regeln für Gradle und npm ergänzen; prüfen: Workflow läuft auf einem Push-Branch grün
 
 ## 2. API-Vertrag und HTTP-Schicht
 
@@ -45,7 +45,7 @@
 
 ## 6. Android-Host
 
-- [ ] 6.1 `AndroidMediaEngine`: `BitmapFactory` mit `inSampleSize` in zwei Durchgängen, Drehung aus `ExifInterface` (Framework-Klasse, nicht AndroidX), JPEG mit Qualität 85, GIF als erstes Frame, HEIC-Probe; prüfen: Robolectric-Tests mit den Fixture-Fotos aus 5.1
+- [x] 6.1 `AndroidMediaEngine`: `BitmapFactory` mit `inSampleSize` in zwei Durchgängen, Drehung aus `ExifInterface` (Framework-Klasse, nicht AndroidX), JPEG mit Qualität 85, GIF als erstes Frame, HEIC-Probe; prüfen: Robolectric-Tests mit den Fixture-Fotos aus 5.1
 - [ ] 6.2 Foreground-Service mit `:core`, HTTP-Server, `PARTIAL_WAKE_LOCK`, `WifiLock`, Notification-Channel ab API 26 und `START_STICKY`; lokaler Binder mit den `StateFlow`s; prüfen: auf dem Emulator (API 21 und aktuell) ist `curl http://<ip>:8080/api/v1/info` erreichbar, auch wenn die Activity im Hintergrund ist
 - [ ] 6.3 `BootReceiver`, HOME-Intent-Filter, immersives Vollbild mit Wiederherstellung, `FLAG_KEEP_SCREEN_ON`; prüfen: Emulator-Neustart zeigt die App ohne Eingriff; `adb shell cmd package resolve-activity -c android.intent.category.HOME` bietet sie an
 - [ ] 6.4 Selbstheilung (`UncaughtExceptionHandler` → Log + `AlarmManager`-Neustart) und rotierendes Datei-Log mit `GET /api/v1/logs`; prüfen: ein Debug-Befehl, der einen Absturz auslöst, führt innerhalb von 30 s zum Neustart, und das Log zeigt die Ursache
@@ -65,7 +65,7 @@
 ## 8. Verwaltungsoberfläche
 
 - [x] 8.1 TypeScript-Typen aus `api/openapi.yaml` generieren (`openapi-typescript`), API-Client mit Token, 401-Behandlung und signierten Bild-URLs (geladene Seiten spätestens nach 50 min neu laden, bei Bildfehler Seite einmal nachladen); prüfen: `npm run typecheck`, Vitest für 401 → Kopplungsdialog und Szenario „Tab stundenlang offen“ mit Fake-Timern
-- [ ] 8.2 Gradle-Task baut `webadmin/` vor `mergeAssets` in die APK-Assets und schlägt ohne Node klar fehl; prüfen: `./gradlew :android:assembleDebug` enthält `assets/webadmin/index.html`; ohne Node erscheint die Fehlermeldung
+- [x] 8.2 Gradle-Task baut `webadmin/` vor `mergeAssets` in die APK-Assets und schlägt ohne Node klar fehl; prüfen: `./gradlew :android:assembleDebug` enthält `assets/webadmin/index.html`; ohne Node erscheint die Fehlermeldung
 - [x] 8.3 App-Rahmen: Layout für Handy und Desktop, Navigation (Fotos, Alben, Einstellungen, Geräte), CSS-Variablen, Hell und Dunkel, i18n Deutsch/Englisch mit Erkennung über den Browser und Wahl pro Browser in `localStorage`; Playwright-Projekte für Chromium, Firefox und WebKit; prüfen: Playwright bei 360 px, 390 px und 1280 px ohne horizontales Scrollen; Szenario „Deutscher Browser“; Szenario „Offline im Heimnetz“ (Netzwerk-Mitschnitt zeigt keine Anfragen an fremde Hosts)
 - [x] 8.4 Kopplungsdialog mit Gerätename, „Code am Rahmen anzeigen“ (`POST /api/v1/pairing/code`) und Fehlern (falsch, abgelaufen, Sperre); prüfen: Playwright gegen einen `:core`-Testserver für „Erster Besuch“ und „Wiederkehrender Besuch“
 - [x] 8.5 Fotoraster mit virtueller Liste, Cursor-Paginierung, Filter nach Album und Sichtbarkeit, Markierung ausgeblendeter Fotos, Detailansicht; Hinweis und Liste übersprungener Dateien; prüfen: Playwright mit 10.000 Fake-Fotos, nur Vorschaubilder im sichtbaren Bereich werden angefragt (Netzwerk-Mitschnitt); Szenario „HEIC per USB auf altem Gerät“
@@ -78,9 +78,9 @@
 
 ## 9. Dokumentation
 
-- [ ] 9.1 README schreiben: Kurzbeschreibung, Architektur in einem Absatz, Build (`mise install`, SDK-Pfad, `./gradlew :android:assembleDebug`), Installation per `adb install`, erste Kopplung; prüfen: die Befehle laufen in einem frischen Clone wie beschrieben
-- [ ] 9.2 `docs/DEVICE_TEST.md` als Checkliste für echte Hardware anlegen (Frame-Drops per `dumpsys gfxinfo`, Dauerlauf 24 h bei 5 s, 48-MP-Foto, Autostart, WLAN-Ausfall, Upload per USB am Rechner sichtbar, Parallelbetrieb mit `pictureframe`, Rückweg mit Sicherung der Fotos); prüfen: jede Zeile verweist auf ihr Spec-Szenario
-- [ ] 9.3 `CLAUDE.md` mit den Projektregeln anlegen (Modulgrenzen, Contract-Tests, Geräte-Zugang mit Verweis auf `../pictureframe/devices/`, Bestätigung vor persistenten Änderungen am Gerät); prüfen: Datei ist vorhanden und verweist auf existierende Pfade
+- [x] 9.1 README schreiben: Kurzbeschreibung, Architektur in einem Absatz, Build (`mise install`, SDK-Pfad, `./gradlew :android:assembleDebug`), Installation per `adb install`, erste Kopplung; prüfen: die Befehle laufen in einem frischen Clone wie beschrieben
+- [x] 9.2 `docs/DEVICE_TEST.md` als Checkliste für echte Hardware anlegen (Frame-Drops per `dumpsys gfxinfo`, Dauerlauf 24 h bei 5 s, 48-MP-Foto, Autostart, WLAN-Ausfall, Upload per USB am Rechner sichtbar, Parallelbetrieb mit `pictureframe`, Rückweg mit Sicherung der Fotos); prüfen: jede Zeile verweist auf ihr Spec-Szenario
+- [x] 9.3 `CLAUDE.md` mit den Projektregeln anlegen (Modulgrenzen, Contract-Tests, Geräte-Zugang mit Verweis auf `../pictureframe/devices/`, Bestätigung vor persistenten Änderungen am Gerät); prüfen: Datei ist vorhanden und verweist auf existierende Pfade
 
 ## 10. Abnahme auf den Geräten
 
