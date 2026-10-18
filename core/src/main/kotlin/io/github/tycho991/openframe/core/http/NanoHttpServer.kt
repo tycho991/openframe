@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
+import java.net.Socket
 import io.github.tycho991.openframe.core.http.Method as ApiMethod
 
 /**
@@ -50,6 +51,15 @@ class NanoHttpServer(
         // sofort schließen, sonst verwirft ein TCP-Reset beim Client die schon gesendete Antwort.
         if (!body.drain(MAX_DRAIN_BYTES)) nano.closeConnection(true)
         return nano
+    }
+
+    /** Header und Rumpf gehen getrennt raus. Ohne `TCP_NODELAY` kostet das mit Delayed ACK rund 40 ms pro Antwort. */
+    override fun createClientHandler(
+        finalAccept: Socket,
+        inputStream: InputStream,
+    ): ClientHandler {
+        runCatching { finalAccept.tcpNoDelay = true }
+        return super.createClientHandler(finalAccept, inputStream)
     }
 
     override fun useGzipWhenAccepted(r: Response): Boolean {

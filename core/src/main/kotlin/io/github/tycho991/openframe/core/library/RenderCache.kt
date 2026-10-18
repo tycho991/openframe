@@ -217,9 +217,27 @@ class RenderCache(
         return deferred
     }
 
+    /** Hält den Worker an. Wartende Aufträge scheitern, laufende werden zu Ende gerendert. */
+    fun close() {
+        closed = true
+        worker.interrupt()
+        worker.join(WORKER_STOP_TIMEOUT_MS)
+        queue.forEach { it.result.cancel() }
+        queue.clear()
+    }
+
+    @Volatile
+    private var closed = false
+
     private fun runWorker() {
-        while (true) {
-            val job = queue.take()
+        // Ein Rendern kann das Interrupt-Flag schlucken, deshalb zusätzlich [closed].
+        while (!closed) {
+            val job =
+                try {
+                    queue.take()
+                } catch (e: InterruptedException) {
+                    return
+                }
             if (job.result.isCompleted) continue
             val target = File(dir, job.key)
             try {
@@ -267,5 +285,6 @@ class RenderCache(
 
     private companion object {
         const val TAG = "render"
+        const val WORKER_STOP_TIMEOUT_MS = 10_000L
     }
 }

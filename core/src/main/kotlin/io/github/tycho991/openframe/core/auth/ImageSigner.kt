@@ -32,6 +32,9 @@ class ImageSigner(
     @Volatile
     private var key: ByteArray = ByteArray(0)
 
+    /** Ein initialisiertes HMAC pro Thread und Schlüssel, weil eine Fotoliste hundert URLs auf einmal signiert. */
+    private val macs = ThreadLocal<Pair<ByteArray, Mac>>()
+
     fun load() {
         val stored = store.load()
         if (stored == null) rotate() else key = Base64.getUrlDecoder().decode(stored.imageKey)
@@ -65,7 +68,14 @@ class ImageSigner(
         photoId: String,
         expires: Long,
     ): String {
-        val hmac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }
+        val k = key
+        val cached = macs.get()
+        val hmac =
+            if (cached != null && cached.first === k) {
+                cached.second
+            } else {
+                Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(k, "HmacSHA256")) }.also { macs.set(k to it) }
+            }
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hmac.doFinal("$photoId.$expires".toByteArray()))
     }
 

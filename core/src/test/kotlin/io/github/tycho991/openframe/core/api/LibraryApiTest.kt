@@ -202,10 +202,12 @@ class LibraryApiTest {
 
     @Test
     fun `Defektes Bild liefert 503`() {
-        put("a.jpg")
-        frame.scan()
-        Fixtures.copy("broken.jpg", File(frame.photos, "a.jpg")).setLastModified(File(frame.photos, "a.jpg").lastModified())
+        // Im Index, aber nicht renderbar, etwa nach einer Beschädigung auf dem Datenträger.
+        val file = put("a.jpg", "broken.jpg")
         val id = id("a.jpg")
+        frame.core.library.index.edit {
+            it.put(PhotoEntry(id, "local", "a.jpg", 400, 300, 0, file.length(), file.lastModified(), 1))
+        }
         assertEquals(503, frame.get("/api/v1/photos/$id/image?size=display").statusCode())
         assertEquals(400, frame.get("/api/v1/photos/$id/image?size=riesig").statusCode())
     }

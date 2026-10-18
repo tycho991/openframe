@@ -34,6 +34,8 @@ import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
+import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
+import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +120,20 @@ class FrameCore(
             .distinctUntilChanged()
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    /** Steuerung der Slideshow für die Anzeige. */
+    val slideshow =
+        SlideshowController(
+            visiblePhotos,
+            { id ->
+                index.library.value.photos
+                    .containsKey(id)
+            },
+            settings.settings,
+            CachedDisplayImages(cache),
+            scope,
+            log,
+        )
+
     val router = Router()
     private val pipeline = HttpPipeline(router, AccessControl(clients, signer), log, StaticAssets(assets)::handle)
     val server = FrameServer(port, Dispatchers.IO.limitedParallelism(HANDLER_THREADS), log, pipeline::handle)
@@ -133,6 +149,7 @@ class FrameCore(
         index.load()
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
+        slideshow.start()
         _ready.value = true
 
         scope.launch { scanLoop() }
@@ -174,6 +191,8 @@ class FrameCore(
     /** Hält den Server an und schreibt ausstehende Änderungen. */
     suspend fun stop() {
         server.stop()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
+        cache.close()
         settings.flush()
         clients.flush()
         index.flush()
