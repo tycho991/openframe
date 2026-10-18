@@ -1,71 +1,105 @@
 # openframe
 
-<!-- Kurzbeschreibung des Projekts folgt mit dem ersten OpenSpec-Change. -->
+Digitaler Bilderrahmen für alte Android-Tablets und Frameo-Rahmen. Die
+Slideshow läuft nativ auf dem Gerät, verwaltet wird im Browser von Laptop
+oder Handy. Es gibt keine Cloud: Fotos kommen per USB oder Upload auf den
+Rahmen, der Rahmen selbst ist der Server.
 
-Projekt mit OpenSpec und Claude Code, angelegt aus
-`tycho991/openspec-project-template`. Einrichtung, Updates und Ablauf pro
-Änderung: siehe unten.
+Ziel-Geräte sind ab Android 5.0 (API 21), getestet auf dem Frameo `PFF_1024`
+(Android 6.0.1) und dem Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
 
----
+## Architektur
 
-## Vorlage: openspec-project-template
+Eine Codebasis in Kotlin. `:core` enthält die ganze Fachlogik und läuft auf
+der reinen JVM: Einstellungen, Fotobibliothek mit Index, Bildgrößen-Cache,
+Slideshow-Steuerung, Kopplung und die HTTP-API unter `/api/v1` (NanoHTTPD als
+Transport). `:android` ist die Kiosk-APK: Foreground-Service mit dem Kern,
+native Anzeige mit zwei `ImageView`s und die Anbindung an `BitmapFactory`. Die
+Anzeige bekommt ihre Daten direkt als `StateFlow`s aus dem Kern, nicht über
+HTTP. Die Verwaltungsoberfläche in `webadmin/` (Svelte 5, TypeScript, Vite)
+wird beim Bauen in die APK gelegt und vom Rahmen ausgeliefert. Der API-Vertrag
+steht in `api/openapi.yaml`; daraus entstehen die Typen der Web-UI, und
+Contract-Tests prüfen jede Antwort des Servers dagegen.
 
-Vorlage für Projekte mit [OpenSpec](https://github.com/Fission-AI/OpenSpec) und
-Claude Code (Desktop-App, Code-Tab). Die Maschinen-Seite (mise, Node,
-Claude-Code-Einstellungen, globale Skills) kommt aus `ansible-terminal`
-(`playbooks/dev_tools.yml`). Planung und Hintergründe:
-`Planung OpenSpec + Claude Code Multi-Maschinen-Setup v4.md`.
+Hintergründe und Entscheidungen: `openspec/changes/bootstrap-openframe-core/design.md`.
 
-## Inhalt
+## Bauen
 
-| Datei | Zweck |
-|---|---|
-| `.mise.toml` | Node und OpenSpec exakt gepinnt, Telemetrie aus, Task `openspec-sync` |
-| `.gitignore` | `.claude/settings.local.json` (persönliche Freigaben) bleibt lokal |
-| `renovate.json` | Updates per PR, 7 Tage Mindestalter, Node-Majors nur nach Freigabe |
-| `.github/workflows/openspec-drift.yml` | prüft, dass die committeten Skills und Commands genau zur gepinnten Version passen |
-
-## Neues Projekt
-
-```bash
-gh repo create tycho991/<name> --private --template tycho991/openspec-project-template --clone
-cd <name>
-mise trust
-mise install
-mise run openspec-profile
-openspec init --tools claude
-git status
-```
-
-`openspec-profile` setzt Profil und Delivery, bevor die ersten Dateien
-entstehen. `openspec-sync` ruft es danach jedes Mal selbst auf. OpenSpec 1.14.3 legt an:
-
-- `openspec/` mit Specs, Changes und `config.yaml`
-- `.claude/commands/opsx/<id>.md`, in Claude Code als `/opsx:<id>`
-- `.claude/skills/openspec-*/` für die Skills
-
-Danach gezielt committen:
+Voraussetzungen: [mise](https://mise.jdx.dev) für JDK 17 und Node, dazu ein
+Android-SDK mit Plattform 36.
 
 ```bash
-git add openspec .claude
-git commit -m "OpenSpec einrichten"
+mise trust && mise install
+# Pfad zum Android-SDK, falls ANDROID_HOME nicht gesetzt ist:
+echo "sdk.dir=$HOME/android-sdk" > local.properties
+./gradlew :android:assembleDebug
 ```
 
-`mise trust` ist pro Projekt einmal nötig. Ein pauschales Vertrauen für ganze
-Verzeichnisse (`trusted_config_paths`) ist bewusst nicht eingerichtet.
+Die APK liegt danach unter `android/build/outputs/apk/debug/android-debug.apk`.
+Ohne Node bricht der Build mit einer Meldung ab, statt eine APK ohne Web-UI zu
+bauen. Ohne Android-SDK wird `:android` übersprungen; `:core` und die Web-UI
+lassen sich trotzdem bauen und testen.
 
-Dann den Projektordner im Code-Tab der Desktop-App öffnen.
+Der Build braucht eine UTF-8-Locale (`LANG=C.UTF-8` oder `de_DE.UTF-8`), weil
+Testnamen Umlaute enthalten.
 
-## Bestehendes Projekt
+## Installieren und erste Kopplung
 
-`.mise.toml`, `.gitignore`, `renovate.json` und den Workflow (nach
-`.github/workflows/`) ins Projekt kopieren, dann wie oben ab `mise trust`. Hat
-das Projekt schon einen `openspec/`-Ordner, statt `openspec init` nur
-`mise run openspec-sync`.
+```bash
+adb install -r android/build/outputs/apk/debug/android-debug.apk
+adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
+```
 
-## OpenSpec aktualisieren
+openframe läuft parallel zu `pictureframe` (eigene Paket-ID). Soll es nach dem
+Neustart von selbst erscheinen, in den Android-Einstellungen als
+Startbildschirm (HOME) wählen.
 
-Renovate öffnet einen PR, der `.mise.toml` erhöht. Im Branch dieses PRs:
+1. Ohne Fotos zeigt der Rahmen die Adresse der Verwaltung, etwa
+   `http://192.168.100.215:8080/`, und einen sechsstelligen Kopplungscode.
+2. Die Adresse im Browser öffnen und den Code eingeben. Der Browser ist danach
+   gekoppelt; weitere Geräte koppeln sich genauso („Code am Rahmen anzeigen“).
+3. Fotos hochladen oder per USB in den Ordner
+   `Android/data/io.github.tycho991.openframe/files/photos` kopieren.
+   Unterordner werden zu Alben.
+
+Am Rahmen selbst: Tippen zeigt Name, Adresse, Code und Pause. Wischen blättert.
+Drei Sekunden in eine Ecke drücken öffnet das Gerätemenü mit „nur lokal“,
+„Alle Kopplungen aufheben“ und Info.
+
+Deinstallieren löscht den Fotoordner mit. Vorher sichern:
+`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`.
+
+## Entwickeln
+
+```bash
+./gradlew check                 # Formatierung, :core-Tests, Android-Importe, API 21, Android Lint
+./gradlew :android:testDebugUnitTest
+cd webadmin
+npm ci
+npm run lint && npm run typecheck && npm test
+npm run e2e                     # baut die Web-UI und testet sie per Playwright gegen einen :core-Testserver
+OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite mit Hot Reload, API über Proxy an den Rahmen
+```
+
+Den `:core`-Testserver mit Fake-Bildern startet auch
+`./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; die Web-UI
+liegt dann unter `http://127.0.0.1:8090/`.
+
+Was sich nur auf echter Hardware prüfen lässt, steht in
+[`docs/DEVICE_TEST.md`](docs/DEVICE_TEST.md).
+
+## Arbeitsablauf mit OpenSpec
+
+Änderungen werden als OpenSpec-Change geplant (Proposal, Specs, Design,
+Tasks unter `openspec/changes/`) und dann umgesetzt. In Claude Code:
+
+1. `/opsx:propose` für einen neuen Change
+2. `openspec validate <name>` und `openspec show <name>`
+3. `/opsx:apply` zum Umsetzen
+4. `/opsx:archive` bzw. `openspec archive <name> --yes`
+
+Node und OpenSpec sind in `.mise.toml` gepinnt. Renovate erhöht die Version per
+PR; im Branch des PRs dann:
 
 ```bash
 mise install
@@ -73,25 +107,5 @@ mise run openspec-sync
 git add -A && git commit -m "OpenSpec-Skills aktualisieren"
 ```
 
-Erst dann wird die Drift-Prüfung grün. Für mehrere Projekte auf einmal:
-`scripts/bump-openspec.sh` in `ansible-terminal`.
-
-## Eigene Skills im Projekt
-
-- Ordner `.claude/skills/<name>/` mit `SKILL.md`. Der Ordnername ist der
-  Skill-Name: `^[a-z0-9]+(-[a-z0-9]+)*$`, nicht mit `openspec-` beginnend.
-- `description` im Frontmatter ist Pflicht, sonst wählt Claude den Skill nicht
-  von selbst aus. Die Drift-Prüfung meldet beides.
-- Persönliche Skills (`~/.claude/skills/`) haben Vorrang vor Projekt-Skills
-  gleichen Namens.
-
-## Arbeitsablauf pro Änderung
-
-1. `/opsx:propose` im Code-Tab (Proposal, Tasks und Spec-Deltas unter
-   `openspec/changes/<name>/`)
-2. `openspec validate <name>` und `openspec show <name>`
-3. `/opsx:apply` zum Umsetzen
-4. `/opsx:archive` bzw. `openspec archive <name> --yes`
-
-Die genauen Commands stehen in `.claude/commands/opsx/` und richten sich nach
-der gepinnten OpenSpec-Version.
+Die Drift-Prüfung in `.github/workflows/openspec-drift.yml` stellt sicher, dass
+die committeten Skills und Commands genau zur gepinnten Version passen.
