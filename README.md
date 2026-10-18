@@ -1,4 +1,14 @@
-# openspec-project-template
+# openframe
+
+<!-- Kurzbeschreibung des Projekts folgt mit dem ersten OpenSpec-Change. -->
+
+Projekt mit OpenSpec und Claude Code, angelegt aus
+`tycho991/openspec-project-template`. Einrichtung, Updates und Ablauf pro
+Änderung: siehe unten.
+
+---
+
+## Vorlage: openspec-project-template
 
 Vorlage für Projekte mit [OpenSpec](https://github.com/Fission-AI/OpenSpec) und
 Claude Code (Desktop-App, Code-Tab). Die Maschinen-Seite (mise, Node,
