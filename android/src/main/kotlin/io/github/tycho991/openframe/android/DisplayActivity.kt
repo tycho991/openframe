@@ -22,6 +22,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation

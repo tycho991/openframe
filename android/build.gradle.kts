@@ -1,5 +1,16 @@
 import com.android.build.api.variant.AndroidComponentsExtension
 
+// AGP bringt seinen eigenen Kotlin-Compiler mit. Die Version aus dem Katalog muss gewinnen,
+// sonst kann er die Metadaten von :core und kotlin-stdlib nicht lesen.
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${libs.versions.kotlin.get()}")
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
 }

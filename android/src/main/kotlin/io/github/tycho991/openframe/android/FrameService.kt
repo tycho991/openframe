@@ -21,6 +21,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 
 /**
