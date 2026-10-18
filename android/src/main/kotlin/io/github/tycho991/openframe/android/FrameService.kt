@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.android
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -147,11 +148,11 @@ class FrameService : Service() {
                 }
             }
         val filter = IntentFilter(ACTION_DEBUG_CRASH)
-        if (Build.VERSION.SDK_INT >=
-            33
-        ) {
+        // Exportiert, damit adb den Broadcast schicken kann. Vor API 33 gibt es das Flag nicht.
+        if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {
+            @SuppressLint("UnspecifiedRegisterReceiverFlag")
             registerReceiver(receiver, filter)
         }
         debugReceiver = receiver

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">openframe</string>
+    <string name="app_name" translatable="false">openframe</string>
     <string name="notification_channel">Server</string>
     <string name="notification_title">openframe is running</string>
     <string name="notification_text">The admin page is reachable on your network.</string>
