@@ -43,6 +43,10 @@ jobs:
 
   webadmin:
     runs-on: ubuntu-latest
+    env:
+      # Der Testserver braucht nur :core, nicht :android.
+      ANDROID_HOME: ""
+      ANDROID_SDK_ROOT: ""
     defaults:
       run:
         working-directory: webadmin
