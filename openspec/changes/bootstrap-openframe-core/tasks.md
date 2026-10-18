@@ -64,17 +64,17 @@
 
 ## 8. Verwaltungsoberfläche
 
-- [ ] 8.1 TypeScript-Typen aus `api/openapi.yaml` generieren (`openapi-typescript`), API-Client mit Token, 401-Behandlung und signierten Bild-URLs (geladene Seiten spätestens nach 50 min neu laden, bei Bildfehler Seite einmal nachladen); prüfen: `npm run typecheck`, Vitest für 401 → Kopplungsdialog und Szenario „Tab stundenlang offen“ mit Fake-Timern
+- [x] 8.1 TypeScript-Typen aus `api/openapi.yaml` generieren (`openapi-typescript`), API-Client mit Token, 401-Behandlung und signierten Bild-URLs (geladene Seiten spätestens nach 50 min neu laden, bei Bildfehler Seite einmal nachladen); prüfen: `npm run typecheck`, Vitest für 401 → Kopplungsdialog und Szenario „Tab stundenlang offen“ mit Fake-Timern
 - [ ] 8.2 Gradle-Task baut `webadmin/` vor `mergeAssets` in die APK-Assets und schlägt ohne Node klar fehl; prüfen: `./gradlew :android:assembleDebug` enthält `assets/webadmin/index.html`; ohne Node erscheint die Fehlermeldung
-- [ ] 8.3 App-Rahmen: Layout für Handy und Desktop, Navigation (Fotos, Alben, Einstellungen, Geräte), CSS-Variablen, Hell und Dunkel, i18n Deutsch/Englisch mit Erkennung über den Browser und Wahl pro Browser in `localStorage`; Playwright-Projekte für Chromium, Firefox und WebKit; prüfen: Playwright bei 360 px, 390 px und 1280 px ohne horizontales Scrollen; Szenario „Deutscher Browser“; Szenario „Offline im Heimnetz“ (Netzwerk-Mitschnitt zeigt keine Anfragen an fremde Hosts)
-- [ ] 8.4 Kopplungsdialog mit Gerätename, „Code am Rahmen anzeigen“ (`POST /api/v1/pairing/code`) und Fehlern (falsch, abgelaufen, Sperre); prüfen: Playwright gegen einen `:core`-Testserver für „Erster Besuch“ und „Wiederkehrender Besuch“
-- [ ] 8.5 Fotoraster mit virtueller Liste, Cursor-Paginierung, Filter nach Album und Sichtbarkeit, Markierung ausgeblendeter Fotos, Detailansicht; Hinweis und Liste übersprungener Dateien; prüfen: Playwright mit 10.000 Fake-Fotos, nur Vorschaubilder im sichtbaren Bereich werden angefragt (Netzwerk-Mitschnitt); Szenario „HEIC per USB auf altem Gerät“
-- [ ] 8.6 Mehrfachauswahl mit Ausblenden, Einblenden und Löschen (mit Bestätigung); prüfen: Playwright „Mehrere ausblenden“ und „Löschen bestätigen“
-- [ ] 8.7 Upload per Dateiauswahl und Drag-and-drop mit Fortschritt und Fehlern pro Datei und Albumwahl (bestehendes oder neues Album); prüfen: Playwright „Teilweiser Fehler“
-- [ ] 8.8 Albenansicht mit Anzahl, Titelbild und Schalter; prüfen: Playwright „Album ausblenden“
-- [ ] 8.9 Einstellungsformular für alle API-Einstellungen (einschließlich Name, Ausrichtung, Sprache am Rahmen und Cache-Budget, ohne „nur lokal“) mit Fehlern am Feld und Bestätigung ohne Neuladen; prüfen: Playwright „Fehler am Feld“
-- [ ] 8.10 Geräteliste mit Kennzeichnung des aktuellen Geräts und Aufheben der Kopplung; prüfen: Playwright „Altes Gerät entfernen“
-- [ ] 8.11 Aktualisierung über `GET /api/v1/state` (Polling alle 10 s, nur bei sichtbarem Tab); prüfen: Playwright „Foto per USB“ (Datei im Testserver-Ordner anlegen → erscheint in 30 s)
+- [x] 8.3 App-Rahmen: Layout für Handy und Desktop, Navigation (Fotos, Alben, Einstellungen, Geräte), CSS-Variablen, Hell und Dunkel, i18n Deutsch/Englisch mit Erkennung über den Browser und Wahl pro Browser in `localStorage`; Playwright-Projekte für Chromium, Firefox und WebKit; prüfen: Playwright bei 360 px, 390 px und 1280 px ohne horizontales Scrollen; Szenario „Deutscher Browser“; Szenario „Offline im Heimnetz“ (Netzwerk-Mitschnitt zeigt keine Anfragen an fremde Hosts)
+- [x] 8.4 Kopplungsdialog mit Gerätename, „Code am Rahmen anzeigen“ (`POST /api/v1/pairing/code`) und Fehlern (falsch, abgelaufen, Sperre); prüfen: Playwright gegen einen `:core`-Testserver für „Erster Besuch“ und „Wiederkehrender Besuch“
+- [x] 8.5 Fotoraster mit virtueller Liste, Cursor-Paginierung, Filter nach Album und Sichtbarkeit, Markierung ausgeblendeter Fotos, Detailansicht; Hinweis und Liste übersprungener Dateien; prüfen: Playwright mit 10.000 Fake-Fotos, nur Vorschaubilder im sichtbaren Bereich werden angefragt (Netzwerk-Mitschnitt); Szenario „HEIC per USB auf altem Gerät“
+- [x] 8.6 Mehrfachauswahl mit Ausblenden, Einblenden und Löschen (mit Bestätigung); prüfen: Playwright „Mehrere ausblenden“ und „Löschen bestätigen“
+- [x] 8.7 Upload per Dateiauswahl und Drag-and-drop mit Fortschritt und Fehlern pro Datei und Albumwahl (bestehendes oder neues Album); prüfen: Playwright „Teilweiser Fehler“
+- [x] 8.8 Albenansicht mit Anzahl, Titelbild und Schalter; prüfen: Playwright „Album ausblenden“
+- [x] 8.9 Einstellungsformular für alle API-Einstellungen (einschließlich Name, Ausrichtung, Sprache am Rahmen und Cache-Budget, ohne „nur lokal“) mit Fehlern am Feld und Bestätigung ohne Neuladen; prüfen: Playwright „Fehler am Feld“
+- [x] 8.10 Geräteliste mit Kennzeichnung des aktuellen Geräts und Aufheben der Kopplung; prüfen: Playwright „Altes Gerät entfernen“
+- [x] 8.11 Aktualisierung über `GET /api/v1/state` (Polling alle 10 s, nur bei sichtbarem Tab); prüfen: Playwright „Foto per USB“ (Datei im Testserver-Ordner anlegen → erscheint in 30 s)
 
 ## 9. Dokumentation
 

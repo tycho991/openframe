@@ -66,3 +66,12 @@ tasks.named("check") {
 tasks.named("compileKotlin") {
     dependsOn(checkNoAndroidImports)
 }
+
+// Testserver für die Playwright-Tests der Web-UI, siehe TestServerMain.
+tasks.register<JavaExec>("runTestServer") {
+    group = "application"
+    description = "Startet :core mit Fake-MediaEngine und der gebauten Web-UI für die Playwright-Tests."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.tycho991.openframe.core.devserver.TestServerMain")
+    workingDir = rootProject.projectDir
+}

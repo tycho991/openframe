@@ -13,3 +13,4 @@ node_modules/
 webadmin/dist/
 webadmin/test-results/
 webadmin/playwright-report/
+webadmin/src/lib/api/schema.d.ts
