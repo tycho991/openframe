@@ -1,0 +1,749 @@
+openapi: 3.1.0
+info:
+  title: openframe API
+  version: "1"
+  summary: Verwaltung eines openframe-Bilderrahmens im LAN.
+  description: |
+    Versionierte JSON-API des Rahmens unter `/api/v1`. Quelle der Wahrheit für
+    die Typen der Web-UI und für die Contract-Tests in `:core`.
+
+    Zugriff: Ein Client koppelt sich mit dem Code, den der Rahmen anzeigt, und
+    erhält ein Token (`Authorization: Bearer`). Bild-URLs tragen stattdessen eine
+    vom Server ausgestellte Signatur `t`, die nur für ein Foto und höchstens zwei
+    Stunden gilt.
+
+    Ändernde Anfragen von fremden Origins werden mit 403 abgelehnt.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: info
+    description: Identität des Rahmens, ohne Kopplung.
+  - name: pairing
+    description: Kopplung per Code und gekoppelte Geräte.
+  - name: settings
+    description: Einstellungen des Rahmens.
+  - name: photos
+    description: Fotos, Upload und Bildgrößen.
+  - name: albums
+    description: Alben aus Ordnern.
+  - name: state
+    description: Versionen zum Erkennen von Änderungen.
+  - name: diagnostics
+    description: Protokoll des Rahmens.
+
+paths:
+  /info:
+    get:
+      tags: [info]
+      operationId: getInfo
+      summary: Identität und Gerätedaten des Rahmens, ohne Kopplung abrufbar.
+      security: []
+      responses:
+        "200":
+          description: Info des Rahmens.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Info" }
+
+  /pairing:
+    post:
+      tags: [pairing]
+      operationId: pair
+      summary: Mit dem am Rahmen angezeigten Code koppeln.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairingRequest" }
+      responses:
+        "201":
+          description: Gekoppelt. Das Token wird nur dieses eine Mal geliefert.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Code falsch (`invalid_code`) oder abgelaufen (`expired_code`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/Locked" }
+
+  /pairing/code:
+    post:
+      tags: [pairing]
+      operationId: showPairingCode
+      summary: Den Rahmen auffordern, für 5 Minuten einen gültigen Code anzuzeigen.
+      description: Die Antwort enthält den Code nie.
+      security: []
+      responses:
+        "204":
+          description: Der Rahmen zeigt einen gültigen Code.
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/Locked" }
+
+  /clients:
+    get:
+      tags: [pairing]
+      operationId: listClients
+      summary: Gekoppelte Geräte.
+      responses:
+        "200":
+          description: Liste der gekoppelten Geräte, das anfragende ist gekennzeichnet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /clients/{clientId}:
+    parameters:
+      - name: clientId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [pairing]
+      operationId: deleteClient
+      summary: Kopplung aufheben. Das Token ist sofort ungültig.
+      responses:
+        "204": { description: Kopplung aufgehoben. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      summary: Alle Einstellungen lesen.
+      responses:
+        "200":
+          description: Alle Einstellungen mit ihren aktuellen Werten.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [settings]
+      operationId: patchSettings
+      summary: Einzelne Einstellungen ändern.
+      description: |
+        Nicht genannte Einstellungen bleiben unverändert. Die Änderung wird ganz
+        oder gar nicht übernommen. Unbekannte Felder, darunter der Modus
+        „nur lokal“, führen zu 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsPatch" }
+      responses:
+        "200":
+          description: Die Einstellungen nach der Änderung.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /photos:
+    get:
+      tags: [photos]
+      operationId: listPhotos
+      summary: Fotos seitenweise, gefiltert und sortiert.
+      parameters:
+        - name: album
+          in: query
+          description: Nur Fotos dieses Albums.
+          schema: { type: string }
+        - name: visible
+          in: query
+          description: Nur sichtbare (`true`) oder nur ausgeblendete (`false`) Fotos.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [date_desc, date_asc, name_asc, name_desc]
+            default: date_desc
+        - name: cursor
+          in: query
+          description: Wert von `nextCursor` der vorigen Seite.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Eine Seite der Fotoliste.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhotoPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [photos]
+      operationId: uploadPhotos
+      summary: Eine oder mehrere Dateien hochladen, optional in ein Album.
+      description: |
+        Wird auf die Platte gestreamt. Enthält die Anfrage eine Datei ohne
+        unterstütztes Format, wird nichts gespeichert (415). Blieben nach dem
+        Upload weniger als 100 MB frei, wird nichts gespeichert (507).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                album:
+                  type: string
+                  description: Album, also Ordner direkt unterhalb des Fotoordners. Wird bereinigt.
+                file:
+                  type: array
+                  items: { type: string, format: binary }
+              required: [file]
+      responses:
+        "201":
+          description: Gespeichert und im Index.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMedia" }
+        "507": { $ref: "#/components/responses/InsufficientStorage" }
+
+  /photos:batch:
+    post:
+      tags: [photos]
+      operationId: batchPhotos
+      summary: Mehrere Fotos aus- oder einblenden oder löschen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+      responses:
+        "200":
+          description: Ausgeführt. Unbekannte IDs stehen in `missing`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /photos/{photoId}:
+    parameters:
+      - $ref: "#/components/parameters/PhotoId"
+    patch:
+      tags: [photos]
+      operationId: patchPhoto
+      summary: Ein Foto aus- oder einblenden.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhotoPatch" }
+      responses:
+        "200":
+          description: Das Foto nach der Änderung.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Photo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [photos]
+      operationId: deletePhoto
+      summary: Datei, Index-Eintrag und gerenderte Größen entfernen.
+      responses:
+        "204": { description: Gelöscht. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /photos/{photoId}/image:
+    parameters:
+      - $ref: "#/components/parameters/PhotoId"
+    get:
+      tags: [photos]
+      operationId: getPhotoImage
+      summary: Gerenderte Bildgröße als JPEG.
+      description: |
+        Mit Token oder mit der Signatur `t` aus der Fotoliste abrufbar. Stimmt `v`
+        mit der aktuellen Bildversion überein, ist die Antwort `immutable`.
+      security:
+        - bearerAuth: []
+        - imageSignature: []
+      parameters:
+        - name: size
+          in: query
+          required: true
+          schema: { type: string, enum: [thumb, display] }
+        - name: v
+          in: query
+          description: Bildversion, nur für Caches.
+          schema: { type: integer }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: Das Bild.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "304": { description: Unverändert. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Das Bild ließ sich nicht rendern.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /skipped-files:
+    get:
+      tags: [photos]
+      operationId: listSkippedFiles
+      summary: Dateien mit Bild-Endung, die nicht aufgenommen werden konnten.
+      responses:
+        "200":
+          description: Liste mit Pfad und Grund.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkippedFileList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /albums:
+    get:
+      tags: [albums]
+      operationId: listAlbums
+      summary: Alle Alben.
+      responses:
+        "200":
+          description: Alle Alben mit Anzahl und Titelbild.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlbumList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /albums/{albumName}:
+    parameters:
+      - name: albumName
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [albums]
+      operationId: patchAlbum
+      summary: Ein Album als Ganzes aus- oder einblenden.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlbumPatch" }
+      responses:
+        "200":
+          description: Das Album nach der Änderung.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Album" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /state:
+    get:
+      tags: [state]
+      operationId: getState
+      summary: Bibliotheks- und Einstellungsversion zum Erkennen von Änderungen.
+      responses:
+        "200":
+          description: Aktuelle Versionen.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/State" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /logs:
+    get:
+      tags: [diagnostics]
+      operationId: getLogs
+      summary: Letzte Einträge des Protokolls.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 500 }
+      responses:
+        "200":
+          description: Die letzten Einträge des Protokolls, älteste zuerst.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    imageSignature:
+      type: apiKey
+      in: query
+      name: t
+
+  parameters:
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z]+-[0-9a-f]{40}$" }
+
+  responses:
+    BadRequest:
+      description: Ungültige Anfrage. Bei Validierungsfehlern mit Angabe pro Feld.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Kein oder kein gültiges Token bzw. keine gültige Signatur.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Ändernde Anfrage von einem fremden Origin.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Nicht gefunden.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: Anfrage zu groß.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMedia:
+      description: Kein unterstütztes Format.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Locked:
+      description: Zu viele Fehlversuche. Kopplung ist vorübergehend gesperrt.
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InsufficientStorage:
+      description: Zu wenig freier Speicher.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Maschinenlesbarer Fehlercode, z. B. `validation_failed`, `invalid_code`, `unauthorized`.
+            message: { type: string }
+            fields:
+              type: object
+              description: Fehler pro Feld, Schlüssel ist der Feldpfad (z. B. `clock.sizePercent`).
+              additionalProperties: { type: string }
+
+    Info:
+      type: object
+      additionalProperties: false
+      required: [id, name, appVersion, androidVersion, screen, apiVersion]
+      properties:
+        id: { type: string, description: "Zufällige, dauerhafte ID des Rahmens." }
+        name: { type: string }
+        appVersion: { type: string }
+        androidVersion: { type: string }
+        screen: { $ref: "#/components/schemas/Size" }
+        apiVersion: { type: integer, const: 1 }
+
+    Size:
+      type: object
+      additionalProperties: false
+      required: [width, height]
+      properties:
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+
+    PairingRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        deviceName:
+          type: string
+          maxLength: 64
+          description: Fehlt der Name, wird er aus dem User-Agent abgeleitet.
+
+    PairingResponse:
+      type: object
+      additionalProperties: false
+      required: [token, client]
+      properties:
+        token: { type: string }
+        client: { $ref: "#/components/schemas/Client" }
+
+    Client:
+      type: object
+      additionalProperties: false
+      required: [id, name, pairedAt, lastSeenAt, current]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        pairedAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        current: { type: boolean, description: "Das anfragende Gerät." }
+
+    ClientList:
+      type: object
+      additionalProperties: false
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items: { $ref: "#/components/schemas/Client" }
+
+    Order: { type: string, enum: [shuffle, chronological] }
+    Transition: { type: string, enum: [fade, slide, none] }
+    FillMode: { type: string, enum: [fill, fit] }
+    Orientation: { type: string, enum: [landscape, portrait] }
+    ClockPosition: { type: string, enum: [top-left, top-right, bottom-left, bottom-right] }
+    ClockFormat: { type: string, enum: ["24h", "12h"] }
+    FrameLanguage: { type: string, enum: [auto, de, en] }
+
+    Clock:
+      type: object
+      additionalProperties: false
+      required: [enabled, position, sizePercent, format]
+      properties:
+        enabled: { type: boolean }
+        position: { $ref: "#/components/schemas/ClockPosition" }
+        sizePercent: { type: integer, minimum: 50, maximum: 300 }
+        format: { $ref: "#/components/schemas/ClockFormat" }
+
+    Settings:
+      type: object
+      additionalProperties: false
+      required:
+        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, language, cacheBudgetMb]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        intervalSeconds: { type: integer, minimum: 5, maximum: 86400 }
+        order: { $ref: "#/components/schemas/Order" }
+        transition: { $ref: "#/components/schemas/Transition" }
+        transitionDurationMs: { type: integer, minimum: 0, maximum: 5000 }
+        fillMode: { $ref: "#/components/schemas/FillMode" }
+        orientation: { $ref: "#/components/schemas/Orientation" }
+        clock: { $ref: "#/components/schemas/Clock" }
+        language: { $ref: "#/components/schemas/FrameLanguage" }
+        cacheBudgetMb: { type: integer, minimum: 100, maximum: 10000 }
+
+    SettingsPatch:
+      type: object
+      description: Wie `Settings`, alle Felder optional, `clock` auch teilweise.
+      properties:
+        name: { type: string }
+        intervalSeconds: { type: integer }
+        order: { type: string }
+        transition: { type: string }
+        transitionDurationMs: { type: integer }
+        fillMode: { type: string }
+        orientation: { type: string }
+        clock:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            position: { type: string }
+            sizePercent: { type: integer }
+            format: { type: string }
+        language: { type: string }
+        cacheBudgetMb: { type: integer }
+
+    ImageUrls:
+      type: object
+      additionalProperties: false
+      required: [thumb, display]
+      properties:
+        thumb: { type: string, description: "Signierte URL des Vorschaubilds." }
+        display: { type: string, description: "Signierte URL der Anzeigegröße." }
+
+    Photo:
+      type: object
+      additionalProperties: false
+      required: [id, path, album, hidden, visible, width, height, takenAt, fileSize, version, urls]
+      properties:
+        id: { type: string }
+        path: { type: string, description: "Pfad relativ zum Fotoordner." }
+        album: { type: [string, "null"] }
+        hidden: { type: boolean, description: "Das Foto selbst ist ausgeblendet." }
+        visible: { type: boolean, description: "Weder Foto noch Album sind ausgeblendet." }
+        width: { type: integer, description: "Breite nach EXIF-Drehung." }
+        height: { type: integer, description: "Höhe nach EXIF-Drehung." }
+        takenAt: { type: string, format: date-time, description: "Aufnahmedatum aus EXIF, ersatzweise Dateidatum." }
+        fileSize: { type: integer }
+        version: { type: integer, description: "Bildversion, steigt bei jeder Änderung der Datei." }
+        urls: { $ref: "#/components/schemas/ImageUrls" }
+
+    PhotoPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Photo" }
+        total: { type: integer, description: "Anzahl aller Fotos, die zum Filter passen." }
+        nextCursor: { type: [string, "null"] }
+
+    PhotoPatch:
+      type: object
+      additionalProperties: false
+      required: [hidden]
+      properties:
+        hidden: { type: boolean }
+
+    UploadResult:
+      type: object
+      additionalProperties: false
+      required: [photos]
+      properties:
+        photos:
+          type: array
+          items: { $ref: "#/components/schemas/Photo" }
+
+    BatchRequest:
+      type: object
+      additionalProperties: false
+      required: [action, ids]
+      properties:
+        action: { type: string, enum: [hide, show, delete] }
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: { type: string }
+
+    BatchResult:
+      type: object
+      additionalProperties: false
+      required: [processed, missing]
+      properties:
+        processed: { type: integer }
+        missing:
+          type: array
+          items: { type: string }
+
+    SkippedFile:
+      type: object
+      additionalProperties: false
+      required: [path, reason, fileSize, modifiedAt]
+      properties:
+        path: { type: string }
+        reason:
+          type: string
+          enum: [unsupported, corrupt]
+          description: "`unsupported`: Format auf diesem Gerät nicht decodierbar; `corrupt`: Datei beschädigt."
+        fileSize: { type: integer }
+        modifiedAt: { type: string, format: date-time }
+
+    SkippedFileList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SkippedFile" }
+
+    Album:
+      type: object
+      additionalProperties: false
+      required: [name, count, hidden, cover]
+      properties:
+        name: { type: string }
+        count: { type: integer }
+        hidden: { type: boolean }
+        cover:
+          description: Titelbild, das neueste Foto des Albums.
+          oneOf:
+            - $ref: "#/components/schemas/ImageUrls"
+            - type: "null"
+
+    AlbumList:
+      type: object
+      additionalProperties: false
+      required: [albums]
+      properties:
+        albums:
+          type: array
+          items: { $ref: "#/components/schemas/Album" }
+
+    AlbumPatch:
+      type: object
+      additionalProperties: false
+      required: [hidden]
+      properties:
+        hidden: { type: boolean }
+
+    State:
+      type: object
+      additionalProperties: false
+      required: [libraryVersion, settingsVersion]
+      properties:
+        libraryVersion: { type: integer }
+        settingsVersion: { type: integer }
+
+    LogEntry:
+      type: object
+      additionalProperties: false
+      required: [time, level, tag, message]
+      properties:
+        time: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error] }
+        tag: { type: string }
+        message: { type: string }
+
+    LogList:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/LogEntry" }

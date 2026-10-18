@@ -10,15 +10,23 @@ kotlin {
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.nanohttpd)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.json.schema.validator)
+    testImplementation(libs.jackson.databind)
+    testImplementation(libs.jackson.yaml)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {
     useJUnitPlatform()
+    // Contract-Tests prüfen jede Antwort gegen den API-Vertrag.
+    val openapi = rootProject.layout.projectDirectory.file("api/openapi.yaml")
+    inputs.file(openapi).withPropertyName("openapi")
+    systemProperty("openframe.openapi", openapi.asFile.absolutePath)
 }
 
 // :core muss auf der reinen JVM laufen. Plattformabhängiges gehört hinter die

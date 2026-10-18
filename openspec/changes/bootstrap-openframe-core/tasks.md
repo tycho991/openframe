@@ -12,11 +12,11 @@
 
 ## 2. API-Vertrag und HTTP-Schicht
 
-- [ ] 2.1 `api/openapi.yaml` für `/api/v1` mit allen Endpunkten aus design.md (Entscheidung 6), Fehlerformat und Auth-Schema schreiben; prüfen: Schema-Lint (`redocly lint` o. ä.) ohne Fehler
-- [ ] 2.2 Routing-Schicht in `:core` über NanoHTTPD bauen: typisierte `suspend`-Handler, JSON per `kotlinx.serialization`, einheitliche Fehlerantworten (400/401/403/404/413/415/429/500/507), begrenzter Dispatcher; prüfen: Tests gegen einen echten `ServerSocket` für Routing, Fehler-Mapping und unbekannte Pfade
-- [ ] 2.3 Sicherheitsheader und Origin-/`Sec-Fetch-Site`-Prüfung für ändernde Methoden umsetzen (Spec `admin-access`: Sicherheitsheader); prüfen: Test „Fremde Seite“ liefert 403, alle Antworten tragen die Header
-- [ ] 2.4 Contract-Test-Harness: jede Antwort eines Tests gegen `api/openapi.yaml` validieren (JSON-Schema-Validator im Testklassenpfad); prüfen: ein absichtlich falsches Feld lässt den Test scheitern
-- [ ] 2.5 Statische Auslieferung über `AssetSource` mit SPA-Fallback auf `index.html` und CSP für die Web-UI; prüfen: Test liefert `index.html` für `/` und `/photos`, Assets mit korrektem MIME-Typ
+- [x] 2.1 `api/openapi.yaml` für `/api/v1` mit allen Endpunkten aus design.md (Entscheidung 6), Fehlerformat und Auth-Schema schreiben; prüfen: Schema-Lint (`redocly lint` o. ä.) ohne Fehler
+- [x] 2.2 Routing-Schicht in `:core` über NanoHTTPD bauen: typisierte `suspend`-Handler, JSON per `kotlinx.serialization`, einheitliche Fehlerantworten (400/401/403/404/413/415/429/500/507), begrenzter Dispatcher; prüfen: Tests gegen einen echten `ServerSocket` für Routing, Fehler-Mapping und unbekannte Pfade
+- [x] 2.3 Sicherheitsheader und Origin-/`Sec-Fetch-Site`-Prüfung für ändernde Methoden umsetzen (Spec `admin-access`: Sicherheitsheader); prüfen: Test „Fremde Seite“ liefert 403, alle Antworten tragen die Header
+- [x] 2.4 Contract-Test-Harness: jede Antwort eines Tests gegen `api/openapi.yaml` validieren (JSON-Schema-Validator im Testklassenpfad); prüfen: ein absichtlich falsches Feld lässt den Test scheitern
+- [x] 2.5 Statische Auslieferung über `AssetSource` mit SPA-Fallback auf `index.html` und CSP für die Web-UI; prüfen: Test liefert `index.html` für `/` und `/photos`, Assets mit korrektem MIME-Typ
 
 ## 3. Einstellungen und Identität
 
