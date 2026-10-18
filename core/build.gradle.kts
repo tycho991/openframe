@@ -18,11 +18,15 @@ dependencies {
     testImplementation(libs.json.schema.validator)
     testImplementation(libs.jackson.databind)
     testImplementation(libs.jackson.yaml)
+    testImplementation(libs.metadata.extractor)
+    testImplementation(libs.twelvemonkeys.webp)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {
     useJUnitPlatform()
+    // Klein genug, dass ein Upload von 300 MB nur gestreamt durchgeht.
+    maxHeapSize = "256m"
     // Contract-Tests prüfen jede Antwort gegen den API-Vertrag.
     val openapi = rootProject.layout.projectDirectory.file("api/openapi.yaml")
     inputs.file(openapi).withPropertyName("openapi")

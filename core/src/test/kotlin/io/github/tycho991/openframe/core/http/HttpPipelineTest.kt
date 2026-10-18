@@ -117,10 +117,10 @@ class HttpPipelineTest {
     fun `Range auf Dateien`() {
         val part = http.requestBytes("GET", "/api/v1/file", headers = mapOf("Range" to "bytes=10-19"))
         assertEquals(206, part.statusCode())
-        assertEquals((10..19).map { it.toByte() }, part.body().toList())
+        assertEquals((10..19).map { it.toByte() }, part.bytes().toList())
         assertEquals("bytes 10-19/100", part.headers().firstValue("content-range").get())
         assertEquals(416, http.requestBytes("GET", "/api/v1/file", headers = mapOf("Range" to "bytes=200-")).statusCode())
-        assertEquals(100, http.requestBytes("GET", "/api/v1/file").body().size)
+        assertEquals(100, http.requestBytes("GET", "/api/v1/file").bytes().size)
     }
 
     @Test
