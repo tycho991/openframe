@@ -1,0 +1,61 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+env:
+  # Testnamen mit Umlauten werden zu Klassendateien mit Umlauten.
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  OPENSPEC_TELEMETRY: "0"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  gradle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Java und Node genau wie in .mise.toml gepinnt.
+      - uses: jdx/mise-action@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - name: AGP-Versionen (Diagnose)
+        run: curl -s https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml | grep -o '<version>[0-9.]*</version>' | tail -8
+      - name: Prüfen und bauen
+        run: ./gradlew check :android:assembleDebug --stacktrace
+      - name: APK prüfen
+        run: |
+          apk=android/build/outputs/apk/debug/android-debug.apk
+          "$ANDROID_HOME"/build-tools/*/aapt dump badging "$apk" | grep -E "^package|sdkVersion|native-code" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gradle-reports
+          path: |
+            **/build/reports/
+            android/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+
+  webadmin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webadmin
+    steps:
+      - uses: actions/checkout@v7
+      # Java und Node genau wie in .mise.toml gepinnt.
+      - uses: jdx/mise-action@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: webadmin/playwright-report/
