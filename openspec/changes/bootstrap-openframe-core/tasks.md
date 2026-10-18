@@ -20,10 +20,10 @@
 
 ## 3. Einstellungen und Identität
 
-- [ ] 3.1 Atomare JSON-Speicherung (`tmp` + `fsync` + `rename`, ein Schreiber, Bündelung) als `JsonStore`; prüfen: Tests für Rundlauf, unterbrochenes Schreiben (Temp-Datei bleibt liegen → alter Stand gilt) und parallele Schreiber
-- [ ] 3.2 Einstellungsmodell mit Defaults, Merge über Defaults und Validierung pro Feld (Spec `frame-settings`), einschließlich Ausrichtung (`landscape`/`portrait`), Sprache am Rahmen und Cache-Budget (100–10.000 MB, Standard 1.000 MB); „nur lokal“ wird mitgespeichert, ist aber kein Feld der API; prüfen: Tests für „Erster Start“, „Update mit neuer Einstellung“, „Ungültiges Intervall“, „Unbekanntes Feld“
-- [ ] 3.3 `GET`/`PATCH /api/v1/settings` mit Teiländerungen, Einstellungsversion und `StateFlow` für die Anzeige; prüfen: Contract-Tests und Szenario „Nur Intervall ändern“
-- [ ] 3.4 Identität (zufällige ID beim ersten Start), Name als Einstellung mit Default aus `PlatformInfo` und `GET /api/v1/info` ohne Auth; prüfen: Tests „Info abrufen“ und „Name ändern“ (über `PATCH /api/v1/settings`), ID bleibt über Neustart gleich
+- [x] 3.1 Atomare JSON-Speicherung (`tmp` + `fsync` + `rename`, ein Schreiber, Bündelung) als `JsonStore`; prüfen: Tests für Rundlauf, unterbrochenes Schreiben (Temp-Datei bleibt liegen → alter Stand gilt) und parallele Schreiber
+- [x] 3.2 Einstellungsmodell mit Defaults, Merge über Defaults und Validierung pro Feld (Spec `frame-settings`), einschließlich Ausrichtung (`landscape`/`portrait`), Sprache am Rahmen und Cache-Budget (100–10.000 MB, Standard 1.000 MB); „nur lokal“ wird mitgespeichert, ist aber kein Feld der API; prüfen: Tests für „Erster Start“, „Update mit neuer Einstellung“, „Ungültiges Intervall“, „Unbekanntes Feld“
+- [x] 3.3 `GET`/`PATCH /api/v1/settings` mit Teiländerungen, Einstellungsversion und `StateFlow` für die Anzeige; prüfen: Contract-Tests und Szenario „Nur Intervall ändern“
+- [x] 3.4 Identität (zufällige ID beim ersten Start), Name als Einstellung mit Default aus `PlatformInfo` und `GET /api/v1/info` ohne Auth; prüfen: Tests „Info abrufen“ und „Name ändern“ (über `PATCH /api/v1/settings`), ID bleibt über Neustart gleich
 
 ## 4. Kopplung und Zugriff
 

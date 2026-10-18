@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.http
 
+import io.github.tycho991.openframe.core.ValidationException
 import io.github.tycho991.openframe.core.log.AppLog
 import kotlinx.coroutines.CancellationException
 import java.net.URI
@@ -34,6 +35,8 @@ class HttpPipeline(
                 dispatch(request)
             } catch (e: HttpException) {
                 HttpResponse.error(e)
+            } catch (e: ValidationException) {
+                HttpResponse.error(HttpException.badRequest("Ungültige Werte", e.fields))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {

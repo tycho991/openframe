@@ -46,7 +46,8 @@ class NanoHttpServer(
                 withContext(dispatcher) { handler(request) }
             }
         val nano = toNano(response, request)
-        // Nicht gelesene Rümpfe würden die nächste Anfrage derselben Verbindung stören.
+        // Nicht gelesene Rümpfe würden die nächste Anfrage derselben Verbindung stören. Wegwerfen statt
+        // sofort schließen, sonst verwirft ein TCP-Reset beim Client die schon gesendete Antwort.
         if (!body.drain(MAX_DRAIN_BYTES)) nano.closeConnection(true)
         return nano
     }
@@ -121,7 +122,7 @@ class NanoHttpServer(
 
     companion object {
         const val SOCKET_READ_TIMEOUT_MS = 30_000
-        private const val MAX_DRAIN_BYTES = 64L * 1024
+        private const val MAX_DRAIN_BYTES = 8L * 1024 * 1024
         private const val JSON_TYPE = "application/json; charset=utf-8"
 
         /** Ein einzelner Bereich `bytes=a-b`, `bytes=a-` oder `bytes=-n`. Leerer Bereich bedeutet 416. */
