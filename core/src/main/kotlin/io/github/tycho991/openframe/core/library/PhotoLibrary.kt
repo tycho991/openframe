@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
+import io.github.tycho991.openframe.core.readAtMost
 import java.io.File
 import java.util.UUID
 
@@ -74,7 +75,7 @@ class PhotoLibrary(
                 val part = reader.next() ?: break
                 when {
                     part.name == "album" && part.filename == null -> {
-                        album = sanitizeAlbum(part.body.readNBytes(1024).toString(Charsets.UTF_8))
+                        album = sanitizeAlbum(part.body.readAtMost(1024).toString(Charsets.UTF_8))
                     }
 
                     part.name == "file" && part.filename != null -> {

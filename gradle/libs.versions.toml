@@ -10,6 +10,9 @@ json-schema-validator = "1.5.9"
 jackson = "2.22.4"
 metadata-extractor = "2.21.0"
 twelvemonkeys = "3.15.3"
+animalsniffer = "2.0.1"
+gummy-bears = "0.16.0"
+desugar = "2.1.5"
 ktlint = "1.8.0"
 
 [libraries]
@@ -23,6 +26,7 @@ jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", ver
 metadata-extractor = { module = "com.drewnoakes:metadata-extractor", version.ref = "metadata-extractor" }
 twelvemonkeys-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version.ref = "twelvemonkeys" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
@@ -30,5 +34,6 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+animalsniffer = { id = "ru.vyarus.animalsniffer", version.ref = "animalsniffer" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

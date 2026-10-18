@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.http
 
+import io.github.tycho991.openframe.core.readAtMost
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
@@ -80,7 +81,7 @@ class HttpRequest(
         }
         val length = contentLength
         if (length != null && length > maxBytes) throw HttpException(413, "too_large", "Rumpf größer als $maxBytes Bytes")
-        val bytes = body.readNBytes((maxBytes + 1).toInt())
+        val bytes = body.readAtMost((maxBytes + 1).toInt())
         if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Rumpf größer als $maxBytes Bytes")
         return try {
             ApiJson.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8))
@@ -104,7 +105,7 @@ class HttpRequest(
                 }.groupBy({ it.first }, { it.second })
         }
 
-        private fun decode(s: String): String = URLDecoder.decode(s, StandardCharsets.UTF_8)
+        private fun decode(s: String): String = URLDecoder.decode(s, "UTF-8")
     }
 }
 

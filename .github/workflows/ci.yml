@@ -20,8 +20,6 @@ jobs:
       # Java und Node genau wie in .mise.toml gepinnt.
       - uses: jdx/mise-action@v5
       - uses: gradle/actions/setup-gradle@v5
-      - name: AGP-Versionen (Diagnose)
-        run: curl -s https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml | grep -o '<version>[0-9.]*</version>' | tail -8
       - name: Prüfen und bauen
         run: ./gradlew check :android:assembleDebug --stacktrace
       - name: APK prüfen

@@ -1,13 +1,21 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.animalsniffer)
 }
 
 kotlin {
     jvmToolchain(17)
 }
 
+// :core läuft auf Android ab API 21, mit Core Library Desugaring (java.time). Prüft jeden Aufruf
+// von JDK-Klassen gegen die dort verfügbare API, weil Android Lint :core nicht sieht.
+animalsniffer {
+    sourceSets = listOf(project.sourceSets["main"])
+}
+
 dependencies {
+    signature("com.toasttab.android:gummy-bears-api-21:${libs.versions.gummy.bears.get()}:coreLib2@signature")
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.nanohttpd)

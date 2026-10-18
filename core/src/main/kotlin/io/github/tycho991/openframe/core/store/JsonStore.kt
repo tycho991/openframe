@@ -11,9 +11,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.io.IOException
 
 /** JSON für gespeicherte Dateien: tolerant gegenüber entfernten Feldern älterer Versionen. */
 val StoreJson =
@@ -103,11 +101,8 @@ class JsonStore<T>(
             out.flush()
             out.fd.sync()
         }
-        try {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (e: AtomicMoveNotSupportedException) {
-            if (!tmp.renameTo(file)) throw e
-        }
+        // rename(2) ersetzt die Zieldatei atomar. java.nio.file gibt es auf Android erst ab API 26.
+        if (!tmp.renameTo(file)) throw IOException("${tmp.name} ließ sich nicht nach ${file.name} umbenennen")
     }
 
     private class Pending<T>(

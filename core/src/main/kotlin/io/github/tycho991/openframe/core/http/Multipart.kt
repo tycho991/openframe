@@ -77,7 +77,7 @@ class MultipartReader(
             if (lim - pos < 2) throw malformed("Header unvollständig")
             if (buf[pos] == '\r'.code.toByte() && buf[pos + 1] == '\n'.code.toByte()) {
                 pos += 2
-                return out.toString(Charsets.UTF_8)
+                return String(out.toByteArray(), Charsets.UTF_8)
             }
             out.write(buf[pos++].toInt())
             if (out.size() > MAX_HEADER_LINE) throw malformed("Header-Zeile zu lang")

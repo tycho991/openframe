@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.platform
 
+import io.github.tycho991.openframe.core.readFully
 import java.io.File
 import java.time.Instant
 
@@ -97,7 +98,7 @@ object ImageFormats {
     fun detect(file: File): ImageFormat? =
         file.inputStream().use { input ->
             val header = ByteArray(32)
-            val n = input.readNBytes(header, 0, header.size)
+            val n = input.readFully(header)
             detect(header.copyOf(n))
         }
 }
