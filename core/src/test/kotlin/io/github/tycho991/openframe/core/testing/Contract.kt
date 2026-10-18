@@ -62,7 +62,7 @@ object Contract {
     fun operations(): Set<String> =
         doc
             .path("paths")
-            .fields()
+            .properties()
             .asSequence()
             .flatMap { (template, item) ->
                 item
@@ -90,7 +90,7 @@ object Contract {
         val relative = path.removePrefix(basePath).substringBefore('?')
         val segments = relative.trim('/').split('/')
         val match =
-            doc.path("paths").fields().asSequence().firstOrNull { (template, item) ->
+            doc.path("paths").properties().asSequence().firstOrNull { (template, item) ->
                 val parts = template.trim('/').split('/')
                 parts.size == segments.size &&
                     parts.zip(segments).all { (p, s) -> (p.startsWith('{') && s.isNotEmpty()) || p == s } &&

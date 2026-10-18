@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package io.github.tycho991.openframe.core.store
 
 import io.github.tycho991.openframe.core.log.AppLog

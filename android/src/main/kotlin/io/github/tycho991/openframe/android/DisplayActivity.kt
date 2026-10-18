@@ -9,11 +9,13 @@ import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.res.Resources
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -22,6 +24,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.window.OnBackInvokedDispatcher
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.settings.FrameLanguage
@@ -122,6 +125,9 @@ class DisplayActivity : Activity() {
                 main.postDelayed(reimmerse, REIMMERSE_MS)
             }
         }
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { setHintVisible(false) }
+        }
         FrameService.start(this)
     }
 
@@ -158,10 +164,16 @@ class DisplayActivity : Activity() {
         super.onDestroy()
     }
 
-    /** Als HOME-Launcher führt die Zurück-Taste nirgendwohin. */
-    @Deprecated("Von Activity geerbt")
-    override fun onBackPressed() {
-        setHintVisible(false)
+    /** Als HOME-Launcher führt die Zurück-Taste nirgendwohin, sie schließt nur den Hinweis. */
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            setHintVisible(false)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {

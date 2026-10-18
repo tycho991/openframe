@@ -37,9 +37,9 @@ class MultipartReader(
         if (!started) {
             started = true
             // Präambel bis zur ersten Grenze überspringen.
-            PartStream().let { preamble -> while (preamble.read(SKIP) >= 0) Unit }
+            PartStream().let { preamble -> drain(preamble) }
         } else {
-            current?.let { stream -> while (stream.read(SKIP) >= 0) Unit }
+            current?.let(::drain)
         }
         // Nach der Grenze: "--" für das Ende oder CRLF vor den Headern des nächsten Teils.
         ensure(2)
@@ -56,6 +56,12 @@ class MultipartReader(
         val stream = PartStream()
         current = stream
         return Part(params["name"], params["filename"], headers["content-type"], stream)
+    }
+
+    private fun drain(stream: InputStream) {
+        while (stream.read(SKIP) >= 0) {
+            // Rest des Teils verwerfen.
+        }
     }
 
     private fun readHeaders(): Map<String, String> {

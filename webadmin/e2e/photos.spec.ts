@@ -20,14 +20,15 @@ test("Große Bibliothek: nur sichtbare Vorschaubilder", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await pairInUi(page);
   await expect(page.getByText("10000 Fotos")).toBeVisible();
+  // Lazy Loading startet je nach Browser erst nach dem Layout.
+  await expect.poll(() => thumbs.size).toBeGreaterThan(0);
   await page.waitForLoadState("networkidle");
-  expect(thumbs.size).toBeGreaterThan(0);
   expect(thumbs.size).toBeLessThan(150);
   // Weit nach unten springen: wieder nur, was dort sichtbar ist.
   const before = thumbs.size;
   await page.evaluate(() => window.scrollTo(0, 60_000));
+  await expect.poll(() => thumbs.size - before).toBeGreaterThan(0);
   await page.waitForLoadState("networkidle");
-  expect(thumbs.size - before).toBeGreaterThan(0);
   expect(thumbs.size - before).toBeLessThan(150);
   expect(await page.locator(".tile").count()).toBeLessThan(150);
 });
