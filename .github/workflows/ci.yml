@@ -32,7 +32,14 @@ jobs:
       - name: APK prüfen
         run: |
           apk=android/build/outputs/apk/debug/android-debug.apk
-          "$ANDROID_HOME"/build-tools/*/aapt dump badging "$apk" | grep -E "^package|sdkVersion|native-code" || true
+          aapt2=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2
+          "$aapt2" dump badging "$apk" | tee badging.txt | grep -E "^package|sdkVersion|native-code" || true
+          grep -q "name='io.github.tycho991.openframe'" badging.txt
+          grep -q "^minSdkVersion:'21'" badging.txt
+          # Keine nativen Bibliotheken: läuft auf allen ABIs.
+          ! grep -q "^native-code" badging.txt
+          unzip -l "$apk" | grep -E "assets/webadmin/(index.html|assets/)" | head -5
+          unzip -l "$apk" | grep -q "assets/webadmin/index.html"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
