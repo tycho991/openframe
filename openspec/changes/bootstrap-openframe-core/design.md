@@ -136,6 +136,7 @@ A tap shows the hint: pause/resume, name, address and pairing code. A long press
 - The service runs as a foreground service with a notification channel from API 26 and `START_STICKY`. It holds a `PARTIAL_WAKE_LOCK` and a `WifiLock`.
 - The activity sets `FLAG_KEEP_SCREEN_ON` and immersive flags and brings fullscreen back on `onSystemUiVisibilityChange`.
 - An `UncaughtExceptionHandler` logs the crash and schedules a restart in 5 seconds through `AlarmManager`.
+- A watchdog alarm starts the service every 20 seconds (each start re-arms the next alarm). The Frameo firmware kills the HOME app as soon as another activity starts and then marks its process as bad, so broadcasts and background activity starts are refused, but a started service is not. Without the watchdog the server would stay down until the Home key is pressed; with it the admin interface is back within about 35 seconds, while the display returns with the Home key.
 - The package ID is `io.github.tycho991.openframe`, `minSdk 21`, `targetSdk` the newest stable version. The APK contains no native libraries and therefore runs on all ABIs.
 
 ### 12. Web UI: Svelte 5, TypeScript, Vite

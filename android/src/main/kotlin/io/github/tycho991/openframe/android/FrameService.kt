@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.android
 
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -55,6 +56,7 @@ class FrameService : Service() {
         startId: Int,
     ): Int {
         (application as FrameApp).startCore()
+        scheduleWatchdog(this)
         return START_STICKY
     }
 
@@ -164,6 +166,32 @@ class FrameService : Service() {
         private const val CHANNEL = "server"
         private const val NOTIFICATION_ID = 1
         private const val NETWORK_SETTLE_MS = 2_000L
+        private const val WATCHDOG_MS = 20_000L
+        private const val ACTION_WATCHDOG = "io.github.tycho991.openframe.WATCHDOG"
+
+        /**
+         * Brings the service back after the system killed the app. The Frameo firmware ends the HOME app as soon
+         * as another activity starts ("user request after error") and then treats its process as bad: broadcasts
+         * and background activity starts are refused, but a started service is not. So an alarm starts the service
+         * itself, every [WATCHDOG_MS]. Each start re-arms the next alarm, while the process lives that is cheap.
+         */
+        fun scheduleWatchdog(context: Context) {
+            val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, FrameService::class.java).setAction(ACTION_WATCHDOG)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
+            val pending =
+                if (Build.VERSION.SDK_INT >= 26) {
+                    PendingIntent.getForegroundService(context, 1, intent, flags)
+                } else {
+                    PendingIntent.getService(context, 1, intent, flags)
+                }
+            val at = System.currentTimeMillis() + WATCHDOG_MS
+            if (Build.VERSION.SDK_INT >= 23) {
+                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            } else {
+                alarms.set(AlarmManager.RTC_WAKEUP, at, pending)
+            }
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, FrameService::class.java)
