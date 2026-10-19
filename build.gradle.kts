@@ -6,7 +6,7 @@ val ktlintVersion = libs.versions.ktlint.get()
 
 spotless {
     kotlin {
-        target("**/src/**/*.kt")
+        target("core/src/**/*.kt", "android/src/**/*.kt")
         ktlint(ktlintVersion)
     }
     kotlinGradle {

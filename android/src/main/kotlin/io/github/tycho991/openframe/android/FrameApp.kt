@@ -65,7 +65,6 @@ class FrameApp : Application() {
      * starten lassen. Der Service startet wegen `START_STICKY` ohnehin neu.
      */
     private fun installCrashHandler() {
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
                 core.log.e("crash", "Absturz in ${thread.name}", error)
@@ -73,7 +72,11 @@ class FrameApp : Application() {
             } catch (ignored: Throwable) {
                 // Beim Absturz nichts mehr riskieren.
             }
-            if (previous != null) previous.uncaughtException(thread, error) else Process.killProcess(Process.myPid())
+            // Nicht an den Standard-Handler weitergeben: Der meldet den Absturz dem System, und das
+            // zeigt auf manchen Geräten (Frameo) einen Fehlerdialog, der den Prozess bis zum Tippen
+            // auf „OK“ am Leben hält. Dann käme der Neustart nie. Deshalb den Prozess selbst beenden.
+            Process.killProcess(Process.myPid())
+            kotlin.system.exitProcess(10)
         }
     }
 
