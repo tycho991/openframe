@@ -1,50 +1,53 @@
-# openframe – Regeln für Claude Code
+# openframe – rules for Claude Code
 
-Bilderrahmen-App: `:core` (Kotlin/JVM, Fachlogik und HTTP-API), `:android` (Kiosk-APK),
-`webadmin/` (Svelte 5 + TypeScript), API-Vertrag in `api/openapi.yaml`. Geplant wird
-mit OpenSpec unter `openspec/`; Entscheidungen stehen im `design.md` des jeweiligen Changes.
+Picture frame app: `:core` (Kotlin/JVM, business logic and HTTP API), `:android` (kiosk APK),
+`webadmin/` (Svelte 5 + TypeScript), API contract in `api/openapi.yaml`. Planning uses
+OpenSpec under `openspec/`; decisions are in the `design.md` of the respective change.
 
-## Modulgrenzen
+## Language
 
-- `:core` hat keine `android.*`/`androidx.*`-Importe. `./gradlew :core:check` prüft das
-  (`checkNoAndroidImports`) und prüft per Animal Sniffer jede JDK-API gegen Android 21 mit
-  Core Library Desugaring. Kein `readNBytes`, kein `java.nio.file`, keine Java-9+-APIs
-  ohne Ersatz (siehe `core/.../IoCompat.kt`).
-- Plattformabhängiges liegt hinter den Schnittstellen in `core/.../platform/`
-  (`MediaEngine`, `Clock`, `PlatformInfo`, `AssetSource`, `MediaStoreNotifier`) und wird
-  in `:android` implementiert, in Tests als JVM-Fake (`core/src/test/.../testing/`).
-- Die Anzeige bekommt Daten als `StateFlow`s aus `FrameCore`, nie über HTTP.
-- `:android` nutzt nur das Framework, kein AndroidX (minSdk 21).
+Everything in the repository is written in English: OpenSpec artifacts (requirements use
+SHALL/MUST), documentation, code comments and KDoc, test names, log messages and API error
+messages. The only German texts are the German translations that users see: `de.json` in the web
+UI and `values-de/strings.xml` on the frame. Commit messages are in English as well.
 
-## API und Contract-Tests
+## Module boundaries
 
-- `api/openapi.yaml` ist die Quelle der Wahrheit. Neue oder geänderte Endpunkte zuerst
-  dort, dann Kotlin-DTOs von Hand, dann `npm run gen:api` für die Typen der Web-UI.
-- Tests gegen den Server laufen mit `TestHttp(..., checkContract = true)` bzw. `TestFrame`;
-  jede Antwort wird gegen den Vertrag geprüft. `RouteAccessTest` stellt sicher, dass Router
-  und Vertrag dieselben Endpunkte und dieselbe Sicherheit haben.
-- Nur `GET /info`, `POST /pairing` und `POST /pairing/code` sind ohne Token erreichbar.
+- `:core` has no `android.*`/`androidx.*` imports. `./gradlew :core:check` verifies this
+  (`checkNoAndroidImports`) and checks every JDK API against Android 21 with Animal Sniffer and
+  core library desugaring. No `readNBytes`, no `java.nio.file`, no Java 9+ APIs without a
+  replacement (see `core/.../IoCompat.kt`).
+- Platform-dependent things sit behind the interfaces in `core/.../platform/`
+  (`MediaEngine`, `Clock`, `PlatformInfo`, `AssetSource`, `MediaStoreNotifier`) and are
+  implemented in `:android`, in tests as a JVM fake (`core/src/test/.../testing/`).
+- The display gets its data as `StateFlow`s from `FrameCore`, never over HTTP.
+- `:android` uses only the framework, no AndroidX (minSdk 21).
 
-## Tests und Prüfungen
+## API and contract tests
 
-- `./gradlew check` (Formatierung, Tests, API-21-Prüfung, Android Lint) muss grün sein.
-- Web-UI: `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/`.
-- `openspec validate <change>` muss mit Exit 0 enden. Die Hinweise „should contain SHALL or MUST“
-  sind erwartet: Die Prüfung kennt nur englische Schlüsselwörter und erkennt unser „MUSS“ nicht
-  (es gibt dafür keine Einstellung). Deshalb nie `--strict` verwenden und keine englischen
-  Schlüsselwörter in die deutschen Specs mischen. Anforderungen unter 500 Zeichen halten, längere
-  in mehrere Anforderungen teilen, sonst warnt der Validator zusätzlich.
-- Der Build braucht eine UTF-8-Locale, weil Testnamen Umlaute enthalten.
-- Was nur auf Hardware messbar ist, gehört in `docs/DEVICE_TEST.md` mit Verweis auf das
-  Spec-Szenario.
+- `api/openapi.yaml` is the source of truth. New or changed endpoints go there first, then the
+  Kotlin DTOs by hand, then `npm run gen:api` for the web UI's types.
+- Tests against the server run with `TestHttp(..., checkContract = true)` or `TestFrame`;
+  every response is checked against the contract. `RouteAccessTest` ensures that router and
+  contract have the same endpoints and the same security.
+- Only `GET /info`, `POST /pairing` and `POST /pairing/code` are reachable without a token.
 
-## Geräte
+## Tests and checks
 
-- Zugangsdaten, IP-Adressen und Notizen zu den Geräten stehen im Nachbarprojekt unter
-  `../pictureframe/devices/`. Nicht in dieses Repo kopieren.
-- Vor jeder dauerhaften Änderung am Gerät nachfragen: Pakete installieren oder
-  deinstallieren, HOME-Launcher ändern, Einstellungen des Systems, Dateien im Fotoordner
-  löschen. Lesende Befehle (`adb shell dumpsys`, `adb logcat`, `adb pull`) sind ohne
-  Rückfrage in Ordnung.
-- `pictureframe` (`com.pictureframe.kiosk`) bleibt installiert, bis openframe seine Rolle
-  übernommen hat. Seine Daten nicht anfassen.
+- `./gradlew check` (formatting, tests, API 21 check, Android Lint) must be green.
+- Web UI: `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/`.
+- `openspec validate <change>` must end with exit 0 and without warnings. Keep requirements
+  under 500 characters; split longer ones into several requirements, otherwise the validator
+  warns.
+- What is measurable only on hardware belongs in `docs/DEVICE_TEST.md` with a reference to the
+  spec scenario.
+
+## Devices
+
+- Credentials, IP addresses and notes on the devices are in the neighboring project under
+  `../pictureframe/devices/`. Do not copy them into this repo.
+- Ask before every persistent change on the device: installing or uninstalling packages,
+  changing the HOME launcher, system settings, deleting files in the photo folder. Read-only
+  commands (`adb shell dumpsys`, `adb logcat`, `adb pull`) are fine without asking.
+- `pictureframe` (`com.pictureframe.kiosk`) stays installed until openframe has taken over its
+  role. Do not touch its data.

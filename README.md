@@ -1,111 +1,108 @@
 # openframe
 
-Digitaler Bilderrahmen für alte Android-Tablets und Frameo-Rahmen. Die
-Slideshow läuft nativ auf dem Gerät, verwaltet wird im Browser von Laptop
-oder Handy. Es gibt keine Cloud: Fotos kommen per USB oder Upload auf den
-Rahmen, der Rahmen selbst ist der Server.
+Digital picture frame for old Android tablets and Frameo frames. The slideshow
+runs natively on the device and is managed in the browser of a laptop or phone.
+There is no cloud: photos get onto the frame by USB or upload, and the frame
+itself is the server.
 
-Ziel-Geräte sind ab Android 5.0 (API 21), getestet auf dem Frameo `PFF_1024`
-(Android 6.0.1) und dem Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
+Target devices run Android 5.0 (API 21) or newer, tested on the Frameo `PFF_1024`
+(Android 6.0.1) and the Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
 
-## Architektur
+## Architecture
 
-Eine Codebasis in Kotlin. `:core` enthält die ganze Fachlogik und läuft auf
-der reinen JVM: Einstellungen, Fotobibliothek mit Index, Bildgrößen-Cache,
-Slideshow-Steuerung, Kopplung und die HTTP-API unter `/api/v1` (NanoHTTPD als
-Transport). `:android` ist die Kiosk-APK: Foreground-Service mit dem Kern,
-native Anzeige mit zwei `ImageView`s und die Anbindung an `BitmapFactory`. Die
-Anzeige bekommt ihre Daten direkt als `StateFlow`s aus dem Kern, nicht über
-HTTP. Die Verwaltungsoberfläche in `webadmin/` (Svelte 5, TypeScript, Vite)
-wird beim Bauen in die APK gelegt und vom Rahmen ausgeliefert. Der API-Vertrag
-steht in `api/openapi.yaml`; daraus entstehen die Typen der Web-UI, und
-Contract-Tests prüfen jede Antwort des Servers dagegen.
+One codebase in Kotlin. `:core` contains all the business logic and runs on the
+plain JVM: settings, photo library with index, image size cache, slideshow
+control, pairing and the HTTP API under `/api/v1` (NanoHTTPD as transport).
+`:android` is the kiosk APK: a foreground service holding the core, a native
+display with two `ImageView`s and the binding to `BitmapFactory`. The display
+receives its data directly as `StateFlow`s from the core, not over HTTP. The
+admin interface in `webadmin/` (Svelte 5, TypeScript, Vite) is placed into the
+APK at build time and served by the frame. The API contract is in
+`api/openapi.yaml`; the web UI's types are generated from it, and contract tests
+check every server response against it.
 
-Hintergründe und Entscheidungen: `openspec/changes/bootstrap-openframe-core/design.md`.
+Background and decisions: `openspec/changes/bootstrap-openframe-core/design.md`.
 
-## Bauen
+## Building
 
-Voraussetzungen: [mise](https://mise.jdx.dev) für JDK 17 und Node, dazu ein
-Android-SDK mit Plattform 36.
+Prerequisites: [mise](https://mise.jdx.dev) for JDK 17 and Node, plus an
+Android SDK with platform 36.
 
 ```bash
 mise trust && mise install
-# Pfad zum Android-SDK, falls ANDROID_HOME nicht gesetzt ist:
+# Path to the Android SDK, if ANDROID_HOME is not set:
 echo "sdk.dir=$HOME/android-sdk" > local.properties
 ./gradlew :android:assembleDebug
 ```
 
-Die APK liegt danach unter `android/build/outputs/apk/debug/android-debug.apk`.
-Ohne Node bricht der Build mit einer Meldung ab, statt eine APK ohne Web-UI zu
-bauen. Ohne Android-SDK wird `:android` übersprungen; `:core` und die Web-UI
-lassen sich trotzdem bauen und testen.
+The APK ends up at `android/build/outputs/apk/debug/android-debug.apk`.
+Without Node the build aborts with a message instead of building an APK without
+the web UI. Without an Android SDK `:android` is skipped; `:core` and the web UI
+can still be built and tested.
 
-Der Build braucht eine UTF-8-Locale (`LANG=C.UTF-8` oder `de_DE.UTF-8`), weil
-Testnamen Umlaute enthalten.
-
-## Installieren und erste Kopplung
+## Installing and first pairing
 
 ```bash
 adb install -r android/build/outputs/apk/debug/android-debug.apk
 adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
 ```
 
-openframe läuft parallel zu `pictureframe` (eigene Paket-ID). Soll es nach dem
-Neustart von selbst erscheinen, in den Android-Einstellungen als
-Startbildschirm (HOME) wählen.
+openframe runs in parallel to `pictureframe` (own package ID). To have it appear
+by itself after a restart, choose it as the home screen (HOME) in the Android
+settings.
 
-1. Ohne Fotos zeigt der Rahmen die Adresse der Verwaltung, etwa
-   `http://192.168.100.215:8080/`, und einen sechsstelligen Kopplungscode.
-2. Die Adresse im Browser öffnen und den Code eingeben. Der Browser ist danach
-   gekoppelt; weitere Geräte koppeln sich genauso („Code am Rahmen anzeigen“).
-3. Fotos hochladen oder per USB in den Ordner
-   `Android/data/io.github.tycho991.openframe/files/photos` kopieren.
-   Unterordner werden zu Alben.
+1. Without photos the frame shows the address of the admin interface, for
+   example `http://192.168.100.215:8080/`, and a six-digit pairing code.
+2. Open the address in a browser and enter the code. The browser is paired
+   afterwards; further devices pair the same way ("Show code on frame").
+3. Upload photos or copy them over USB into the folder
+   `Android/data/io.github.tycho991.openframe/files/photos`.
+   Subfolders become albums.
 
-Am Rahmen selbst: Tippen zeigt Name, Adresse, Code und Pause. Wischen blättert.
-Drei Sekunden in eine Ecke drücken öffnet das Gerätemenü mit „nur lokal“,
-„Alle Kopplungen aufheben“ und Info.
+On the frame itself: a tap shows name, address, code and pause. Swiping pages
+through the photos. Pressing a corner for three seconds opens the device menu
+with "local only", "Revoke all pairings" and info.
 
-Deinstallieren löscht den Fotoordner mit. Vorher sichern:
+Uninstalling deletes the photo folder as well. Back it up first:
 `adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`.
 
-## Entwickeln
+## Developing
 
 ```bash
-./gradlew check                 # Formatierung, :core-Tests, Android-Importe, API 21, Android Lint
+./gradlew check                 # formatting, :core tests, Android imports, API 21, Android Lint
 ./gradlew :android:testDebugUnitTest
 cd webadmin
 npm ci
 npm run lint && npm run typecheck && npm test
-npm run e2e                     # baut die Web-UI und testet sie per Playwright gegen einen :core-Testserver
-OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite mit Hot Reload, API über Proxy an den Rahmen
+npm run e2e                     # builds the web UI and tests it with Playwright against a :core test server
+OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite with hot reload, API proxied to the frame
 ```
 
-Den `:core`-Testserver mit Fake-Bildern startet auch
-`./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; die Web-UI
-liegt dann unter `http://127.0.0.1:8090/`.
+The `:core` test server with fake images can also be started with
+`./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; the web UI is
+then at `http://127.0.0.1:8090/`.
 
-Was sich nur auf echter Hardware prüfen lässt, steht in
+What can be verified only on real hardware is listed in
 [`docs/DEVICE_TEST.md`](docs/DEVICE_TEST.md).
 
-## Arbeitsablauf mit OpenSpec
+## Workflow with OpenSpec
 
-Änderungen werden als OpenSpec-Change geplant (Proposal, Specs, Design,
-Tasks unter `openspec/changes/`) und dann umgesetzt. In Claude Code:
+Changes are planned as an OpenSpec change (proposal, specs, design, tasks under
+`openspec/changes/`) and then implemented. In Claude Code:
 
-1. `/opsx:propose` für einen neuen Change
-2. `openspec validate <name>` und `openspec show <name>`
-3. `/opsx:apply` zum Umsetzen
-4. `/opsx:archive` bzw. `openspec archive <name> --yes`
+1. `/opsx:propose` for a new change
+2. `openspec validate <name>` and `openspec show <name>`
+3. `/opsx:apply` to implement
+4. `/opsx:archive` or `openspec archive <name> --yes`
 
-Node und OpenSpec sind in `.mise.toml` gepinnt. Renovate erhöht die Version per
-PR; im Branch des PRs dann:
+Node and OpenSpec are pinned in `.mise.toml`. Renovate raises the version by PR;
+in the PR's branch then:
 
 ```bash
 mise install
 mise run openspec-sync
-git add -A && git commit -m "OpenSpec-Skills aktualisieren"
+git add -A && git commit -m "Update OpenSpec skills"
 ```
 
-Die Drift-Prüfung in `.github/workflows/openspec-drift.yml` stellt sicher, dass
-die committeten Skills und Commands genau zur gepinnten Version passen.
+The drift check in `.github/workflows/openspec-drift.yml` makes sure that the
+committed skills and commands match the pinned version exactly.
