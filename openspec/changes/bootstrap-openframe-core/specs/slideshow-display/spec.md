@@ -2,129 +2,129 @@
 
 ## Purpose
 
-Zeigt die sichtbaren Fotos der Bibliothek auf dem Rahmen als flüssige Vollbild-Slideshow an, auch auf alter, schwacher Android-Hardware.
+Shows the library's visible photos on the frame as a smooth fullscreen slideshow, even on old, weak Android hardware.
 
 ## ADDED Requirements
 
-### Requirement: Fotos im Vollbild wechseln
-Der Rahmen MUSS die sichtbaren Fotos der Bibliothek nacheinander im Vollbild anzeigen und nach dem eingestellten Intervall zum nächsten Foto wechseln. Nach dem letzten Foto MUSS die Slideshow von vorn beginnen.
+### Requirement: Change photos in fullscreen
+The frame SHALL show the library's visible photos one after another in fullscreen and switch to the next photo after the configured interval. After the last photo the slideshow SHALL start over from the beginning.
 
-#### Scenario: Wechsel nach Intervall
-- **WHEN** das Intervall auf 30 Sekunden steht und ein Foto 30 Sekunden angezeigt wurde
-- **THEN** zeigt der Rahmen das nächste sichtbare Foto
+#### Scenario: Change after interval
+- **WHEN** the interval is set to 30 seconds and a photo has been shown for 30 seconds
+- **THEN** the frame shows the next visible photo
 
-#### Scenario: Umlauf
-- **WHEN** das letzte Foto der Reihenfolge angezeigt wurde und das Intervall abläuft
-- **THEN** beginnt die Slideshow wieder mit dem ersten Foto der Reihenfolge
+#### Scenario: Wrap-around
+- **WHEN** the last photo of the order has been shown and the interval expires
+- **THEN** the slideshow starts again with the first photo of the order
 
-### Requirement: Reihenfolge
-Der Rahmen MUSS die Reihenfolge `shuffle` (Standard) und `chronological` (nach Aufnahmedatum, ersatzweise Dateidatum) unterstützen. Bei `shuffle` MUSS jedes sichtbare Foto einmal pro Durchgang gezeigt werden, bevor sich eines wiederholt.
+### Requirement: Order
+The frame SHALL support the orders `shuffle` (default) and `chronological` (by capture date, falling back to file date). With `shuffle`, every visible photo SHALL be shown once per pass before any repeats.
 
-#### Scenario: Shuffle ohne Wiederholung im Durchgang
-- **WHEN** 10 Fotos sichtbar sind und die Reihenfolge `shuffle` ist
-- **THEN** erscheint in den ersten 10 Wechseln jedes Foto genau einmal
+#### Scenario: Shuffle without repeats within a pass
+- **WHEN** 10 photos are visible and the order is `shuffle`
+- **THEN** in the first 10 changes every photo appears exactly once
 
-#### Scenario: Chronologisch
-- **WHEN** die Reihenfolge `chronological` ist
-- **THEN** erscheinen die Fotos aufsteigend nach Aufnahmedatum
+#### Scenario: Chronological
+- **WHEN** the order is `chronological`
+- **THEN** the photos appear in ascending order of capture date
 
-### Requirement: Übergänge
-Der Wechsel MUSS mit dem eingestellten Übergang erfolgen: `fade` (Überblendung, Standard), `slide` oder `none`. Die Übergangsdauer MUSS einstellbar sein. Bei einer Übergangsdauer von 0 MUSS sofort gewechselt werden.
+### Requirement: Transitions
+The change SHALL happen with the configured transition: `fade` (crossfade, default), `slide` or `none`. The transition duration SHALL be configurable. With a transition duration of 0 the change SHALL happen immediately.
 
-#### Scenario: Überblendung
-- **WHEN** der Übergang `fade` mit 1500 ms eingestellt ist
-- **THEN** blendet das neue Foto über 1500 ms über das alte, ohne schwarzes Zwischenbild
+#### Scenario: Crossfade
+- **WHEN** the transition `fade` is configured with 1500 ms
+- **THEN** the new photo fades in over the old one for 1500 ms, without a black frame in between
 
-### Requirement: Flüssige Darstellung auf schwacher Hardware
-Übergänge MÜSSEN auf den Referenzgeräten (Frameo `PFF_1024`, Android 6.0.1; Lenovo Yoga Tablet 2 1050F, Android 5.0.1) ohne sichtbares Ruckeln laufen. Das Decodieren des nächsten Fotos DARF den laufenden Übergang NICHT verzögern.
+### Requirement: Smooth display on weak hardware
+Transitions SHALL run without visible stutter on the reference devices (Frameo `PFF_1024`, Android 6.0.1; Lenovo Yoga Tablet 2 1050F, Android 5.0.1). Decoding the next photo SHALL NOT delay a running transition.
 
-#### Scenario: Nächstes Foto ist vorbereitet
-- **WHEN** ein Wechsel fällig wird
-- **THEN** ist das nächste Foto bereits decodiert und der Übergang beginnt ohne Wartezeit
+#### Scenario: Next photo is prepared
+- **WHEN** a change is due
+- **THEN** the next photo is already decoded and the transition starts without waiting
 
-#### Scenario: Bildrate während eines Übergangs
-- **WHEN** auf einem Referenzgerät eine Überblendung läuft
-- **THEN** fallen während des Übergangs höchstens 5 % der Frames aus (gemessen mit `dumpsys gfxinfo` oder gleichwertig)
+#### Scenario: Frame rate during a transition
+- **WHEN** a crossfade runs on a reference device
+- **THEN** at most 5 % of the frames are dropped during the transition (measured with `dumpsys gfxinfo` or equivalent)
 
-### Requirement: Speicherbegrenzung
-Die Slideshow MUSS mit dem Heap der Referenzgeräte auskommen. Fotos MÜSSEN in Bildschirmauflösung statt in Originalgröße in den Speicher geladen werden, und es DÜRFEN höchstens das aktuelle und das nächste Foto als Bitmap gehalten werden.
+### Requirement: Memory limits
+The slideshow SHALL get by with the heap of the reference devices. Photos SHALL be loaded into memory at screen resolution instead of original size, and at most the current and the next photo SHALL be held as bitmaps.
 
-#### Scenario: Großes Foto
-- **WHEN** ein Foto mit 48 Megapixeln angezeigt wird
-- **THEN** stürzt die App nicht ab und das Foto erscheint in Bildschirmauflösung
+#### Scenario: Large photo
+- **WHEN** a photo with 48 megapixels is shown
+- **THEN** the app does not crash and the photo appears at screen resolution
 
-#### Scenario: Dauerlauf
-- **WHEN** die Slideshow 24 Stunden mit dem Intervall 5 Sekunden läuft
-- **THEN** wächst der Speicherverbrauch nicht stetig an und die App läuft weiter
+#### Scenario: Endurance run
+- **WHEN** the slideshow runs for 24 hours with an interval of 5 seconds
+- **THEN** memory use does not grow steadily and the app keeps running
 
-### Requirement: Füllmodus
-Der Rahmen MUSS die Füllmodi `fill` (bildschirmfüllend, beschnitten, Standard) und `fit` (vollständig sichtbar, mit Rändern) unterstützen. Das Seitenverhältnis des Fotos DARF dabei NICHT verzerrt werden.
+### Requirement: Fill mode
+The frame SHALL support the fill modes `fill` (fills the screen, cropped, default) and `fit` (fully visible, with borders). The photo's aspect ratio SHALL NOT be distorted in the process.
 
-#### Scenario: Hochformat bei fill
-- **WHEN** ein Hochformatfoto auf einem Querformat-Display im Modus `fill` angezeigt wird
-- **THEN** füllt das Foto die Breite aus, oben und unten wird mittig beschnitten
+#### Scenario: Portrait with fill
+- **WHEN** a portrait photo is shown on a landscape display in `fill` mode
+- **THEN** the photo fills the width and is cropped centered at the top and bottom
 
-#### Scenario: Hochformat bei fit
-- **WHEN** dasselbe Foto im Modus `fit` angezeigt wird
-- **THEN** ist das ganze Foto sichtbar und links und rechts bleiben Ränder
+#### Scenario: Portrait with fit
+- **WHEN** the same photo is shown in `fit` mode
+- **THEN** the whole photo is visible and borders remain on the left and right
 
-### Requirement: Ausrichtung des Rahmens
-Der Rahmen MUSS im eingestellten Format laufen, `landscape` (Standard) oder `portrait`. Innerhalb des Formats DARF er dem Lagesensor folgen, also um 180° drehen. Ein Wechsel des Formats MUSS ohne Neustart der App wirksam werden.
+### Requirement: Orientation of the frame
+The frame SHALL run in the configured format, `landscape` (default) or `portrait`. Within the format it MAY follow the orientation sensor, that is, rotate by 180°. A change of format SHALL take effect without restarting the app.
 
-#### Scenario: Auf Hochformat umstellen
-- **WHEN** die Ausrichtung von `landscape` auf `portrait` geändert wird
-- **THEN** läuft die Slideshow ohne Neustart im Hochformat weiter, und die Fotos werden für das neue Format neu gerendert
+#### Scenario: Switch to portrait
+- **WHEN** the orientation is changed from `landscape` to `portrait`
+- **THEN** the slideshow keeps running in portrait without a restart, and the photos are rendered again for the new format
 
-### Requirement: Ausrichtung aus EXIF
-Fotos MÜSSEN entsprechend ihrer EXIF-Orientierung gedreht angezeigt werden.
+### Requirement: Orientation from EXIF
+Photos SHALL be shown rotated according to their EXIF orientation.
 
-#### Scenario: Gedrehtes Handyfoto
-- **WHEN** ein Foto die EXIF-Orientierung 6 (90° im Uhrzeigersinn) hat
-- **THEN** erscheint es aufrecht
+#### Scenario: Rotated phone photo
+- **WHEN** a photo has EXIF orientation 6 (90° clockwise)
+- **THEN** it appears upright
 
-### Requirement: Uhr-Overlay
-Der Rahmen MUSS eine abschaltbare Uhr mit Datum über dem Foto anzeigen. Position (vier Ecken), Größe, 12- oder 24-Stunden-Format und die Sprache des Datums MÜSSEN einstellbar sein. Die Uhr MUSS auf hellen wie dunklen Fotos lesbar sein.
+### Requirement: Clock overlay
+The frame SHALL show a clock with date, which can be switched off, over the photo. Position (four corners), size, 12- or 24-hour format and the date's language SHALL be configurable. The clock SHALL be legible on bright and dark photos alike.
 
-#### Scenario: Minutenwechsel
-- **WHEN** die Uhr eingeschaltet ist und eine neue Minute beginnt
-- **THEN** zeigt die Uhr spätestens eine Sekunde danach die neue Uhrzeit
+#### Scenario: Minute change
+- **WHEN** the clock is on and a new minute begins
+- **THEN** the clock shows the new time within one second at the latest
 
-#### Scenario: Uhr aus
-- **WHEN** die Uhr in den Einstellungen ausgeschaltet wird
-- **THEN** verschwindet sie ohne Neustart der App
+#### Scenario: Clock off
+- **WHEN** the clock is switched off in the settings
+- **THEN** it disappears without restarting the app
 
-### Requirement: Bedienung am Rahmen
-Ein Wischen nach links oder rechts MUSS zum nächsten oder vorherigen Foto wechseln. Ein Tippen MUSS für einige Sekunden einen Hinweis einblenden, mit Pause/Weiter, dem Namen des Rahmens, der Adresse der Verwaltungsoberfläche und einem gültigen Kopplungscode.
+### Requirement: Operation on the frame
+Swiping left or right SHALL switch to the next or previous photo. A tap SHALL show a hint for a few seconds, with pause/resume, the frame's name, the address of the admin interface and a valid pairing code.
 
-#### Scenario: Zurückwischen
-- **WHEN** der Nutzer nach rechts wischt
-- **THEN** zeigt der Rahmen das vorherige Foto und das Intervall beginnt neu
+#### Scenario: Swipe back
+- **WHEN** the user swipes right
+- **THEN** the frame shows the previous photo and the interval starts over
 
 #### Scenario: Pause
-- **WHEN** der Nutzer pausiert
-- **THEN** bleibt das aktuelle Foto stehen, bis er die Wiedergabe fortsetzt
+- **WHEN** the user pauses
+- **THEN** the current photo stays until the user resumes playback
 
-### Requirement: Leerzustand
-Gibt es keine sichtbaren Fotos, MUSS der Rahmen einen Hinweis zeigen, wie man Fotos hinzufügt. Dazu gehören die Adresse der Verwaltungsoberfläche und der Kopplungscode, solange noch kein Gerät gekoppelt ist.
+### Requirement: Empty state
+If there are no visible photos, the frame SHALL show a hint on how to add photos. It SHALL include the address of the admin interface and the pairing code as long as no device is paired yet.
 
-#### Scenario: Neuer Rahmen
-- **WHEN** die App zum ersten Mal ohne Fotos startet
-- **THEN** zeigt der Rahmen die Adresse der Verwaltungsoberfläche und den Kopplungscode
+#### Scenario: New frame
+- **WHEN** the app starts without photos for the first time
+- **THEN** the frame shows the address of the admin interface and the pairing code
 
-### Requirement: Änderungen ohne Neustart übernehmen
-Neue, ausgeblendete oder gelöschte Fotos und geänderte Einstellungen MÜSSEN spätestens beim nächsten Wechsel wirksam werden, ohne dass die App neu startet.
+### Requirement: Apply changes without restart
+New, hidden or deleted photos and changed settings SHALL take effect at the next change at the latest, without the app restarting.
 
-#### Scenario: Album ausgeblendet
-- **WHEN** ein Album in der Verwaltungsoberfläche ausgeblendet wird
-- **THEN** erscheint ab dem nächsten Wechsel kein Foto dieses Albums mehr
+#### Scenario: Album hidden
+- **WHEN** an album is hidden in the admin interface
+- **THEN** from the next change on no photo of this album appears any more
 
-#### Scenario: Aktuelles Foto gelöscht
-- **WHEN** das gerade angezeigte Foto gelöscht wird
-- **THEN** wechselt der Rahmen sofort zum nächsten Foto
+#### Scenario: Current photo deleted
+- **WHEN** the photo currently shown is deleted
+- **THEN** the frame switches to the next photo immediately
 
-### Requirement: Fehlerhafte Dateien überspringen
-Lässt sich ein Foto nicht decodieren, MUSS der Rahmen es überspringen und das nächste anzeigen. Das fehlerhafte Foto DARF die Slideshow NICHT anhalten.
+### Requirement: Skip faulty files
+If a photo cannot be decoded, the frame SHALL skip it and show the next one. The faulty photo SHALL NOT stop the slideshow.
 
-#### Scenario: Defekte Datei
-- **WHEN** das nächste Foto eine beschädigte JPEG-Datei ist
-- **THEN** zeigt der Rahmen stattdessen das darauf folgende Foto und protokolliert den Fehler
+#### Scenario: Broken file
+- **WHEN** the next photo is a damaged JPEG file
+- **THEN** the frame shows the photo after it instead and logs the error

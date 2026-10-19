@@ -2,55 +2,55 @@
 
 ## Why
 
-`pictureframe` (v1.2.0) funktioniert, trägt aber seine Entstehungsgeschichte mit sich. Der Code ist doppelt vorhanden: ein Node-Server mit etwa 1.900 Zeilen und ein Kotlin-Core mit etwa 5.000 Zeilen in der APK. Die Slideshow ist eine Web-App mit etwa 8.000 Zeilen Vanilla-JS, die in den alten WebViews der Zielgeräte laufen muss. Dafür braucht sie unter anderem einen `fetch()`-Polyfill, und sie kann weder flüssig animieren noch eine moderne Oberfläche bieten.
+`pictureframe` (v1.2.0) works, but it carries its history with it. The code exists twice: a Node server with about 1,900 lines and a Kotlin core with about 5,000 lines in the APK. The slideshow is a web app with about 8,000 lines of vanilla JS that has to run in the old WebViews of the target devices. Among other things that requires a `fetch()` polyfill, and it can neither animate smoothly nor offer a modern interface.
 
-Gleichzeitig ist der wichtigste Schritt schon belegt: Der Server läuft auf dem Gerät selbst. openframe baut deshalb auf dieser Architektur neu auf, mit nur noch einer Codebasis. Die Slideshow wird nativ und hardwarebeschleunigt gerendert, sodass sie auch auf schwacher Hardware flüssig läuft. Die Verwaltungsoberfläche wird zeitgemäß und läuft im Browser von Laptop oder Handy statt auf dem Rahmen. Specs und Tests bilden von Anfang an den Vertrag.
+At the same time the most important step is already proven: the server runs on the device itself. openframe therefore rebuilds on this architecture, with only one codebase. The slideshow is rendered natively and hardware-accelerated, so it runs smoothly even on weak hardware. The admin interface becomes contemporary and runs in the browser of a laptop or phone instead of on the frame. Specs and tests form the contract from the start.
 
-Dieser erste Change legt das Fundament und den Kern. Er soll so geschnitten sein, dass Nextcloud, Video, Zuschnitt, Bildschirm-Zeitplan, Home Assistant und mehrere Rahmen als eigene, kleinere Changes darauf aufsetzen können.
+This first change lays the foundation and the core. It is meant to be cut so that Nextcloud, video, cropping, screen schedule, Home Assistant and multiple frames can build on it as separate, smaller changes.
 
 ## What Changes
 
-- Neues Projekt in Kotlin mit Coroutines und `kotlinx.serialization`. Es gibt ein plattformneutrales Modul `core` ohne `android.*`-Importe und ein Modul `android` für die Kiosk-APK. Einen Node-Server gibt es nicht mehr.
-- **Native Slideshow auf dem Gerät** statt WebView: Die Bilder werden mit hardwarebeschleunigten Android-Views dargestellt, mit Überblendung und einer Uhr als Overlay. Die Decodierung läuft gedrosselt und mit vorab heruntergerechneten Bildern, damit der Speicher auf Geräten mit 1 GB RAM und API 21 reicht.
-- **Lokale Fotobibliothek**: Fotos kommen per USB-Ordner oder Upload hinein. Ein Index mit stabilen IDs und Album-Ordnern bildet die Grundlage, auf der später Nextcloud und weitere Quellen aufsetzen.
-- **Eingebetteter HTTP-Server** auf dem Gerät. Er liefert eine versionierte JSON-API unter `/api/v1` und die Verwaltungsoberfläche aus.
-- **Moderne Verwaltungsoberfläche** mit TypeScript, Komponenten und Build-Step, gebaut für aktuelle Browser auf Laptop und Handy. Sie bietet Fotoübersicht, Upload, Alben ein- und ausblenden, die Einstellungen der Slideshow und die Verwaltung der gekoppelten Geräte.
-- **Zugriffsschutz**: Neu ist eine Kopplung per Code, der auf dem Rahmen angezeigt wird. Danach verwaltet ein Token den Zugriff, statt einer völlig offenen API im LAN. Zusätzlich gibt es am Rahmen einen Schalter, der den Server nur lokal erreichbar macht.
-- **Kiosk-Betrieb**: Die App ist HOME-Launcher, startet nach dem Boot von selbst, läuft im Vollbild, hält das Display wach und betreibt den Server in einem Foreground-Service.
-- **Kennung pro Rahmen**: Jeder Rahmen erhält eine eindeutige ID und einen Namen. Damit kann ein späterer Change für mehrere Rahmen ohne Umbau darauf aufsetzen.
-- Werkzeuge für Gradle-Build, CI mit Tests für `core`, Web-UI und APK sowie eine Prüfung, dass `core` keine Android-Importe enthält.
+- New project in Kotlin with coroutines and `kotlinx.serialization`. There is a platform-neutral module `core` without `android.*` imports and a module `android` for the kiosk APK. There is no Node server any more.
+- **Native slideshow on the device** instead of a WebView: the images are shown with hardware-accelerated Android views, with a crossfade and a clock as overlay. Decoding is throttled and works with pre-scaled images so that memory is enough on devices with 1 GB RAM and API 21.
+- **Local photo library**: photos arrive through a USB folder or upload. An index with stable IDs and album folders forms the basis on which Nextcloud and other sources can build later.
+- **Embedded HTTP server** on the device. It serves a versioned JSON API under `/api/v1` and the admin interface.
+- **Modern admin interface** with TypeScript, components and a build step, built for current browsers on laptop and phone. It offers a photo overview, upload, hiding and showing albums, the slideshow settings and management of the paired devices.
+- **Access protection**: new is pairing by a code that is shown on the frame. After that a token manages access, instead of a completely open API on the LAN. In addition there is a switch on the frame that makes the server reachable locally only.
+- **Kiosk operation**: the app is the HOME launcher, starts by itself after boot, runs in fullscreen, keeps the display awake and runs the server in a foreground service.
+- **Identifier per frame**: every frame gets a unique ID and a name. This lets a later change for multiple frames build on it without rework.
+- Tooling for the Gradle build, CI with tests for `core`, the web UI and the APK, and a check that `core` contains no Android imports.
 
-Nicht Teil dieses Changes und als eigene Folge-Changes geplant:
+Not part of this change and planned as separate follow-up changes:
 
-- Nextcloud-Sync
+- Nextcloud sync
 - Video
-- Crop-Editor
-- Bildschirm-Zeitplan und Auto-Helligkeit
+- Crop editor
+- Screen schedule and auto brightness
 - Home Assistant
-- Verwaltung mehrerer Rahmen
-- Self-Update
-- Reverse-Geocoding
-- Übernahme der Daten aus `pictureframe`
+- Management of multiple frames
+- Self-update
+- Reverse geocoding
+- Taking over the data from `pictureframe`
 
 ## Capabilities
 
 ### New Capabilities
 
-- `slideshow-display`: Native Darstellung der Fotos auf dem Rahmen: Reihenfolge, Intervall, Übergänge, Füllmodus, Ausrichtung, Uhr-Overlay, Bedienung am Rahmen mit Hinweis und Gerätemenü, Leerzustand und Speicherverhalten auf schwacher Hardware.
-- `photo-library`: Lokale Fotos und Alben. Dazu gehören Import per Ordner und Upload, Index mit stabilen IDs, Erkennung von Änderungen, Liste übersprungener Dateien, Ausblenden, Löschen und gerenderte Bildgrößen mit Speicherbudget.
-- `frame-settings`: Einstellungsmodell des Rahmens mit Defaults, Validierung und Persistenz, darunter Ausrichtung, Sprache am Rahmen und Cache-Budget, dazu die Identität des Rahmens (ID, Name).
-- `admin-access`: Erreichbarkeit der API im LAN, Kopplung per Code, Tokens und der Modus „nur lokal“.
-- `web-admin`: Verwaltungsoberfläche im Browser für Fotos, Alben, Einstellungen und gekoppelte Geräte.
-- `kiosk-host`: Betrieb der App als Kiosk auf Android: Autostart, HOME-Launcher, Vollbild, Display wach halten und Lebenszyklus des Servers.
+- `slideshow-display`: Native display of the photos on the frame: order, interval, transitions, fill mode, orientation, clock overlay, operation on the frame with hint and device menu, empty state and memory behavior on weak hardware.
+- `photo-library`: Local photos and albums. This includes import by folder and upload, index with stable IDs, detection of changes, list of skipped files, hiding, deleting and rendered image sizes with a storage budget.
+- `frame-settings`: The frame's settings model with defaults, validation and persistence, including orientation, language on the frame and cache budget, plus the frame's identity (ID, name).
+- `admin-access`: Reachability of the API on the LAN, pairing by code, tokens and the "local only" mode.
+- `web-admin`: Admin interface in the browser for photos, albums, settings and paired devices.
+- `kiosk-host`: Running the app as a kiosk on Android: autostart, HOME launcher, fullscreen, keeping the display awake and the server's lifecycle.
 
 ### Modified Capabilities
 
-Keine. Das Projekt hat noch keine Specs.
+None. The project has no specs yet.
 
 ## Impact
 
-- Neues Repository `openframe` mit `settings.gradle.kts` und den Modulen `:core` und `:android`, dem API-Vertrag `api/openapi.yaml` und `webadmin/` für den Node-Build der Verwaltungsoberfläche, deren Ergebnis in die APK-Assets gelangt.
-- Abhängigkeiten: Kotlin, `kotlinx-coroutines`, `kotlinx-serialization`, ein eingebetteter HTTP-Server (siehe design.md) und ein Frontend-Toolchain über Node, gepinnt über `.mise.toml`.
-- Zielgeräte: Frameo `PFF_1024` (Android 6.0.1, armeabi-v7a) und Lenovo Yoga Tablet 2 1050F (Android 5.0.1, x86). Das bedeutet `minSdk 21`.
-- Neue Paket-ID. Dadurch kann openframe parallel zu `com.pictureframe.kiosk` installiert und getestet werden, bevor es den alten Rahmen ablöst.
-- Die API ist zur alten `pictureframe`-API nicht kompatibel. **BREAKING** gilt nur für Werkzeuge, die gegen die alte API gebaut sind, zum Beispiel die Home-Assistant-Integration. Sie wird in einem Folge-Change neu angebunden.
+- New repository `openframe` with `settings.gradle.kts` and the modules `:core` and `:android`, the API contract `api/openapi.yaml` and `webadmin/` for the Node build of the admin interface, whose result ends up in the APK assets.
+- Dependencies: Kotlin, `kotlinx-coroutines`, `kotlinx-serialization`, an embedded HTTP server (see design.md) and a frontend toolchain via Node, pinned through `.mise.toml`.
+- Target devices: Frameo `PFF_1024` (Android 6.0.1, armeabi-v7a) and Lenovo Yoga Tablet 2 1050F (Android 5.0.1, x86). This means `minSdk 21`.
+- New package ID. This allows openframe to be installed and tested in parallel to `com.pictureframe.kiosk` before it replaces the old frame.
+- The API is not compatible with the old `pictureframe` API. **BREAKING** applies only to tools built against the old API, for example the Home Assistant integration. It will be reconnected in a follow-up change.

@@ -2,102 +2,102 @@
 
 ## Purpose
 
-Bietet eine zeitgemäße Verwaltungsoberfläche im Browser von Laptop oder Handy. Damit lassen sich Fotos, Alben und Einstellungen eines Rahmens pflegen, ohne am Rahmen selbst etwas bedienen zu müssen.
+Provides a modern admin interface in the browser of a laptop or phone. It lets users maintain a frame's photos, albums and settings without having to operate anything on the frame itself.
 
 ## ADDED Requirements
 
-### Requirement: Auslieferung durch den Rahmen
-Die Verwaltungsoberfläche MUSS vom Rahmen unter `/` ausgeliefert werden und ohne Internetzugang funktionieren. Sie DARF keine Ressourcen von fremden Servern laden.
+### Requirement: Served by the frame
+The admin interface SHALL be served by the frame at `/` and work without internet access. It SHALL NOT load resources from foreign servers.
 
-#### Scenario: Offline im Heimnetz
-- **WHEN** das Heimnetz keinen Internetzugang hat und der Nutzer die Adresse des Rahmens öffnet
-- **THEN** lädt die Verwaltungsoberfläche vollständig
+#### Scenario: Offline on the home network
+- **WHEN** the home network has no internet access and the user opens the frame's address
+- **THEN** the admin interface loads completely
 
-### Requirement: Unterstützte Browser
-Die Verwaltungsoberfläche MUSS in den jeweils zwei aktuellen Hauptversionen von Firefox, Chrome und Safari auf Desktop und Mobilgeräten funktionieren. Sie MUSS ab 360 px Breite ohne horizontales Scrollen bedienbar sein.
+### Requirement: Supported browsers
+The admin interface SHALL work in the two most recent major versions each of Firefox, Chrome and Safari on desktop and mobile devices. It SHALL be usable from 360 px width without horizontal scrolling.
 
-#### Scenario: Handy
-- **WHEN** der Nutzer die Oberfläche auf einem Handy mit 390 px Breite öffnet
-- **THEN** sind alle Funktionen ohne horizontales Scrollen erreichbar
+#### Scenario: Phone
+- **WHEN** the user opens the interface on a phone with 390 px width
+- **THEN** all functions are reachable without horizontal scrolling
 
-### Requirement: Kopplung in der Oberfläche
-Ohne gültiges Token MUSS die Oberfläche den Kopplungsdialog zeigen. Nach erfolgreicher Kopplung MUSS sie das Token im Browser speichern. Bei einer 401-Antwort MUSS sie zum Kopplungsdialog zurückkehren.
+### Requirement: Pairing in the interface
+Without a valid token the interface SHALL show the pairing dialog. After successful pairing it SHALL store the token in the browser. On a 401 response it SHALL return to the pairing dialog.
 
-#### Scenario: Erster Besuch
-- **WHEN** ein Browser die Oberfläche zum ersten Mal öffnet
-- **THEN** sieht der Nutzer den Kopplungsdialog mit dem Hinweis, wo der Code am Rahmen erscheint
+#### Scenario: First visit
+- **WHEN** a browser opens the interface for the first time
+- **THEN** the user sees the pairing dialog with a hint where the code appears on the frame
 
-#### Scenario: Wiederkehrender Besuch
-- **WHEN** ein gekoppelter Browser die Oberfläche erneut öffnet
-- **THEN** sieht der Nutzer direkt seine Fotos
+#### Scenario: Returning visit
+- **WHEN** a paired browser opens the interface again
+- **THEN** the user sees their photos directly
 
-### Requirement: Fotoübersicht
-Die Oberfläche MUSS die Fotos als Raster mit Vorschaubildern zeigen, filterbar nach Album und Sichtbarkeit. Auch bei 10.000 Fotos MUSS das Blättern flüssig bleiben, es dürfen also nur die sichtbaren Vorschaubilder geladen werden. Ausgeblendete Fotos MÜSSEN erkennbar sein.
+### Requirement: Photo overview
+The interface SHALL show the photos as a grid of thumbnails, filterable by album and visibility. Even with 10,000 photos, scrolling SHALL stay smooth, so only the visible thumbnails may be loaded. Hidden photos SHALL be recognizable.
 
-#### Scenario: Große Bibliothek
-- **WHEN** die Bibliothek 10.000 Fotos enthält und der Nutzer durch das Raster scrollt
-- **THEN** lädt die Oberfläche nur Vorschaubilder im sichtbaren Bereich und reagiert ohne spürbare Verzögerung
+#### Scenario: Large library
+- **WHEN** the library contains 10,000 photos and the user scrolls through the grid
+- **THEN** the interface loads only thumbnails in the visible area and responds without noticeable delay
 
-#### Scenario: Tab stundenlang offen
-- **WHEN** die Oberfläche drei Stunden offen bleibt, ohne dass sich die Bibliothek ändert
-- **THEN** zeigt das Raster weiterhin alle Vorschaubilder, ohne dass der Nutzer neu lädt
+#### Scenario: Tab open for hours
+- **WHEN** the interface stays open for three hours without the library changing
+- **THEN** the grid still shows all thumbnails without the user reloading
 
-### Requirement: Übersprungene Dateien
-Liegen im Fotoordner Dateien, die der Rahmen nicht aufnehmen konnte, MUSS die Oberfläche darauf hinweisen und sie mit Pfad und Grund auflisten.
+### Requirement: Skipped files
+If the photo folder contains files that the frame could not accept, the interface SHALL point this out and list them with path and reason.
 
-#### Scenario: HEIC per USB auf altem Gerät
-- **WHEN** auf einem Rahmen mit Android 6 eine HEIC-Datei per USB in den Fotoordner kopiert wurde
-- **THEN** zeigt die Oberfläche einen Hinweis, und die Liste nennt die Datei mit dem Grund „nicht unterstützt“
+#### Scenario: HEIC over USB on an old device
+- **WHEN** a HEIC file has been copied into the photo folder over USB on a frame with Android 6
+- **THEN** the interface shows a hint, and the list names the file with the reason "not supported"
 
-### Requirement: Fotos bearbeiten
-In der Oberfläche MÜSSEN einzelne oder mehrere ausgewählte Fotos ein- und ausgeblendet und gelöscht werden können. Das Löschen MUSS vorher bestätigt werden. Eine Detailansicht MUSS das Foto größer mit Album, Aufnahmedatum und Maßen zeigen.
+### Requirement: Edit photos
+In the interface it SHALL be possible to hide, unhide and delete individual or several selected photos. Deleting SHALL be confirmed beforehand. A detail view SHALL show the photo larger with album, capture date and dimensions.
 
-#### Scenario: Mehrere ausblenden
-- **WHEN** der Nutzer drei Fotos auswählt und „Ausblenden“ wählt
-- **THEN** sind alle drei als ausgeblendet markiert und erscheinen nicht mehr in der Slideshow
+#### Scenario: Hide several
+- **WHEN** the user selects three photos and chooses "Hide"
+- **THEN** all three are marked as hidden and no longer appear in the slideshow
 
-#### Scenario: Löschen bestätigen
-- **WHEN** der Nutzer „Löschen“ wählt
-- **THEN** fragt die Oberfläche nach Bestätigung und löscht erst danach
+#### Scenario: Confirm delete
+- **WHEN** the user chooses "Delete"
+- **THEN** the interface asks for confirmation and deletes only afterwards
 
-### Requirement: Upload in der Oberfläche
-Fotos MÜSSEN per Dateiauswahl und per Drag-and-drop hochgeladen werden können, optional in ein bestehendes oder neues Album. Der Fortschritt MUSS pro Datei sichtbar sein. Fehler MÜSSEN pro Datei gemeldet werden, ohne die übrigen Uploads abzubrechen.
+### Requirement: Upload in the interface
+It SHALL be possible to upload photos by file selection and by drag and drop, optionally into an existing or new album. Progress SHALL be visible per file. Errors SHALL be reported per file without aborting the other uploads.
 
-#### Scenario: Teilweiser Fehler
-- **WHEN** der Nutzer fünf Dateien hochlädt, von denen eine eine Textdatei ist
-- **THEN** werden vier hochgeladen und für die Textdatei erscheint eine Fehlermeldung
+#### Scenario: Partial failure
+- **WHEN** the user uploads five files, one of which is a text file
+- **THEN** four are uploaded and an error message appears for the text file
 
-### Requirement: Alben
-Die Oberfläche MUSS die Alben mit Anzahl der Fotos und einem Titelbild zeigen und ein Album mit einem Schalter ein- und ausblenden können.
+### Requirement: Albums
+The interface SHALL show the albums with the number of photos and a cover image, and SHALL let the user hide and unhide an album with a switch.
 
-#### Scenario: Album ausblenden
-- **WHEN** der Nutzer den Schalter des Albums `urlaub` ausschaltet
-- **THEN** zeigt die Slideshow keine Fotos aus `urlaub` mehr
+#### Scenario: Hide album
+- **WHEN** the user turns off the switch of the album `holiday`
+- **THEN** the slideshow shows no more photos from `holiday`
 
-### Requirement: Einstellungen bearbeiten
-Die Oberfläche MUSS alle Einstellungen bearbeiten können, die die API anbietet, und Validierungsfehler am betroffenen Feld anzeigen. Gespeicherte Änderungen MÜSSEN ohne Neuladen bestätigt werden.
+### Requirement: Edit settings
+The interface SHALL be able to edit all settings that the API offers and SHALL show validation errors at the affected field. Saved changes SHALL be confirmed without reloading.
 
-#### Scenario: Fehler am Feld
-- **WHEN** der Nutzer ein ungültiges Intervall speichert
-- **THEN** erscheint die Fehlermeldung am Feld Intervall und nichts wird gespeichert
+#### Scenario: Error at the field
+- **WHEN** the user saves an invalid interval
+- **THEN** the error message appears at the interval field and nothing is saved
 
-### Requirement: Gekoppelte Geräte
-Die Oberfläche MUSS die gekoppelten Geräte auflisten und das Aufheben einer Kopplung ermöglichen. Das aktuelle Gerät MUSS dabei erkennbar sein.
+### Requirement: Paired devices
+The interface SHALL list the paired devices and allow revoking a pairing. The current device SHALL be recognizable in the list.
 
-#### Scenario: Altes Gerät entfernen
-- **WHEN** der Nutzer bei einem anderen Gerät „Kopplung aufheben“ wählt
-- **THEN** verschwindet es aus der Liste und das aktuelle Gerät bleibt gekoppelt
+#### Scenario: Remove old device
+- **WHEN** the user chooses "Revoke pairing" for another device
+- **THEN** it disappears from the list and the current device stays paired
 
-### Requirement: Sprache
-Die Oberfläche MUSS Deutsch und Englisch unterstützen und die Sprache aus dem Browser übernehmen, solange der Nutzer keine andere wählt. Die Wahl gilt pro Browser und ist unabhängig von der Sprache am Rahmen.
+### Requirement: Language
+The interface SHALL support German and English and take the language from the browser as long as the user does not choose another. The choice applies per browser and is independent of the language on the frame.
 
-#### Scenario: Deutscher Browser
-- **WHEN** der Browser Deutsch als bevorzugte Sprache meldet
-- **THEN** erscheint die Oberfläche auf Deutsch
+#### Scenario: German browser
+- **WHEN** the browser reports German as its preferred language
+- **THEN** the interface appears in German
 
-### Requirement: Aktueller Stand
-Die Oberfläche MUSS Änderungen, die anderswo vorgenommen wurden, etwa per USB oder von einem zweiten Browser, spätestens nach 30 Sekunden anzeigen, ohne dass der Nutzer neu lädt.
+### Requirement: Current state
+The interface SHALL show changes made elsewhere, for example over USB or from a second browser, after 30 seconds at the latest, without the user reloading.
 
-#### Scenario: Foto per USB
-- **WHEN** die Oberfläche offen ist und ein Foto per USB hinzukommt
-- **THEN** erscheint es spätestens nach 30 Sekunden im Raster
+#### Scenario: Photo over USB
+- **WHEN** the interface is open and a photo arrives over USB
+- **THEN** it appears in the grid after 30 seconds at the latest

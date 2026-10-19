@@ -2,134 +2,134 @@
 
 ## Purpose
 
-Verwaltet die Fotos eines Rahmens: Import aus dem lokalen Ordner und per Upload, einen Index mit stabilen IDs, Alben, Sichtbarkeit und gerenderte Bildgrößen für Slideshow und Verwaltungsoberfläche.
+Manages a frame's photos: import from the local folder and by upload, an index with stable IDs, albums, visibility and rendered image sizes for the slideshow and the admin interface.
 
 ## ADDED Requirements
 
-### Requirement: Unterstützte Formate
-Die Bibliothek MUSS JPEG, PNG, WebP und GIF aufnehmen. GIF MUSS als Standbild ins erste Frame übernommen werden. HEIC/HEIF MUSS nur dann aufgenommen werden, wenn das Gerät es decodieren kann. Andere Dateien MÜSSEN ignoriert werden, ohne den Import abzubrechen. Dateien mit Bild-Endung, die nicht aufgenommen werden können (nicht decodierbares Format oder beschädigte Datei), MÜSSEN mit relativem Pfad und Grund in einer Liste übersprungener Dateien stehen, die die API liefert.
+### Requirement: Supported formats
+The library SHALL accept JPEG, PNG, WebP and GIF. GIF SHALL be taken over as a still image from its first frame. HEIC/HEIF SHALL be accepted only if the device can decode it. Other files SHALL be ignored without aborting the import. Files with an image extension that cannot be accepted (undecodable format or damaged file) SHALL appear, with relative path and reason, in a list of skipped files that the API provides.
 
-#### Scenario: Gemischter Ordner
-- **WHEN** der Fotoordner `a.jpg`, `b.png`, `notiz.txt` und `c.mp4` enthält
-- **THEN** nimmt die Bibliothek `a.jpg` und `b.png` auf und ignoriert die übrigen Dateien
+#### Scenario: Mixed folder
+- **WHEN** the photo folder contains `a.jpg`, `b.png`, `note.txt` and `c.mp4`
+- **THEN** the library accepts `a.jpg` and `b.png` and ignores the other files
 
-#### Scenario: HEIC auf altem Gerät
-- **WHEN** auf einem Gerät mit Android 6 eine HEIC-Datei im Ordner liegt
-- **THEN** wird sie nicht in den Index aufgenommen und erscheint in der Liste übersprungener Dateien mit dem Grund „nicht unterstützt“
+#### Scenario: HEIC on an old device
+- **WHEN** a HEIC file lies in the folder on a device with Android 6
+- **THEN** it is not added to the index and appears in the list of skipped files with the reason "not supported"
 
-### Requirement: Lokaler Fotoordner
-Der Rahmen MUSS einen Fotoordner haben, der per USB (MTP) ohne Root erreichbar ist. Unterordner MÜSSEN durchsucht werden. Neue, geänderte und entfernte Dateien MÜSSEN spätestens 30 Sekunden nach der Änderung im Index stehen. Dateien, die der Rahmen selbst anlegt oder löscht, etwa per Upload, MÜSSEN danach auch per USB richtig sichtbar sein.
+### Requirement: Local photo folder
+The frame SHALL have a photo folder that is reachable over USB (MTP) without root. Subfolders SHALL be scanned. New, changed and removed files SHALL be in the index 30 seconds after the change at the latest. Files that the frame itself creates or deletes, for example through upload, SHALL afterwards also be visible correctly over USB.
 
-#### Scenario: Foto per USB kopiert
-- **WHEN** ein Foto per USB in den Fotoordner kopiert wird
-- **THEN** steht es spätestens nach 30 Sekunden im Index und ist sichtbar
+#### Scenario: Photo copied over USB
+- **WHEN** a photo is copied into the photo folder over USB
+- **THEN** it is in the index and visible after 30 seconds at the latest
 
-#### Scenario: Datei entfernt
-- **WHEN** eine Datei aus dem Fotoordner gelöscht wird
-- **THEN** verschwindet ihr Eintrag spätestens nach 30 Sekunden aus dem Index
+#### Scenario: File removed
+- **WHEN** a file is deleted from the photo folder
+- **THEN** its entry disappears from the index after 30 seconds at the latest
 
-#### Scenario: Hochgeladenes Foto per USB
-- **WHEN** ein Foto über die Verwaltungsoberfläche hochgeladen und der Rahmen danach per USB verbunden wird
-- **THEN** ist das Foto im Fotoordner sichtbar
+#### Scenario: Uploaded photo over USB
+- **WHEN** a photo is uploaded through the admin interface and the frame is connected over USB afterwards
+- **THEN** the photo is visible in the photo folder
 
-### Requirement: Stabile Foto-IDs
-Jedes Foto MUSS eine ID haben, die sich aus seinem relativen Pfad ergibt und über Neustarts und Neuscans gleich bleibt. Wird eine Datei am selben Pfad ersetzt, MUSS die ID gleich bleiben, ihre Bildversion MUSS sich aber ändern, damit Caches ungültig werden.
+### Requirement: Stable photo IDs
+Every photo SHALL have an ID that derives from its relative path and stays the same across restarts and rescans. If a file is replaced at the same path, the ID SHALL stay the same, but its image version SHALL change so that caches become invalid.
 
-#### Scenario: Neustart
-- **WHEN** die App neu startet
-- **THEN** haben alle Fotos dieselben IDs wie vorher
+#### Scenario: Restart
+- **WHEN** the app restarts
+- **THEN** all photos have the same IDs as before
 
-#### Scenario: Datei ersetzt
-- **WHEN** `urlaub/1.jpg` durch eine andere Datei gleichen Namens ersetzt wird
-- **THEN** behält das Foto seine ID, seine Bildversion steigt und das Ausblenden bleibt erhalten
+#### Scenario: File replaced
+- **WHEN** `holiday/1.jpg` is replaced by a different file of the same name
+- **THEN** the photo keeps its ID, its image version increases and its hidden state is kept
 
-### Requirement: Metadaten
-Für jedes Foto MUSS der Index Breite und Höhe (nach EXIF-Drehung), Aufnahmedatum (EXIF, ersatzweise Dateidatum), Dateigröße, Album und Sichtbarkeit enthalten. Unveränderte Dateien DÜRFEN beim Neuscan NICHT erneut gelesen werden.
+### Requirement: Metadata
+For every photo the index SHALL contain width and height (after EXIF rotation), capture date (EXIF, falling back to the file date), file size, album and visibility. Unchanged files SHALL NOT be read again during a rescan.
 
-#### Scenario: Neuscan ohne Änderungen
-- **WHEN** ein Neuscan läuft und sich keine Datei geändert hat
-- **THEN** wird keine Bilddatei geöffnet und der Index bleibt unverändert
+#### Scenario: Rescan without changes
+- **WHEN** a rescan runs and no file has changed
+- **THEN** no image file is opened and the index remains unchanged
 
-### Requirement: Alben aus Ordnern
-Der erste Unterordner unterhalb des Fotoordners MUSS das Album eines Fotos bestimmen. Fotos direkt im Fotoordner MÜSSEN zu keinem Album gehören. Ein Album MUSS als Ganzes ausgeblendet werden können. Das MUSS auch für Fotos gelten, die später in diesen Ordner kommen.
+### Requirement: Albums from folders
+The first subfolder below the photo folder SHALL determine a photo's album. Photos directly in the photo folder SHALL belong to no album. It SHALL be possible to hide an album as a whole. This SHALL also apply to photos that arrive in that folder later.
 
-#### Scenario: Album zuordnen
-- **WHEN** `urlaub/2025/strand.jpg` importiert wird
-- **THEN** gehört das Foto zum Album `urlaub`
+#### Scenario: Assign album
+- **WHEN** `holiday/2025/beach.jpg` is imported
+- **THEN** the photo belongs to the album `holiday`
 
-#### Scenario: Ausgeblendetes Album bekommt neues Foto
-- **WHEN** das Album `urlaub` ausgeblendet ist und ein neues Foto in `urlaub/` kopiert wird
-- **THEN** ist das neue Foto ebenfalls ausgeblendet
+#### Scenario: Hidden album receives a new photo
+- **WHEN** the album `holiday` is hidden and a new photo is copied into `holiday/`
+- **THEN** the new photo is hidden as well
 
-### Requirement: Einzelne Fotos ausblenden
-Einzelne Fotos MÜSSEN ausgeblendet und wieder eingeblendet werden können. Ein Foto ist für die Slideshow sichtbar, wenn weder das Foto selbst noch sein Album ausgeblendet ist.
+### Requirement: Hide individual photos
+It SHALL be possible to hide and unhide individual photos. A photo is visible to the slideshow if neither the photo itself nor its album is hidden.
 
-#### Scenario: Foto ausblenden
-- **WHEN** ein Foto ausgeblendet wird
-- **THEN** zeigt die Slideshow es nicht mehr, es bleibt aber in der Bibliothek
+#### Scenario: Hide photo
+- **WHEN** a photo is hidden
+- **THEN** the slideshow no longer shows it, but it stays in the library
 
 ### Requirement: Upload
-Fotos MÜSSEN über die API hochgeladen werden können, einzeln oder mehrere, optional in ein Album. Uploads MÜSSEN auf Datenträger gestreamt werden statt im Arbeitsspeicher zu liegen. Dateinamen und Albumnamen MÜSSEN so bereinigt werden, dass keine Datei außerhalb des Fotoordners entstehen kann. Ein Albumname MUSS genau eine Ordnerebene bilden. Ein Upload, nach dem weniger als 100 MB Speicher frei blieben, MUSS abgelehnt werden.
+It SHALL be possible to upload photos through the API, one or several, optionally into an album. Uploads SHALL be streamed to disk instead of being held in memory. File names and album names SHALL be sanitized so that no file can end up outside the photo folder. An album name SHALL form exactly one folder level. An upload after which less than 100 MB of storage would remain free SHALL be rejected.
 
-#### Scenario: Upload in Album
-- **WHEN** zwei JPEG-Dateien mit dem Album `familie` hochgeladen werden
-- **THEN** liegen sie in `familie/`, stehen sofort im Index und die Antwort enthält ihre IDs
+#### Scenario: Upload into album
+- **WHEN** two JPEG files are uploaded with the album `family`
+- **THEN** they lie in `family/`, are in the index immediately and the response contains their IDs
 
-#### Scenario: Pfad-Traversal
-- **WHEN** eine Datei mit dem Namen `../../evil.jpg` oder in das Album `../../x` hochgeladen wird
-- **THEN** landet sie bereinigt in einem Ordner direkt unterhalb des Fotoordners oder der Upload wird mit 400 abgelehnt, und außerhalb des Fotoordners entsteht keine Datei
+#### Scenario: Path traversal
+- **WHEN** a file named `../../evil.jpg` is uploaded, or a file is uploaded into the album `../../x`
+- **THEN** it ends up sanitized in a folder directly below the photo folder or the upload is rejected with 400, and no file is created outside the photo folder
 
-#### Scenario: Gleicher Name
-- **WHEN** eine Datei hochgeladen wird, deren Name im Zielordner schon existiert
-- **THEN** wird die vorhandene Datei nicht überschrieben, sondern die neue erhält einen eindeutigen Namen
+#### Scenario: Same name
+- **WHEN** a file is uploaded whose name already exists in the target folder
+- **THEN** the existing file is not overwritten, instead the new file receives a unique name
 
-#### Scenario: Kein unterstütztes Format
-- **WHEN** eine Datei hochgeladen wird, die kein unterstütztes Format hat
-- **THEN** antwortet die API mit 415 und speichert nichts
+#### Scenario: Unsupported format
+- **WHEN** a file is uploaded that has no supported format
+- **THEN** the API answers with 415 and stores nothing
 
-#### Scenario: Speicher voll
-- **WHEN** nach einem Upload weniger als 100 MB Speicher frei blieben
-- **THEN** antwortet die API mit 507, speichert nichts und lässt keine Teildatei zurück
+#### Scenario: Storage full
+- **WHEN** less than 100 MB of storage would remain free after an upload
+- **THEN** the API answers with 507, stores nothing and leaves no partial file behind
 
-### Requirement: Löschen
-Fotos MÜSSEN über die API gelöscht werden können. Dabei MÜSSEN die Datei und alle abgeleiteten Bildgrößen entfernt werden.
+### Requirement: Delete
+It SHALL be possible to delete photos through the API. The file and all derived image sizes SHALL be removed in the process.
 
-#### Scenario: Foto löschen
-- **WHEN** ein Foto gelöscht wird
-- **THEN** sind Datei, Index-Eintrag und gerenderte Größen entfernt
+#### Scenario: Delete photo
+- **WHEN** a photo is deleted
+- **THEN** file, index entry and rendered sizes are removed
 
-### Requirement: Gerenderte Bildgrößen
-Die Bibliothek MUSS für jedes Foto ein Vorschaubild (längste Kante 400 px) und eine Anzeigegröße liefern. Die Anzeigegröße MUSS den Bildschirm in der eingestellten Ausrichtung vollständig bedecken, damit auch der Füllmodus `fill` scharf ist. Sie DARF dabei höchstens das 2,5-Fache der Pixelzahl des Bildschirms haben, etwa bei Panoramen. Beide Größen MÜSSEN EXIF-gedreht sein und zwischengespeichert werden. Die Antwort MUSS über die Bildversion dauerhaft cachebar sein.
+### Requirement: Rendered image sizes
+The library SHALL provide a thumbnail (longest edge 400 px) and a display size for every photo. The display size SHALL fully cover the screen in the configured orientation so that the `fill` mode is sharp as well. It SHALL have at most 2.5 times the screen's pixel count, for example for panoramas. Both sizes SHALL be EXIF-rotated and cached. The response SHALL be cacheable for the long term through the image version.
 
-#### Scenario: Hochformatfoto auf Querformat-Rahmen
-- **WHEN** auf einem Rahmen mit 1920×1200 im Format `landscape` ein Foto mit 3000×4000 Pixeln gerendert wird
-- **THEN** hat die Anzeigegröße 1920×2560 Pixel
+#### Scenario: Portrait photo on a landscape frame
+- **WHEN** a photo of 3000×4000 pixels is rendered on a frame with 1920×1200 in `landscape`
+- **THEN** the display size is 1920×2560 pixels
 
-#### Scenario: Vorschaubild abrufen
-- **WHEN** die Verwaltungsoberfläche das Vorschaubild eines Fotos abruft
-- **THEN** erhält sie ein JPEG mit längster Kante 400 px und `Cache-Control: immutable`
+#### Scenario: Fetch thumbnail
+- **WHEN** the admin interface fetches a photo's thumbnail
+- **THEN** it receives a JPEG with a longest edge of 400 px and `Cache-Control: immutable`
 
-#### Scenario: Wiederholter Abruf
-- **WHEN** dasselbe Vorschaubild ein zweites Mal mit `If-None-Match` angefragt wird
-- **THEN** antwortet die API mit 304 ohne neu zu rendern
+#### Scenario: Repeated request
+- **WHEN** the same thumbnail is requested a second time with `If-None-Match`
+- **THEN** the API answers with 304 without rendering again
 
-### Requirement: Speicherplatz begrenzen
-Die zwischengespeicherten Bildgrößen MÜSSEN das Budget aus den Einstellungen (`frame-settings`) einhalten. Bei Überschreitung MÜSSEN die am längsten nicht genutzten Einträge entfernt werden. Originalfotos DÜRFEN dabei NICHT gelöscht werden.
+### Requirement: Limit storage space
+The cached image sizes SHALL stay within the budget from the settings (`frame-settings`). When it is exceeded, the entries that have gone unused longest SHALL be removed. Original photos SHALL NOT be deleted in the process.
 
-#### Scenario: Budget überschritten
-- **WHEN** der Cache das Budget überschreitet
-- **THEN** werden die am längsten nicht genutzten Cache-Einträge entfernt, bis er wieder darunter liegt, und alle Originale bleiben erhalten
+#### Scenario: Budget exceeded
+- **WHEN** the cache exceeds the budget
+- **THEN** the cache entries unused for the longest time are removed until it is below the budget again, and all originals are kept
 
-### Requirement: Fotoliste über die API
-Die API MUSS die Fotos seitenweise liefern, filterbar nach Album und Sichtbarkeit und sortierbar nach Aufnahmedatum oder Name. Jeder Eintrag MUSS ID, Album, Sichtbarkeit, Maße, Aufnahmedatum, Bildversion und vom Server signierte URLs für Vorschaubild und Anzeigegröße enthalten. Eine Bibliothek mit 10.000 Fotos MUSS dabei ohne spürbare Verzögerung blättern.
+### Requirement: Photo list through the API
+The API SHALL deliver the photos page by page, filterable by album and visibility and sortable by capture date or name. Every entry SHALL contain ID, album, visibility, dimensions, capture date, image version and server-signed URLs for the thumbnail and the display size. A library of 10,000 photos SHALL page without noticeable delay.
 
-#### Scenario: Seite abrufen
-- **WHEN** die Seite 2 mit 100 Einträgen aus dem Album `urlaub` abgerufen wird
-- **THEN** enthält die Antwort höchstens 100 Fotos aus `urlaub`, die Gesamtzahl und einen Verweis auf die nächste Seite
+#### Scenario: Fetch page
+- **WHEN** page 2 with 100 entries from the album `holiday` is fetched
+- **THEN** the response contains at most 100 photos from `holiday`, the total count and a link to the next page
 
-### Requirement: Änderungen signalisieren
-Die API MUSS eine Bibliotheksversion liefern, die sich bei jeder Änderung am Index ändert. Clients MÜSSEN damit erkennen können, ob sie neu laden müssen.
+### Requirement: Signal changes
+The API SHALL provide a library version that changes with every change to the index. Clients SHALL be able to use it to detect whether they need to reload.
 
-#### Scenario: Neues Foto
-- **WHEN** ein Foto hinzukommt
-- **THEN** liefert die API danach eine andere Bibliotheksversion als vorher
+#### Scenario: New photo
+- **WHEN** a photo is added
+- **THEN** the API afterwards provides a different library version than before

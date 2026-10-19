@@ -2,104 +2,104 @@
 
 ## Purpose
 
-Legt fest, wer den Rahmen über das Netzwerk verwalten darf. Ein Client wird mit einem Code gekoppelt, der auf dem Rahmen angezeigt wird. Danach weist er sich mit einem Token aus. Ein Modus „nur lokal“ schließt das Netzwerk ganz aus.
+Defines who may manage the frame over the network. A client is paired with a code that the frame shows on its display. After that it identifies itself with a token. A "local only" mode shuts the network out completely.
 
 ## ADDED Requirements
 
-### Requirement: Erreichbarkeit im LAN
-Der Server des Rahmens MUSS im lokalen Netzwerk auf einem festen Port (Standard 8080) erreichbar sein, solange der Modus „nur lokal“ aus ist. Die Adresse MUSS auf dem Rahmen ablesbar sein.
+### Requirement: Reachability on the LAN
+The frame's server SHALL be reachable on the local network on a fixed port (default 8080) as long as local-only mode is off. The address SHALL be readable on the frame.
 
-#### Scenario: Adresse anzeigen
-- **WHEN** der Nutzer auf den Rahmen tippt
-- **THEN** zeigt der Hinweis die Adresse der Verwaltungsoberfläche, z. B. `http://192.168.100.215:8080/`
+#### Scenario: Show address
+- **WHEN** the user taps the frame
+- **THEN** the hint shows the address of the admin interface, e.g. `http://192.168.100.215:8080/`
 
-### Requirement: Geschützte Endpunkte
-Alle Endpunkte, die Fotos oder Einstellungen lesen oder ändern, MÜSSEN ein gültiges Token verlangen. Ohne gültiges Token MÜSSEN sie mit 401 antworten. Frei zugänglich DÜRFEN nur die Info des Rahmens, die Kopplung (einschließlich der Anforderung, einen Code am Rahmen anzuzeigen) und die statischen Dateien der Verwaltungsoberfläche sein. Bildabrufe DÜRFEN statt des Tokens eine vom Server ausgestellte Signatur tragen, die nur für dieses eine Foto und höchstens zwei Stunden gilt.
+### Requirement: Protected endpoints
+All endpoints that read or change photos or settings SHALL require a valid token. Without a valid token they SHALL answer with 401. Only the frame's info, pairing (including the request to show a code on the frame) and the static files of the admin interface SHALL be freely accessible. Image requests MAY carry a server-issued signature instead of the token, valid for that one photo only and for at most two hours.
 
-#### Scenario: Ohne Token
-- **WHEN** ein Client ohne Token die Fotoliste abruft
-- **THEN** antwortet die API mit 401
+#### Scenario: Without token
+- **WHEN** a client without a token fetches the photo list
+- **THEN** the API answers with 401
 
-#### Scenario: Mit Token
-- **WHEN** ein gekoppelter Client mit seinem Token die Fotoliste abruft
-- **THEN** antwortet die API mit 200
+#### Scenario: With token
+- **WHEN** a paired client fetches the photo list with its token
+- **THEN** the API answers with 200
 
-#### Scenario: Signierte Bild-URL
-- **WHEN** ein Browser eine Bild-URL aus der Fotoliste ohne Token abruft
-- **THEN** liefert die API das Bild, solange die Signatur gültig ist
+#### Scenario: Signed image URL
+- **WHEN** a browser fetches an image URL from the photo list without a token
+- **THEN** the API serves the image as long as the signature is valid
 
-#### Scenario: Signatur auf anderes Foto übertragen
-- **WHEN** ein Client die Signatur eines Fotos an die URL eines anderen Fotos hängt
-- **THEN** antwortet die API mit 401
+#### Scenario: Signature reused for another photo
+- **WHEN** a client attaches the signature of one photo to the URL of another photo
+- **THEN** the API answers with 401
 
-### Requirement: Kopplung per Code
-Ein Client MUSS sich koppeln können, indem er einen Code eingibt, den der Rahmen anzeigt. Der Code MUSS sechs Ziffern haben, 5 Minuten gelten und nur einmal verwendbar sein. Bei erfolgreicher Kopplung MUSS der Client ein Token erhalten. Läuft ein Code ab, während der Rahmen ihn zeigt, MUSS der Rahmen ihn durch einen neuen ersetzen.
+### Requirement: Pairing by code
+A client SHALL be able to pair by entering a code that the frame shows. The code SHALL have six digits, be valid for 5 minutes and be usable only once. After successful pairing the client SHALL receive a token. If a code expires while the frame is showing it, the frame SHALL replace it with a new one.
 
-#### Scenario: Erfolgreiche Kopplung
-- **WHEN** der Nutzer in der Verwaltungsoberfläche „Koppeln“ wählt und den auf dem Rahmen angezeigten Code eingibt
-- **THEN** erhält der Browser ein Token und hat danach Zugriff auf Fotos und Einstellungen
+#### Scenario: Successful pairing
+- **WHEN** the user chooses "Pair" in the admin interface and enters the code shown on the frame
+- **THEN** the browser receives a token and afterwards has access to photos and settings
 
-#### Scenario: Code abgelaufen
-- **WHEN** ein Code nach mehr als 5 Minuten eingegeben wird
-- **THEN** wird die Kopplung abgelehnt und der Rahmen zeigt auf Anfrage einen neuen Code
+#### Scenario: Code expired
+- **WHEN** a code is entered after more than 5 minutes
+- **THEN** pairing is rejected and the frame shows a new code on request
 
-### Requirement: Gerätename bei der Kopplung
-Ein gekoppelter Client MUSS unter einem Gerätenamen in der Liste der gekoppelten Geräte erscheinen. Den Namen gibt der Client an, ersatzweise MUSS er aus dem User-Agent abgeleitet werden.
+### Requirement: Device name when pairing
+A paired client SHALL appear in the list of paired devices under a device name. The client provides the name; failing that, the name SHALL be derived from the user agent.
 
-#### Scenario: Name vom Client
-- **WHEN** ein Client mit dem Gerätenamen „Laptop“ koppelt
-- **THEN** erscheint er in der Liste der gekoppelten Geräte als „Laptop“
+#### Scenario: Name from client
+- **WHEN** a client pairs with the device name "Laptop"
+- **THEN** it appears in the list of paired devices as "Laptop"
 
-#### Scenario: Name aus dem User-Agent
-- **WHEN** ein Client ohne Gerätenamen koppelt
-- **THEN** erscheint er in der Liste mit einem aus dem User-Agent abgeleiteten Namen, z. B. „Firefox auf Android“
+#### Scenario: Name from user agent
+- **WHEN** a client pairs without a device name
+- **THEN** it appears in the list with a name derived from the user agent, e.g. "Firefox on Android"
 
-### Requirement: Code am Rahmen anfordern
-Ein Client ohne Token MUSS den Rahmen auffordern können, einen gültigen Code anzuzeigen. Die Antwort der API DARF den Code NICHT enthalten.
+### Requirement: Request code on the frame
+A client without a token SHALL be able to ask the frame to show a valid code. The API response SHALL NOT contain the code.
 
-#### Scenario: Code am Rahmen anfordern
-- **WHEN** der Nutzer im Kopplungsdialog „Code am Rahmen anzeigen“ wählt
-- **THEN** zeigt der Rahmen für 5 Minuten einen gültigen Code, und die Antwort der API enthält den Code nicht
+#### Scenario: Request code on the frame
+- **WHEN** the user chooses "Show code on frame" in the pairing dialog
+- **THEN** the frame shows a valid code for 5 minutes, and the API response does not contain the code
 
-### Requirement: Schutz vor Durchprobieren
-Nach 5 falschen Codes MUSS der Rahmen den aktuellen Code verwerfen und weitere Kopplungsversuche für 60 Sekunden ablehnen.
+### Requirement: Brute-force protection
+After 5 wrong codes the frame SHALL discard the current code and reject further pairing attempts for 60 seconds.
 
-#### Scenario: Zu viele Fehlversuche
-- **WHEN** fünfmal ein falscher Code eingegeben wird
-- **THEN** antwortet die Kopplung 60 Sekunden lang mit 429 und danach gilt ein neuer Code
+#### Scenario: Too many failed attempts
+- **WHEN** a wrong code is entered five times
+- **THEN** pairing answers with 429 for 60 seconds and a new code applies afterwards
 
-### Requirement: Token verwalten
-Ein gekoppelter Client MUSS die Liste der gekoppelten Geräte sehen und einzelne Kopplungen aufheben können. Ein aufgehobenes Token MUSS sofort ungültig sein. Tokens MÜSSEN auf dem Rahmen nur als Hash gespeichert werden.
+### Requirement: Manage tokens
+A paired client SHALL be able to see the list of paired devices and revoke individual pairings. A revoked token SHALL become invalid immediately. Tokens SHALL be stored on the frame only as a hash.
 
-#### Scenario: Kopplung aufheben
-- **WHEN** der Nutzer die Kopplung seines alten Laptops aufhebt
-- **THEN** erhält der alte Laptop beim nächsten Aufruf 401
+#### Scenario: Revoke pairing
+- **WHEN** the user revokes the pairing of their old laptop
+- **THEN** the old laptop receives 401 on its next request
 
-### Requirement: Alle Kopplungen am Rahmen zurücksetzen
-Am Rahmen selbst MUSS es eine Möglichkeit geben, alle Kopplungen aufzuheben, ohne einen gekoppelten Client zu brauchen. Die Aktion MUSS bestätigt werden.
+### Requirement: Reset all pairings on the frame
+On the frame itself there SHALL be a way to revoke all pairings without needing a paired client. The action SHALL be confirmed.
 
-#### Scenario: Zugriff verloren
-- **WHEN** der Nutzer am Rahmen „Alle Kopplungen aufheben“ wählt und bestätigt
-- **THEN** sind alle Tokens und alle ausgestellten Bild-Signaturen ungültig und der Rahmen zeigt einen neuen Kopplungscode
+#### Scenario: Access lost
+- **WHEN** the user chooses "Revoke all pairings" on the frame and confirms
+- **THEN** all tokens and all issued image signatures are invalid and the frame shows a new pairing code
 
-### Requirement: Modus „nur lokal“
-Ist der Modus „nur lokal“ an, DARF der Server NICHT über das Netzwerk erreichbar sein, sondern nur vom Gerät selbst. Der Modus MUSS dauerhaft gespeichert werden und DARF NUR am Rahmen selbst ein- und ausgeschaltet werden, nicht über die API. So kann sich niemand aus dem Browser aussperren.
+### Requirement: Local-only mode
+While local-only mode is on, the server SHALL NOT be reachable over the network, only from the device itself. The mode SHALL be stored durably and SHALL be switchable on or off ONLY on the frame itself, not through the API. This way nobody can lock themselves out from the browser.
 
-#### Scenario: Nur lokal an
-- **WHEN** der Modus „nur lokal“ eingeschaltet ist
-- **THEN** ist der Port aus dem LAN nicht erreichbar und die Slideshow läuft weiter
+#### Scenario: Local-only on
+- **WHEN** local-only mode is switched on
+- **THEN** the port is not reachable from the LAN and the slideshow keeps running
 
-#### Scenario: Am Rahmen ausschalten
-- **WHEN** der Nutzer am Rahmen den Modus „nur lokal“ ausschaltet
-- **THEN** ist die Verwaltungsoberfläche wieder aus dem LAN erreichbar
+#### Scenario: Turn off on the frame
+- **WHEN** the user turns local-only mode off on the frame
+- **THEN** the admin interface is reachable from the LAN again
 
-#### Scenario: Über die API
-- **WHEN** ein gekoppelter Client versucht, den Modus „nur lokal“ über die Einstellungen zu setzen
-- **THEN** antwortet die API mit 400 und der Modus bleibt unverändert
+#### Scenario: Via the API
+- **WHEN** a paired client tries to set local-only mode through the settings
+- **THEN** the API answers with 400 and the mode stays unchanged
 
-### Requirement: Sicherheitsheader
-Alle Antworten MÜSSEN Header setzen, die das Einbetten in fremde Seiten und MIME-Sniffing verhindern. Ändernde Anfragen von fremden Origins MÜSSEN abgelehnt werden.
+### Requirement: Security headers
+All responses SHALL set headers that prevent embedding in foreign pages and MIME sniffing. Mutating requests from foreign origins SHALL be rejected.
 
-#### Scenario: Fremde Seite
-- **WHEN** eine Seite auf einem anderen Origin per Browser eine ändernde Anfrage an den Rahmen schickt
-- **THEN** lehnt der Server sie mit 403 ab
+#### Scenario: Foreign page
+- **WHEN** a page on another origin sends a mutating request to the frame from a browser
+- **THEN** the server rejects it with 403

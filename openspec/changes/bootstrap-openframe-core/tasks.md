@@ -1,93 +1,93 @@
 # Tasks
 
-## 1. Projektgerüst und Werkzeuge
+## 1. Project skeleton and tooling
 
-- [x] 1.1 JDK 17 (Temurin) in `.mise.toml` pinnen, Gradle-Wrapper, `settings.gradle.kts` mit `:core` und `:android` und `gradle/libs.versions.toml` anlegen; prüfen: `mise install && ./gradlew help` läuft durch
-- [x] 1.2 Modul `:core` als Kotlin/JVM-Bibliothek (Kotlin 2.x, Toolchain 17, `kotlinx-coroutines`, `kotlinx-serialization`, JUnit 5) mit einem Platzhaltertest anlegen; prüfen: `./gradlew :core:test` grün
-- [x] 1.3 Gradle-Check gegen `android.*`-Importe in `:core` an `check` hängen; prüfen: ein absichtlich eingefügter Import lässt `./gradlew :core:check` mit verständlicher Meldung scheitern
-- [x] 1.4 Modul `:android` mit Paket-ID `io.github.tycho991.openframe`, `minSdk 21`, neuestem stabilem `targetSdk`, `largeHeap` und leerer Activity anlegen; prüfen: `./gradlew :android:assembleDebug` erzeugt eine APK, `aapt dump badging` zeigt Paket-ID und `minSdk 21`
-- [x] 1.5 Spotless/ktlint und Android Lint einrichten, einschließlich der Prüfung, dass keine API über `minSdk` genutzt wird; prüfen: `./gradlew check` grün, ein Stilverstoß lässt es scheitern
-- [x] 1.6 `webadmin/` mit Vite, Svelte 5, TypeScript, ESLint, Prettier und Vitest anlegen, `package-lock.json` einchecken; prüfen: `npm ci && npm run lint && npm test && npm run build` in `webadmin/` grün
-- [x] 1.7 GitHub-Actions-Workflow `ci.yml` (Gradle `check` + `assembleDebug`, Web-UI-Lint/-Test/-Build) und Renovate-Regeln für Gradle und npm ergänzen; prüfen: Workflow läuft auf einem Push-Branch grün
+- [x] 1.1 Pin JDK 17 (Temurin) in `.mise.toml`, create the Gradle wrapper, `settings.gradle.kts` with `:core` and `:android`, and `gradle/libs.versions.toml`; verify: `mise install && ./gradlew help` runs through
+- [x] 1.2 Create module `:core` as a Kotlin/JVM library (Kotlin 2.x, toolchain 17, `kotlinx-coroutines`, `kotlinx-serialization`, JUnit 5) with a placeholder test; verify: `./gradlew :core:test` green
+- [x] 1.3 Hook a Gradle check against `android.*` imports in `:core` into `check`; verify: a deliberately inserted import makes `./gradlew :core:check` fail with an understandable message
+- [x] 1.4 Create module `:android` with package ID `io.github.tycho991.openframe`, `minSdk 21`, newest stable `targetSdk`, `largeHeap` and an empty activity; verify: `./gradlew :android:assembleDebug` produces an APK, `aapt dump badging` shows package ID and `minSdk 21`
+- [x] 1.5 Set up Spotless/ktlint and Android Lint, including the check that no API above `minSdk` is used; verify: `./gradlew check` green, a style violation makes it fail
+- [x] 1.6 Create `webadmin/` with Vite, Svelte 5, TypeScript, ESLint, Prettier and Vitest, check in `package-lock.json`; verify: `npm ci && npm run lint && npm test && npm run build` in `webadmin/` green
+- [x] 1.7 Add the GitHub Actions workflow `ci.yml` (Gradle `check` + `assembleDebug`, web UI lint/test/build) and Renovate rules for Gradle and npm; verify: workflow runs green on a push branch
 
-## 2. API-Vertrag und HTTP-Schicht
+## 2. API contract and HTTP layer
 
-- [x] 2.1 `api/openapi.yaml` für `/api/v1` mit allen Endpunkten aus design.md (Entscheidung 6), Fehlerformat und Auth-Schema schreiben; prüfen: Schema-Lint (`redocly lint` o. ä.) ohne Fehler
-- [x] 2.2 Routing-Schicht in `:core` über NanoHTTPD bauen: typisierte `suspend`-Handler, JSON per `kotlinx.serialization`, einheitliche Fehlerantworten (400/401/403/404/413/415/429/500/507), begrenzter Dispatcher; prüfen: Tests gegen einen echten `ServerSocket` für Routing, Fehler-Mapping und unbekannte Pfade
-- [x] 2.3 Sicherheitsheader und Origin-/`Sec-Fetch-Site`-Prüfung für ändernde Methoden umsetzen (Spec `admin-access`: Sicherheitsheader); prüfen: Test „Fremde Seite“ liefert 403, alle Antworten tragen die Header
-- [x] 2.4 Contract-Test-Harness: jede Antwort eines Tests gegen `api/openapi.yaml` validieren (JSON-Schema-Validator im Testklassenpfad); prüfen: ein absichtlich falsches Feld lässt den Test scheitern
-- [x] 2.5 Statische Auslieferung über `AssetSource` mit SPA-Fallback auf `index.html` und CSP für die Web-UI; prüfen: Test liefert `index.html` für `/` und `/photos`, Assets mit korrektem MIME-Typ
+- [x] 2.1 Write `api/openapi.yaml` for `/api/v1` with all endpoints from design.md (decision 6), error format and auth schema; verify: schema lint (`redocly lint` or similar) without errors
+- [x] 2.2 Build the routing layer in `:core` on NanoHTTPD: typed `suspend` handlers, JSON through `kotlinx.serialization`, uniform error responses (400/401/403/404/413/415/429/500/507), bounded dispatcher; verify: tests against a real `ServerSocket` for routing, error mapping and unknown paths
+- [x] 2.3 Implement security headers and origin/`Sec-Fetch-Site` check for mutating methods (spec `admin-access`: Security headers); verify: test "Foreign page" yields 403, all responses carry the headers
+- [x] 2.4 Contract test harness: validate every response of a test against `api/openapi.yaml` (JSON schema validator on the test classpath); verify: a deliberately wrong field makes the test fail
+- [x] 2.5 Static serving through `AssetSource` with SPA fallback to `index.html` and CSP for the web UI; verify: test serves `index.html` for `/` and `/photos`, assets with the correct MIME type
 
-## 3. Einstellungen und Identität
+## 3. Settings and identity
 
-- [x] 3.1 Atomare JSON-Speicherung (`tmp` + `fsync` + `rename`, ein Schreiber, Bündelung) als `JsonStore`; prüfen: Tests für Rundlauf, unterbrochenes Schreiben (Temp-Datei bleibt liegen → alter Stand gilt) und parallele Schreiber
-- [x] 3.2 Einstellungsmodell mit Defaults, Merge über Defaults und Validierung pro Feld (Spec `frame-settings`), einschließlich Ausrichtung (`landscape`/`portrait`), Sprache am Rahmen und Cache-Budget (100–10.000 MB, Standard 1.000 MB); „nur lokal“ wird mitgespeichert, ist aber kein Feld der API; prüfen: Tests für „Erster Start“, „Update mit neuer Einstellung“, „Ungültiges Intervall“, „Unbekanntes Feld“
-- [x] 3.3 `GET`/`PATCH /api/v1/settings` mit Teiländerungen, Einstellungsversion und `StateFlow` für die Anzeige; prüfen: Contract-Tests und Szenario „Nur Intervall ändern“
-- [x] 3.4 Identität (zufällige ID beim ersten Start), Name als Einstellung mit Default aus `PlatformInfo` und `GET /api/v1/info` ohne Auth; prüfen: Tests „Info abrufen“ und „Name ändern“ (über `PATCH /api/v1/settings`), ID bleibt über Neustart gleich
+- [x] 3.1 Atomic JSON storage (`tmp` + `fsync` + `rename`, single writer, batching) as `JsonStore`; verify: tests for round trip, interrupted write (temp file stays behind → old state applies) and parallel writers
+- [x] 3.2 Settings model with defaults, merge over defaults and per-field validation (spec `frame-settings`), including orientation (`landscape`/`portrait`), language on the frame and cache budget (100–10,000 MB, default 1,000 MB); "local only" is stored along but is not a field of the API; verify: tests for "First start", "Update with a new setting", "Invalid interval", "Unknown field"
+- [x] 3.3 `GET`/`PATCH /api/v1/settings` with partial changes, settings version and a `StateFlow` for the display; verify: contract tests and scenario "Change only the interval"
+- [x] 3.4 Identity (random ID on first start), name as a setting with default from `PlatformInfo` and `GET /api/v1/info` without auth; verify: tests "Fetch info" and "Change name" (through `PATCH /api/v1/settings`), ID stays the same across restart
 
-## 4. Kopplung und Zugriff
+## 4. Pairing and access
 
-- [x] 4.1 Kopplungscode (6 Ziffern, 5 min, einmalig, 5 Fehlversuche → 60 s Sperre), `POST /api/v1/pairing` mit Gerätename (Fallback aus User-Agent) und `POST /api/v1/pairing/code` (ohne Auth, 204, zeigt einen gültigen Code am Rahmen über einen `StateFlow` für 5 min oder bis zur Kopplung); ein angezeigter Code wird bei Ablauf ersetzt; prüfen: Tests mit Fake-`Clock` für Erfolg, Ablauf, Einmaligkeit, Sperre (429), „Code am Rahmen anfordern“ (Antwort enthält keinen Code) und Ersetzen eines angezeigten Codes nach 5 min
-- [x] 4.2 Token-Speicherung als SHA-256, Auth-Filter für alle geschützten Routen, `GET/DELETE /api/v1/clients` mit Kennzeichnung des anfragenden Geräts; prüfen: Tests „Ohne Token“ (401), „Mit Token“ (200), „Kopplung aufheben“ (sofort 401); ein Test listet alle Routen und stellt sicher, dass nur die freigegebenen ohne Token erreichbar sind
-- [x] 4.3 Signierte, kurzlebige Bild-URLs (`?t=`, HMAC über Foto-ID und Ablauf, Server-Geheimnis, Ablauf auf die übernächste volle Stunde gerundet) als Alternative zum Token nur für Bildabrufe; prüfen: Tests für gültige, abgelaufene und auf ein anderes Foto übertragene Signaturen (Szenarien „Signierte Bild-URL“, „Signatur auf anderes Foto übertragen“) und gleiche URL innerhalb einer Stunde
-- [x] 4.4 „Alle Kopplungen aufheben“ (einschließlich neuem Signatur-Geheimnis) und Bindung an `127.0.0.1` im Modus „nur lokal“ als Core-Funktionen, nicht über die API erreichbar; prüfen: Test, dass nach dem Zurücksetzen alle Tokens und alten Bild-URLs 401 liefern und ein neuer Code entsteht; Test, dass der Server im Modus „nur lokal“ auf einer LAN-Adresse nicht annimmt; Szenario „Über die API“ (400)
+- [x] 4.1 Pairing code (6 digits, 5 min, single use, 5 failed attempts → 60 s lockout), `POST /api/v1/pairing` with device name (fallback from user agent) and `POST /api/v1/pairing/code` (without auth, 204, shows a valid code on the frame through a `StateFlow` for 5 min or until pairing); a displayed code is replaced when it expires; verify: tests with a fake `Clock` for success, expiry, single use, lockout (429), "Request code on the frame" (response contains no code) and replacing a displayed code after 5 min
+- [x] 4.2 Token storage as SHA-256, auth filter for all protected routes, `GET/DELETE /api/v1/clients` with marking of the requesting device; verify: tests "Without token" (401), "With token" (200), "Revoke pairing" (401 immediately); a test lists all routes and ensures that only the approved ones are reachable without a token
+- [x] 4.3 Signed, short-lived image URLs (`?t=`, HMAC over photo ID and expiry, server secret, expiry rounded to the full hour after next) as an alternative to the token for image requests only; verify: tests for valid, expired and transferred-to-another-photo signatures (scenarios "Signed image URL", "Signature reused for another photo") and the same URL within an hour
+- [x] 4.4 "Revoke all pairings" (including a new signature secret) and binding to `127.0.0.1` in "local only" mode as core functions, not reachable through the API; verify: test that after the reset all tokens and old image URLs yield 401 and a new code is created; test that the server in "local only" mode does not accept on a LAN address; scenario "Via the API" (400)
 
-## 5. Fotobibliothek
+## 5. Photo library
 
-- [x] 5.1 `MediaEngine`-Schnittstelle und JVM-Fake (ImageIO + `metadata-extractor`) für Tests; Fixture-Fotos mit EXIF-Orientierung 1/6/8, PNG, WebP, GIF und eine defekte Datei unter `core/src/test/resources`; prüfen: Fake liest Maße nach Drehung korrekt
-- [x] 5.2 `PhotoIndexStore` (Index im Speicher, gebündelt persistiert, Bibliotheksversion, `StateFlow` der sichtbaren Fotos); prüfen: Tests für Rundlauf, Versionswechsel bei Änderung und Neustart
-- [x] 5.3 `PhotoSource` `local`: Scan alle 15 s, mtime/Größe-Abkürzung, ID aus Pfad, Bildversion, Album aus erstem Ordner, Formatfilter, HEIC nur nach erfolgreichem Probe-Decode, Liste übersprungener Dateien mit Grund und `GET /api/v1/skipped-files` (Spec `photo-library`); prüfen: Tests für „Gemischter Ordner“, „HEIC auf altem Gerät“ (Fake-MediaEngine ohne HEIC), „Neuscan ohne Änderungen“ (kein Öffnen, auch nicht der übersprungenen Dateien), „Datei ersetzt“, „Datei entfernt“, „Album zuordnen“
-- [x] 5.4 Sichtbarkeit von Foto und Album, einschließlich ausgeblendeter Alben für neue Fotos; `PATCH /api/v1/photos/{id}`, `GET`/`PATCH /api/v1/albums` (mit Anzahl und Titelbild), `POST /api/v1/photos:batch`; prüfen: Contract-Tests und Szenario „Ausgeblendetes Album bekommt neues Foto“
-- [x] 5.5 `GET /api/v1/photos` mit Filter, Sortierung, Cursor-Paginierung und signierten Bild-URLs pro Eintrag (aus 4.3); prüfen: Contract-Test „Seite abrufen“ und ein Test mit 10.000 synthetischen Einträgen unter 50 ms pro Seite auf der JVM
-- [x] 5.6 Upload (multipart, Streaming auf die Platte, Bereinigung von Datei- und Albumnamen, eindeutige Namen, Formatprüfung, Prüfung auf mindestens 100 MB Restspeicher, sofortiger Index-Eintrag, Meldung an `MediaStoreNotifier`); prüfen: Tests „Upload in Album“, „Pfad-Traversal“ (Datei- und Albumname), „Gleicher Name“, „Kein unterstütztes Format“ (415), „Speicher voll“ (507, keine Teildatei) und ein Upload von 300 MB mit begrenztem Test-Heap
-- [x] 5.7 Löschen einschließlich der abgeleiteten Größen (`DELETE /api/v1/photos/{id}`, Batch) und Meldung an `MediaStoreNotifier`; prüfen: Test „Foto löschen“, Fake-Notifier hat die Datei erhalten
-- [x] 5.8 Bildgrößen-Cache: Vorschaubild 400 px und bildschirmdeckende Anzeigegröße für die eingestellte Ausrichtung (höchstens 2,5-fache Pixelzahl des Bildschirms), Cache-Schlüssel aus ID, Bildversion und Zielmaßen, ein Render-Worker, Vorab-Rendern der nächsten Fotos, beim ersten Start zuerst das erste Foto der Reihenfolge, ETag/304, `Cache-Control: immutable`, LRU-Budget aus den Einstellungen; prüfen: Tests „Vorschaubild abrufen“, „Hochformatfoto auf Querformat-Rahmen“ (1920×2560), Panorama an der Obergrenze, „Wiederholter Abruf“ (304 ohne Rendern), „Budget überschritten“ (Originale unberührt)
+- [x] 5.1 `MediaEngine` interface and JVM fake (ImageIO + `metadata-extractor`) for tests; fixture photos with EXIF orientation 1/6/8, PNG, WebP, GIF and a broken file under `core/src/test/resources`; verify: fake reads dimensions correctly after rotation
+- [x] 5.2 `PhotoIndexStore` (index in memory, persisted in batches, library version, `StateFlow` of the visible photos); verify: tests for round trip, version change on modification and restart
+- [x] 5.3 `PhotoSource` `local`: scan every 15 s, mtime/size shortcut, ID from path, image version, album from first folder, format filter, HEIC only after a successful probe decode, list of skipped files with reason and `GET /api/v1/skipped-files` (spec `photo-library`); verify: tests for "Mixed folder", "HEIC on an old device" (fake MediaEngine without HEIC), "Rescan without changes" (no opening, not even of the skipped files), "File replaced", "File removed", "Assign album"
+- [x] 5.4 Visibility of photo and album, including hidden albums for new photos; `PATCH /api/v1/photos/{id}`, `GET`/`PATCH /api/v1/albums` (with count and cover image), `POST /api/v1/photos:batch`; verify: contract tests and scenario "Hidden album receives a new photo"
+- [x] 5.5 `GET /api/v1/photos` with filter, sorting, cursor pagination and signed image URLs per entry (from 4.3); verify: contract test "Fetch page" and a test with 10,000 synthetic entries under 50 ms per page on the JVM
+- [x] 5.6 Upload (multipart, streaming to disk, sanitizing of file and album names, unique names, format check, check for at least 100 MB remaining storage, immediate index entry, notification to `MediaStoreNotifier`); verify: tests "Upload into album", "Path traversal" (file and album name), "Same name", "Unsupported format" (415), "Storage full" (507, no partial file) and an upload of 300 MB with a limited test heap
+- [x] 5.7 Delete including the derived sizes (`DELETE /api/v1/photos/{id}`, batch) and notification to `MediaStoreNotifier`; verify: test "Delete photo", fake notifier has received the file
+- [x] 5.8 Image size cache: thumbnail 400 px and screen-covering display size for the configured orientation (at most 2.5 times the screen's pixel count), cache key from ID, image version and target dimensions, one render worker, rendering the next photos ahead, on first start the first photo of the order first, ETag/304, `Cache-Control: immutable`, LRU budget from the settings; verify: tests "Fetch thumbnail", "Portrait photo on a landscape frame" (1920×2560), panorama at the upper limit, "Repeated request" (304 without rendering), "Budget exceeded" (originals untouched)
 
-## 6. Android-Host
+## 6. Android host
 
-- [x] 6.1 `AndroidMediaEngine`: `BitmapFactory` mit `inSampleSize` in zwei Durchgängen, Drehung aus `ExifInterface` (Framework-Klasse, nicht AndroidX), JPEG mit Qualität 85, GIF als erstes Frame, HEIC-Probe; prüfen: Robolectric-Tests mit den Fixture-Fotos aus 5.1
-- [ ] 6.2 Foreground-Service mit `:core`, HTTP-Server, `PARTIAL_WAKE_LOCK`, `WifiLock`, Notification-Channel ab API 26 und `START_STICKY`; lokaler Binder mit den `StateFlow`s; prüfen: auf dem Emulator (API 21 und aktuell) ist `curl http://<ip>:8080/api/v1/info` erreichbar, auch wenn die Activity im Hintergrund ist
-- [ ] 6.3 `BootReceiver`, HOME-Intent-Filter, immersives Vollbild mit Wiederherstellung, `FLAG_KEEP_SCREEN_ON`; prüfen: Emulator-Neustart zeigt die App ohne Eingriff; `adb shell cmd package resolve-activity -c android.intent.category.HOME` bietet sie an
-- [ ] 6.4 Selbstheilung (`UncaughtExceptionHandler` → Log + `AlarmManager`-Neustart) und rotierendes Datei-Log mit `GET /api/v1/logs`; prüfen: ein Debug-Befehl, der einen Absturz auslöst, führt innerhalb von 30 s zum Neustart, und das Log zeigt die Ursache
-- [ ] 6.5 `PlatformInfo` (Modell, Android-Version, Auflösung, IP-Adressen) und Neubindung des Servers nach WLAN-Wechsel; prüfen: auf dem Emulator WLAN aus und an, danach ist `/api/v1/info` wieder erreichbar und die angezeigte Adresse stimmt
-- [ ] 6.6 `MediaStoreNotifier` für Android mit `MediaScannerConnection.scanFile` für angelegte und gelöschte Dateien; prüfen: auf dem Emulator nach einem Upload zeigt `adb shell content query --uri content://media/external/file` die Datei, nach dem Löschen nicht mehr (Szenario „Hochgeladenes Foto per USB“; echter MTP-Test in `docs/DEVICE_TEST.md`)
+- [x] 6.1 `AndroidMediaEngine`: `BitmapFactory` with `inSampleSize` in two passes, rotation from `ExifInterface` (framework class, not AndroidX), JPEG with quality 85, GIF as first frame, HEIC probe; verify: Robolectric tests with the fixture photos from 5.1
+- [ ] 6.2 Foreground service with `:core`, HTTP server, `PARTIAL_WAKE_LOCK`, `WifiLock`, notification channel from API 26 and `START_STICKY`; local binder with the `StateFlow`s; verify: on the emulator (API 21 and current) `curl http://<ip>:8080/api/v1/info` is reachable, even when the activity is in the background
+- [ ] 6.3 `BootReceiver`, HOME intent filter, immersive fullscreen with restoration, `FLAG_KEEP_SCREEN_ON`; verify: emulator restart shows the app without intervention; `adb shell cmd package resolve-activity -c android.intent.category.HOME` offers it
+- [ ] 6.4 Self-healing (`UncaughtExceptionHandler` → log + `AlarmManager` restart) and rotating file log with `GET /api/v1/logs`; verify: a debug command that triggers a crash leads to a restart within 30 s, and the log shows the cause
+- [ ] 6.5 `PlatformInfo` (model, Android version, resolution, IP addresses) and rebinding of the server after a Wi-Fi change; verify: on the emulator Wi-Fi off and on, afterwards `/api/v1/info` is reachable again and the displayed address is correct
+- [ ] 6.6 `MediaStoreNotifier` for Android with `MediaScannerConnection.scanFile` for created and deleted files; verify: on the emulator after an upload `adb shell content query --uri content://media/external/file` shows the file, after deletion not any more (scenario "Uploaded photo over USB"; real MTP test in `docs/DEVICE_TEST.md`)
 
-## 7. Native Slideshow
+## 7. Native slideshow
 
-- [x] 7.1 Reihenfolge-Logik in `:core` (`shuffle` ohne Wiederholung im Durchgang, `chronological`, Umlauf, vor/zurück, Reaktion auf Änderungen der Bibliothek, gelöschtes aktuelles Foto); prüfen: JVM-Tests für alle Szenarien zu Reihenfolge, Umlauf und Änderungen aus Spec `slideshow-display`
-- [ ] 7.2 Anzeige-Activity mit zwei `ImageView`s, Decode-Thread, höchstens zwei Bitmaps, Vorladen des nächsten Fotos, Überspringen defekter oder noch nicht gerenderter Fotos (Warten nur, solange noch keines gerendert ist), Start erst nach Bereitschaft des Cores (nicht des HTTP-Servers); Ausrichtung per `setRequestedOrientation` (`sensorLandscape`/`sensorPortrait`) ohne Neustart, bis zum Neu-Rendern mit der alten Anzeigegröße; prüfen: Emulator zeigt Fixture-Fotos im eingestellten Intervall, die defekte Datei wird übersprungen; Szenario „Kaltstart“ mit ausgeschaltetem WLAN und leerem Cache; Szenario „Auf Hochformat umstellen“
-- [ ] 7.3 Übergänge `fade`/`slide`/`none` mit `ViewPropertyAnimator` (ohne `withLayer()`, siehe design.md, Entscheidung 2), Dauer aus den Einstellungen; Füllmodi `fill`/`fit` über die Matrix; prüfen: Szenario „Übergang geändert“ ohne Neustart; Szenarien „Überblendung“, „Hochformat bei fill/fit“ visuell auf dem Emulator (Screenshots in `docs/`)
-- [ ] 7.4 Uhr-Overlay (Position, Größe, 12/24 h, Datumssprache, Schatten), Minutenwechsel über `ACTION_TIME_TICK`; prüfen: Szenarien „Minutenwechsel“ und „Uhr aus“ ohne Neustart
-- [ ] 7.5 Gesten und Hinweis-Overlay (Wischen vor/zurück, Tippen → Pause/Weiter, Name, Adresse, gültiger Kopplungscode), Leerzustand und Anzeige des per API angeforderten Codes; prüfen: Szenarien „Zurückwischen“, „Pause“, „Neuer Rahmen“ auf dem Emulator
-- [ ] 7.6 Gerätemenü (3 s langes Drücken in der Ecke): „nur lokal“ an/aus, „Alle Kopplungen aufheben“ mit Bestätigung, Info; prüfen: Szenarien „Am Rahmen ausschalten“ und „Zugriff verloren“ auf dem Emulator
-- [ ] 7.7 Gemeinsames Theme (Typografie, Farben, Abstände) für Overlay, Hinweis, Leerzustand und Gerätemenü; alle Texte am Rahmen als String-Ressourcen auf Deutsch und Englisch, gewählt über die Einstellung „Sprache am Rahmen“ ohne Neustart; prüfen: Screenshots aller vier Zustände auf 1024×600 und 1920×1200 in `docs/`, je einmal mit `de` und `en`
+- [x] 7.1 Order logic in `:core` (`shuffle` without repeats within a pass, `chronological`, wrap-around, forward/back, reaction to library changes, deleted current photo); verify: JVM tests for all scenarios on order, wrap-around and changes from spec `slideshow-display`
+- [ ] 7.2 Display activity with two `ImageView`s, decode thread, at most two bitmaps, preloading the next photo, skipping broken or not yet rendered photos (waiting only as long as none is rendered yet), start only once the core is ready (not the HTTP server); orientation through `setRequestedOrientation` (`sensorLandscape`/`sensorPortrait`) without restart, with the old display size until re-rendered; verify: emulator shows fixture photos at the configured interval, the broken file is skipped; scenario "Cold start" with Wi-Fi off and empty cache; scenario "Switch to portrait"
+- [ ] 7.3 Transitions `fade`/`slide`/`none` with `ViewPropertyAnimator` (without `withLayer()`, see design.md, decision 2), duration from the settings; fill modes `fill`/`fit` through the matrix; verify: scenario "Transition changed" without restart; scenarios "Crossfade", "Portrait with fill/fit" visually on the emulator (screenshots in `docs/`)
+- [ ] 7.4 Clock overlay (position, size, 12/24 h, date language, shadow), minute change through `ACTION_TIME_TICK`; verify: scenarios "Minute change" and "Clock off" without restart
+- [ ] 7.5 Gestures and hint overlay (swipe forward/back, tap → pause/resume, name, address, valid pairing code), empty state and display of the code requested through the API; verify: scenarios "Swipe back", "Pause", "New frame" on the emulator
+- [ ] 7.6 Device menu (3 s long press in the corner): "local only" on/off, "Revoke all pairings" with confirmation, info; verify: scenarios "Turn off on the frame" and "Access lost" on the emulator
+- [ ] 7.7 Shared theme (typography, colors, spacing) for overlay, hint, empty state and device menu; all texts on the frame as string resources in German and English, chosen through the setting "Language on the frame" without restart; verify: screenshots of all four states at 1024×600 and 1920×1200 in `docs/`, once each with `de` and `en`
 
-## 8. Verwaltungsoberfläche
+## 8. Admin interface
 
-- [x] 8.1 TypeScript-Typen aus `api/openapi.yaml` generieren (`openapi-typescript`), API-Client mit Token, 401-Behandlung und signierten Bild-URLs (geladene Seiten spätestens nach 50 min neu laden, bei Bildfehler Seite einmal nachladen); prüfen: `npm run typecheck`, Vitest für 401 → Kopplungsdialog und Szenario „Tab stundenlang offen“ mit Fake-Timern
-- [x] 8.2 Gradle-Task baut `webadmin/` vor `mergeAssets` in die APK-Assets und schlägt ohne Node klar fehl; prüfen: `./gradlew :android:assembleDebug` enthält `assets/webadmin/index.html`; ohne Node erscheint die Fehlermeldung
-- [x] 8.3 App-Rahmen: Layout für Handy und Desktop, Navigation (Fotos, Alben, Einstellungen, Geräte), CSS-Variablen, Hell und Dunkel, i18n Deutsch/Englisch mit Erkennung über den Browser und Wahl pro Browser in `localStorage`; Playwright-Projekte für Chromium, Firefox und WebKit; prüfen: Playwright bei 360 px, 390 px und 1280 px ohne horizontales Scrollen; Szenario „Deutscher Browser“; Szenario „Offline im Heimnetz“ (Netzwerk-Mitschnitt zeigt keine Anfragen an fremde Hosts)
-- [x] 8.4 Kopplungsdialog mit Gerätename, „Code am Rahmen anzeigen“ (`POST /api/v1/pairing/code`) und Fehlern (falsch, abgelaufen, Sperre); prüfen: Playwright gegen einen `:core`-Testserver für „Erster Besuch“ und „Wiederkehrender Besuch“
-- [x] 8.5 Fotoraster mit virtueller Liste, Cursor-Paginierung, Filter nach Album und Sichtbarkeit, Markierung ausgeblendeter Fotos, Detailansicht; Hinweis und Liste übersprungener Dateien; prüfen: Playwright mit 10.000 Fake-Fotos, nur Vorschaubilder im sichtbaren Bereich werden angefragt (Netzwerk-Mitschnitt); Szenario „HEIC per USB auf altem Gerät“
-- [x] 8.6 Mehrfachauswahl mit Ausblenden, Einblenden und Löschen (mit Bestätigung); prüfen: Playwright „Mehrere ausblenden“ und „Löschen bestätigen“
-- [x] 8.7 Upload per Dateiauswahl und Drag-and-drop mit Fortschritt und Fehlern pro Datei und Albumwahl (bestehendes oder neues Album); prüfen: Playwright „Teilweiser Fehler“
-- [x] 8.8 Albenansicht mit Anzahl, Titelbild und Schalter; prüfen: Playwright „Album ausblenden“
-- [x] 8.9 Einstellungsformular für alle API-Einstellungen (einschließlich Name, Ausrichtung, Sprache am Rahmen und Cache-Budget, ohne „nur lokal“) mit Fehlern am Feld und Bestätigung ohne Neuladen; prüfen: Playwright „Fehler am Feld“
-- [x] 8.10 Geräteliste mit Kennzeichnung des aktuellen Geräts und Aufheben der Kopplung; prüfen: Playwright „Altes Gerät entfernen“
-- [x] 8.11 Aktualisierung über `GET /api/v1/state` (Polling alle 10 s, nur bei sichtbarem Tab); prüfen: Playwright „Foto per USB“ (Datei im Testserver-Ordner anlegen → erscheint in 30 s)
+- [x] 8.1 Generate TypeScript types from `api/openapi.yaml` (`openapi-typescript`), API client with token, 401 handling and signed image URLs (reload loaded pages after 50 min at the latest, reload the page once on an image error); verify: `npm run typecheck`, Vitest for 401 → pairing dialog and scenario "Tab open for hours" with fake timers
+- [x] 8.2 Gradle task builds `webadmin/` before `mergeAssets` into the APK assets and fails clearly without Node; verify: `./gradlew :android:assembleDebug` contains `assets/webadmin/index.html`; without Node the error message appears
+- [x] 8.3 App shell: layout for phone and desktop, navigation (photos, albums, settings, devices), CSS variables, light and dark, i18n German/English with detection through the browser and choice per browser in `localStorage`; Playwright projects for Chromium, Firefox and WebKit; verify: Playwright at 360 px, 390 px and 1280 px without horizontal scrolling; scenario "German browser"; scenario "Offline on the home network" (network capture shows no requests to foreign hosts)
+- [x] 8.4 Pairing dialog with device name, "Show code on frame" (`POST /api/v1/pairing/code`) and errors (wrong, expired, lockout); verify: Playwright against a `:core` test server for "First visit" and "Returning visit"
+- [x] 8.5 Photo grid with virtual list, cursor pagination, filter by album and visibility, marking of hidden photos, detail view; hint and list of skipped files; verify: Playwright with 10,000 fake photos, only thumbnails in the visible area are requested (network capture); scenario "HEIC over USB on an old device"
+- [x] 8.6 Multi-selection with hide, unhide and delete (with confirmation); verify: Playwright "Hide several" and "Confirm delete"
+- [x] 8.7 Upload by file selection and drag and drop with progress and errors per file and album choice (existing or new album); verify: Playwright "Partial failure"
+- [x] 8.8 Album view with count, cover image and switch; verify: Playwright "Hide album"
+- [x] 8.9 Settings form for all API settings (including name, orientation, language on the frame and cache budget, without "local only") with errors at the field and confirmation without reloading; verify: Playwright "Error at the field"
+- [x] 8.10 Device list with marking of the current device and revoking a pairing; verify: Playwright "Remove old device"
+- [x] 8.11 Refresh through `GET /api/v1/state` (polling every 10 s, only when the tab is visible); verify: Playwright "Photo over USB" (create a file in the test server's folder → appears within 30 s)
 
-## 9. Dokumentation
+## 9. Documentation
 
-- [x] 9.1 README schreiben: Kurzbeschreibung, Architektur in einem Absatz, Build (`mise install`, SDK-Pfad, `./gradlew :android:assembleDebug`), Installation per `adb install`, erste Kopplung; prüfen: die Befehle laufen in einem frischen Clone wie beschrieben
-- [x] 9.2 `docs/DEVICE_TEST.md` als Checkliste für echte Hardware anlegen (Frame-Drops per `dumpsys gfxinfo`, Dauerlauf 24 h bei 5 s, 48-MP-Foto, Autostart, WLAN-Ausfall, Upload per USB am Rechner sichtbar, Parallelbetrieb mit `pictureframe`, Rückweg mit Sicherung der Fotos); prüfen: jede Zeile verweist auf ihr Spec-Szenario
-- [x] 9.3 `CLAUDE.md` mit den Projektregeln anlegen (Modulgrenzen, Contract-Tests, Geräte-Zugang mit Verweis auf `../pictureframe/devices/`, Bestätigung vor persistenten Änderungen am Gerät); prüfen: Datei ist vorhanden und verweist auf existierende Pfade
+- [x] 9.1 Write the README: short description, architecture in one paragraph, build (`mise install`, SDK path, `./gradlew :android:assembleDebug`), installation by `adb install`, first pairing; verify: the commands work in a fresh clone as described
+- [x] 9.2 Create `docs/DEVICE_TEST.md` as a checklist for real hardware (frame drops via `dumpsys gfxinfo`, endurance run 24 h at 5 s, 48 MP photo, autostart, Wi-Fi outage, upload visible on the computer over USB, side-by-side operation with `pictureframe`, way back with photo backup); verify: every row refers to its spec scenario
+- [x] 9.3 Create `CLAUDE.md` with the project rules (module boundaries, contract tests, device access with a reference to `../pictureframe/devices/`, confirmation before persistent changes on the device); verify: file exists and refers to existing paths
 
-## 10. Abnahme auf den Geräten
+## 10. Acceptance on the devices
 
-- [ ] 10.1 Lenovo Yoga Tablet 2: APK parallel zu `pictureframe` installieren und `docs/DEVICE_TEST.md` vollständig abarbeiten (nach Rücksprache, da Paketinstallation auf dem Gerät); prüfen: alle Punkte abgehakt, Messwerte eingetragen
-- [ ] 10.2 Frameo: APK parallel installieren, Slideshow, Kopplung, Upload und Dauerlauf prüfen, `pictureframe` bleibt HOME-Launcher (nach Rücksprache); prüfen: Checkliste ohne den HOME-Wechsel abgehakt
+- [ ] 10.1 Lenovo Yoga Tablet 2: install the APK in parallel to `pictureframe` and work through `docs/DEVICE_TEST.md` completely (after consultation, since it installs a package on the device); verify: all items ticked, measurements entered
+- [ ] 10.2 Frameo: install the APK in parallel, check slideshow, pairing, upload and endurance run, `pictureframe` remains the HOME launcher (after consultation); verify: checklist ticked without the HOME switch
 
 ## Workflow follow-up
 
-- Folge-Changes vorschlagen: Nextcloud-Sync, Video, Crop-Editor, Bildschirm-Zeitplan/Helligkeit, Home Assistant, mehrere Rahmen (mDNS), Self-Update.
-- Change nach Review und grüner Abnahme mit `/opsx:archive` archivieren.
+- Propose follow-up changes: Nextcloud sync, video, crop editor, screen schedule/brightness, Home Assistant, multiple frames (mDNS), self-update.
+- Archive the change with `/opsx:archive` after review and green acceptance.

@@ -2,78 +2,78 @@
 
 ## Purpose
 
-Hält die Einstellungen und die Identität eines Rahmens. Sie sind validiert, überstehen Neustarts und Updates und lassen sich über die API lesen und ändern.
+Holds the settings and the identity of a frame. They are validated, survive restarts and updates, and can be read and changed through the API.
 
 ## ADDED Requirements
 
-### Requirement: Einstellungsmodell mit Defaults
-Der Rahmen MUSS für jede Einstellung einen dokumentierten Standardwert haben. Fehlt eine Einstellung in den gespeicherten Daten, etwa nach einem Update mit neuen Einstellungen, MUSS der Standardwert gelten, ohne dass vorhandene Werte verloren gehen.
+### Requirement: Settings model with defaults
+The frame SHALL have a documented default value for every setting. If a setting is missing from the stored data, for example after an update that adds settings, the default value SHALL apply without losing existing values.
 
-#### Scenario: Erster Start
-- **WHEN** die App ohne gespeicherte Einstellungen startet
-- **THEN** gelten alle Standardwerte und die Slideshow läuft
+#### Scenario: First start
+- **WHEN** the app starts without stored settings
+- **THEN** all default values apply and the slideshow runs
 
-#### Scenario: Update mit neuer Einstellung
-- **WHEN** eine neue App-Version eine zusätzliche Einstellung einführt
-- **THEN** behält der Rahmen alle bisherigen Werte und die neue Einstellung hat ihren Standardwert
+#### Scenario: Update with a new setting
+- **WHEN** a new app version introduces an additional setting
+- **THEN** the frame keeps all previous values and the new setting has its default value
 
-### Requirement: Umfang der Einstellungen
-Die Einstellungen der Anzeige MÜSSEN mindestens umfassen: Intervall (5 s bis 24 h, Standard 30 s), Reihenfolge, Übergang und Übergangsdauer (0 bis 5000 ms), Füllmodus, Ausrichtung (`landscape` Standard, `portrait`) und Uhr (an/aus, Position, Größe 50 bis 300 %, 12/24 h).
+### Requirement: Scope of the settings
+The display settings SHALL include at least: interval (5 s to 24 h, default 30 s), order, transition and transition duration (0 to 5000 ms), fill mode, orientation (`landscape` default, `portrait`) and clock (on/off, position, size 50 to 300 %, 12/24 h).
 
-#### Scenario: Einstellungen der Anzeige lesen
-- **WHEN** ein gekoppelter Client die Einstellungen abruft
-- **THEN** enthält die Antwort alle genannten Einstellungen der Anzeige mit ihren aktuellen Werten
+#### Scenario: Read display settings
+- **WHEN** a paired client fetches the settings
+- **THEN** the response contains all the display settings named above with their current values
 
-### Requirement: Einstellungen des Rahmens
-Die Einstellungen MÜSSEN außerdem umfassen: Sprache am Rahmen (`auto` für die Systemsprache, `de`, `en`) für das Datum der Uhr und alle Texte am Rahmen, Name des Rahmens und Budget für zwischengespeicherte Bildgrößen (100 bis 10.000 MB, Standard 1.000 MB). Der Modus „nur lokal“ ist keine Einstellung der API, siehe `admin-access`.
+### Requirement: Frame settings
+The settings SHALL also include: language on the frame (`auto` for the system language, `de`, `en`) for the clock's date and all texts on the frame, the frame's name, and the budget for cached image sizes (100 to 10,000 MB, default 1,000 MB). Local-only mode is not a setting of the API, see `admin-access`.
 
-#### Scenario: Einstellungen des Rahmens lesen
-- **WHEN** ein gekoppelter Client die Einstellungen abruft
-- **THEN** enthält die Antwort Sprache, Name und Cache-Budget mit ihren aktuellen Werten
+#### Scenario: Read frame settings
+- **WHEN** a paired client fetches the settings
+- **THEN** the response contains language, name and cache budget with their current values
 
-### Requirement: Validierung
-Änderungen an den Einstellungen MÜSSEN vollständig validiert werden, bevor sie gespeichert werden. Ungültige Änderungen MÜSSEN mit 400 und einer Fehlerangabe pro Feld abgelehnt werden. Dabei DARF keine Einstellung teilweise übernommen werden.
+### Requirement: Validation
+Changes to the settings SHALL be validated completely before they are stored. Invalid changes SHALL be rejected with 400 and an error entry per field. No setting SHALL be applied partially.
 
-#### Scenario: Ungültiges Intervall
-- **WHEN** ein Client das Intervall auf 1 Sekunde und die Uhr auf aus setzt
-- **THEN** antwortet die API mit 400, benennt das Feld des Intervalls, und auch die Uhr bleibt unverändert
+#### Scenario: Invalid interval
+- **WHEN** a client sets the interval to 1 second and the clock to off
+- **THEN** the API answers with 400, names the interval field, and the clock also stays unchanged
 
-#### Scenario: Unbekanntes Feld
-- **WHEN** ein Client ein unbekanntes Feld mitschickt
-- **THEN** antwortet die API mit 400 und benennt das Feld
+#### Scenario: Unknown field
+- **WHEN** a client sends an unknown field
+- **THEN** the API answers with 400 and names the field
 
-### Requirement: Teiländerungen
-Clients MÜSSEN einzelne Einstellungen ändern können, ohne alle Einstellungen mitzuschicken. Nicht genannte Einstellungen MÜSSEN unverändert bleiben.
+### Requirement: Partial changes
+Clients SHALL be able to change individual settings without sending all settings. Settings that are not mentioned SHALL remain unchanged.
 
-#### Scenario: Nur Intervall ändern
-- **WHEN** ein Client nur das Intervall auf 60 s setzt
-- **THEN** ist das Intervall 60 s und alle anderen Einstellungen sind unverändert
+#### Scenario: Change only the interval
+- **WHEN** a client sets only the interval to 60 s
+- **THEN** the interval is 60 s and all other settings are unchanged
 
-### Requirement: Dauerhafte, atomare Speicherung
-Gespeicherte Einstellungen MÜSSEN Neustarts und App-Updates überstehen. Ein Stromausfall während des Speicherns DARF NICHT zu beschädigten oder leeren Einstellungen führen.
+### Requirement: Durable, atomic storage
+Stored settings SHALL survive restarts and app updates. A power loss while saving SHALL NOT lead to corrupted or empty settings.
 
-#### Scenario: Neustart nach Änderung
-- **WHEN** eine Einstellung geändert und das Gerät danach neu gestartet wird
-- **THEN** gilt nach dem Start der geänderte Wert
+#### Scenario: Restart after a change
+- **WHEN** a setting is changed and the device is restarted afterwards
+- **THEN** the changed value applies after startup
 
-#### Scenario: Stromausfall beim Schreiben
-- **WHEN** der Schreibvorgang unterbrochen wird
-- **THEN** gilt beim nächsten Start entweder der alte oder der neue Stand vollständig
+#### Scenario: Power loss while writing
+- **WHEN** the write is interrupted
+- **THEN** at the next start either the old or the new state applies, completely
 
-### Requirement: Änderungen sofort wirksam
-Gespeicherte Einstellungen MÜSSEN ohne Neustart wirksam werden. Die API MUSS eine Einstellungsversion liefern, an der Clients Änderungen erkennen.
+### Requirement: Changes take effect immediately
+Stored settings SHALL take effect without a restart. The API SHALL provide a settings version that clients can use to detect changes.
 
-#### Scenario: Übergang geändert
-- **WHEN** der Übergang von `fade` auf `slide` geändert wird
-- **THEN** nutzt die Slideshow beim nächsten Wechsel `slide`
+#### Scenario: Transition changed
+- **WHEN** the transition is changed from `fade` to `slide`
+- **THEN** the slideshow uses `slide` at the next change
 
-### Requirement: Identität des Rahmens
-Jeder Rahmen MUSS beim ersten Start eine zufällige, dauerhafte ID erhalten, die sich nie ändert. Er MUSS einen änderbaren Namen haben, Standard ist das Gerätemodell. ID, Name, App-Version, Bildschirmauflösung und Android-Version MÜSSEN ohne Kopplung abrufbar sein.
+### Requirement: Frame identity
+Every frame SHALL receive a random, durable ID on first start that never changes. It SHALL have a changeable name, defaulting to the device model. ID, name, app version, screen resolution and Android version SHALL be retrievable without pairing.
 
-#### Scenario: Info abrufen
-- **WHEN** ein Client ohne Token die Info des Rahmens abruft
-- **THEN** erhält er ID, Name, App-Version, Bildschirmauflösung und Android-Version, aber keine Einstellungen
+#### Scenario: Fetch info
+- **WHEN** a client without a token fetches the frame's info
+- **THEN** it receives ID, name, app version, screen resolution and Android version, but no settings
 
-#### Scenario: Name ändern
-- **WHEN** der Name auf „Wohnzimmer“ geändert wird
-- **THEN** zeigt die Info den neuen Namen, und die ID ist unverändert
+#### Scenario: Change name
+- **WHEN** the name is changed to "Living room"
+- **THEN** the info shows the new name, and the ID is unchanged
