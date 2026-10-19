@@ -15,7 +15,10 @@ import java.util.concurrent.Executors
  * Zeigt Fotos mit zwei übereinanderliegenden `ImageView`s. Decodiert wird auf
  * einem eigenen Thread, nur die vorab gerenderte Anzeigegröße, ohne weitere
  * Skalierung. Es gibt höchstens zwei Bitmaps: das aktuelle und das nächste.
- * Übergänge laufen über `ViewPropertyAnimator` mit Hardware-Layern.
+ * Übergänge laufen über `ViewPropertyAnimator`. Bewusst ohne `withLayer()`: Eine `ImageView` ohne
+ * Hintergrund überlappt sich nicht selbst, `alpha` und `translationX` brauchen also keinen
+ * Hardware-Layer. Der Layer kostete auf dem Frameo etwa jeden fünften Vsync (gemessen: 22 % verpasst
+ * mit, 2 bis 4 % ohne).
  */
 class SlideRenderer(
     private var front: ImageView,
@@ -160,7 +163,6 @@ class SlideRenderer(
                     .animate()
                     .alpha(1f)
                     .setDuration(durationMs)
-                    .withLayer()
                     .withEndAction { done(old) }
                     .start()
             }
@@ -173,14 +175,12 @@ class SlideRenderer(
                     .animate()
                     .translationX(0f)
                     .setDuration(durationMs)
-                    .withLayer()
                     .withEndAction { done(old) }
                     .start()
                 front
                     .animate()
                     .translationX(-width * direction)
                     .setDuration(durationMs)
-                    .withLayer()
                     .start()
             }
 
