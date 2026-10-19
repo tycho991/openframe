@@ -29,6 +29,11 @@ mit OpenSpec unter `openspec/`; Entscheidungen stehen im `design.md` des jeweili
 
 - `./gradlew check` (Formatierung, Tests, API-21-Prüfung, Android Lint) muss grün sein.
 - Web-UI: `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/`.
+- `openspec validate <change>` muss mit Exit 0 enden. Die Hinweise „should contain SHALL or MUST“
+  sind erwartet: Die Prüfung kennt nur englische Schlüsselwörter und erkennt unser „MUSS“ nicht
+  (es gibt dafür keine Einstellung). Deshalb nie `--strict` verwenden und keine englischen
+  Schlüsselwörter in die deutschen Specs mischen. Anforderungen unter 500 Zeichen halten, längere
+  in mehrere Anforderungen teilen, sonst warnt der Validator zusätzlich.
 - Der Build braucht eine UTF-8-Locale, weil Testnamen Umlaute enthalten.
 - Was nur auf Hardware messbar ist, gehört in `docs/DEVICE_TEST.md` mit Verweis auf das
   Spec-Szenario.

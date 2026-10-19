@@ -33,7 +33,7 @@ Alle Endpunkte, die Fotos oder Einstellungen lesen oder ändern, MÜSSEN ein gü
 - **THEN** antwortet die API mit 401
 
 ### Requirement: Kopplung per Code
-Ein Client MUSS sich koppeln können, indem er einen Code eingibt, den der Rahmen anzeigt. Der Code MUSS sechs Ziffern haben, 5 Minuten gelten und nur einmal verwendbar sein. Bei erfolgreicher Kopplung MUSS der Client ein Token erhalten und unter einem Gerätenamen in der Liste der gekoppelten Geräte erscheinen. Den Namen gibt der Client an, ersatzweise wird er aus dem User-Agent abgeleitet. Ein Client ohne Token MUSS den Rahmen auffordern können, einen gültigen Code anzuzeigen. Läuft ein Code ab, während der Rahmen ihn zeigt, MUSS der Rahmen ihn durch einen neuen ersetzen.
+Ein Client MUSS sich koppeln können, indem er einen Code eingibt, den der Rahmen anzeigt. Der Code MUSS sechs Ziffern haben, 5 Minuten gelten und nur einmal verwendbar sein. Bei erfolgreicher Kopplung MUSS der Client ein Token erhalten. Läuft ein Code ab, während der Rahmen ihn zeigt, MUSS der Rahmen ihn durch einen neuen ersetzen.
 
 #### Scenario: Erfolgreiche Kopplung
 - **WHEN** der Nutzer in der Verwaltungsoberfläche „Koppeln“ wählt und den auf dem Rahmen angezeigten Code eingibt
@@ -42,6 +42,20 @@ Ein Client MUSS sich koppeln können, indem er einen Code eingibt, den der Rahme
 #### Scenario: Code abgelaufen
 - **WHEN** ein Code nach mehr als 5 Minuten eingegeben wird
 - **THEN** wird die Kopplung abgelehnt und der Rahmen zeigt auf Anfrage einen neuen Code
+
+### Requirement: Gerätename bei der Kopplung
+Ein gekoppelter Client MUSS unter einem Gerätenamen in der Liste der gekoppelten Geräte erscheinen. Den Namen gibt der Client an, ersatzweise MUSS er aus dem User-Agent abgeleitet werden.
+
+#### Scenario: Name vom Client
+- **WHEN** ein Client mit dem Gerätenamen „Laptop“ koppelt
+- **THEN** erscheint er in der Liste der gekoppelten Geräte als „Laptop“
+
+#### Scenario: Name aus dem User-Agent
+- **WHEN** ein Client ohne Gerätenamen koppelt
+- **THEN** erscheint er in der Liste mit einem aus dem User-Agent abgeleiteten Namen, z. B. „Firefox auf Android“
+
+### Requirement: Code am Rahmen anfordern
+Ein Client ohne Token MUSS den Rahmen auffordern können, einen gültigen Code anzuzeigen. Die Antwort der API DARF den Code NICHT enthalten.
 
 #### Scenario: Code am Rahmen anfordern
 - **WHEN** der Nutzer im Kopplungsdialog „Code am Rahmen anzeigen“ wählt

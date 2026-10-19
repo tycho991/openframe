@@ -11,7 +11,7 @@ Dieser erste Change legt das Fundament und den Kern. Er soll so geschnitten sein
 ## What Changes
 
 - Neues Projekt in Kotlin mit Coroutines und `kotlinx.serialization`. Es gibt ein plattformneutrales Modul `core` ohne `android.*`-Importe und ein Modul `android` für die Kiosk-APK. Einen Node-Server gibt es nicht mehr.
-- **Native Slideshow auf dem Gerät** statt WebView: Die Bilder werden mit Android-Views und Hardware-Layern dargestellt, mit Überblendung und einer Uhr als Overlay. Die Decodierung läuft gedrosselt und mit vorab heruntergerechneten Bildern, damit der Speicher auf Geräten mit 1 GB RAM und API 21 reicht.
+- **Native Slideshow auf dem Gerät** statt WebView: Die Bilder werden mit hardwarebeschleunigten Android-Views dargestellt, mit Überblendung und einer Uhr als Overlay. Die Decodierung läuft gedrosselt und mit vorab heruntergerechneten Bildern, damit der Speicher auf Geräten mit 1 GB RAM und API 21 reicht.
 - **Lokale Fotobibliothek**: Fotos kommen per USB-Ordner oder Upload hinein. Ein Index mit stabilen IDs und Album-Ordnern bildet die Grundlage, auf der später Nextcloud und weitere Quellen aufsetzen.
 - **Eingebetteter HTTP-Server** auf dem Gerät. Er liefert eine versionierte JSON-API unter `/api/v1` und die Verwaltungsoberfläche aus.
 - **Moderne Verwaltungsoberfläche** mit TypeScript, Komponenten und Build-Step, gebaut für aktuelle Browser auf Laptop und Handy. Sie bietet Fotoübersicht, Upload, Alben ein- und ausblenden, die Einstellungen der Slideshow und die Verwaltung der gekoppelten Geräte.

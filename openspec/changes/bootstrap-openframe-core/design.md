@@ -49,13 +49,13 @@ openframe/
 
 ### 2. Native Slideshow mit Android-Views statt WebView oder Compose
 
-Die Anzeige ist eine eigene `Activity` mit zwei übereinanderliegenden `ImageView`s. Die Übergänge laufen über `ViewPropertyAnimator` (`alpha`, `translationX`) mit `withLayer()`, also Hardware-Layern. Uhr und Hinweis sind gewöhnliche Views mit Schatten für die Lesbarkeit. Ein gemeinsames Theme mit Typografie und Farben gibt der Oberfläche am Gerät eine einheitliche, zeitgemäße Optik. Alle Texte am Gerät liegen als String-Ressourcen auf Deutsch und Englisch vor. Welche Sprache gilt, bestimmt die Einstellung „Sprache am Rahmen“, `auto` folgt der Systemsprache.
+Die Anzeige ist eine eigene `Activity` mit zwei übereinanderliegenden `ImageView`s. Die Übergänge laufen über `ViewPropertyAnimator` (`alpha`, `translationX`), bewusst ohne `withLayer()`: Eine `ImageView` ohne Hintergrund überlappt sich nicht selbst und braucht für beides keinen Layer. Auf dem Frameo kostete ein expliziter Layer etwa jeden fünften Vsync (verpasste Vsyncs pro Überblendung: 20 bis 22 % mit, 2 bis 7 % ohne). Uhr und Hinweis sind gewöhnliche Views mit Schatten für die Lesbarkeit. Ein gemeinsames Theme mit Typografie und Farben gibt der Oberfläche am Gerät eine einheitliche, zeitgemäße Optik. Alle Texte am Gerät liegen als String-Ressourcen auf Deutsch und Englisch vor. Welche Sprache gilt, bestimmt die Einstellung „Sprache am Rahmen“, `auto` folgt der Systemsprache.
 
 *Alternativen:*
 
 - Eine moderne Web-Oberfläche in der WebView, wie in `pictureframe`. Verworfen, weil die WebViews der Zielgeräte zu alt sind, Animationen ruckeln und Polyfills nötig werden. Genau das soll besser werden.
 - Jetpack Compose. Verworfen, weil es `minSdk 23` voraussetzt und auf schwacher Hardware messbar mehr kostet als Views.
-- OpenGL. Verworfen, weil zwei Bitmaps mit Alpha-Animation auf Hardware-Layern das Ziel erreichen, ohne eigene Render-Pipeline.
+- OpenGL. Verworfen, weil zwei Bitmaps mit Alpha-Animation über das normale, hardwarebeschleunigte View-System das Ziel erreichen, ohne eigene Render-Pipeline.
 
 ### 3. Bildpipeline: vorab gerendert, ein Bild voraus
 

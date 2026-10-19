@@ -18,11 +18,18 @@ Der Rahmen MUSS für jede Einstellung einen dokumentierten Standardwert haben. F
 - **THEN** behält der Rahmen alle bisherigen Werte und die neue Einstellung hat ihren Standardwert
 
 ### Requirement: Umfang der Einstellungen
-Die Einstellungen MÜSSEN mindestens umfassen: Intervall (5 s bis 24 h, Standard 30 s), Reihenfolge, Übergang und Übergangsdauer (0 bis 5000 ms), Füllmodus, Ausrichtung (`landscape` Standard, `portrait`), Uhr (an/aus, Position, Größe 50 bis 300 %, 12/24 h), Sprache am Rahmen (`auto` für die Systemsprache, `de`, `en`) für das Datum der Uhr und alle Texte am Rahmen, Name des Rahmens und Budget für zwischengespeicherte Bildgrößen (100 bis 10.000 MB, Standard 1.000 MB). Der Modus „nur lokal“ ist keine Einstellung der API, siehe `admin-access`.
+Die Einstellungen der Anzeige MÜSSEN mindestens umfassen: Intervall (5 s bis 24 h, Standard 30 s), Reihenfolge, Übergang und Übergangsdauer (0 bis 5000 ms), Füllmodus, Ausrichtung (`landscape` Standard, `portrait`) und Uhr (an/aus, Position, Größe 50 bis 300 %, 12/24 h).
 
-#### Scenario: Einstellungen lesen
+#### Scenario: Einstellungen der Anzeige lesen
 - **WHEN** ein gekoppelter Client die Einstellungen abruft
-- **THEN** enthält die Antwort alle genannten Einstellungen mit ihren aktuellen Werten
+- **THEN** enthält die Antwort alle genannten Einstellungen der Anzeige mit ihren aktuellen Werten
+
+### Requirement: Einstellungen des Rahmens
+Die Einstellungen MÜSSEN außerdem umfassen: Sprache am Rahmen (`auto` für die Systemsprache, `de`, `en`) für das Datum der Uhr und alle Texte am Rahmen, Name des Rahmens und Budget für zwischengespeicherte Bildgrößen (100 bis 10.000 MB, Standard 1.000 MB). Der Modus „nur lokal“ ist keine Einstellung der API, siehe `admin-access`.
+
+#### Scenario: Einstellungen des Rahmens lesen
+- **WHEN** ein gekoppelter Client die Einstellungen abruft
+- **THEN** enthält die Antwort Sprache, Name und Cache-Budget mit ihren aktuellen Werten
 
 ### Requirement: Validierung
 Änderungen an den Einstellungen MÜSSEN vollständig validiert werden, bevor sie gespeichert werden. Ungültige Änderungen MÜSSEN mit 400 und einer Fehlerangabe pro Feld abgelehnt werden. Dabei DARF keine Einstellung teilweise übernommen werden.
