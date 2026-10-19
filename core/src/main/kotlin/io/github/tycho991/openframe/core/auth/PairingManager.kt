@@ -12,11 +12,11 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Was der Rahmen zur Kopplung anzeigen soll.
+ * What the frame should show for pairing.
  *
- * [code] ist der gültige Code, solange ihn jemand braucht: der Rahmen selbst
- * (Leerzustand, Hinweis) oder eine Anfrage aus der Web-UI. [requestedUntil]
- * ist gesetzt, solange der Hinweis wegen einer solchen Anfrage stehen bleibt.
+ * [code] is the valid code as long as somebody needs it: the frame itself
+ * (empty state, hint) or a request from the web UI. [requestedUntil]
+ * is set as long as the hint stays up because of such a request.
  */
 data class PairingDisplay(
     val code: String?,
@@ -24,9 +24,9 @@ data class PairingDisplay(
 )
 
 /**
- * Kopplungscodes: sechs Ziffern, 5 Minuten gültig, nur einmal verwendbar.
- * Nach 5 Fehlversuchen wird der Code verworfen und die Kopplung 60 Sekunden gesperrt.
- * Läuft ein angezeigter Code ab, ersetzt [tick] ihn durch einen neuen.
+ * Pairing codes: six digits, valid for 5 minutes, usable only once.
+ * After 5 failed attempts the code is discarded and pairing is locked for 60 seconds.
+ * If a displayed code expires, [tick] replaces it with a new one.
  */
 class PairingManager(
     private val clients: ClientRegistry,
@@ -46,14 +46,14 @@ class PairingManager(
 
     val display: StateFlow<PairingDisplay> = _display.asStateFlow()
 
-    /** Der Rahmen zeigt gerade einen Code (Leerzustand oder Hinweis) und braucht einen gültigen. */
+    /** The frame is currently showing a code (empty state or hint) and needs a valid one. */
     @Synchronized
     fun setShownOnFrame(shown: Boolean) {
         shownOnFrame = shown
         refresh()
     }
 
-    /** `POST /api/v1/pairing/code`: Der Rahmen zeigt 5 Minuten lang einen gültigen Code. */
+    /** `POST /api/v1/pairing/code`: the frame shows a valid code for 5 minutes. */
     @Synchronized
     fun requestDisplay() {
         val now = clock.now()
@@ -62,11 +62,11 @@ class PairingManager(
         refresh()
     }
 
-    /** Einmal pro Sekunde: abgelaufene Codes ersetzen, Anfragefenster schließen. */
+    /** Once per second: replace expired codes, close the request window. */
     @Synchronized
     fun tick() = refresh()
 
-    /** Prüft [input] und legt bei Erfolg einen Client an. Liefert Token und Client. */
+    /** Checks [input] and creates a client on success. Returns token and client. */
     @Synchronized
     fun pair(
         input: String,
@@ -82,25 +82,25 @@ class PairingManager(
             requestedUntil = null
             refresh()
             val result = clients.create(deviceName)
-            log.i(TAG, "Gekoppelt: ${result.second.name}")
+            log.i(TAG, "Paired: ${result.second.name}")
             return result
         }
         if (lastExpiredCode != null && equal(input, lastExpiredCode!!)) {
-            throw HttpException(401, "expired_code", "Der Code ist abgelaufen. Am Rahmen einen neuen anzeigen lassen.")
+            throw HttpException(401, "expired_code", "The code has expired. Have the frame show a new one.")
         }
         failures++
         if (failures >= MAX_FAILURES) {
-            log.w(TAG, "$MAX_FAILURES falsche Codes, Kopplung für ${LOCK.seconds} s gesperrt")
+            log.w(TAG, "$MAX_FAILURES wrong codes, pairing locked for ${LOCK.seconds} s")
             failures = 0
             code = null
             lastExpiredCode = null
             lockedUntil = now + LOCK
             refresh()
         }
-        throw HttpException(401, "invalid_code", "Der Code ist falsch.")
+        throw HttpException(401, "invalid_code", "The code is wrong.")
     }
 
-    /** Verwirft den aktuellen Code, z. B. nach „Alle Kopplungen aufheben“, und zeigt einen neuen. */
+    /** Discards the current code, e.g. after "Revoke all pairings", and shows a new one. */
     @Synchronized
     fun reset() {
         code = null
@@ -134,7 +134,7 @@ class PairingManager(
         return HttpException(
             429,
             "locked",
-            "Zu viele Fehlversuche. Erneut in $seconds s.",
+            "Too many failed attempts. Try again in $seconds s.",
             headers = mapOf("Retry-After" to seconds.toString()),
         )
     }

@@ -13,7 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 
-/** JSON für gespeicherte Dateien: tolerant gegenüber entfernten Feldern älterer Versionen. */
+/** JSON for stored files: tolerant of fields removed from older versions. */
 val StoreJson =
     Json {
         ignoreUnknownKeys = true
@@ -22,12 +22,12 @@ val StoreJson =
     }
 
 /**
- * Eine JSON-Datei, die atomar geschrieben wird: erst `name.tmp`, dann `fsync`,
- * dann `rename`. Ein Stromausfall hinterlässt so entweder den alten oder den
- * neuen Stand, nie eine halbe Datei.
+ * A JSON file that is written atomically: first `name.tmp`, then `fsync`,
+ * then `rename`. A power loss thus leaves either the old or the new
+ * state, never half a file.
  *
- * [save] bündelt Änderungen: Ein einziger Schreiber setzt höchstens nach
- * [debounceMs] den jeweils letzten Stand ab. [flush] schreibt sofort.
+ * [save] batches changes: a single writer flushes the latest state after
+ * [debounceMs] at most. [flush] writes immediately.
  */
 class JsonStore<T>(
     private val file: File,
@@ -52,11 +52,11 @@ class JsonStore<T>(
         }
     }
 
-    /** Liest den gespeicherten Stand oder `null`, wenn es keinen lesbaren gibt. */
+    /** Reads the stored state or `null` if there is no readable one. */
     fun load(): T? {
         if (tmp.exists()) {
-            // Ein abgebrochener Schreibvorgang. Die Hauptdatei ist der gültige Stand.
-            log.w(TAG, "Unvollständige Datei ${tmp.name} verworfen")
+            // An aborted write. The main file is the valid state.
+            log.w(TAG, "Incomplete file ${tmp.name} discarded")
             tmp.delete()
         }
         if (!file.exists()) return null
@@ -64,19 +64,19 @@ class JsonStore<T>(
             StoreJson.decodeFromString(serializer, file.readText())
         } catch (e: Exception) {
             val broken = File(file.parentFile, file.name + ".broken")
-            log.e(TAG, "${file.name} nicht lesbar, beiseitegelegt als ${broken.name}", e)
+            log.e(TAG, "${file.name} not readable, set aside as ${broken.name}", e)
             file.renameTo(broken)
             null
         }
     }
 
-    /** Merkt [value] zum Schreiben vor. Mehrere Aufrufe kurz hintereinander ergeben einen Schreibvorgang. */
+    /** Queues [value] for writing. Several calls in quick succession result in one write. */
     fun save(value: T) {
         pending = Pending(value)
         signal.trySend(Unit)
     }
 
-    /** Schreibt einen vorgemerkten Stand sofort. */
+    /** Writes a queued state immediately. */
     suspend fun flush() {
         writeLock.withLock {
             val value = pending ?: return
@@ -85,7 +85,7 @@ class JsonStore<T>(
         }
     }
 
-    /** Schreibt [value] sofort, an der Bündelung vorbei. */
+    /** Writes [value] immediately, bypassing the batching. */
     suspend fun saveNow(value: T) {
         writeLock.withLock {
             pending = null
@@ -101,8 +101,8 @@ class JsonStore<T>(
             out.flush()
             out.fd.sync()
         }
-        // rename(2) ersetzt die Zieldatei atomar. java.nio.file gibt es auf Android erst ab API 26.
-        if (!tmp.renameTo(file)) throw IOException("${tmp.name} ließ sich nicht nach ${file.name} umbenennen")
+        // rename(2) replaces the target file atomically. java.nio.file exists on Android only from API 26.
+        if (!tmp.renameTo(file)) throw IOException("${tmp.name} could not be renamed to ${file.name}")
     }
 
     private class Pending<T>(

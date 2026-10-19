@@ -19,13 +19,13 @@ data class LogListDto(
     val entries: List<LogEntryDto>,
 )
 
-/** `GET /api/v1/logs`: die letzten Einträge des Protokolls. */
+/** `GET /api/v1/logs`: the latest entries of the log. */
 fun Router.diagnosticsRoutes(log: AppLog) {
     get("/api/v1/logs") { req ->
         val limit =
             req.queryParam("limit")?.let {
                 it.toIntOrNull()?.takeIf { n -> n in 1..5000 }
-                    ?: throw HttpException.badRequest("limit 1 bis 5000")
+                    ?: throw HttpException.badRequest("limit 1 to 5000")
             }
                 ?: 500
         val entries = log.recent(limit).map { LogEntryDto(it.time.toString(), it.level.name.lowercase(), it.tag, it.message) }

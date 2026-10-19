@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
-/** Gespeicherte Form: Werte als JSON, damit neue Einstellungen ihren Standard bekommen. */
+/** Stored form: values as JSON so that new settings get their default. */
 @Serializable
 data class StoredSettings(
     val values: JsonObject = JsonObject(emptyMap()),
@@ -20,8 +20,8 @@ data class StoredSettings(
 )
 
 /**
- * Hält die Einstellungen des Rahmens. Änderungen werden vollständig geprüft
- * und erst dann übernommen, sofort als [settings] sichtbar und gebündelt gespeichert.
+ * Holds the frame's settings. Changes are validated completely and only
+ * then applied, immediately visible as [settings] and stored in batches.
  */
 class SettingsRepository(
     private val store: JsonStore<StoredSettings>,
@@ -35,24 +35,24 @@ class SettingsRepository(
 
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
-    /** Steigt bei jeder Änderung, auch über Neustarts. */
+    /** Increases with every change, also across restarts. */
     val version: StateFlow<Long> = _version.asStateFlow()
 
-    /** Modus „nur lokal“. Nur am Rahmen schaltbar, nicht Teil der API. */
+    /** "Local only" mode. Switchable only on the frame, not part of the API. */
     val localOnly: StateFlow<Boolean> = _localOnly.asStateFlow()
 
     fun load() {
         val stored = store.load() ?: StoredSettings()
         val result = SettingsPatch.apply(defaults, stored.values)
         if (result.errors.isNotEmpty()) {
-            log.w(TAG, "Gespeicherte Einstellungen teilweise ungültig, Standard gilt für: ${result.errors.keys.joinToString()}")
+            log.w(TAG, "Stored settings partially invalid, default applies for: ${result.errors.keys.joinToString()}")
         }
         _settings.value = result.settings
         _version.value = stored.version
         _localOnly.value = stored.localOnly
     }
 
-    /** Übernimmt [patch] ganz oder gar nicht. Wirft [ValidationException] mit Fehlern pro Feld. */
+    /** Applies [patch] completely or not at all. Throws [ValidationException] with errors per field. */
     @Synchronized
     fun patch(patch: JsonObject): Settings {
         val result = SettingsPatch.apply(_settings.value, patch)

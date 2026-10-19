@@ -3,9 +3,9 @@ package io.github.tycho991.openframe.core
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
-// Ersatz für InputStream.readNBytes, das es auf Android erst ab API 33 gibt.
+// Replacement for InputStream.readNBytes, which exists on Android only from API 33.
 
-/** Liest bis zu [max] Bytes oder bis zum Ende. */
+/** Reads up to [max] bytes or until the end. */
 fun InputStream.readAtMost(max: Int): ByteArray {
     val out = ByteArrayOutputStream(minOf(max, 8192))
     val buf = ByteArray(8192)
@@ -19,7 +19,7 @@ fun InputStream.readAtMost(max: Int): ByteArray {
     return out.toByteArray()
 }
 
-/** Füllt [buf] ab [off] mit bis zu [len] Bytes. Liefert die Anzahl, kleiner als [len] nur am Ende. */
+/** Fills [buf] from [off] with up to [len] bytes. Returns the count, smaller than [len] only at the end. */
 fun InputStream.readFully(
     buf: ByteArray,
     off: Int = 0,

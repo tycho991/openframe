@@ -103,7 +103,7 @@ data class StateDto(
     val settingsVersion: Long,
 )
 
-/** Position in einer sortierten Liste: Schlüssel des letzten Eintrags der vorigen Seite. */
+/** Position in a sorted list: key of the last entry of the previous page. */
 @Serializable
 private data class Cursor(
     val t: Long,
@@ -137,7 +137,7 @@ private enum class Sort(
         }
 }
 
-/** Fotos, Alben, Upload, Bildgrößen, übersprungene Dateien und Zustand. */
+/** Photos, albums, upload, image sizes, skipped files and state. */
 fun Router.libraryRoutes(
     library: PhotoLibrary,
     settings: SettingsRepository,
@@ -167,19 +167,19 @@ fun Router.libraryRoutes(
         urls = urls(entry),
     )
 
-    fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("Kein solches Foto")
+    fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("No such photo")
 
     get("/api/v1/photos") { req ->
         val sort =
             req.queryParam("sort")?.let { s ->
                 Sort.entries.firstOrNull { it.apiName == s }
-                    ?: throw HttpException.badRequest("Unbekannte Sortierung $s")
+                    ?: throw HttpException.badRequest("Unknown sort order $s")
             }
                 ?: Sort.DATE_DESC
         val limit =
             req.queryParam("limit")?.let {
                 it.toIntOrNull()?.takeIf { n -> n in 1..500 }
-                    ?: throw HttpException.badRequest("limit 1 bis 500")
+                    ?: throw HttpException.badRequest("limit 1 to 500")
             }
                 ?: 100
         val visible =
@@ -187,7 +187,7 @@ fun Router.libraryRoutes(
                 null -> null
                 "true" -> true
                 "false" -> false
-                else -> throw HttpException.badRequest("visible ist true oder false")
+                else -> throw HttpException.badRequest("visible is true or false")
             }
         val album = req.queryParam("album")
         val lib = index.library.value
@@ -196,7 +196,7 @@ fun Router.libraryRoutes(
             req.queryParam("cursor")?.let { raw ->
                 val c =
                     runCatching { Json.decodeFromString(Cursor.serializer(), String(Base64.getUrlDecoder().decode(raw))) }
-                        .getOrElse { throw HttpException.badRequest("Ungültiger cursor") }
+                        .getOrElse { throw HttpException.badRequest("Invalid cursor") }
                 val probe = PhotoEntry(c.i, "", c.p, 1, 1, c.t, 0, 0, 0)
                 val pos = filtered.binarySearch(probe, sort.comparator())
                 if (pos >= 0) pos + 1 else -pos - 1
@@ -222,7 +222,7 @@ fun Router.libraryRoutes(
 
     post("/api/v1/photos:batch") { req ->
         val body = req.bodyAs(BatchRequestDto.serializer())
-        if (body.ids.isEmpty() || body.ids.size > 10_000) throw HttpException.badRequest("1 bis 10000 IDs")
+        if (body.ids.isEmpty() || body.ids.size > 10_000) throw HttpException.badRequest("1 to 10000 IDs")
         val missing = mutableListOf<String>()
         var processed = 0
         for (id in body.ids.distinct()) {
@@ -237,7 +237,7 @@ fun Router.libraryRoutes(
                     }
 
                     else -> {
-                        throw HttpException.badRequest("action ist hide, show oder delete")
+                        throw HttpException.badRequest("action is hide, show or delete")
                     }
                 }
             if (ok) processed++ else missing += id
@@ -252,7 +252,7 @@ fun Router.libraryRoutes(
     }
 
     delete("/api/v1/photos/{photoId}") { req ->
-        if (!library.delete(req.pathParam("photoId"))) throw HttpException.notFound("Kein solches Foto")
+        if (!library.delete(req.pathParam("photoId"))) throw HttpException.notFound("No such photo")
         HttpResponse.noContent()
     }
 
@@ -260,7 +260,7 @@ fun Router.libraryRoutes(
         val entry = entryOrThrow(req.pathParam("photoId"))
         val size =
             RenderSize.entries.firstOrNull { it.apiName == req.queryParam("size") }
-                ?: throw HttpException.badRequest("size ist thumb oder display")
+                ?: throw HttpException.badRequest("size is thumb or display")
         val target = library.cache.targetSize(entry, size)
         val etag = "\"${entry.id}-${entry.version}-${target.width}x${target.height}\""
         val cacheControl =
@@ -279,7 +279,7 @@ fun Router.libraryRoutes(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                throw HttpException(503, "render_failed", "Das Bild ließ sich nicht rendern")
+                throw HttpException(503, "render_failed", "The image could not be rendered")
             }
         HttpResponse.FileBody(200, file, "image/jpeg", headers)
     }

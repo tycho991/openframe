@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.SequenceInputStream
 
-/** Ein Teil einer `multipart/form-data`-Anfrage. [body] ist nur bis zum nächsten [MultipartReader.next] lesbar. */
+/** One part of a `multipart/form-data` request. [body] is readable only until the next [MultipartReader.next]. */
 class Part(
     val name: String?,
     val filename: String?,
@@ -13,14 +13,14 @@ class Part(
 )
 
 /**
- * Liest `multipart/form-data` als Strom, ohne Teile im Speicher zu halten.
- * Der Puffer ist fest, egal wie groß die Dateien sind.
+ * Reads `multipart/form-data` as a stream without holding parts in memory.
+ * The buffer is fixed, no matter how large the files are.
  */
 class MultipartReader(
     input: InputStream,
     boundary: String,
 ) {
-    // Die erste Grenze steht ohne vorangehendes CRLF am Anfang. Mit CRLF davor gilt dieselbe Suche für alle.
+    // The first boundary stands at the start without a preceding CRLF. With a CRLF in front, the same search applies to all.
     private val input: InputStream = SequenceInputStream("\r\n".byteInputStream(), input)
     private val delimiter = "\r\n--$boundary".toByteArray(Charsets.US_ASCII)
     private val buf = ByteArray(BUFFER_SIZE)
@@ -31,27 +31,27 @@ class MultipartReader(
     private var finished = false
     private var started = false
 
-    /** Der nächste Teil oder `null` am Ende. Wirft [HttpException] bei kaputter Anfrage. */
+    /** The next part or `null` at the end. Throws [HttpException] on a broken request. */
     fun next(): Part? {
         if (finished) return null
         if (!started) {
             started = true
-            // Präambel bis zur ersten Grenze überspringen.
+            // Skip the preamble up to the first boundary.
             PartStream().let { preamble -> drain(preamble) }
         } else {
             current?.let(::drain)
         }
-        // Nach der Grenze: "--" für das Ende oder CRLF vor den Headern des nächsten Teils.
+        // After the boundary: "--" for the end or CRLF before the next part's headers.
         ensure(2)
-        if (lim - pos < 2) throw malformed("Anfrage endet nach einer Grenze")
+        if (lim - pos < 2) throw malformed("Request ends after a boundary")
         if (buf[pos] == '-'.code.toByte() && buf[pos + 1] == '-'.code.toByte()) {
             finished = true
             return null
         }
-        if (buf[pos] != '\r'.code.toByte() || buf[pos + 1] != '\n'.code.toByte()) throw malformed("Erwartet CRLF nach der Grenze")
+        if (buf[pos] != '\r'.code.toByte() || buf[pos + 1] != '\n'.code.toByte()) throw malformed("Expected CRLF after the boundary")
         pos += 2
         val headers = readHeaders()
-        val disposition = headers["content-disposition"] ?: throw malformed("Content-Disposition fehlt")
+        val disposition = headers["content-disposition"] ?: throw malformed("Content-Disposition is missing")
         val params = parseParams(disposition)
         val stream = PartStream()
         current = stream
@@ -60,7 +60,7 @@ class MultipartReader(
 
     private fun drain(stream: InputStream) {
         while (stream.read(SKIP) >= 0) {
-            // Rest des Teils verwerfen.
+            // Discard the rest of the part.
         }
     }
 
@@ -70,9 +70,9 @@ class MultipartReader(
             val line = readLine()
             if (line.isEmpty()) return headers
             val colon = line.indexOf(':')
-            if (colon <= 0) throw malformed("Ungültige Header-Zeile")
+            if (colon <= 0) throw malformed("Invalid header line")
             headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
-            if (headers.size > 32) throw malformed("Zu viele Header")
+            if (headers.size > 32) throw malformed("Too many headers")
         }
     }
 
@@ -80,17 +80,17 @@ class MultipartReader(
         val out = ByteArrayOutputStream()
         while (true) {
             ensure(2)
-            if (lim - pos < 2) throw malformed("Header unvollständig")
+            if (lim - pos < 2) throw malformed("Headers incomplete")
             if (buf[pos] == '\r'.code.toByte() && buf[pos + 1] == '\n'.code.toByte()) {
                 pos += 2
                 return String(out.toByteArray(), Charsets.UTF_8)
             }
             out.write(buf[pos++].toInt())
-            if (out.size() > MAX_HEADER_LINE) throw malformed("Header-Zeile zu lang")
+            if (out.size() > MAX_HEADER_LINE) throw malformed("Header line too long")
         }
     }
 
-    /** Sorgt dafür, dass mindestens [n] Bytes im Puffer liegen, sofern der Strom so viele hat. */
+    /** Makes sure at least [n] bytes are in the buffer, provided the stream has that many. */
     private fun ensure(n: Int) {
         if (lim - pos >= n) return
         if (pos > 0) {
@@ -119,7 +119,7 @@ class MultipartReader(
         return -1
     }
 
-    /** Liest bis zur nächsten Grenze und verbraucht sie. */
+    /** Reads up to the next boundary and consumes it. */
     private inner class PartStream : InputStream() {
         private var ended = false
 
@@ -146,7 +146,7 @@ class MultipartReader(
                 val available =
                     when {
                         idx > 0 -> idx - pos
-                        eof -> throw malformed("Anfrage endet mitten in einem Teil")
+                        eof -> throw malformed("Request ends in the middle of a part")
                         else -> lim - pos - (delimiter.size - 1)
                     }
                 if (available > 0) {
@@ -155,11 +155,11 @@ class MultipartReader(
                     pos += n
                     return n
                 }
-                // Zu wenig im Puffer, um eine Grenze auszuschließen: nachladen.
-                if (lim - pos >= buf.size) throw malformed("Puffer voll")
+                // Too little in the buffer to rule out a boundary: load more.
+                if (lim - pos >= buf.size) throw malformed("Buffer full")
                 val before = lim - pos
                 ensure(before + 1)
-                if (lim - pos == before && eof) throw malformed("Anfrage endet mitten in einem Teil")
+                if (lim - pos == before && eof) throw malformed("Request ends in the middle of a part")
             }
         }
     }
@@ -173,7 +173,7 @@ class MultipartReader(
 
         private fun malformed(message: String) = HttpException(400, "malformed_multipart", message)
 
-        /** Die Grenze aus `Content-Type: multipart/form-data; boundary=…`. */
+        /** The boundary from `Content-Type: multipart/form-data; boundary=…`. */
         fun boundaryOf(contentType: String?): String? {
             if (contentType == null || !contentType.lowercase().startsWith("multipart/form-data")) return null
             return parseParams(contentType)["boundary"]?.takeIf { it.isNotEmpty() && it.length <= 200 }

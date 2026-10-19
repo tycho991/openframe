@@ -3,7 +3,7 @@ package io.github.tycho991.openframe.core.auth
 import io.github.tycho991.openframe.core.http.Authenticator
 import io.github.tycho991.openframe.core.http.HttpRequest
 
-/** Bearer-Token aus [ClientRegistry], Bild-Signaturen aus [ImageSigner]. */
+/** Bearer token from [ClientRegistry], image signatures from [ImageSigner]. */
 class AccessControl(
     private val clients: ClientRegistry,
     private val signer: ImageSigner,
@@ -25,7 +25,7 @@ class AccessControl(
     }
 }
 
-/** Leitet einen Gerätenamen wie „Firefox auf Android“ aus dem User-Agent ab. */
+/** Derives a device name like "Firefox on Android" from the user agent. */
 object DeviceName {
     private val browsers =
         listOf(
@@ -53,12 +53,12 @@ object DeviceName {
         )
 
     fun fromUserAgent(userAgent: String?): String {
-        if (userAgent.isNullOrBlank()) return "Unbekanntes Gerät"
+        if (userAgent.isNullOrBlank()) return "Unknown device"
         val browser = browsers.firstOrNull { userAgent.contains(it.first) }?.second
         val system = systems.firstOrNull { userAgent.contains(it.first) }?.second
         return when {
             browser != null && system != null -> {
-                "$browser auf $system"
+                "$browser on $system"
             }
 
             browser != null -> {
@@ -74,7 +74,7 @@ object DeviceName {
                     .substringBefore(' ')
                     .substringBefore('/')
                     .take(32)
-                    .ifBlank { "Unbekanntes Gerät" }
+                    .ifBlank { "Unknown device" }
             }
         }
     }

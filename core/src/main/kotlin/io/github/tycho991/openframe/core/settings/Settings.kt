@@ -87,9 +87,9 @@ data class ClockSettings(
 )
 
 /**
- * Einstellungen des Rahmens, wie die API sie liefert. Die Standardwerte sind
- * dokumentiert in Spec `frame-settings`. Der Modus „nur lokal“ gehört nicht
- * dazu, siehe [SettingsRepository.localOnly].
+ * The frame's settings as the API delivers them. The default values are
+ * documented in spec `frame-settings`. The "local only" mode is not part
+ * of them, see [SettingsRepository.localOnly].
  */
 @Serializable
 data class Settings(
@@ -111,7 +111,7 @@ data class Settings(
         val CLOCK_SIZE_PERCENT = 50..300
         val CACHE_BUDGET_MB = 100..10_000
 
-        /** Standardwerte. Der Name ist das Gerätemodell. */
+        /** Default values. The name is the device model. */
         fun defaults(model: String) = Settings(name = model.take(NAME_MAX_LENGTH).ifBlank { "openframe" })
     }
 }

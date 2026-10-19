@@ -16,7 +16,7 @@ import java.util.Base64
 data class StoredClient(
     val id: String,
     val name: String,
-    /** SHA-256 des Tokens, hex. Das Token selbst wird nie gespeichert. */
+    /** SHA-256 of the token, hex. The token itself is never stored. */
     val tokenHash: String,
     val pairedAtMs: Long,
     val lastSeenAtMs: Long,
@@ -30,7 +30,7 @@ data class StoredClients(
     val clients: List<StoredClient> = emptyList(),
 )
 
-/** Gekoppelte Geräte und ihre Tokens. */
+/** Paired devices and their tokens. */
 class ClientRegistry(
     private val store: JsonStore<StoredClients>,
     private val clock: Clock,
@@ -44,7 +44,7 @@ class ClientRegistry(
         _clients.value = store.load()?.clients ?: emptyList()
     }
 
-    /** Legt einen Client an und liefert sein Token. Es ist danach nicht mehr abrufbar. */
+    /** Creates a client and returns its token. It cannot be retrieved afterwards. */
     @Synchronized
     fun create(name: String): Pair<String, StoredClient> {
         val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes))
@@ -55,7 +55,7 @@ class ClientRegistry(
         return token to client
     }
 
-    /** Der Client zum Token oder `null`. Merkt sich, wann er zuletzt da war (auf eine Minute genau). */
+    /** The client for the token or `null`. Remembers when it was last seen (accurate to a minute). */
     fun authenticate(token: String): StoredClient? {
         val h = hash(token)
         val client =
@@ -69,7 +69,7 @@ class ClientRegistry(
         return client
     }
 
-    /** Hebt eine Kopplung auf. Das Token ist sofort ungültig. */
+    /** Revokes a pairing. The token becomes invalid immediately. */
     @Synchronized
     fun remove(id: String): Boolean {
         val remaining = _clients.value.filterNot { it.id == id }
@@ -91,7 +91,7 @@ class ClientRegistry(
     ) {
         _clients.value = clients
         store.save(StoredClients(clients))
-        // Kopplungen und Widerrufe sollen einen Neustart sicher überstehen.
+        // Pairings and revocations are meant to survive a restart reliably.
         if (immediately) kotlinx.coroutines.runBlocking { store.flush() }
     }
 

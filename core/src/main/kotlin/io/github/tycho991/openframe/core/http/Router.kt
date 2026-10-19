@@ -1,14 +1,14 @@
 package io.github.tycho991.openframe.core.http
 
-/** Wer eine Route aufrufen darf. */
+/** Who may call a route. */
 enum class Access {
-    /** Ohne Token: Info, Kopplung, Web-UI. */
+    /** Without token: info, pairing, web UI. */
     PUBLIC,
 
-    /** Nur mit gültigem Token. */
+    /** Only with a valid token. */
     TOKEN,
 
-    /** Mit Token oder mit der Bild-Signatur `t` für genau dieses Foto. */
+    /** With token or with the image signature `t` for exactly this photo. */
     TOKEN_OR_IMAGE_SIGNATURE,
 }
 
@@ -49,7 +49,7 @@ sealed interface RouteMatch {
         val params: Map<String, String>,
     ) : RouteMatch
 
-    /** Der Pfad existiert, aber nicht mit dieser Methode. */
+    /** The path exists, but not with this method. */
     data class MethodNotAllowed(
         val allowed: Set<Method>,
     ) : RouteMatch
@@ -58,9 +58,9 @@ sealed interface RouteMatch {
 }
 
 /**
- * Schmale Routing-Schicht: Pfadmuster mit `{param}`-Segmenten, eine Route je
- * Methode und Muster. Literale Segmente haben Vorrang vor Parametern, damit
- * `/photos:batch` nicht als `/photos/{id}` endet.
+ * Narrow routing layer: path patterns with `{param}` segments, one route per
+ * method and pattern. Literal segments take precedence over parameters so that
+ * `/photos:batch` does not end up as `/photos/{id}`.
  */
 class Router {
     private val routes = mutableListOf<Route>()
@@ -73,7 +73,7 @@ class Router {
         access: Access = Access.TOKEN,
         handler: Handler,
     ) {
-        require(routes.none { it.method == method && it.pattern == pattern }) { "Route doppelt: $method $pattern" }
+        require(routes.none { it.method == method && it.pattern == pattern }) { "Route defined twice: $method $pattern" }
         routes += Route(method, pattern, access, handler)
     }
 

@@ -8,13 +8,13 @@ import io.github.tycho991.openframe.core.platform.MediaEngine
 import java.io.File
 
 /**
- * Eine Quelle von Fotos. Jede Quelle verwaltet nur ihre eigenen Einträge im
- * Index. `local` jetzt, `nextcloud` in einem Folge-Change.
+ * A source of photos. Every source manages only its own entries in the
+ * index. `local` now, `nextcloud` in a follow-up change.
  */
 interface PhotoSource {
     val id: String
 
-    /** Gleicht den Index mit der Quelle ab. */
+    /** Reconciles the index with the source. */
     suspend fun scan(): ScanResult
 }
 
@@ -26,8 +26,8 @@ data class ScanResult(
 )
 
 /**
- * Der lokale Fotoordner, per USB erreichbar. Unveränderte Dateien erkennt der
- * Scan an `mtime` und Größe und öffnet sie nicht, auch übersprungene nicht.
+ * The local photo folder, reachable over USB. The scan recognizes unchanged
+ * files by `mtime` and size and does not open them, not even skipped ones.
  */
 class LocalPhotoSource(
     val root: File,
@@ -47,7 +47,7 @@ class LocalPhotoSource(
                 .associateBy { it.path }
         val skippedKnown = library.skipped.filter { it.source == id }.associateBy { it.path }
 
-        // Erst außerhalb der Sperre lesen, dann in einem Schritt übernehmen.
+        // Read outside the lock first, then apply in one step.
         val probed = HashMap<String, Result<PhotoEntry>>()
         for ((path, file) in files) {
             val size = file.length()
@@ -72,7 +72,7 @@ class LocalPhotoSource(
                             edit.put(it)
                         }.onFailure { e ->
                             val reason = (e as? ImageException)?.reason ?: io.github.tycho991.openframe.core.platform.SkipReason.CORRUPT
-                            if (e !is ImageException) log.w(TAG, "Fehler beim Lesen von $path", e)
+                            if (e !is ImageException) log.w(TAG, "Error reading $path", e)
                             edit.skip(SkippedFile(id, path, reason, file.length(), file.lastModified()))
                             skipped++
                         }
@@ -94,8 +94,8 @@ class LocalPhotoSource(
     }
 
     /**
-     * Nimmt eine selbst angelegte Datei sofort auf, etwa nach einem Upload.
-     * Mit [info] aus einer vorigen Prüfung wird die Datei nicht erneut geöffnet. Wirft [ImageException].
+     * Accepts a file created by the app itself immediately, for example after an upload.
+     * With [info] from a previous check the file is not opened again. Throws [ImageException].
      */
     fun add(
         file: File,
@@ -131,7 +131,7 @@ class LocalPhotoSource(
         )
     }
 
-    /** Alle Dateien mit Bild-Endung, versteckte Dateien und Ordner ausgenommen. */
+    /** All files with an image extension, hidden files and folders excluded. */
     private fun listFiles(): Map<String, File> =
         root
             .walkTopDown()

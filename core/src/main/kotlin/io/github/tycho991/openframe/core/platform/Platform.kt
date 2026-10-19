@@ -4,7 +4,7 @@ import java.io.File
 import java.io.InputStream
 import java.time.Instant
 
-/** Zeitquelle, in Tests durch eine steuerbare Uhr ersetzt. */
+/** Time source, replaced by a controllable clock in tests. */
 interface Clock {
     fun now(): Instant
 
@@ -15,30 +15,30 @@ interface Clock {
     }
 }
 
-/** Maße und Eigenschaften des Geräts, in :android aus dem System gelesen. */
+/** Dimensions and properties of the device, read from the system in :android. */
 interface PlatformInfo {
     val model: String
     val androidVersion: String
     val appVersion: String
 
-    /** Auflösung in der natürlichen Ausrichtung des Geräts, ohne Systemleisten. */
+    /** Resolution in the device's natural orientation, without system bars. */
     val screenWidth: Int
     val screenHeight: Int
 
-    /** IPv4-Adressen im LAN, die der Hinweis am Rahmen anzeigt. */
+    /** IPv4 addresses on the LAN that the hint on the frame shows. */
     fun ipAddresses(): List<String>
 
-    /** Freier Speicher auf dem Datenträger, der [dir] enthält. */
+    /** Free storage on the volume that contains [dir]. */
     fun freeBytes(dir: File): Long = dir.usableSpace
 }
 
-/** Dateien der Web-UI, in :android aus den APK-Assets. */
+/** The web UI's files, from the APK assets in :android. */
 fun interface AssetSource {
-    /** Öffnet die Datei unter [path] (ohne führenden Schrägstrich) oder liefert `null`. */
+    /** Opens the file at [path] (without a leading slash) or returns `null`. */
     fun open(path: String): InputStream?
 }
 
-/** Meldet selbst angelegte oder gelöschte Fotodateien an das System, damit sie per USB sichtbar werden. */
+/** Reports photo files created or deleted by the app itself to the system so that they become visible over USB. */
 fun interface MediaStoreNotifier {
     fun notifyChanged(file: File)
 

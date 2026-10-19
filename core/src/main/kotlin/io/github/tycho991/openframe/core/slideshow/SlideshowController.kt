@@ -22,12 +22,12 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.random.Random
 
-/** Die Anzeigegrößen, wie die Slideshow sie braucht. */
+/** The display sizes as the slideshow needs them. */
 interface DisplayImages {
-    /** Eine fertige Anzeigegröße, notfalls noch die vom alten Format, oder `null`. */
+    /** A finished display size, if need be still the one from the old format, or `null`. */
     fun ready(entry: PhotoEntry): File?
 
-    /** Rendert die Anzeigegröße jetzt, vor allem anderen. Wirft, wenn das scheitert. */
+    /** Renders the display size now, before everything else. Throws if that fails. */
     suspend fun render(entry: PhotoEntry): File
 
     fun prefetch(
@@ -36,7 +36,7 @@ interface DisplayImages {
     )
 }
 
-/** [DisplayImages] aus dem [RenderCache]. */
+/** [DisplayImages] from the [RenderCache]. */
 class CachedDisplayImages(
     private val cache: RenderCache,
 ) : DisplayImages {
@@ -51,15 +51,15 @@ class CachedDisplayImages(
 }
 
 sealed interface SlideState {
-    /** Noch kein Foto bereit, etwa beim ersten Start mit leerem Cache. */
+    /** No photo ready yet, for example on first start with an empty cache. */
     data object Loading : SlideState
 
-    /** Keine sichtbaren Fotos. */
+    /** No visible photos. */
     data object Empty : SlideState
 
     /**
-     * [photo] wird mit der Anzeigegröße [file] gezeigt. [step] ist +1 für vorwärts,
-     * -1 für zurück und 0 für den ersten Wechsel. [seq] steigt mit jedem Wechsel.
+     * [photo] is shown with the display size [file]. [step] is +1 for forward,
+     * -1 for back and 0 for the first change. [seq] increases with every change.
      */
     data class Showing(
         val photo: PhotoEntry,
@@ -70,13 +70,13 @@ sealed interface SlideState {
 }
 
 /**
- * Steuert die Slideshow: Reihenfolge, Intervall, Pause und das Überspringen
- * von Fotos, die noch nicht gerendert oder defekt sind. Die Anzeige zeigt nur
- * [state] an und meldet Gesten und Decodierfehler zurück.
+ * Controls the slideshow: order, interval, pause and skipping
+ * photos that are not yet rendered or are broken. The display only shows
+ * [state] and reports gestures and decode errors back.
  */
 class SlideshowController(
     private val visible: StateFlow<List<PhotoEntry>>,
-    /** Ob das Foto noch in der Bibliothek ist. Gelöschte aktuelle Fotos wechseln sofort, ausgeblendete beim nächsten Wechsel. */
+    /** Whether the photo is still in the library. Deleted current photos switch immediately, hidden ones at the next change. */
     private val exists: (String) -> Boolean,
     private val settings: StateFlow<Settings>,
     private val images: DisplayImages,
@@ -121,8 +121,8 @@ class SlideshowController(
     private val _nextUp = MutableStateFlow<Pair<PhotoEntry, File>?>(null)
 
     /**
-     * Das Foto, das beim nächsten Wechsel vorwärts voraussichtlich kommt, mit fertiger
-     * Anzeigegröße. Die Anzeige decodiert es vorab, damit der Übergang ohne Wartezeit beginnt.
+     * The photo that is expected to come at the next forward change, with a finished
+     * display size. The display decodes it ahead so that the transition starts without waiting.
      */
     val nextUp: StateFlow<Pair<PhotoEntry, File>?> = _nextUp.asStateFlow()
 
@@ -138,18 +138,18 @@ class SlideshowController(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    log.e(TAG, "Fehler in der Slideshow", e)
+                    log.e(TAG, "Error in the slideshow", e)
                 }
             }
         }
     }
 
-    /** Wischen nach links: nächstes Foto, das Intervall beginnt neu. */
+    /** Swipe left: next photo, the interval starts over. */
     fun next() {
         commands.trySend(Command.Step(+1, manual = true))
     }
 
-    /** Wischen nach rechts: voriges Foto, das Intervall beginnt neu. */
+    /** Swipe right: previous photo, the interval starts over. */
     fun previous() {
         commands.trySend(Command.Step(-1, manual = true))
     }
@@ -162,7 +162,7 @@ class SlideshowController(
         commands.trySend(Command.Pause(null))
     }
 
-    /** Die Anzeige konnte die Datei nicht decodieren: protokollieren und weiter. */
+    /** The display could not decode the file: log it and move on. */
     fun reportUndecodable(photo: PhotoEntry) {
         commands.trySend(Command.Undecodable(photo.id))
     }
@@ -189,7 +189,7 @@ class SlideshowController(
             is Command.Undecodable -> {
                 val current = (_state.value as? SlideState.Showing)?.photo
                 if (current?.id == command.id) {
-                    log.e(TAG, "Foto nicht decodierbar, übersprungen: ${current.path}")
+                    log.e(TAG, "Photo not decodable, skipped: ${current.path}")
                     show(+1)
                 }
             }
@@ -210,7 +210,7 @@ class SlideshowController(
                 show(0)
             }
 
-            // Gelöscht: sofort weiter. Die Reihenfolge steht schon auf dem nächsten Foto.
+            // Deleted: move on immediately. The order already points to the next photo.
             removed && current != null && !exists(current.id) -> {
                 show(+1)
             }
@@ -218,9 +218,9 @@ class SlideshowController(
     }
 
     /**
-     * Zeigt das nächste ([step] = +1), vorige (-1) oder aktuelle (0) Foto der
-     * Reihenfolge, das eine fertige Anzeigegröße hat. Ist gar keine fertig,
-     * wird das erste Foto jetzt gerendert und gewartet.
+     * Shows the next ([step] = +1), previous (-1) or current (0) photo of the
+     * order that has a finished display size. If none at all is finished,
+     * the first photo is rendered now and waited for.
      */
     private suspend fun show(step: Int) {
         if (playlist.size == 0) return
@@ -244,13 +244,13 @@ class SlideshowController(
             candidates += entry
             images.prefetch(listOf(entry), RenderPriority.NEXT)
         }
-        // Kein Foto fertig. Läuft schon eines, bleibt es stehen, bis das nächste fertig ist.
+        // No photo finished. If one is already showing, it stays until the next is finished.
         val showing = (_state.value as? SlideState.Showing)?.photo
         if (showing != null && playlist.moveTo(showing.id) != null) {
             armTimer()
             return
         }
-        // Erster Start mit leerem Cache: das erste Foto jetzt rendern und darauf warten.
+        // First start with an empty cache: render the first photo now and wait for it.
         _state.value = SlideState.Loading
         for (entry in candidates) {
             playlist.moveTo(entry.id) ?: continue
@@ -260,7 +260,7 @@ class SlideshowController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.w(TAG, "Foto übersprungen, Rendern fehlgeschlagen: ${entry.path}")
+                log.w(TAG, "Photo skipped, rendering failed: ${entry.path}")
             }
         }
     }

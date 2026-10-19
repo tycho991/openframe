@@ -13,7 +13,7 @@ fun Router.settingsRoutes(settings: SettingsRepository) {
         HttpResponse.json(Settings.serializer(), settings.settings.value)
     }
     patch("/api/v1/settings") { req ->
-        val patch = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Erwartet ein JSON-Objekt")
+        val patch = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
         HttpResponse.json(Settings.serializer(), settings.patch(patch))
     }
 }

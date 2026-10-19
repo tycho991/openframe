@@ -14,7 +14,7 @@ import io.github.tycho991.openframe.core.readAtMost
 import java.io.File
 import java.util.UUID
 
-/** Änderungen an der Bibliothek, die über die API oder die Anzeige kommen. */
+/** Changes to the library that come through the API or the display. */
 class PhotoLibrary(
     val index: PhotoIndexStore,
     val local: LocalPhotoSource,
@@ -29,7 +29,7 @@ class PhotoLibrary(
         hidden: Boolean,
     ): PhotoEntry =
         index.edit { edit ->
-            val entry = edit.get(id) ?: throw HttpException.notFound("Kein solches Foto")
+            val entry = edit.get(id) ?: throw HttpException.notFound("No such photo")
             entry.copy(hidden = hidden).also(edit::put)
         }
 
@@ -37,31 +37,31 @@ class PhotoLibrary(
         album: String,
         hidden: Boolean,
     ) = index.edit { edit ->
-        if (edit.photos.values.none { it.album == album }) throw HttpException.notFound("Kein solches Album")
+        if (edit.photos.values.none { it.album == album }) throw HttpException.notFound("No such album")
         edit.setAlbumHidden(album, hidden)
     }
 
-    /** Löscht Datei, Index-Eintrag und gerenderte Größen. `false`, wenn es das Foto nicht gibt. */
+    /** Deletes file, index entry and rendered sizes. `false` if the photo does not exist. */
     fun delete(id: String): Boolean {
         val entry = index.library.value.photos[id] ?: return false
         val file = local.fileOf(entry)
-        if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "Datei ließ sich nicht löschen")
+        if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "File could not be deleted")
         index.edit { it.remove(id) }
         cache.remove(id)
         notifier.notifyChanged(file)
-        log.i(TAG, "Gelöscht: ${entry.path}")
+        log.i(TAG, "Deleted: ${entry.path}")
         return true
     }
 
     /**
-     * Upload per `multipart/form-data` mit optionalem Feld `album` und Dateien
-     * im Feld `file`. Gestreamt in einen versteckten Ordner im Fotoordner, erst
-     * nach Prüfung aller Dateien verschoben. Ganz oder gar nicht.
+     * Upload by `multipart/form-data` with an optional field `album` and files
+     * in the field `file`. Streamed into a hidden folder inside the photo folder, moved
+     * only after all files have been checked. All or nothing.
      */
     fun upload(request: HttpRequest): List<PhotoEntry> {
         val boundary =
             MultipartReader.boundaryOf(request.header("content-type"))
-                ?: throw HttpException(415, "unsupported_media_type", "Erwartet multipart/form-data")
+                ?: throw HttpException(415, "unsupported_media_type", "Expected multipart/form-data")
         val root = local.root
         val staging = File(root, STAGING).apply { mkdirs() }
         request.contentLength?.let { length ->
@@ -89,7 +89,7 @@ class PhotoLibrary(
                     }
                 }
             }
-            if (staged.isEmpty()) throw HttpException.badRequest("Keine Datei im Feld file")
+            if (staged.isEmpty()) throw HttpException.badRequest("No file in the field file")
             for (s in staged) s.info = check(s)
             return staged.map { move(it, album) }
         } finally {
@@ -121,17 +121,17 @@ class PhotoLibrary(
         dir.mkdirs()
         val info = s.info!!
         val name = if (ImageFormats.hasImageExtension(s.name)) s.name else "${s.name}.${info.format.extension}"
-        // Gleichzeitige Uploads mit gleichem Namen dürfen sich nicht überschreiben.
+        // Concurrent uploads with the same name must not overwrite each other.
         val target =
             synchronized(this) {
                 uniqueFile(
                     dir,
                     name,
-                ).also { if (!s.tmp.renameTo(it)) throw HttpException(500, "move_failed", "Datei ließ sich nicht ablegen") }
+                ).also { if (!s.tmp.renameTo(it)) throw HttpException(500, "move_failed", "File could not be put in place") }
             }
         val entry = local.add(target, info)
         notifier.notifyChanged(target)
-        log.i(TAG, "Hochgeladen: ${entry.path}")
+        log.i(TAG, "Uploaded: ${entry.path}")
         return entry
     }
 
@@ -158,9 +158,9 @@ class PhotoLibrary(
     }
 
     private fun insufficientStorage() =
-        HttpException(507, "insufficient_storage", "Zu wenig Speicher: Nach dem Upload blieben weniger als 100 MB frei.")
+        HttpException(507, "insufficient_storage", "Not enough storage: less than 100 MB would remain free after the upload.")
 
-    private fun unsupported(name: String) = HttpException(415, "unsupported_format", "$name hat kein unterstütztes Format")
+    private fun unsupported(name: String) = HttpException(415, "unsupported_format", "$name has no supported format")
 
     companion object {
         const val RESERVE_BYTES = 100L * 1024 * 1024
@@ -169,7 +169,7 @@ class PhotoLibrary(
         private const val TAG = "library"
         private const val FORBIDDEN = "<>:\"/\\|?*"
 
-        /** Dateiname ohne Pfad und ohne Zeichen, die außerhalb des Zielordners führen oder Dateisysteme stören. */
+        /** File name without path and without characters that lead outside the target folder or upset file systems. */
         fun sanitizeName(raw: String): String {
             val base = raw.substringAfterLast('/').substringAfterLast('\\')
             val cleaned =
@@ -181,7 +181,7 @@ class PhotoLibrary(
             return cleaned.take(120).ifEmpty { "upload" }
         }
 
-        /** Albumname als genau eine Ordnerebene direkt unterhalb des Fotoordners, `null` für kein Album. */
+        /** Album name as exactly one folder level directly below the photo folder, `null` for no album. */
         fun sanitizeAlbum(raw: String): String? =
             raw
                 .filter { it >= ' ' && it !in FORBIDDEN }

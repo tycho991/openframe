@@ -57,7 +57,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.Duration
 
-/** Ordner des Rahmens: Zustand, Cache und der per USB erreichbare Fotoordner. */
+/** The frame's folders: state, cache and the photo folder reachable over USB. */
 data class FrameDirs(
     val state: File,
     val cache: File,
@@ -65,8 +65,8 @@ data class FrameDirs(
 )
 
 /**
- * Der Kern des Rahmens. Lädt Einstellungen und Bibliothek, betreibt den
- * HTTP-Server und liefert der Anzeige ihre Daten als [StateFlow]s, ohne HTTP.
+ * The frame's core. Loads settings and library, runs the
+ * HTTP server and delivers the display its data as [StateFlow]s, without HTTP.
  */
 class FrameCore(
     private val dirs: FrameDirs,
@@ -110,17 +110,17 @@ class FrameCore(
 
     private val _ready = MutableStateFlow(false)
 
-    /** Einstellungen und Bibliothek sind geladen. Die Anzeige wartet nur darauf, nicht auf Server oder Netzwerk. */
+    /** Settings and library are loaded. The display waits only for this, not for server or network. */
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
-    /** Die für die Slideshow sichtbaren Fotos, nach Aufnahmedatum. */
+    /** The photos visible to the slideshow, by capture date. */
     val visiblePhotos: StateFlow<List<PhotoEntry>> =
         index.library
             .map { it.visible }
             .distinctUntilChanged()
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    /** Steuerung der Slideshow für die Anzeige. */
+    /** Slideshow control for the display. */
     val slideshow =
         SlideshowController(
             visiblePhotos,
@@ -140,7 +140,7 @@ class FrameCore(
 
     private val scanSignal = Channel<Unit>(Channel.CONFLATED)
 
-    /** Lädt alles, startet die Hintergrundarbeit und den Server. */
+    /** Loads everything, starts the background work and the server. */
     suspend fun start() {
         log.i(TAG, "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion}")
         settings.load()
@@ -172,23 +172,23 @@ class FrameCore(
         server.start(settings.localOnly.value)
     }
 
-    /** Scannt den Fotoordner sofort statt beim nächsten Intervall. */
+    /** Scans the photo folder immediately instead of at the next interval. */
     fun requestScan() {
         scanSignal.trySend(Unit)
     }
 
-    /** Modus „nur lokal“, nur über das Gerätemenü. */
+    /** "Local only" mode, only through the device menu. */
     fun setLocalOnly(enabled: Boolean) = settings.setLocalOnly(enabled)
 
-    /** „Alle Kopplungen aufheben“, nur über das Gerätemenü. */
+    /** "Revoke all pairings", only through the device menu. */
     fun resetAllPairings() = admin.resetAll()
 
-    /** Nach einem Netzwerkwechsel, damit der Server auf der neuen Adresse annimmt. */
+    /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         if (!settings.localOnly.value) server.restart()
     }
 
-    /** Hält den Server an und schreibt ausstehende Änderungen. */
+    /** Stops the server and writes pending changes. */
     suspend fun stop() {
         server.stop()
         scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
@@ -212,7 +212,7 @@ class FrameCore(
             try {
                 localSource.scan()
             } catch (e: Exception) {
-                log.e(TAG, "Scan fehlgeschlagen", e)
+                log.e(TAG, "Scan failed", e)
             }
             withTimeoutOrNull(scanInterval.toMillis()) { scanSignal.receive() }
         }

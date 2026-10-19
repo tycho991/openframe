@@ -4,13 +4,13 @@ import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.serialization.Serializable
 import java.security.SecureRandom
 
-/** Die unveränderliche Identität des Rahmens. Der Name ist eine Einstellung. */
+/** The frame's immutable identity. The name is a setting. */
 @Serializable
 data class FrameIdentity(
     val id: String,
 ) {
     companion object {
-        /** Lädt die ID oder legt beim ersten Start eine zufällige an und speichert sie sofort. */
+        /** Loads the ID or, on first start, creates a random one and stores it immediately. */
         suspend fun loadOrCreate(
             store: JsonStore<FrameIdentity>,
             random: SecureRandom = SecureRandom(),

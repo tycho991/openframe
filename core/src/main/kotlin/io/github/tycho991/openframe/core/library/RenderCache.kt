@@ -18,7 +18,7 @@ enum class RenderSize(
     DISPLAY("display"),
 }
 
-/** Wer auf ein Bild wartet. Höhere Priorität wird zuerst gerendert. */
+/** Who is waiting for an image. Higher priority is rendered first. */
 enum class RenderPriority { PREFETCH, NEXT, DEMAND }
 
 data class PixelSize(
@@ -26,12 +26,12 @@ data class PixelSize(
     val height: Int,
 )
 
-/** Zielgrößen der gerenderten Bilder, als reine Funktionen testbar. */
+/** Target sizes of the rendered images, testable as pure functions. */
 object RenderSizes {
     const val THUMB_EDGE = 400
     const val MAX_PIXEL_FACTOR = 2.5
 
-    /** Bildschirm in der eingestellten Ausrichtung, aus der natürlichen Auflösung des Geräts. */
+    /** Screen in the configured orientation, from the device's natural resolution. */
     fun screen(
         naturalWidth: Int,
         naturalHeight: Int,
@@ -42,15 +42,15 @@ object RenderSizes {
         return if (orientation == Orientation.LANDSCAPE) PixelSize(long, short) else PixelSize(short, long)
     }
 
-    /** Vorschaubild: längste Kante 400 px, nie größer als das Original. */
+    /** Thumbnail: longest edge 400 px, never larger than the original. */
     fun thumb(
         width: Int,
         height: Int,
     ): PixelSize = scaled(width, height, minOf(1.0, THUMB_EDGE.toDouble() / max(width, height)))
 
     /**
-     * Anzeigegröße: die kleinste Größe, die den Bildschirm vollständig bedeckt,
-     * höchstens das 2,5-Fache seiner Pixelzahl und nie größer als das Original.
+     * Display size: the smallest size that fully covers the screen,
+     * at most 2.5 times its pixel count and never larger than the original.
      */
     fun display(
         width: Int,
@@ -72,10 +72,10 @@ object RenderSizes {
 }
 
 /**
- * Cache der gerenderten Bildgrößen. Gerendert wird auf genau einem Worker-Thread
- * mit niedriger Priorität, Anfragen der Anzeige und der Web-UI vor dem Vorab-Rendern.
- * Der Cache hält das Budget ein, indem er die am längsten nicht genutzten Dateien
- * entfernt. Originale fasst er nie an.
+ * Cache of the rendered image sizes. Rendering happens on exactly one worker thread
+ * with low priority, requests from the display and the web UI before pre-rendering.
+ * The cache stays within the budget by removing the files unused for the
+ * longest time. It never touches originals.
  */
 class RenderCache(
     private val dir: File,
@@ -99,7 +99,7 @@ class RenderCache(
     private val seq = AtomicLong()
     private val inFlight = HashMap<String, CompletableDeferred<File>>()
 
-    /** Name → letzte Nutzung, für die LRU-Verdrängung. */
+    /** Name → last use, for LRU eviction. */
     private val lastUse = LinkedHashMap<String, Long>()
     private val clock = AtomicLong()
 
@@ -134,7 +134,7 @@ class RenderCache(
             RenderSize.DISPLAY -> RenderSizes.display(entry.width, entry.height, screen())
         }
 
-    /** Die gerenderte Datei, bei Bedarf jetzt gerendert. Wirft, wenn das Rendern scheitert. */
+    /** The rendered file, rendered now if needed. Throws if rendering fails. */
     suspend fun get(
         entry: PhotoEntry,
         size: RenderSize,
@@ -144,7 +144,7 @@ class RenderCache(
         return enqueue(entry, targetSize(entry, size), priority).await()
     }
 
-    /** Die gerenderte Datei, wenn es sie schon gibt, ohne zu rendern. */
+    /** The rendered file if it already exists, without rendering. */
     fun peek(
         entry: PhotoEntry,
         size: RenderSize,
@@ -155,7 +155,7 @@ class RenderCache(
         return file
     }
 
-    /** Irgendeine fertige Anzeigegröße dieser Bildversion, etwa noch die vom alten Format. */
+    /** Any finished display size of this image version, for example still the one from the old format. */
     fun peekAnyDisplay(entry: PhotoEntry): File? {
         val prefix = "${entry.id}-v${entry.version}-"
         val thumb = fileName(entry, targetSize(entry, RenderSize.THUMB))
@@ -170,7 +170,7 @@ class RenderCache(
         return File(dir, name).takeIf { it.exists() }?.also { touch(name) }
     }
 
-    /** Rendert die Anzeigegrößen von [entries] vorab, sofern sie fehlen. */
+    /** Pre-renders the display sizes of [entries] if they are missing. */
     fun prefetch(
         entries: List<PhotoEntry>,
         priority: RenderPriority = RenderPriority.PREFETCH,
@@ -181,12 +181,12 @@ class RenderCache(
         }
     }
 
-    /** Entfernt alle gerenderten Größen eines Fotos, etwa nach dem Löschen. */
+    /** Removes all rendered sizes of a photo, for example after deleting. */
     fun remove(photoId: String) {
         deleteMatching { it.startsWith("$photoId-") }
     }
 
-    /** Hält das Budget ein. [keep] bleibt in jedem Fall erhalten, etwa das gerade gerenderte Bild. */
+    /** Stays within the budget. [keep] is kept in any case, for example the image just rendered. */
     fun trim(keep: String? = null) {
         val budget = budgetBytes()
         val files = synchronized(lastUse) { lastUse.entries.sortedBy { it.value }.map { it.key } }
@@ -217,7 +217,7 @@ class RenderCache(
         return deferred
     }
 
-    /** Hält den Worker an. Wartende Aufträge scheitern, laufende werden zu Ende gerendert. */
+    /** Stops the worker. Waiting jobs fail, running ones are rendered to the end. */
     fun close() {
         closed = true
         worker.interrupt()
@@ -230,7 +230,7 @@ class RenderCache(
     private var closed = false
 
     private fun runWorker() {
-        // Ein Rendern kann das Interrupt-Flag schlucken, deshalb zusätzlich [closed].
+        // A render can swallow the interrupt flag, hence [closed] in addition.
         while (!closed) {
             val job =
                 try {
@@ -245,7 +245,7 @@ class RenderCache(
                 touch(job.key)
                 job.result.complete(target)
             } catch (e: Throwable) {
-                log.w(TAG, "Rendern von ${job.entry.path} fehlgeschlagen", e)
+                log.w(TAG, "Rendering of ${job.entry.path} failed", e)
                 job.result.completeExceptionally(e)
             } finally {
                 synchronized(inFlight) { inFlight.remove(job.key) }
@@ -259,8 +259,8 @@ class RenderCache(
     ) {
         val tmp = File(dir, ".${job.key}.tmp")
         engine.render(originalOf(job.entry), tmp, job.size.width, job.size.height)
-        if (!tmp.renameTo(target)) throw IllegalStateException("Umbenennen nach ${target.name} fehlgeschlagen")
-        // Ältere Bildversionen dieses Fotos werden nicht mehr gebraucht.
+        if (!tmp.renameTo(target)) throw IllegalStateException("Renaming to ${target.name} failed")
+        // Older image versions of this photo are no longer needed.
         touch(target.name)
         val current = "${job.entry.id}-v${job.entry.version}-"
         deleteMatching { it.startsWith("${job.entry.id}-") && !it.startsWith(current) }

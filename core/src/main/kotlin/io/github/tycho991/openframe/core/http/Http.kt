@@ -25,7 +25,7 @@ enum class Method {
     val isMutating: Boolean get() = this == POST || this == PUT || this == PATCH || this == DELETE
 }
 
-/** JSON-Konfiguration der API: strikt beim Lesen, vollständig beim Schreiben. */
+/** JSON configuration of the API: strict when reading, complete when writing. */
 val ApiJson =
     Json {
         encodeDefaults = true
@@ -33,33 +33,33 @@ val ApiJson =
         ignoreUnknownKeys = false
     }
 
-/** Eine eingehende Anfrage, unabhängig vom Transport. */
+/** An incoming request, independent of the transport. */
 class HttpRequest(
     val method: Method,
     val path: String,
     val query: Map<String, List<String>>,
-    /** Header mit kleingeschriebenen Namen. */
+    /** Headers with lower-case names. */
     val headers: Map<String, String>,
     val contentLength: Long?,
     private val body: InputStream,
 ) {
-    /** Parameter aus dem Pfadmuster, vom Router gesetzt. */
+    /** Parameters from the path pattern, set by the router. */
     var pathParams: Map<String, String> = emptyMap()
         internal set
 
-    /** Der authentifizierte Client, vom Auth-Filter gesetzt. */
+    /** The authenticated client, set by the auth filter. */
     var clientId: String? = null
 
     fun header(name: String): String? = headers[name.lowercase()]
 
     fun queryParam(name: String): String? = query[name]?.firstOrNull()
 
-    fun pathParam(name: String): String = pathParams[name] ?: error("Pfadparameter $name fehlt in der Route")
+    fun pathParam(name: String): String = pathParams[name] ?: error("Path parameter $name is missing in the route")
 
-    /** Der Rumpf als Stream, begrenzt auf `Content-Length`. Darf nur einmal gelesen werden. */
+    /** The body as a stream, limited to `Content-Length`. May be read only once. */
     fun bodyStream(): InputStream = body
 
-    /** Liest den Rumpf als JSON. Lehnt Rümpfe über [maxBytes] mit 413 ab. */
+    /** Reads the body as JSON. Rejects bodies over [maxBytes] with 413. */
     fun <T> bodyAs(
         serializer: KSerializer<T>,
         maxBytes: Long = MAX_JSON_BYTES,
@@ -68,25 +68,25 @@ class HttpRequest(
         return try {
             ApiJson.decodeFromJsonElement(serializer, json)
         } catch (e: kotlinx.serialization.SerializationException) {
-            throw HttpException.badRequest("Ungültiger Rumpf: ${e.message?.lineSequence()?.first()}")
+            throw HttpException.badRequest("Invalid body: ${e.message?.lineSequence()?.first()}")
         } catch (e: IllegalArgumentException) {
-            throw HttpException.badRequest("Ungültiger Rumpf: ${e.message?.lineSequence()?.first()}")
+            throw HttpException.badRequest("Invalid body: ${e.message?.lineSequence()?.first()}")
         }
     }
 
     fun bodyJson(maxBytes: Long = MAX_JSON_BYTES): JsonElement {
         val type = header("content-type")?.substringBefore(';')?.trim()?.lowercase()
         if (type != "application/json") {
-            throw HttpException(415, "unsupported_media_type", "Erwartet application/json")
+            throw HttpException(415, "unsupported_media_type", "Expected application/json")
         }
         val length = contentLength
-        if (length != null && length > maxBytes) throw HttpException(413, "too_large", "Rumpf größer als $maxBytes Bytes")
+        if (length != null && length > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
         val bytes = body.readAtMost((maxBytes + 1).toInt())
-        if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Rumpf größer als $maxBytes Bytes")
+        if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
         return try {
             ApiJson.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8))
         } catch (e: kotlinx.serialization.SerializationException) {
-            throw HttpException(400, "invalid_json", "Kein gültiges JSON: ${e.message}")
+            throw HttpException(400, "invalid_json", "Not valid JSON: ${e.message}")
         }
     }
 
@@ -109,7 +109,7 @@ class HttpRequest(
     }
 }
 
-/** Eine Antwort, unabhängig vom Transport. */
+/** A response, independent of the transport. */
 sealed class HttpResponse {
     abstract val status: Int
     abstract val headers: Map<String, String>
@@ -131,7 +131,7 @@ sealed class HttpResponse {
         override fun withHeaders(extra: Map<String, String>) = copy(headers = headers + extra)
     }
 
-    /** Eine Datei, mit Unterstützung für `Range`. */
+    /** A file, with support for `Range`. */
     data class FileBody(
         override val status: Int,
         val file: File,
@@ -141,7 +141,7 @@ sealed class HttpResponse {
         override fun withHeaders(extra: Map<String, String>) = copy(headers = headers + extra)
     }
 
-    /** Ein Stream bekannter oder unbekannter Länge, z. B. ein Asset der Web-UI. */
+    /** A stream of known or unknown length, e.g. an asset of the web UI. */
     data class StreamBody(
         override val status: Int,
         val contentType: String,
@@ -168,7 +168,7 @@ sealed class HttpResponse {
     }
 }
 
-/** Fehler, der als JSON-Fehlerantwort mit [status] endet. */
+/** Error that ends as a JSON error response with [status]. */
 class HttpException(
     val status: Int,
     val code: String,
@@ -182,9 +182,9 @@ class HttpException(
             fields: Map<String, String> = emptyMap(),
         ) = HttpException(400, if (fields.isEmpty()) "bad_request" else "validation_failed", message, fields)
 
-        fun notFound(message: String = "Nicht gefunden") = HttpException(404, "not_found", message)
+        fun notFound(message: String = "Not found") = HttpException(404, "not_found", message)
 
-        fun unauthorized(message: String = "Kein gültiges Token") = HttpException(401, "unauthorized", message)
+        fun unauthorized(message: String = "No valid token") = HttpException(401, "unauthorized", message)
     }
 }
 

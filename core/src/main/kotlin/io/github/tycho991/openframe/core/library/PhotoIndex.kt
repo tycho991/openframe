@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import java.security.MessageDigest
 
-/** Ein Foto im Index. Pfade sind relativ zum Ordner der Quelle, mit `/` getrennt. */
+/** A photo in the index. Paths are relative to the source's folder, separated by `/`. */
 @Serializable
 data class PhotoEntry(
     val id: String,
@@ -16,21 +16,21 @@ data class PhotoEntry(
     val path: String,
     val width: Int,
     val height: Int,
-    /** Aufnahmedatum aus EXIF, ersatzweise Dateidatum. */
+    /** Capture date from EXIF, falling back to the file date. */
     val takenAtMs: Long,
     val fileSize: Long,
     val modifiedMs: Long,
-    /** Steigt bei jeder Änderung der Datei, damit Caches ungültig werden. */
+    /** Increases with every change of the file so that caches become invalid. */
     val version: Int,
     val hidden: Boolean = false,
 ) {
-    /** Der erste Ordner unterhalb des Fotoordners, `null` für Fotos direkt darin. */
+    /** The first folder below the photo folder, `null` for photos directly in it. */
     val album: String? get() = path.substringBefore('/', "").ifEmpty { null }
 
     val name: String get() = path.substringAfterLast('/')
 
     companion object {
-        /** Stabile ID aus Quelle und relativem Pfad. */
+        /** Stable ID from source and relative path. */
         fun idFor(
             source: String,
             path: String,
@@ -41,7 +41,7 @@ data class PhotoEntry(
     }
 }
 
-/** Eine Datei mit Bild-Endung, die nicht aufgenommen werden konnte. */
+/** A file with an image extension that could not be accepted. */
 @Serializable
 data class SkippedFile(
     val source: String,
@@ -59,23 +59,23 @@ data class StoredIndex(
     val libraryVersion: Long = 0,
 )
 
-/** Unveränderlicher Stand der Bibliothek. */
+/** Immutable state of the library. */
 class Library(
     val photos: Map<String, PhotoEntry>,
     val hiddenAlbums: Set<String>,
     val skipped: List<SkippedFile>,
-    /** Ändert sich bei jeder Änderung am Index, auch über Neustarts. */
+    /** Changes with every change to the index, also across restarts. */
     val version: Long,
 ) {
     fun isVisible(photo: PhotoEntry) = !photo.hidden && photo.album !in hiddenAlbums
 
-    /** Alle Fotos nach Aufnahmedatum aufsteigend, bei Gleichstand nach Pfad. Einmal pro Stand berechnet. */
+    /** All photos by capture date ascending, by path on a tie. Computed once per state. */
     val byDate: List<PhotoEntry> by lazy { photos.values.sortedWith(DATE_ORDER) }
 
-    /** Alle Fotos nach Pfad aufsteigend. */
+    /** All photos by path ascending. */
     val byName: List<PhotoEntry> by lazy { photos.values.sortedWith(NAME_ORDER) }
 
-    /** Die für die Slideshow sichtbaren Fotos nach Aufnahmedatum. */
+    /** The photos visible to the slideshow by capture date. */
     val visible: List<PhotoEntry> by lazy { byDate.filter(::isVisible) }
 
     companion object {
@@ -85,7 +85,7 @@ class Library(
     }
 }
 
-/** Änderungen an einem Stand, gesammelt und dann als neuer Stand übernommen. */
+/** Changes to a state, collected and then applied as a new state. */
 class LibraryEdit internal constructor(
     from: Library,
 ) {
@@ -127,8 +127,8 @@ class LibraryEdit internal constructor(
 }
 
 /**
- * Der Index im Speicher. Jede Änderung ergibt einen neuen [Library]-Stand mit
- * neuer Version, wird sofort als [library] sichtbar und gebündelt gespeichert.
+ * The index in memory. Every change yields a new [Library] state with a
+ * new version, becomes visible immediately as [library] and is stored in batches.
  */
 class PhotoIndexStore(
     private val store: JsonStore<StoredIndex>,
@@ -148,7 +148,7 @@ class PhotoIndexStore(
             )
     }
 
-    /** Führt [block] aus und übernimmt das Ergebnis, wenn sich etwas geändert hat. */
+    /** Runs [block] and applies the result if something has changed. */
     @Synchronized
     fun <R> edit(block: (LibraryEdit) -> R): R {
         val current = _library.value

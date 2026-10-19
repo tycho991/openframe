@@ -38,7 +38,7 @@ data class ClientListDto(
 
 private fun StoredClient.toDto(currentId: String?) = ClientDto(id, name, pairedAt.toString(), lastSeenAt.toString(), id == currentId)
 
-/** Kopplung per Code und Verwaltung der gekoppelten Geräte. */
+/** Pairing by code and management of the paired devices. */
 fun Router.pairingRoutes(
     pairing: PairingManager,
     clients: ClientRegistry,
@@ -47,8 +47,8 @@ fun Router.pairingRoutes(
         val body = req.bodyAs(PairingRequestDto.serializer())
         if (!body.code.matches(Regex("[0-9]{6}"))) {
             throw HttpException.badRequest(
-                "Der Code hat sechs Ziffern",
-                mapOf("code" to "Sechs Ziffern"),
+                "The code has six digits",
+                mapOf("code" to "Six digits"),
             )
         }
         val name =
@@ -67,7 +67,7 @@ fun Router.pairingRoutes(
         HttpResponse.json(ClientListDto.serializer(), ClientListDto(clients.clients.value.map { it.toDto(req.clientId) }))
     }
     delete("/api/v1/clients/{clientId}") { req ->
-        if (!clients.remove(req.pathParam("clientId"))) throw HttpException.notFound("Kein solches Gerät")
+        if (!clients.remove(req.pathParam("clientId"))) throw HttpException.notFound("No such device")
         HttpResponse.noContent()
     }
 }

@@ -11,8 +11,8 @@ import java.net.Socket
 import io.github.tycho991.openframe.core.http.Method as ApiMethod
 
 /**
- * NanoHTTPD als reiner Transport: übersetzt Anfragen und Antworten und
- * führt die Handler auf einem begrenzten [dispatcher] aus. Kennt keine Routen.
+ * NanoHTTPD as pure transport: translates requests and responses and
+ * runs the handlers on a bounded [dispatcher]. Knows no routes.
  */
 class NanoHttpServer(
     host: String,
@@ -20,7 +20,7 @@ class NanoHttpServer(
     private val dispatcher: CoroutineDispatcher,
     private val handler: suspend (HttpRequest) -> HttpResponse,
 ) : NanoHTTPD(host, port) {
-    /** Der tatsächlich gebundene Port, auch wenn mit Port 0 gestartet wurde. */
+    /** The port actually bound, even if started with port 0. */
     val port: Int get() = listeningPort
 
     fun startServer() {
@@ -32,7 +32,7 @@ class NanoHttpServer(
         val body = BoundedInputStream(session.inputStream, length ?: 0)
         val method =
             runCatching { ApiMethod.valueOf(session.method.name) }.getOrNull()
-                ?: return toNano(HttpResponse.error(HttpException(405, "method_not_allowed", "Methode nicht unterstützt")), null)
+                ?: return toNano(HttpResponse.error(HttpException(405, "method_not_allowed", "Method not supported")), null)
         val request =
             HttpRequest(
                 method = method,
@@ -47,13 +47,13 @@ class NanoHttpServer(
                 withContext(dispatcher) { handler(request) }
             }
         val nano = toNano(response, request)
-        // Nicht gelesene Rümpfe würden die nächste Anfrage derselben Verbindung stören. Wegwerfen statt
-        // sofort schließen, sonst verwirft ein TCP-Reset beim Client die schon gesendete Antwort.
+        // Unread bodies would disturb the next request on the same connection. Discard instead of
+        // closing right away, otherwise a TCP reset makes the client drop the response already sent.
         if (!body.drain(MAX_DRAIN_BYTES)) nano.closeConnection(true)
         return nano
     }
 
-    /** Header und Rumpf gehen getrennt raus. Ohne `TCP_NODELAY` kostet das mit Delayed ACK rund 40 ms pro Antwort. */
+    /** Headers and body go out separately. Without `TCP_NODELAY` that costs about 40 ms per response with delayed ACK. */
     override fun createClientHandler(
         finalAccept: Socket,
         inputStream: InputStream,
@@ -135,7 +135,7 @@ class NanoHttpServer(
         private const val MAX_DRAIN_BYTES = 8L * 1024 * 1024
         private const val JSON_TYPE = "application/json; charset=utf-8"
 
-        /** Ein einzelner Bereich `bytes=a-b`, `bytes=a-` oder `bytes=-n`. Leerer Bereich bedeutet 416. */
+        /** A single range `bytes=a-b`, `bytes=a-` or `bytes=-n`. An empty range means 416. */
         internal fun parseRange(
             header: String,
             total: Long,
@@ -178,7 +178,7 @@ class NanoHttpServer(
     }
 }
 
-/** Liest höchstens [limit] Bytes aus [input] und lässt den Rest der Verbindung unberührt. */
+/** Reads at most [limit] bytes from [input] and leaves the rest of the connection untouched. */
 internal class BoundedInputStream(
     input: InputStream,
     private var limit: Long,
@@ -209,12 +209,12 @@ internal class BoundedInputStream(
 
     override fun available(): Int = minOf(super.available().toLong(), limit).toInt()
 
-    /** Die Verbindung gehört NanoHTTPD und wird hier nicht geschlossen. */
+    /** The connection belongs to NanoHTTPD and is not closed here. */
     override fun close() {}
 
     override fun markSupported() = false
 
-    /** Liest bis zu [max] restliche Bytes weg. `false`, wenn danach noch Daten übrig sind. */
+    /** Reads away up to [max] remaining bytes. `false` if data is left afterwards. */
     fun drain(max: Long): Boolean {
         var budget = max
         val buf = ByteArray(8192)

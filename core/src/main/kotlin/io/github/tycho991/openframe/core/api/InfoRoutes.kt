@@ -24,7 +24,7 @@ data class InfoDto(
     val apiVersion: Int = 1,
 )
 
-/** `GET /api/v1/info`, ohne Kopplung abrufbar und ohne Einstellungen. */
+/** `GET /api/v1/info`, retrievable without pairing and without settings. */
 fun Router.infoRoutes(
     identity: FrameIdentity,
     settings: SettingsRepository,

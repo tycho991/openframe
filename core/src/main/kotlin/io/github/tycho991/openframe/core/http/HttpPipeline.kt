@@ -5,12 +5,12 @@ import io.github.tycho991.openframe.core.log.AppLog
 import kotlinx.coroutines.CancellationException
 import java.net.URI
 
-/** Prüft Token und Bild-Signaturen. Implementiert in `auth`. */
+/** Checks tokens and image signatures. Implemented in `auth`. */
 interface Authenticator {
-    /** Liefert die ID des Clients zum Bearer-Token der Anfrage oder `null`. */
+    /** Returns the ID of the client for the request's bearer token or `null`. */
     fun clientFor(request: HttpRequest): String?
 
-    /** Ob die Anfrage eine gültige Bild-Signatur für das Foto [photoId] trägt. */
+    /** Whether the request carries a valid image signature for the photo [photoId]. */
     fun hasValidImageSignature(
         request: HttpRequest,
         photoId: String,
@@ -18,10 +18,10 @@ interface Authenticator {
 }
 
 /**
- * Verarbeitet jede Anfrage in derselben Reihenfolge: Route finden,
- * Origin prüfen, Zugriff prüfen, Handler ausführen, Fehler abbilden und
- * Sicherheitsheader setzen. Pfade außerhalb von `/api/` gehen an [fallback],
- * die Auslieferung der Web-UI.
+ * Processes every request in the same order: find route,
+ * check origin, check access, run handler, map errors and
+ * set security headers. Paths outside `/api/` go to [fallback],
+ * the serving of the web UI.
  */
 class HttpPipeline(
     private val router: Router,
@@ -36,12 +36,12 @@ class HttpPipeline(
             } catch (e: HttpException) {
                 HttpResponse.error(e)
             } catch (e: ValidationException) {
-                HttpResponse.error(HttpException.badRequest("Ungültige Werte", e.fields))
+                HttpResponse.error(HttpException.badRequest("Invalid values", e.fields))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                log.e(TAG, "Fehler bei ${request.method} ${request.path}", e)
-                HttpResponse.error(HttpException(500, "internal_error", "Interner Fehler"))
+                log.e(TAG, "Error on ${request.method} ${request.path}", e)
+                HttpResponse.error(HttpException(500, "internal_error", "Internal error"))
             }
         return response.withHeaders(SECURITY_HEADERS)
     }
@@ -51,14 +51,14 @@ class HttpPipeline(
         if (!request.path.startsWith(API_PREFIX)) return fallback(request)
         return when (val match = router.match(request.method, request.path)) {
             is RouteMatch.NotFound -> {
-                throw HttpException.notFound("Unbekannter Endpunkt ${request.path}")
+                throw HttpException.notFound("Unknown endpoint ${request.path}")
             }
 
             is RouteMatch.MethodNotAllowed -> {
                 throw HttpException(
                     405,
                     "method_not_allowed",
-                    "Methode ${request.method} nicht erlaubt",
+                    "Method ${request.method} not allowed",
                     headers = mapOf("Allow" to match.allowed.joinToString(", ")),
                 )
             }
@@ -87,25 +87,25 @@ class HttpPipeline(
         if (route.access == Access.TOKEN_OR_IMAGE_SIGNATURE) {
             val photoId = request.pathParams["photoId"]
             if (photoId != null && authenticator.hasValidImageSignature(request, photoId)) return
-            throw HttpException.unauthorized("Kein gültiges Token und keine gültige Signatur")
+            throw HttpException.unauthorized("No valid token and no valid signature")
         }
         throw HttpException.unauthorized()
     }
 
     /**
-     * Ändernde Anfragen aus dem Browser dürfen nur vom eigenen Origin kommen.
-     * Clients ohne diese Header (curl, Home Assistant) sind nicht betroffen.
+     * Mutating requests from the browser may only come from the own origin.
+     * Clients without these headers (curl, Home Assistant) are not affected.
      */
     private fun checkOrigin(request: HttpRequest) {
         val fetchSite = request.header("sec-fetch-site")
         if (fetchSite != null && fetchSite != "same-origin" && fetchSite != "none") {
-            throw HttpException(403, "forbidden_origin", "Anfrage von fremder Seite abgelehnt")
+            throw HttpException(403, "forbidden_origin", "Request from a foreign page rejected")
         }
         val origin = request.header("origin") ?: return
         val host = request.header("host")
         val originHost = runCatching { URI(origin).let { u -> if (u.port == -1) u.host else "${u.host}:${u.port}" } }.getOrNull()
         if (originHost == null || host == null || !originHost.equals(host, ignoreCase = true)) {
-            throw HttpException(403, "forbidden_origin", "Anfrage von fremdem Origin abgelehnt")
+            throw HttpException(403, "forbidden_origin", "Request from a foreign origin rejected")
         }
     }
 

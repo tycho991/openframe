@@ -6,9 +6,9 @@ import io.github.tycho991.openframe.core.settings.Order
 import kotlin.random.Random
 
 /**
- * Reihenfolge der Slideshow. Bei `shuffle` erscheint jedes sichtbare Foto
- * einmal pro Durchgang, bevor sich eines wiederholt. Bei `chronological`
- * aufsteigend nach Aufnahmedatum. Nach dem letzten Foto beginnt ein neuer Durchgang.
+ * Order of the slideshow. With `shuffle` every visible photo appears
+ * once per pass before any repeats. With `chronological`
+ * ascending by capture date. After the last photo a new pass begins.
  */
 class Playlist(
     private val random: Random = Random.Default,
@@ -16,12 +16,12 @@ class Playlist(
     private var order = Order.SHUFFLE
     private var photos: Map<String, PhotoEntry> = emptyMap()
 
-    /** IDs des aktuellen Durchgangs. */
+    /** IDs of the current pass. */
     private var pass: MutableList<String> = mutableListOf()
     private var previousPass: List<String> = emptyList()
     private var pos = 0
 
-    /** Das aktuelle Foto ist weggefallen und [pos] steht schon auf dem nächsten. */
+    /** The current photo has dropped out and [pos] already points to the next one. */
     private var advanced = false
 
     val current: PhotoEntry? get() = pass.getOrNull(pos)?.let(photos::get)
@@ -29,8 +29,8 @@ class Playlist(
     val size: Int get() = pass.size
 
     /**
-     * Übernimmt die sichtbaren Fotos ([visible], nach Aufnahmedatum) und die
-     * Reihenfolge. Liefert `true`, wenn das aktuelle Foto weggefallen ist.
+     * Takes over the visible photos ([visible], by capture date) and the
+     * order. Returns `true` if the current photo has dropped out.
      */
     fun update(
         visible: List<PhotoEntry>,
@@ -54,7 +54,7 @@ class Playlist(
                 pass.retainAll { it in photos }
                 pos -= removedBeforePos
                 val known = pass.toHashSet()
-                // Neue Fotos kommen an zufällige Stellen nach dem aktuellen, damit sie noch in diesem Durchgang erscheinen.
+                // New photos go to random positions after the current one so that they still appear in this pass.
                 for (id in visible.map { it.id }.filter { it !in known }) {
                     val from = (pos + 1).coerceAtMost(pass.size)
                     pass.add(from + random.nextInt(pass.size - from + 1), id)
@@ -66,7 +66,7 @@ class Playlist(
         return (before != null && before !in photos).also { if (it) advanced = true }
     }
 
-    /** Wechselt zum nächsten Foto und beginnt nach dem letzten einen neuen Durchgang. */
+    /** Moves to the next photo and begins a new pass after the last one. */
     fun next(): PhotoEntry? {
         if (pass.isEmpty()) return null
         if (advanced) {
@@ -78,7 +78,7 @@ class Playlist(
         return current
     }
 
-    /** Wechselt zum vorigen Foto, auch über den Anfang des Durchgangs hinweg. */
+    /** Moves to the previous photo, also across the start of the pass. */
     fun previous(): PhotoEntry? {
         if (pass.isEmpty()) return null
         advanced = false
@@ -102,7 +102,7 @@ class Playlist(
         return current
     }
 
-    /** Springt zum Foto [id], wenn es im aktuellen Durchgang ist. */
+    /** Jumps to the photo [id] if it is in the current pass. */
     fun moveTo(id: String): PhotoEntry? {
         val i = pass.indexOf(id)
         if (i < 0) return null
@@ -111,14 +111,14 @@ class Playlist(
         return current
     }
 
-    /** Die nächsten [n] Fotos nach dem aktuellen, ohne zu wechseln. */
+    /** The next [n] photos after the current one, without moving. */
     fun upcoming(n: Int): List<PhotoEntry> {
         if (pass.isEmpty()) return emptyList()
         val result = ArrayList<PhotoEntry>(n)
         var i = pos + 1
         while (result.size < minOf(n, pass.size - 1)) {
             if (i >= pass.size) {
-                // Im neuen Durchgang ist die Reihenfolge bei shuffle noch offen.
+                // In the new pass the order is still open with shuffle.
                 if (order == Order.SHUFFLE) break
                 i = 0
             }
@@ -141,11 +141,11 @@ class Playlist(
         previousPass = emptyList()
         pos = keep?.let { pass.indexOf(it) }?.takeIf { it >= 0 }
             ?: keepEntry?.let { gone ->
-                // Weggefallen: weiter mit dem Foto, das in der Sortierung danach kommt.
+                // Dropped out: continue with the photo that comes after it in the sort order.
                 pass.indexOfFirst { DATE_ORDER.compare(photos.getValue(it), gone) > 0 }.takeIf { it >= 0 }
             } ?: 0
         if (order == Order.SHUFFLE && keep != null && keep in photos) {
-            // Das aktuelle Foto steht am Anfang, damit der Durchgang ab hier vollständig ist.
+            // The current photo is at the start so that the pass is complete from here on.
             pass.remove(keep)
             pass.add(0, keep)
             pos = 0
@@ -157,7 +157,7 @@ class Playlist(
         if (order == Order.SHUFFLE) {
             val last = pass.lastOrNull()
             pass.shuffle(random)
-            // Kein Foto zweimal hintereinander über die Grenze zweier Durchgänge.
+            // No photo twice in a row across the boundary of two passes.
             if (pass.size > 1 && pass.first() == last) {
                 val swap = 1 + random.nextInt(pass.size - 1)
                 pass[0] = pass[swap].also { pass[swap] = pass[0] }

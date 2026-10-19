@@ -12,17 +12,17 @@ import javax.crypto.spec.SecretKeySpec
 
 @Serializable
 data class StoredSecret(
-    /** Base64url des HMAC-Schlüssels für Bild-Signaturen. */
+    /** Base64url of the HMAC key for image signatures. */
     val imageKey: String,
 )
 
 /**
- * Signaturen für Bild-URLs, weil `<img>` keinen Authorization-Header schicken
- * kann. Die Signatur gilt nur für ein Foto und läuft zur übernächsten vollen
- * Stunde ab, also nach ein bis zwei Stunden. Innerhalb einer Stunde ist sie
- * gleich, damit der Browser-Cache greift.
+ * Signatures for image URLs, because `<img>` cannot send an Authorization
+ * header. The signature is valid for one photo only and expires at the full
+ * hour after next, that is, after one to two hours. Within an hour it stays
+ * the same so that the browser cache works.
  *
- * Format von `t`: `<Ablauf in Epoch-Sekunden>.<HMAC-SHA256(photoId + "." + Ablauf), Base64url>`.
+ * Format of `t`: `<expiry in epoch seconds>.<HMAC-SHA256(photoId + "." + expiry), Base64url>`.
  */
 class ImageSigner(
     private val store: JsonStore<StoredSecret>,
@@ -32,7 +32,7 @@ class ImageSigner(
     @Volatile
     private var key: ByteArray = ByteArray(0)
 
-    /** Ein initialisiertes HMAC pro Thread und Schlüssel, weil eine Fotoliste hundert URLs auf einmal signiert. */
+    /** One initialized HMAC per thread and key, because a photo list signs a hundred URLs at once. */
     private val macs = ThreadLocal<Pair<ByteArray, Mac>>()
 
     fun load() {
@@ -40,7 +40,7 @@ class ImageSigner(
         if (stored == null) rotate() else key = Base64.getUrlDecoder().decode(stored.imageKey)
     }
 
-    /** Neuer Schlüssel: Alle bisher ausgestellten Signaturen werden ungültig. */
+    /** New key: all signatures issued so far become invalid. */
     @Synchronized
     fun rotate() {
         key = ByteArray(KEY_BYTES).also(random::nextBytes)

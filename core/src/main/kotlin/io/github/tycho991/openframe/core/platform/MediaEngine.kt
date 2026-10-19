@@ -14,7 +14,7 @@ enum class ImageFormat(
     HEIF("heic"),
 }
 
-/** Maße nach EXIF-Drehung und Aufnahmedatum aus EXIF, sofern vorhanden. */
+/** Dimensions after EXIF rotation and capture date from EXIF, if present. */
 data class ImageInfo(
     val format: ImageFormat,
     val width: Int,
@@ -22,14 +22,14 @@ data class ImageInfo(
     val takenAt: Instant?,
 )
 
-/** Warum eine Datei mit Bild-Endung nicht aufgenommen werden kann. */
+/** Why a file with an image extension cannot be accepted. */
 enum class SkipReason(
     val apiName: String,
 ) {
-    /** Format auf diesem Gerät nicht decodierbar, etwa HEIC vor API 28. */
+    /** Format cannot be decoded on this device, for example HEIC before API 28. */
     UNSUPPORTED("unsupported"),
 
-    /** Datei beschädigt oder kein Bild. */
+    /** File damaged or not an image. */
     CORRUPT("corrupt"),
 }
 
@@ -40,19 +40,19 @@ class ImageException(
 ) : Exception(message, cause)
 
 /**
- * Bildoperationen der Plattform. In :android über `BitmapFactory`, in Tests
- * als JVM-Fake. Alle Methoden blockieren und laufen auf dem Render-Worker.
+ * Image operations of the platform. In :android through `BitmapFactory`, in tests
+ * as a JVM fake. All methods block and run on the render worker.
  */
 interface MediaEngine {
     /**
-     * Liest Format, Maße und Aufnahmedatum und prüft per Probe-Decode, dass
-     * die Datei decodierbar ist. Wirft [ImageException].
+     * Reads format, dimensions and capture date and checks by a probe decode that
+     * the file is decodable. Throws [ImageException].
      */
     fun probe(file: File): ImageInfo
 
     /**
-     * Rendert [source] EXIF-gedreht auf genau [width]×[height] Pixel als JPEG
-     * mit Qualität [quality] nach [target]. Das Seitenverhältnis bestimmt der Aufrufer.
+     * Renders [source] EXIF-rotated to exactly [width]×[height] pixels as JPEG
+     * with quality [quality] to [target]. The caller determines the aspect ratio.
      */
     fun render(
         source: File,
@@ -67,7 +67,7 @@ interface MediaEngine {
     }
 }
 
-/** Erkennt Bildformate an den ersten Bytes, unabhängig von der Dateiendung. */
+/** Recognizes image formats by their first bytes, independent of the file extension. */
 object ImageFormats {
     val EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif")
 

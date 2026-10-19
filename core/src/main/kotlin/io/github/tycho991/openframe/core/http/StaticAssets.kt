@@ -3,15 +3,15 @@ package io.github.tycho991.openframe.core.http
 import io.github.tycho991.openframe.core.platform.AssetSource
 
 /**
- * Liefert die Web-UI aus [assets] aus. Pfade ohne Dateiendung, etwa
- * `/photos`, sind Routen der Single-Page-App und bekommen `index.html`.
+ * Serves the web UI from [assets]. Paths without a file extension, for example
+ * `/photos`, are routes of the single-page app and get `index.html`.
  */
 class StaticAssets(
     private val assets: AssetSource,
 ) {
     suspend fun handle(request: HttpRequest): HttpResponse {
         if (request.method != Method.GET && request.method != Method.HEAD) {
-            throw HttpException(405, "method_not_allowed", "Nur GET", headers = mapOf("Allow" to "GET"))
+            throw HttpException(405, "method_not_allowed", "GET only", headers = mapOf("Allow" to "GET"))
         }
         val path = request.path.trimStart('/')
         if (path.split('/').any { it == ".." || it == "." }) throw HttpException.notFound()
@@ -24,7 +24,7 @@ class StaticAssets(
             if (target == INDEX) {
                 mapOf("Cache-Control" to "no-cache", "Content-Security-Policy" to CSP)
             } else if (target.startsWith("assets/")) {
-                // Vite versieht alles unter assets/ mit einem Hash im Dateinamen.
+                // Vite puts a hash into the file name of everything under assets/.
                 mapOf("Cache-Control" to "public, max-age=31536000, immutable")
             } else {
                 mapOf("Cache-Control" to "no-cache")

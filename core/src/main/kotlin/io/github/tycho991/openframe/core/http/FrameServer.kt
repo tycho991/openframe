@@ -4,8 +4,8 @@ import io.github.tycho991.openframe.core.log.AppLog
 import kotlinx.coroutines.CoroutineDispatcher
 
 /**
- * Lebenszyklus des HTTP-Servers. Im Modus „nur lokal“ bindet er an
- * `127.0.0.1` und ist aus dem LAN nicht erreichbar, sonst an alle Adressen.
+ * Lifecycle of the HTTP server. In "local only" mode it binds to
+ * `127.0.0.1` and is not reachable from the LAN, otherwise to all addresses.
  */
 class FrameServer(
     private val port: Int,
@@ -19,7 +19,7 @@ class FrameServer(
     var localOnly: Boolean = false
         private set
 
-    /** Der gebundene Port oder `null`, wenn der Server nicht läuft. */
+    /** The bound port or `null` if the server is not running. */
     val boundPort: Int? get() = server?.takeIf { it.isAlive }?.port
 
     @Synchronized
@@ -30,10 +30,10 @@ class FrameServer(
         val s = NanoHttpServer(host, port, dispatcher, handler)
         s.startServer()
         server = s
-        log.i(TAG, "Server auf $host:${s.port}" + if (localOnly) " (nur lokal)" else "")
+        log.i(TAG, "Server on $host:${s.port}" + if (localOnly) " (local only)" else "")
     }
 
-    /** Startet neu, etwa nach einem WLAN-Wechsel oder beim Umschalten von „nur lokal“. */
+    /** Restarts, for example after a Wi-Fi change or when toggling "local only". */
     @Synchronized
     fun restart(localOnly: Boolean = this.localOnly) = start(localOnly)
 

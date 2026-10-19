@@ -8,16 +8,16 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 
-/** Ergebnis einer Änderung: neue Einstellungen und die Fehler pro Feld. */
+/** Result of a change: new settings and the errors per field. */
 data class PatchResult(
     val settings: Settings,
     val errors: Map<String, String>,
 )
 
 /**
- * Wendet eine Teiländerung als JSON auf [Settings] an und prüft jedes Feld.
- * Dieselbe Logik lädt gespeicherte Werte über die Standardwerte, sodass
- * fehlende oder ungültige Werte nach einem Update ihren Standard behalten.
+ * Applies a partial change as JSON to [Settings] and validates every field.
+ * The same logic loads stored values over the defaults so that
+ * missing or invalid values keep their default after an update.
  */
 object SettingsPatch {
     fun apply(
@@ -31,7 +31,7 @@ object SettingsPatch {
                 "name" -> {
                     string(value, key, errors)?.trim()?.let {
                         if (it.isEmpty() || it.length > Settings.NAME_MAX_LENGTH) {
-                            errors[key] = "1 bis ${Settings.NAME_MAX_LENGTH} Zeichen"
+                            errors[key] = "1 to ${Settings.NAME_MAX_LENGTH} characters"
                         } else {
                             s = s.copy(name = it)
                         }
@@ -75,7 +75,7 @@ object SettingsPatch {
                 }
 
                 else -> {
-                    errors[key] = "Unbekanntes Feld"
+                    errors[key] = "Unknown field"
                 }
             }
         }
@@ -88,7 +88,7 @@ object SettingsPatch {
         errors: MutableMap<String, String>,
     ): ClockSettings {
         if (value !is JsonObject) {
-            errors["clock"] = "Erwartet ein Objekt"
+            errors["clock"] = "Expected an object"
             return base
         }
         var c = base
@@ -99,7 +99,7 @@ object SettingsPatch {
                 "position" -> enum(v, path, ClockPosition.serializer(), errors)?.let { c = c.copy(position = it) }
                 "sizePercent" -> int(v, path, Settings.CLOCK_SIZE_PERCENT, errors)?.let { c = c.copy(sizePercent = it) }
                 "format" -> enum(v, path, ClockFormat.serializer(), errors)?.let { c = c.copy(format = it) }
-                else -> errors[path] = "Unbekanntes Feld"
+                else -> errors[path] = "Unknown field"
             }
         }
         return c
@@ -111,7 +111,7 @@ object SettingsPatch {
         errors: MutableMap<String, String>,
     ): String? {
         if (value is JsonPrimitive && value.isString) return value.content
-        errors[key] = "Erwartet einen Text"
+        errors[key] = "Expected a text"
         return null
     }
 
@@ -121,7 +121,7 @@ object SettingsPatch {
         errors: MutableMap<String, String>,
     ): Boolean? {
         val b = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
-        if (b == null) errors[key] = "Erwartet true oder false"
+        if (b == null) errors[key] = "Expected true or false"
         return b
     }
 
@@ -133,7 +133,7 @@ object SettingsPatch {
     ): Int? {
         val n = (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
         if (n == null || n !in range) {
-            errors[key] = "Erwartet eine ganze Zahl von ${range.first} bis ${range.last}"
+            errors[key] = "Expected an integer from ${range.first} to ${range.last}"
             return null
         }
         return n
@@ -149,7 +149,7 @@ object SettingsPatch {
             runCatching { Json.decodeFromJsonElement(serializer, value) }.getOrNull()?.let { return it }
         }
         val names = (0 until serializer.descriptor.elementsCount).map { serializer.descriptor.getElementName(it) }
-        errors[key] = "Erlaubt: ${names.joinToString()}"
+        errors[key] = "Allowed: ${names.joinToString()}"
         return null
     }
 }

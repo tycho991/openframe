@@ -15,14 +15,14 @@ data class LogEntry(
     val message: String,
 )
 
-/** Empfänger für Protokolleinträge, z. B. Logcat in :android. */
+/** Receiver for log entries, e.g. Logcat in :android. */
 fun interface LogSink {
     fun write(entry: LogEntry)
 }
 
 /**
- * Protokoll der App. Hält die letzten Einträge im Speicher und schreibt sie
- * optional in ein rotierendes Datei-Log mit begrenzter Größe.
+ * The app's log. Keeps the latest entries in memory and optionally writes them
+ * to a rotating file log of limited size.
  */
 class AppLog(
     private val clock: Clock,
@@ -70,17 +70,17 @@ class AppLog(
         sinks.forEach { it.write(entry) }
     }
 
-    /** Die letzten [limit] Einträge, älteste zuerst. Liest das Datei-Log, wenn vorhanden. */
+    /** The latest [limit] entries, oldest first. Reads the file log if present. */
     fun recent(limit: Int): List<LogEntry> = file?.read(limit) ?: synchronized(buffer) { buffer.toList().takeLast(limit) }
 
     private fun stackTrace(error: Throwable): String = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
 }
 
 /**
- * Datei-Log mit zwei Dateien: Erreicht die aktuelle Datei [maxBytes], wird sie
- * zur alten Datei und eine neue beginnt. Belegt so höchstens 2 × [maxBytes].
+ * File log with two files: when the current file reaches [maxBytes], it becomes
+ * the old file and a new one begins. Occupies at most 2 × [maxBytes] that way.
  *
- * Format pro Zeile: `ISO-Zeit<TAB>LEVEL<TAB>tag<TAB>Nachricht` mit maskierten Zeilenumbrüchen.
+ * Format per line: `ISO time<TAB>LEVEL<TAB>tag<TAB>message` with escaped line breaks.
  */
 class RotatingFileLog(
     private val dir: File,
