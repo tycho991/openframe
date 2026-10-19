@@ -12,18 +12,18 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * Zeigt Fotos mit zwei übereinanderliegenden `ImageView`s. Decodiert wird auf
- * einem eigenen Thread, nur die vorab gerenderte Anzeigegröße, ohne weitere
- * Skalierung. Es gibt höchstens zwei Bitmaps: das aktuelle und das nächste.
- * Übergänge laufen über `ViewPropertyAnimator`. Bewusst ohne `withLayer()`: Eine `ImageView` ohne
- * Hintergrund überlappt sich nicht selbst, `alpha` und `translationX` brauchen also keinen
- * Hardware-Layer. Der Layer kostete auf dem Frameo etwa jeden fünften Vsync (gemessen: 22 % verpasst
- * mit, 2 bis 4 % ohne).
+ * Shows photos with two stacked `ImageView`s. Decoding happens on a
+ * thread of its own, only the pre-rendered display size, without further
+ * scaling. There are at most two bitmaps: the current and the next.
+ * Transitions run through `ViewPropertyAnimator`. Deliberately without `withLayer()`: an `ImageView` without a
+ * background does not overlap itself, so `alpha` and `translationX` need no
+ * hardware layer. The layer cost about every fifth vsync on the Frameo (measured: 22 % missed
+ * with it, 2 to 4 % without).
  */
 class SlideRenderer(
     private var front: ImageView,
     private var back: ImageView,
-    /** Ein Foto ließ sich nicht decodieren. */
+    /** A photo could not be decoded. */
     private val onUndecodable: (PhotoEntry) -> Unit,
 ) {
     private class Decoded(
@@ -48,7 +48,7 @@ class SlideRenderer(
             back.scaleType = scaleType()
         }
 
-    /** Zeigt [photo] mit dem Übergang [transition]. [step] +1 kommt von rechts, -1 von links. */
+    /** Shows [photo] with the transition [transition]. [step] +1 comes from the right, -1 from the left. */
     fun show(
         photo: PhotoEntry,
         file: File,
@@ -63,7 +63,7 @@ class SlideRenderer(
             swapTo(ready, step, transition, durationMs)
             return
         }
-        // Nicht vorab decodiert, etwa nach einem Wischen zurück: jetzt decodieren.
+        // Not decoded ahead, for example after swiping back: decode now.
         preloaded?.bitmap?.recycle()
         preloaded = null
         decoder.execute {
@@ -80,13 +80,13 @@ class SlideRenderer(
         }
     }
 
-    /** Decodiert das nächste Foto vorab, damit der Übergang ohne Wartezeit beginnt. */
+    /** Decodes the next photo ahead so that the transition starts without waiting. */
     fun preload(next: Pair<PhotoEntry, File>?) {
         if (next == null) return
         val (photo, file) = next
         if (preloaded?.photo?.id == photo.id && preloaded?.file == file) return
         if (preloading == photo.id to file) return
-        // Höchstens zwei Bitmaps: während eines Übergangs sind beide belegt.
+        // At most two bitmaps: during a transition both are in use.
         if (animating) {
             main.postDelayed({ preload(next) }, 200)
             return
@@ -109,7 +109,7 @@ class SlideRenderer(
         }
     }
 
-    /** Zeigt nichts mehr, etwa im Leerzustand. */
+    /** Shows nothing any more, for example in the empty state. */
     fun clear() {
         generation++
         front.animate().cancel()
@@ -133,7 +133,7 @@ class SlideRenderer(
         transition: Transition,
         durationMs: Long,
     ) {
-        // Ein laufender Übergang wird abgeschlossen, bevor der nächste beginnt. cancel() löst withEndAction nicht aus.
+        // A running transition is completed before the next one begins. cancel() does not trigger withEndAction.
         if (animating) {
             front.animate().cancel()
             back.animate().cancel()
@@ -197,7 +197,7 @@ class SlideRenderer(
         finishSwap(old)
     }
 
-    /** Die hintere Ansicht nach vorn, aber unter den Overlays (deren translationZ ist höher). */
+    /** The back view to the front, but below the overlays (their translationZ is higher). */
     private fun raiseBack() {
         back.translationZ = 1f
         front.translationZ = 0f
@@ -209,7 +209,7 @@ class SlideRenderer(
         back = t
     }
 
-    /** Räumt die hintere Ansicht ab und gibt das alte Bitmap frei. */
+    /** Clears the back view and releases the old bitmap. */
     private fun finishSwap(old: Decoded? = null) {
         back.setImageDrawable(null)
         back.alpha = 0f

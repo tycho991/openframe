@@ -26,8 +26,8 @@ import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 
 /**
- * Foreground-Service mit Kern und HTTP-Server. Läuft weiter, wenn die Anzeige
- * im Hintergrund ist oder neu startet, und hält CPU und WLAN wach.
+ * Foreground service with core and HTTP server. Keeps running when the display
+ * is in the background or restarting, and keeps CPU and Wi-Fi awake.
  */
 class FrameService : Service() {
     inner class LocalBinder : Binder() {
@@ -65,7 +65,7 @@ class FrameService : Service() {
         debugReceiver?.let(::unregisterReceiver)
         wakeLock?.takeIf { it.isHeld }?.release()
         wifiLock?.takeIf { it.isHeld }?.release()
-        // Der Kern gehört dem Prozess und läuft weiter. START_STICKY bringt den Service zurück.
+        // The core belongs to the process and keeps running. START_STICKY brings the service back.
         super.onDestroy()
     }
 
@@ -112,20 +112,20 @@ class FrameService : Service() {
         wifiLock = wifi.createWifiLock(mode, "openframe:server").apply { acquire() }
     }
 
-    /** Nach einem WLAN-Wechsel neu binden, damit der Server auf der neuen Adresse annimmt. */
+    /** Rebind after a Wi-Fi change so that the server accepts on the new address. */
     private fun watchNetwork() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val restart = Runnable { if (core.ready.value) core.onNetworkChanged() }
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    core.log.i(TAG, "Netzwerk verfügbar")
+                    core.log.i(TAG, "Network available")
                     main.removeCallbacks(restart)
                     main.postDelayed(restart, NETWORK_SETTLE_MS)
                 }
 
                 override fun onLost(network: Network) {
-                    core.log.i(TAG, "Netzwerk verloren")
+                    core.log.i(TAG, "Network lost")
                 }
             }
         connectivity.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
@@ -133,8 +133,8 @@ class FrameService : Service() {
     }
 
     /**
-     * Nur in Debug-Builds: `adb shell am broadcast -a io.github.tycho991.openframe.DEBUG_CRASH`
-     * löst einen Absturz aus, um die Selbstheilung zu prüfen.
+     * Debug builds only: `adb shell am broadcast -a io.github.tycho991.openframe.DEBUG_CRASH`
+     * triggers a crash to check the self-healing.
      */
     private fun registerDebugCommands() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
@@ -144,11 +144,11 @@ class FrameService : Service() {
                     context: Context,
                     intent: Intent,
                 ) {
-                    main.post { throw IllegalStateException("Absturz auf Anfrage (DEBUG_CRASH)") }
+                    main.post { throw IllegalStateException("Crash on request (DEBUG_CRASH)") }
                 }
             }
         val filter = IntentFilter(ACTION_DEBUG_CRASH)
-        // Exportiert, damit adb den Broadcast schicken kann. Vor API 33 gibt es das Flag nicht.
+        // Exported so that adb can send the broadcast. The flag does not exist before API 33.
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {

@@ -21,7 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-/** Die Bildpipeline mit echten Decodern über Robolectric, mit den Testbildern aus :core. */
+/** The image pipeline with real decoders through Robolectric, with the test images from :core. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [28])
@@ -42,12 +42,12 @@ class AndroidMediaEngineTest {
         } catch (e: ImageException) {
             return e.reason
         }
-        fail("ImageException erwartet")
+        fail("ImageException expected")
         throw AssertionError()
     }
 
     @Test
-    fun masseNachDrehungUndAufnahmedatum() {
+    fun dimensionsAfterRotationAndCaptureDate() {
         val landscape = engine.probe(fixture("landscape.jpg"))
         assertEquals(ImageFormat.JPEG, landscape.format)
         assertEquals(400 to 300, landscape.width to landscape.height)
@@ -63,7 +63,7 @@ class AndroidMediaEngineTest {
     }
 
     @Test
-    fun weitereFormateUndGifAlsStandbild() {
+    fun furtherFormatsAndGifAsStillImage() {
         assertEquals(200 to 100, engine.probe(fixture("image.png")).let { it.width to it.height })
         assertEquals(160 to 120, engine.probe(fixture("image.webp")).let { it.width to it.height })
         val gif = engine.probe(fixture("anim.gif"))
@@ -74,28 +74,28 @@ class AndroidMediaEngineTest {
     }
 
     @Test
-    fun defekteDateiUndHeicAufAltemGeraet() {
+    fun brokenFileAndHeicOnOldDevice() {
         assertEquals(SkipReason.CORRUPT, skipReason { engine.probe(fixture("broken.jpg")) })
-        assertEquals(SkipReason.CORRUPT, skipReason { engine.probe(fixture("notiz.txt")) })
+        assertEquals(SkipReason.CORRUPT, skipReason { engine.probe(fixture("note.txt")) })
         assertEquals(SkipReason.UNSUPPORTED, skipReason { AndroidMediaEngine(sdkInt = 23).probe(fixture("photo.heic")) })
     }
 
     @Test
-    fun rendernDrehtNachExifUndSchreibtJpeg() {
+    fun renderingRotatesByExifAndWritesJpeg() {
         val out = File(tmp.root, "out.jpg")
         engine.render(fixture("rotated6.jpg"), out, 150, 200)
         val bmp = BitmapFactory.decodeFile(out.path)
         assertEquals(150 to 200, bmp.width to bmp.height)
-        // Rote Markierung oben links im gespeicherten Bild liegt nach 90° im Uhrzeigersinn oben rechts.
+        // The red marker at the top left in the stored image is at the top right after 90° clockwise.
         val p = bmp.getPixel(140, 10)
-        assertTrue("oben rechts rot, war ${Integer.toHexString(p)}", Color.red(p) > 200 && Color.green(p) < 80)
+        assertTrue("top right red, was ${Integer.toHexString(p)}", Color.red(p) > 200 && Color.green(p) < 80)
         val bytes = out.readBytes()
         assertEquals(0xFF.toByte(), bytes[0])
         assertEquals(0xD8.toByte(), bytes[1])
     }
 
     @Test
-    fun inSampleSizeInZweiDurchgaengen() {
+    fun inSampleSizeInTwoPasses() {
         assertEquals(1, AndroidMediaEngine.sampleSize(400, 300, 400, 300))
         assertEquals(4, AndroidMediaEngine.sampleSize(8000, 6000, 1920, 1200))
         assertEquals(2, AndroidMediaEngine.sampleSize(8000, 6000, 2560, 1920))

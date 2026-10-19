@@ -18,8 +18,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Uhr mit Datum über dem Foto. Lesbar auf hellen wie dunklen Fotos durch
- * Schatten an der Schrift. Aktualisiert sich bei jedem Minutenwechsel.
+ * Clock with date over the photo. Legible on bright and dark photos alike thanks to
+ * a shadow on the text. Updates on every minute change.
  */
 class ClockOverlay(
     private val context: Context,

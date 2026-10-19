@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# Erzeugt die Testbilder unter core/src/test/resources/fixtures (braucht Pillow).
-# Aufruf: python3 scripts/generate-test-fixtures.py core/src/test/resources/fixtures
+# Generates the test images under core/src/test/resources/fixtures (needs Pillow).
+# Usage: python3 scripts/generate-test-fixtures.py core/src/test/resources/fixtures
 import sys, os
 from PIL import Image, ImageDraw
 out = sys.argv[1]
 def scene(w, h, color):
     im = Image.new("RGB", (w, h), color)
     d = ImageDraw.Draw(im)
-    # Markierung oben links, damit Drehungen prüfbar sind
+    # Marker at the top left so that rotations can be checked
     d.rectangle([0, 0, w // 4, h // 4], fill=(255, 0, 0))
     return im
 def exif(orientation=None, taken=None):
@@ -28,6 +28,6 @@ f1 = scene(100, 80, (200, 200, 0)); f2 = scene(100, 80, (0, 200, 200))
 f1.save(f"{out}/anim.gif", save_all=True, append_images=[f2], duration=200, loop=0)
 good = open(f"{out}/landscape.jpg", "rb").read()
 open(f"{out}/broken.jpg", "wb").write(good[:300])
-# HEIF-Kopf ohne Bilddaten: auf Geräten ohne Decoder „nicht unterstützt“
+# HEIF header without image data: "unsupported" on devices without a decoder
 open(f"{out}/photo.heic", "wb").write(bytes.fromhex("0000001866747970686569630000000068656963") + b"mif1" + b"\0" * 200)
-open(f"{out}/note.txt", "w").write("keine Bilddatei\n")
+open(f"{out}/note.txt", "w").write("not an image\n")

@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.OpenFrame">
 
-        <!-- HOME-Launcher: die Home-Taste führt zur Slideshow. -->
+        <!-- HOME launcher: the Home button leads to the slideshow. -->
         <activity
             android:name=".android.DisplayActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|locale|layoutDirection|uiMode"

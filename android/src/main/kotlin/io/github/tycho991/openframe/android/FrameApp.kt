@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * Hält den einen [FrameCore] des Prozesses. Gestartet wird er vom
- * [FrameService], die Anzeige bekommt ihn über dessen Binder.
+ * Holds the process's one [FrameCore]. It is started by the
+ * [FrameService], the display gets it through its binder.
  */
 class FrameApp : Application() {
     val core: FrameCore by lazy {
@@ -42,14 +42,14 @@ class FrameApp : Application() {
             .AtomicBoolean(false)
     private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
-    /** Startet den Kern genau einmal pro Prozess. */
+    /** Starts the core exactly once per process. */
     fun startCore() {
         if (!started.compareAndSet(false, true)) return
         appScope.launch {
             try {
                 core.start()
             } catch (e: Exception) {
-                core.log.e("app", "Start des Kerns fehlgeschlagen", e)
+                core.log.e("app", "Starting the core failed", e)
                 throw e
             }
         }
@@ -61,8 +61,8 @@ class FrameApp : Application() {
     }
 
     /**
-     * Selbstheilung: Absturz protokollieren und die Anzeige in 5 Sekunden neu
-     * starten lassen. Der Service startet wegen `START_STICKY` ohnehin neu.
+     * Self-healing: log the crash and have the display restart in 5 seconds.
+     * The service restarts anyway because of `START_STICKY`.
      */
     private fun installCrashHandler() {
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
@@ -70,11 +70,11 @@ class FrameApp : Application() {
                 core.log.e("crash", "Absturz in ${thread.name}", error)
                 scheduleRestart(this, RESTART_DELAY_MS)
             } catch (ignored: Throwable) {
-                // Beim Absturz nichts mehr riskieren.
+                // Do not risk anything more during a crash.
             }
-            // Nicht an den Standard-Handler weitergeben: Der meldet den Absturz dem System, und das
-            // zeigt auf manchen Geräten (Frameo) einen Fehlerdialog, der den Prozess bis zum Tippen
-            // auf „OK“ am Leben hält. Dann käme der Neustart nie. Deshalb den Prozess selbst beenden.
+            // Do not hand over to the default handler: it reports the crash to the system, and on
+            // some devices (Frameo) that shows an error dialog that keeps the process alive until
+            // "OK" is tapped. The restart would then never come. So end the process ourselves.
             Process.killProcess(Process.myPid())
             kotlin.system.exitProcess(10)
         }
@@ -96,7 +96,7 @@ class FrameApp : Application() {
     }
 }
 
-/** Protokoll zusätzlich nach Logcat. */
+/** Log to Logcat as well. */
 private object LogcatSink : LogSink {
     override fun write(entry: io.github.tycho991.openframe.core.log.LogEntry) {
         val tag = "openframe/${entry.tag}"

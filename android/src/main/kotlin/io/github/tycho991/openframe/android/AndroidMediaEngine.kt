@@ -20,28 +20,28 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * [MediaEngine] mit `BitmapFactory`. Decodiert in zwei Durchgängen: erst nur
- * die Maße, dann mit `inSampleSize` so klein wie möglich, damit auch Fotos
- * mit 48 MP auf Geräten mit wenig Heap durchgehen. Drehung aus der
- * Framework-Klasse `ExifInterface`, nicht aus AndroidX (minSdk 21).
+ * [MediaEngine] with `BitmapFactory`. Decodes in two passes: first only
+ * the dimensions, then with `inSampleSize` as small as possible so that even photos
+ * with 48 MP get through on devices with little heap. Rotation from the
+ * framework class `ExifInterface`, not from AndroidX (minSdk 21).
  */
 class AndroidMediaEngine(
     private val sdkInt: Int = android.os.Build.VERSION.SDK_INT,
 ) : MediaEngine {
     override fun probe(file: File): ImageInfo {
-        val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "Kein bekanntes Bildformat")
-        // HEIC decodiert BitmapFactory erst ab API 28.
-        if (format == ImageFormat.HEIF && sdkInt < HEIF_MIN_SDK) throw ImageException(SkipReason.UNSUPPORTED, "HEIC erst ab Android 9")
+        val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "No known image format")
+        // BitmapFactory decodes HEIC only from API 28.
+        if (format == ImageFormat.HEIF && sdkInt < HEIF_MIN_SDK) throw ImageException(SkipReason.UNSUPPORTED, "HEIC only from Android 9")
         val bounds = bounds(file)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-            throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Nicht decodierbar")
+            throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Not decodable")
         }
-        // Probe-Decode stark verkleinert: erkennt beschädigte Dateien und fehlende Decoder, ohne viel Speicher.
+        // Probe decode heavily downscaled: detects damaged files and missing decoders without much memory.
         val probe =
             BitmapFactory.decodeFile(
                 file.path,
                 BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, PROBE_EDGE, PROBE_EDGE) },
-            ) ?: throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Nicht decodierbar")
+            ) ?: throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Not decodable")
         probe.recycle()
         val exif = exif(file)
         val orientation = exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) ?: 1
@@ -64,7 +64,7 @@ class AndroidMediaEngine(
         val bounds = bounds(source)
         val orientation = exif(source)?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) ?: 1
         val swap = orientation in 5..8
-        // Zielmaße im gespeicherten, ungedrehten Bild.
+        // Target dimensions in the stored, unrotated image.
         val rawW = if (swap) height else width
         val rawH = if (swap) width else height
         val options =
@@ -72,11 +72,11 @@ class AndroidMediaEngine(
                 inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, rawW, rawH)
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-        val decoded = BitmapFactory.decodeFile(source.path, options) ?: throw ImageException(SkipReason.CORRUPT, "Nicht decodierbar")
+        val decoded = BitmapFactory.decodeFile(source.path, options) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         try {
             val matrix = orientationMatrix(orientation, decoded.width, decoded.height)
-            // Auf die Zielgröße skalieren, nach der Drehung.
+            // Scale to the target size, after the rotation.
             val rotatedW = if (swap) decoded.height else decoded.width
             val rotatedH = if (swap) decoded.width else decoded.height
             matrix.postScale(width.toFloat() / rotatedW, height.toFloat() / rotatedH)
@@ -89,7 +89,7 @@ class AndroidMediaEngine(
                         stream,
                     )
                 ) {
-                    throw ImageException(SkipReason.CORRUPT, "JPEG nicht schreibbar")
+                    throw ImageException(SkipReason.CORRUPT, "JPEG not writable")
                 }
             }
         } finally {
@@ -113,7 +113,7 @@ class AndroidMediaEngine(
         private const val HEIF_MIN_SDK = 28
         private const val PROBE_EDGE = 64
 
-        /** Größte Zweierpotenz, mit der das Bild noch mindestens [reqW]×[reqH] groß bleibt. */
+        /** Largest power of two with which the image still stays at least [reqW]×[reqH] in size. */
         fun sampleSize(
             width: Int,
             height: Int,
@@ -125,7 +125,7 @@ class AndroidMediaEngine(
             return sample
         }
 
-        /** EXIF-Datum ohne Zeitzone, als Ortszeit des Geräts. */
+        /** EXIF date without time zone, as the device's local time. */
         fun parseExifDate(value: String?): java.time.Instant? {
             if (value.isNullOrBlank()) return null
             val format = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }

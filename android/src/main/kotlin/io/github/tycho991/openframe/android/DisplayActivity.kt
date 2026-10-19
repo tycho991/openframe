@@ -45,9 +45,9 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Die Anzeige am Rahmen. Holt sich den Kern über den Binder des
- * [FrameService] und zeigt dessen Zustand an, ohne HTTP. Startet erst, wenn
- * der Kern Einstellungen und Bibliothek geladen hat, unabhängig von Server und Netzwerk.
+ * The display on the frame. Gets the core through the binder of the
+ * [FrameService] and shows its state, without HTTP. Starts only once
+ * the core has loaded settings and library, independent of server and network.
  */
 class DisplayActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
@@ -114,13 +114,13 @@ class DisplayActivity : Activity() {
         hintCodeBox = findViewById(R.id.hint_code_box)
         hintPause = findViewById(R.id.hint_pause)
         hintPause.setOnClickListener { core?.slideshow?.togglePause() }
-        // Overlays liegen immer über den Fotos, auch wenn der Renderer die Bildansichten anhebt.
+        // Overlays are always above the photos, even if the renderer raises the image views.
         for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.clock, R.id.hint)) findViewById<View>(id).translationZ = OVERLAY_Z
         gestures = GestureDetector(this, GestureListener())
 
         @Suppress("DEPRECATION")
         window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-            // Systemleisten eingeblendet: nach kurzer Zeit wieder ausblenden.
+            // System bars shown: hide them again after a short time.
             if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
                 main.removeCallbacks(reimmerse)
                 main.postDelayed(reimmerse, REIMMERSE_MS)
@@ -166,8 +166,8 @@ class DisplayActivity : Activity() {
     }
 
     /**
-     * Als HOME-Launcher führt die Zurück-Taste nirgendwohin, sie schließt nur den Hinweis.
-     * Ab API 33 über den OnBackInvokedCallback in onCreate; darunter gibt es ohne AndroidX nur diesen Weg.
+     * As the HOME launcher the Back button leads nowhere, it only closes the hint.
+     * From API 33 through the OnBackInvokedCallback in onCreate; below that there is only this way without AndroidX.
      */
     @SuppressLint("GestureBackNavigation")
     override fun onKeyDown(
@@ -182,7 +182,7 @@ class DisplayActivity : Activity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        // 3 Sekunden langes Drücken in einer Ecke öffnet das Gerätemenü.
+        // A 3-second press in a corner opens the device menu.
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -222,7 +222,7 @@ class DisplayActivity : Activity() {
         scope?.cancel()
         scope = s
         s.launch {
-            // Nur auf den Kern warten, nicht auf Server oder Netzwerk.
+            // Wait only for the core, not for server or network.
             core.ready.filter { it }.first()
             launch { core.settings.settings.collect(::applySettings) }
             launch { core.slideshow.state.collect(::render) }
@@ -237,7 +237,7 @@ class DisplayActivity : Activity() {
             launch {
                 combine(core.pairing.display, core.clients.clients) { display, clients -> display to clients.isEmpty() }
                     .collect { (display, noClients) ->
-                        // Auf Anfrage aus der Web-UI bleibt der Hinweis mit dem Code stehen.
+                        // On request from the web UI the hint with the code stays up.
                         if (display.requestedUntil != null && !hintVisible) setHintVisible(true, autoHide = false)
                         if (display.requestedUntil == null && hintVisible && !hintAutoHides) setHintVisible(false)
                         core.pairing.setShownOnFrame(hintVisible || (showingEmpty && noClients))
@@ -422,7 +422,7 @@ class DisplayActivity : Activity() {
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 
-    /** Sprache am Rahmen: `auto` folgt dem System, sonst gilt die gewählte, ohne Neustart. */
+    /** Language on the frame: `auto` follows the system, otherwise the chosen one applies, without restart. */
     private fun locale(language: FrameLanguage): Locale =
         when (language) {
             FrameLanguage.AUTO -> {

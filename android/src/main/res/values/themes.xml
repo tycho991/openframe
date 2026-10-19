@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Gemeinsames Aussehen am Rahmen: schwarzer Grund, helle Schrift mit Schatten, ruhige Akzentfarbe. -->
+    <!-- Shared look on the frame: black background, light text with a shadow, calm accent color. -->
     <color name="frame_background">#000000</color>
     <color name="frame_text">#FFFFFFFF</color>
     <color name="frame_text_muted">#CCFFFFFF</color>

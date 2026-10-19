@@ -14,7 +14,7 @@ import java.io.InputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
-/** Gerätedaten aus dem System. */
+/** Device data from the system. */
 class AndroidPlatformInfo(
     private val context: Context,
 ) : PlatformInfo {
@@ -41,7 +41,7 @@ class AndroidPlatformInfo(
                 .filterNotNull()
         }.getOrDefault(emptyList())
 
-    /** Auflösung in der natürlichen Ausrichtung des Geräts, unabhängig von der aktuellen Drehung. */
+    /** Resolution in the device's natural orientation, independent of the current rotation. */
     @Suppress("DEPRECATION")
     private fun naturalSize(): Pair<Int, Int> {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -53,7 +53,7 @@ class AndroidPlatformInfo(
     }
 }
 
-/** Die gebaute Web-UI aus den APK-Assets unter `webadmin/`. */
+/** The built web UI from the APK assets under `webadmin/`. */
 class ApkAssets(
     private val context: Context,
 ) : AssetSource {
@@ -65,7 +65,7 @@ class ApkAssets(
         }
 }
 
-/** Meldet Dateien dem MediaStore, damit ein Rechner per USB (MTP) sie sieht, auch gelöschte nicht mehr. */
+/** Reports files to the MediaStore so that a computer over USB (MTP) sees them, and no longer sees deleted ones. */
 class AndroidMediaStoreNotifier(
     private val context: Context,
 ) : MediaStoreNotifier {
