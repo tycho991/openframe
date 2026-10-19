@@ -52,13 +52,13 @@
     }
   }
 
-  // Filter oder Sortierung geändert: von vorn laden.
+  // Filter or sort order changed: load from the start.
   $effect(() => {
     const q = query();
     void guard(() => pages.setQuery(q));
   });
 
-  // Bibliothek anderswo geändert (USB, zweiter Browser): geladene Seiten, Alben und übersprungene Dateien neu laden.
+  // Library changed elsewhere (USB, second browser): reload loaded pages, albums and skipped files.
   let seenVersion = -1;
   $effect(() => {
     const v = session.libraryVersion;
@@ -70,7 +70,7 @@
     });
   });
 
-  // Signierte URLs vor dem Ablauf erneuern.
+  // Renew signed URLs before they expire.
   $effect(() => {
     const timer = setInterval(() => void guard(() => pages.refreshStale()), 60_000);
     return () => clearInterval(timer);

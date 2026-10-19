@@ -59,7 +59,7 @@
   async function start() {
     running = true;
     const queue = items.filter((i) => i.status === "waiting");
-    // Zwei gleichzeitig: schneller als einzeln, ohne den Rahmen zu überlasten.
+    // Two at a time: faster than one by one, without overloading the frame.
     const worker = async () => {
       for (let item = queue.shift(); item; item = queue.shift()) {
         item.status = "uploading";

@@ -15,7 +15,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Kotlin, Serialization und Coroutines gemeinsam, sonst passen Compiler und Bibliotheken nicht zusammen",
+      "description": "Kotlin, serialization and coroutines together, otherwise compiler and libraries do not fit",
       "matchPackageNames": [
         "org.jetbrains.kotlin{/,}**",
         "org.jetbrains.kotlinx{/,}**"
@@ -23,7 +23,7 @@
       "groupName": "Kotlin"
     },
     {
-      "description": "Android Gradle Plugin und Desugaring zusammen; Majors nur nach Freigabe",
+      "description": "Android Gradle Plugin and desugaring together; majors only after approval",
       "matchPackageNames": [
         "com.android.tools.build:gradle",
         "com.android.application",
@@ -42,7 +42,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Werkzeuge der Web-UI (Lint, Format, Typen, Build, Tests) gebündelt, außer Majors",
+      "description": "Web UI tools (lint, format, types, build, tests) bundled, except majors",
       "matchFileNames": [
         "webadmin/package.json"
       ],
@@ -56,14 +56,14 @@
       "groupName": "Web-UI-Werkzeuge"
     },
     {
-      "description": "Playwright ändert die Browser, eigener PR",
+      "description": "Playwright changes the browsers, own PR",
       "matchPackageNames": [
         "@playwright/test"
       ],
       "groupName": "Playwright"
     },
     {
-      "description": "openapi-typescript und typescript-eslint brauchen TypeScript 5",
+      "description": "openapi-typescript and typescript-eslint need TypeScript 5",
       "matchPackageNames": [
         "typescript"
       ],
@@ -73,7 +73,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "JDK bleibt auf 17 (Gradle-Toolchain und Android)",
+      "description": "JDK stays on 17 (Gradle toolchain and Android)",
       "matchPackageNames": [
         "java"
       ],

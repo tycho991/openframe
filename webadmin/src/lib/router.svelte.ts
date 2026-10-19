@@ -7,7 +7,7 @@ function parse(pathname: string): Route {
   return ROUTES.includes(first) ? first : "photos";
 }
 
-/** Routen über die History-API. Der Rahmen liefert für jeden Pfad ohne Dateiendung `index.html`. */
+/** Routes through the History API. The frame serves `index.html` for every path without a file extension. */
 class Router {
   route = $state<Route>(parse(location.pathname));
 

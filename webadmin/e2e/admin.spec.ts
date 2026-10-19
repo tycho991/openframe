@@ -5,21 +5,21 @@ test.beforeEach(async () => {
   await reset();
 });
 
-test("Album ausblenden", async ({ page }) => {
-  await usb("landscape.jpg", "urlaub/a.jpg");
-  await usb("landscape.jpg", "familie/b.jpg");
+test("Hide album", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "family/b.jpg");
   await pairInUi(page);
   await page.getByRole("link", { name: "Alben" }).click();
-  const urlaub = page.getByRole("listitem").filter({ hasText: "urlaub" });
-  await urlaub.getByRole("switch", { name: "In der Slideshow zeigen" }).uncheck();
-  await expect(urlaub.getByRole("switch")).not.toBeChecked();
+  const holiday = page.getByRole("listitem").filter({ hasText: "holiday" });
+  await holiday.getByRole("switch", { name: "In der Slideshow zeigen" }).uncheck();
+  await expect(holiday.getByRole("switch")).not.toBeChecked();
   const albums = await apiAsBrowser<{ albums: { name: string; hidden: boolean }[] }>(page, "/albums");
-  expect(albums.albums.find((a) => a.name === "urlaub")?.hidden).toBe(true);
-  const photos = await apiAsBrowser<{ items: { visible: boolean }[] }>(page, "/photos?album=urlaub");
+  expect(albums.albums.find((a) => a.name === "holiday")?.hidden).toBe(true);
+  const photos = await apiAsBrowser<{ items: { visible: boolean }[] }>(page, "/photos?album=holiday");
   expect(photos.items.every((p) => !p.visible)).toBe(true);
 });
 
-test("Fehler am Feld", async ({ page }) => {
+test("Error at the field", async ({ page }) => {
   await pairInUi(page);
   await page.getByRole("link", { name: "Einstellungen" }).click();
   const interval = page.getByLabel("Wechsel alle (Sekunden)");
@@ -34,14 +34,14 @@ test("Fehler am Feld", async ({ page }) => {
   );
   expect(settings.intervalSeconds).toBe(30);
   expect(settings.clock.enabled).toBe(true);
-  // Gültig speichern: bestätigt ohne Neuladen.
+  // Save validly: confirmed without reloading.
   await interval.fill("60");
   await page.getByRole("button", { name: "Speichern" }).click();
   await expect(page.getByRole("status")).toHaveText("Gespeichert");
   expect((await apiAsBrowser<{ intervalSeconds: number }>(page, "/settings")).intervalSeconds).toBe(60);
 });
 
-test("Altes Gerät entfernen", async ({ page, baseURL }) => {
+test("Remove old device", async ({ page, baseURL }) => {
   await pairInUi(page);
   await pairOtherDevice(baseURL!, "Alter Laptop");
   await page.getByRole("link", { name: "Geräte" }).click();

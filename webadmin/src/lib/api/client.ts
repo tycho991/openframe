@@ -14,7 +14,7 @@ export type BatchResult = S["BatchResult"];
 export type UploadResult = S["UploadResult"];
 export type PhotoSort = "date_desc" | "date_asc" | "name_asc" | "name_desc";
 
-/** Fehlerantwort der API mit Code und optionalen Fehlern pro Feld. */
+/** Error response of the API with code and optional errors per field. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -42,7 +42,7 @@ export interface PhotoQuery {
 
 export interface ApiOptions {
   tokens: TokenStore;
-  /** Wird bei 401 auf einer geschützten Route aufgerufen, nachdem das Token verworfen wurde. */
+  /** Called on 401 on a protected route after the token has been discarded. */
   onUnauthorized: () => void;
   base?: string;
   fetch?: typeof fetch;
@@ -122,7 +122,7 @@ export function createApi(options: ApiOptions) {
       call<Album>("PATCH", `/albums/${encodeURIComponent(name)}`, { hidden }),
     state: () => call<State>("GET", "/state"),
 
-    /** Lädt eine Datei hoch, mit Fortschritt von 0 bis 1. Per XHR, weil fetch keinen Upload-Fortschritt kennt. */
+    /** Uploads a file, with progress from 0 to 1. Through XHR, because fetch knows no upload progress. */
     upload(file: File, album: string | null, onProgress: (fraction: number) => void): Promise<UploadResult> {
       return new Promise((resolve, reject) => {
         const form = new FormData();
@@ -156,7 +156,7 @@ export function createApi(options: ApiOptions) {
   };
 }
 
-/** Token im `localStorage`, pro Browser. Fällt auf den Speicher zurück, wenn der Zugriff scheitert. */
+/** Token in `localStorage`, per browser. Falls back to memory if access fails. */
 export function localTokenStore(key = "openframe.token"): TokenStore {
   let memory: string | null = null;
   return {
@@ -173,7 +173,7 @@ export function localTokenStore(key = "openframe.token"): TokenStore {
         if (token) localStorage.setItem(key, token);
         else localStorage.removeItem(key);
       } catch {
-        // Privater Modus o. ä.: nur im Speicher.
+        // Private mode or similar: memory only.
       }
     },
   };

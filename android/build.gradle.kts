@@ -1,7 +1,7 @@
 import com.android.build.api.variant.AndroidComponentsExtension
 
-// AGP bringt seinen eigenen Kotlin-Compiler mit. Die Version aus dem Katalog muss gewinnen,
-// sonst kann er die Metadaten von :core und kotlin-stdlib nicht lesen.
+// AGP brings its own Kotlin compiler. The version from the catalog has to win,
+// otherwise it cannot read the metadata of :core and kotlin-stdlib.
 buildscript {
     repositories {
         mavenCentral()
@@ -30,12 +30,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // java.time aus :core auf API 21 bis 25.
+        // java.time from :core on API 21 to 25.
         isCoreLibraryDesugaringEnabled = true
     }
 
     lint {
-        // Keine API über minSdk 21 ohne Prüfung der Version.
+        // No API above minSdk 21 without checking the version.
         error += "NewApi"
         abortOnError = true
         checkReleaseBuilds = true
@@ -46,7 +46,7 @@ android {
     }
 
     sourceSets {
-        // Dieselben Testbilder wie in :core.
+        // The same test images as in :core.
         getByName("test").resources.srcDir(rootProject.file("core/src/test/resources"))
     }
 }
@@ -64,14 +64,14 @@ dependencies {
     testImplementation(libs.robolectric)
 }
 
-// Die Web-UI wird vor dem Zusammenstellen der Assets gebaut und unter assets/webadmin/ in die APK gelegt.
+// The web UI is built before the assets are assembled and placed into the APK under assets/webadmin/.
 val webadminDir: Directory = rootProject.layout.projectDirectory.dir("webadmin")
 
-val noNode = "openframe: Node/npm nicht gefunden. Erst \"mise install\" ausführen. Ohne Web-UI wird keine APK gebaut."
+val noNode = "openframe: Node/npm not found. Run \"mise install\" first. Without the web UI no APK is built."
 
 val buildWebadmin by tasks.registering(Exec::class) {
     group = "build"
-    description = "Baut die Web-UI mit npm (Node aus .mise.toml)."
+    description = "Builds the web UI with npm (Node from .mise.toml)."
     workingDir = webadminDir.asFile
     inputs.dir(webadminDir.dir("src"))
     inputs.files(

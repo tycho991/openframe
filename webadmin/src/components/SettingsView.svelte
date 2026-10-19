@@ -28,13 +28,13 @@
     }
   }
 
-  // Anderswo geändert und hier nichts offen: neu laden.
+  // Changed elsewhere and nothing pending here: reload.
   $effect(() => {
     void session.settingsVersion;
     if (!dirty) void load();
   });
 
-  /** Nur die geänderten Felder, `clock` auch teilweise. */
+  /** Only the changed fields, `clock` also partially. */
   function patch(from: Settings, to: Settings) {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(to) as (keyof Settings)[]) {

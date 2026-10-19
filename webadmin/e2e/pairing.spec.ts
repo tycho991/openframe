@@ -5,20 +5,20 @@ test.beforeEach(async () => {
   await reset();
 });
 
-test("Erster Besuch", async ({ page }) => {
+test("First visit", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Mit dem Rahmen koppeln" })).toBeVisible();
   await expect(page.getByText("Den sechsstelligen Code zeigt der Rahmen an")).toBeVisible();
 });
 
-test("Wiederkehrender Besuch", async ({ page }) => {
+test("Returning visit", async ({ page }) => {
   await pairInUi(page);
   await page.reload();
   await expect(page.getByRole("navigation")).toBeVisible();
   await expect(page.getByText("Noch keine Fotos")).toBeVisible();
 });
 
-test("Falscher Code und Code am Rahmen anzeigen", async ({ page }) => {
+test("Wrong code and show code on frame", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Code am Rahmen anzeigen" }).click();
   await expect(page.getByRole("status")).toHaveText("Der Rahmen zeigt jetzt 5 Minuten lang einen Code.");
@@ -29,9 +29,9 @@ test("Falscher Code und Code am Rahmen anzeigen", async ({ page }) => {
   await expect(page.getByRole("alert")).toHaveText("Der Code ist falsch.");
 });
 
-test("Nach aufgehobener Kopplung zurück zum Dialog", async ({ page }) => {
+test("Back to the dialog after the pairing was revoked", async ({ page }) => {
   await pairInUi(page);
-  await page.evaluate(() => localStorage.setItem("openframe.token", "ungültig"));
+  await page.evaluate(() => localStorage.setItem("openframe.token", "invalid"));
   await page.reload();
   await expect(page.getByRole("heading", { name: "Mit dem Rahmen koppeln" })).toBeVisible();
 });

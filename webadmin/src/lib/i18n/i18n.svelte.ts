@@ -16,19 +16,19 @@ function stored(): Lang | null {
   }
 }
 
-/** Sprache der Oberfläche: aus dem Browser, solange der Nutzer keine andere wählt. Unabhängig von der Sprache am Rahmen. */
+/** Language of the interface: from the browser as long as the user does not choose another. Independent of the language on the frame. */
 class I18n {
   lang = $state<Lang>(
     stored() ?? detectLanguage(typeof navigator === "undefined" ? [] : navigator.languages),
   );
 
-  /** Wählt eine Sprache für diesen Browser. `null` folgt wieder dem Browser. */
+  /** Chooses a language for this browser. `null` follows the browser again. */
   choose(lang: Lang | null): void {
     try {
       if (lang) localStorage.setItem(STORAGE_KEY, lang);
       else localStorage.removeItem(STORAGE_KEY);
     } catch {
-      // Ohne Speicher gilt die Wahl nur bis zum Neuladen.
+      // Without storage the choice applies only until reload.
     }
     this.lang = lang ?? detectLanguage(navigator.languages);
     document.documentElement.lang = this.lang;
@@ -45,7 +45,7 @@ export function t(key: Key, params?: Record<string, string | number>): string {
   return format(catalogs[i18n.lang][key] ?? key, params);
 }
 
-/** Einzahl für genau eins, sonst Mehrzahl mit `{n}`. */
+/** Singular for exactly one, otherwise plural with `{n}`. */
 export function tn(one: Key, many: Key, n: number): string {
   return n === 1 ? t(one, { n }) : t(many, { n });
 }

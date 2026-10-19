@@ -1,7 +1,7 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vitest/config";
 
-// Für `npm run dev`: API-Aufrufe gehen an einen Rahmen oder an den :core-Testserver.
+// For `npm run dev`: API calls go to a frame or to the :core test server.
 const frame = process.env.OPENFRAME_URL ?? "http://127.0.0.1:8090";
 
 export default defineConfig({
@@ -11,12 +11,12 @@ export default defineConfig({
       "/api": {
         target: frame,
         changeOrigin: true,
-        // Der Rahmen lehnt ändernde Anfragen von fremden Origins ab.
+        // The frame rejects mutating requests from foreign origins.
         headers: { origin: frame },
       },
     },
   },
-  // Die Web-UI wird vom Rahmen unter "/" ausgeliefert, alle Assets liegen lokal.
+  // The web UI is served by the frame at "/", all assets are local.
   base: "/",
   build: {
     outDir: "dist",

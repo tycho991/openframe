@@ -5,13 +5,13 @@ interface Page {
   items: Photo[];
   next: string | null;
   loadedAt: number;
-  /** Ob nach einem Bildfehler schon einmal nachgeladen wurde. */
+  /** Whether a reload has already happened after an image error. */
   retried: boolean;
 }
 
 export interface PhotoPagesOptions {
   pageSize?: number;
-  /** Signierte Bild-URLs gelten ein bis zwei Stunden. Seiten werden spätestens nach dieser Zeit neu geladen. */
+  /** Signed image URLs are valid for one to two hours. Pages are reloaded after this time at the latest. */
   maxAgeMs?: number;
   now?: () => number;
 }
@@ -19,8 +19,8 @@ export interface PhotoPagesOptions {
 export const MAX_PAGE_AGE_MS = 50 * 60 * 1000;
 
 /**
- * Die geladenen Seiten der Fotoliste für das Raster. Lädt seitenweise per
- * Cursor nach und hält die signierten Bild-URLs frisch.
+ * The loaded pages of the photo list for the grid. Loads page by page through
+ * the cursor and keeps the signed image URLs fresh.
  */
 export class PhotoPages {
   private pages: Page[] = [];
@@ -55,13 +55,13 @@ export class PhotoPages {
     return () => this.listeners.delete(listener);
   }
 
-  /** Neuer Filter oder neue Sortierung: von vorn laden. */
+  /** New filter or new sort order: load from the start. */
   async setQuery(query: Omit<PhotoQuery, "cursor" | "limit">): Promise<void> {
     this.query = query;
     await this.reload();
   }
 
-  /** Alle bisher geladenen Seiten neu laden, etwa wenn sich die Bibliotheksversion geändert hat. */
+  /** Reload all pages loaded so far, for example when the library version has changed. */
   async reload(): Promise<void> {
     const count = Math.max(1, this.pages.length);
     const fresh: Page[] = [];
@@ -76,7 +76,7 @@ export class PhotoPages {
     this.emit();
   }
 
-  /** Die nächste Seite anhängen, sofern es eine gibt. Gleichzeitige Aufrufe laden nur einmal. */
+  /** Append the next page, if there is one. Concurrent calls load only once. */
   loadMore(): Promise<void> {
     if (this.loading) return this.loading;
     if (!this.hasMore) return Promise.resolve();
@@ -92,7 +92,7 @@ export class PhotoPages {
     return this.loading;
   }
 
-  /** Seiten neu laden, deren URLs bald ablaufen. Regelmäßig aufrufen, etwa jede Minute. */
+  /** Reload pages whose URLs are about to expire. Call regularly, for example every minute. */
   async refreshStale(): Promise<void> {
     const now = this.now();
     let changed = false;
@@ -105,7 +105,7 @@ export class PhotoPages {
     if (changed) this.emit();
   }
 
-  /** Ein Bild ließ sich nicht laden, vermutlich wegen abgelaufener Signatur: seine Seite einmal nachladen. */
+  /** An image could not be loaded, presumably because of an expired signature: reload its page once. */
   async onImageError(photoId: string): Promise<void> {
     const i = this.pages.findIndex((p) => p.items.some((it) => it.id === photoId));
     const page = this.pages[i];
@@ -116,7 +116,7 @@ export class PhotoPages {
     this.emit();
   }
 
-  /** Ein Foto lokal ersetzen, etwa nach dem Ausblenden, ohne neu zu laden. */
+  /** Replace a photo locally, for example after hiding, without reloading. */
   replace(photo: Photo): void {
     for (const page of this.pages) {
       const j = page.items.findIndex((p) => p.id === photo.id);

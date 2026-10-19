@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 env:
-  # Testnamen mit Umlauten werden zu Klassendateien mit Umlauten.
+  # UTF-8 everywhere, so that file names and test data with non-ASCII characters behave the same.
   LC_ALL: C.UTF-8
   LANG: C.UTF-8
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
@@ -17,26 +17,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Java und Node genau wie in .mise.toml gepinnt.
+      # Java and Node pinned exactly as in .mise.toml.
       - uses: jdx/mise-action@v5
       - uses: gradle/actions/setup-gradle@v5
-      - name: Prüfen und bauen
+      - name: Check and build
         run: |
           set -o pipefail
           ./gradlew check :android:assembleDebug --console=plain 2>&1 | tee build.log
-      - name: Fehler zusammenfassen
+      - name: Summarize errors
         if: failure()
         run: |
           grep -nE "^e: |^ERROR|error:|What went wrong|FAILED|Lint found" -A6 build.log | head -300
           cat android/build/reports/lint-results-debug.txt 2>/dev/null | head -200 || true
-      - name: APK prüfen
+      - name: Check APK
         run: |
           apk=android/build/outputs/apk/debug/android-debug.apk
           aapt2=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2
           "$aapt2" dump badging "$apk" | tee badging.txt | grep -E "^package|sdkVersion|native-code" || true
           grep -q "name='io.github.tycho991.openframe'" badging.txt
           grep -q "^minSdkVersion:'21'" badging.txt
-          # Keine nativen Bibliotheken: läuft auf allen ABIs.
+          # No native libraries: runs on all ABIs.
           ! grep -q "^native-code" badging.txt
           unzip -l "$apk" | grep -E "assets/webadmin/(index.html|assets/)" | head -5
           unzip -l "$apk" | grep -q "assets/webadmin/index.html"
@@ -52,7 +52,7 @@ jobs:
   webadmin:
     runs-on: ubuntu-latest
     env:
-      # Der Testserver braucht nur :core, nicht :android.
+      # The test server needs only :core, not :android.
       ANDROID_HOME: ""
       ANDROID_SDK_ROOT: ""
     defaults:
@@ -60,7 +60,7 @@ jobs:
         working-directory: webadmin
     steps:
       - uses: actions/checkout@v7
-      # Java und Node genau wie in .mise.toml gepinnt.
+      # Java and Node pinned exactly as in .mise.toml.
       - uses: jdx/mise-action@v5
       - uses: gradle/actions/setup-gradle@v5
       - run: npm ci

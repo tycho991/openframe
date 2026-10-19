@@ -13,8 +13,8 @@ function respond(status: number, body?: unknown): Response {
   });
 }
 
-describe("API-Client", () => {
-  it("schickt das Token als Bearer", async () => {
+describe("API client", () => {
+  it("sends the token as Bearer", async () => {
     const fetch = vi.fn(async () => respond(200, { libraryVersion: 1, settingsVersion: 2 }));
     const api = createApi({ tokens: memoryTokens("abc"), onUnauthorized: () => {}, fetch });
     await api.state();
@@ -24,8 +24,8 @@ describe("API-Client", () => {
     );
   });
 
-  it("verwirft bei 401 das Token und öffnet den Kopplungsdialog", async () => {
-    const tokens = memoryTokens("alt");
+  it("discards the token on 401 and opens the pairing dialog", async () => {
+    const tokens = memoryTokens("old");
     const onUnauthorized = vi.fn();
     const api = createApi({
       tokens,
@@ -37,7 +37,7 @@ describe("API-Client", () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
-  it("öffnet bei falschem Code nicht erneut den Dialog", async () => {
+  it("does not open the dialog again on a wrong code", async () => {
     const onUnauthorized = vi.fn();
     const api = createApi({
       tokens: memoryTokens(),
@@ -50,7 +50,7 @@ describe("API-Client", () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
-  it("speichert das Token nach erfolgreicher Kopplung", async () => {
+  it("stores the token after successful pairing", async () => {
     const tokens = memoryTokens();
     const fetch = vi.fn(async () =>
       respond(201, {
@@ -67,7 +67,7 @@ describe("API-Client", () => {
     });
   });
 
-  it("liefert Fehler pro Feld", async () => {
+  it("returns errors per field", async () => {
     const api = createApi({
       tokens: memoryTokens("t"),
       onUnauthorized: () => {},
@@ -80,12 +80,12 @@ describe("API-Client", () => {
     expect(error.fields).toEqual({ intervalSeconds: "5 bis 86400" });
   });
 
-  it("baut die Abfrage der Fotoliste", async () => {
+  it("builds the photo list query", async () => {
     const fetch = vi.fn(async () => respond(200, { items: [], total: 0, nextCursor: null }));
     const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
-    await api.photos({ album: "urlaub & co", visible: false, cursor: null, limit: 50 });
+    await api.photos({ album: "holiday & co", visible: false, cursor: null, limit: 50 });
     expect((fetch.mock.calls[0] as unknown as [string])[0]).toBe(
-      "/api/v1/photos?album=urlaub+%26+co&visible=false&limit=50",
+      "/api/v1/photos?album=holiday+%26+co&visible=false&limit=50",
     );
   });
 });

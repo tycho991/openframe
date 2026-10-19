@@ -32,7 +32,7 @@ class AndroidMediaEngineTest {
     private val engine = AndroidMediaEngine(sdkInt = 28)
 
     private fun fixture(name: String): File {
-        val stream = requireNotNull(javaClass.getResourceAsStream("/fixtures/$name")) { "Fixture $name fehlt" }
+        val stream = requireNotNull(javaClass.getResourceAsStream("/fixtures/$name")) { "Fixture $name is missing" }
         return File(tmp.root, name).also { f -> stream.use { s -> f.outputStream().use { s.copyTo(it) } } }
     }
 

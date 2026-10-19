@@ -32,12 +32,12 @@ rootProject.name = "openframe"
 
 include(":core")
 
-// :android braucht das Android-SDK. Ohne SDK lassen sich :core und die Web-UI trotzdem bauen und testen.
+// :android needs the Android SDK. Without an SDK, :core and the web UI can still be built and tested.
 val androidSdk =
     System.getenv("ANDROID_HOME")?.ifBlank { null } ?: System.getenv("ANDROID_SDK_ROOT")?.ifBlank { null }
         ?: file("local.properties").takeIf { it.exists() }?.readLines()?.firstOrNull { it.startsWith("sdk.dir=") }
 if (androidSdk != null) {
     include(":android")
 } else {
-    logger.warn("Kein Android-SDK gefunden (ANDROID_HOME oder sdk.dir in local.properties): :android wird übersprungen.")
+    logger.warn("No Android SDK found (ANDROID_HOME or sdk.dir in local.properties): :android is skipped.")
 }

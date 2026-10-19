@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Lokal ohne heruntergeladene Browser: Pfad zu einem vorhandenen Chromium.
+// Locally without downloaded browsers: path to an existing Chromium.
 const chromiumPath = process.env.PW_CHROMIUM_PATH;
 
 export default defineConfig({
   testDir: "e2e",
-  // Ein gemeinsamer Testserver mit Zustand: nacheinander.
+  // One shared test server with state: run one after another.
   workers: 1,
   fullyParallel: false,
   timeout: 90_000,

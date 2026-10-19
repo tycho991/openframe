@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Photo, PhotoPage, PhotoQuery } from "./api/client";
 import { MAX_PAGE_AGE_MS, PhotoPages } from "./photos";
 
-/** Fake-API mit 25 Fotos. Die Signatur in den URLs ist die Stunde, in der die Seite geladen wurde. */
+/** Fake API with 25 photos. The signature in the URLs is the hour in which the page was loaded. */
 function fakeApi(now: () => number, total = 25) {
   const all = Array.from({ length: total }, (_, i) => `local-${String(i).padStart(40, "0")}`);
   const photos = vi.fn(async (q: PhotoQuery = {}): Promise<PhotoPage> => {
@@ -26,7 +26,7 @@ describe("PhotoPages", () => {
   beforeEach(() => vi.useFakeTimers({ now: new Date("2026-05-01T10:15:00Z") }));
   afterEach(() => vi.useRealTimers());
 
-  it("lädt seitenweise per Cursor", async () => {
+  it("loads page by page through the cursor", async () => {
     const api = fakeApi(Date.now);
     const pages = new PhotoPages(api, {}, { pageSize: 10 });
     await pages.loadMore();
@@ -38,7 +38,7 @@ describe("PhotoPages", () => {
     expect(api.photos).toHaveBeenCalledTimes(3);
   });
 
-  it("Tab stundenlang offen: URLs bleiben frisch", async () => {
+  it("Tab open for hours: URLs stay fresh", async () => {
     const api = fakeApi(Date.now);
     const pages = new PhotoPages(api, {}, { pageSize: 10 });
     await pages.loadMore();
@@ -46,7 +46,7 @@ describe("PhotoPages", () => {
     const refresh = setInterval(() => void pages.refreshStale(), 60_000);
     for (let minute = 0; minute < 180; minute++) {
       await vi.advanceTimersByTimeAsync(60_000);
-      // Keine geladene URL ist älter als 50 Minuten plus die Prüfung jede Minute.
+      // No loaded URL is older than 50 minutes plus the check every minute.
       const hourNow = Math.floor(Date.now() / 3_600_000);
       for (const p of pages.items) {
         const signedHour = Number(p.urls.thumb.split("t=")[1]);
@@ -60,7 +60,7 @@ describe("PhotoPages", () => {
     );
   });
 
-  it("lädt nach einem Bildfehler die Seite einmal nach", async () => {
+  it("reloads the page once after an image error", async () => {
     const api = fakeApi(Date.now);
     const pages = new PhotoPages(api, {}, { pageSize: 10 });
     await pages.loadMore();
@@ -71,9 +71,9 @@ describe("PhotoPages", () => {
     expect(api.photos).toHaveBeenCalledTimes(3);
   });
 
-  it("lädt bei geänderter Bibliothek alle geladenen Seiten neu", async () => {
+  it("reloads all loaded pages when the library changed", async () => {
     const api = fakeApi(Date.now);
-    const pages = new PhotoPages(api, { album: "urlaub" }, { pageSize: 10 });
+    const pages = new PhotoPages(api, { album: "holiday" }, { pageSize: 10 });
     await pages.loadMore();
     await pages.loadMore();
     const listener = vi.fn();
@@ -81,6 +81,6 @@ describe("PhotoPages", () => {
     await pages.reload();
     expect(pages.items).toHaveLength(20);
     expect(listener).toHaveBeenCalledOnce();
-    expect(api.photos.mock.calls.at(-1)![0]).toMatchObject({ album: "urlaub" });
+    expect(api.photos.mock.calls.at(-1)![0]).toMatchObject({ album: "holiday" });
   });
 });

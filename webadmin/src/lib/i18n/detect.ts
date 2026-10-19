@@ -2,7 +2,7 @@ export type Lang = "de" | "en";
 
 export const LANGS: Lang[] = ["de", "en"];
 
-/** Die erste unterstützte Sprache aus den Browser-Sprachen, sonst Englisch. */
+/** The first supported language from the browser languages, otherwise English. */
 export function detectLanguage(preferred: readonly string[]): Lang {
   for (const tag of preferred) {
     const base = tag.toLowerCase().split("-")[0];
@@ -11,7 +11,7 @@ export function detectLanguage(preferred: readonly string[]): Lang {
   return "en";
 }
 
-/** Ersetzt `{name}` in [template] durch die Werte aus [params]. */
+/** Replaces `{name}` in [template] with the values from [params]. */
 export function format(template: string, params: Record<string, string | number> = {}): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in params ? String(params[key]) : match,

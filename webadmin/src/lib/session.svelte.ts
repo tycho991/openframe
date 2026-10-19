@@ -2,7 +2,7 @@ import { createApi, localTokenStore, type Info } from "./api/client";
 
 export const tokens = localTokenStore();
 
-/** Zustand der Sitzung: gekoppelt oder nicht, und die Versionen, an denen Änderungen erkennbar sind. */
+/** State of the session: paired or not, and the versions by which changes are detectable. */
 class Session {
   paired = $state(tokens.get() !== null);
   info = $state<Info | null>(null);
@@ -22,9 +22,9 @@ export const api = createApi({
 export const STATE_POLL_MS = 10_000;
 
 /**
- * Fragt alle 10 Sekunden die Versionen ab, solange der Tab sichtbar ist, und
- * sofort, wenn er wieder sichtbar wird. Änderungen per USB oder aus einem
- * zweiten Browser erscheinen so ohne Neuladen.
+ * Polls the versions every 10 seconds while the tab is visible, and
+ * immediately when it becomes visible again. Changes over USB or from a
+ * second browser thus appear without reloading.
  */
 export function startStatePolling(): () => void {
   let stopped = false;
@@ -35,7 +35,7 @@ export function startStatePolling(): () => void {
       session.libraryVersion = s.libraryVersion;
       session.settingsVersion = s.settingsVersion;
     } catch {
-      // Rahmen kurz nicht erreichbar: beim nächsten Mal wieder.
+      // Frame briefly unreachable: try again next time.
     }
   };
   const timer = setInterval(poll, STATE_POLL_MS);

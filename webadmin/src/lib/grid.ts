@@ -1,7 +1,7 @@
 export interface GridInput {
   width: number;
   count: number;
-  /** Scrollposition relativ zum Anfang des Rasters. */
+  /** Scroll position relative to the start of the grid. */
   scrollY: number;
   viewport: number;
   minTile?: number;
@@ -10,8 +10,8 @@ export interface GridInput {
 }
 
 /**
- * Berechnet, welche Kacheln im sichtbaren Bereich liegen. Nur diese werden
- * gerendert, damit auch bei 10.000 Fotos nur die sichtbaren Vorschaubilder laden.
+ * Computes which tiles are in the visible area. Only these are
+ * rendered so that even with 10,000 photos only the visible thumbnails load.
  */
 export function gridLayout(input: GridInput) {
   const gap = input.gap ?? 6;
@@ -31,7 +31,7 @@ export function gridLayout(input: GridInput) {
     height: Math.max(0, rows * rowHeight - gap),
     first: firstRow * columns,
     last: Math.min(input.count, lastRow * columns),
-    /** Ob der sichtbare Bereich nahe am Ende der geladenen Fotos liegt. */
+    /** Whether the visible area is near the end of the loaded photos. */
     nearEnd: lastRow >= rows - overscan - 1,
     position(index: number) {
       return { x: (index % columns) * (tile + gap), y: Math.floor(index / columns) * rowHeight };

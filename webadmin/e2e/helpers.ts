@@ -10,19 +10,19 @@ async function control(pathAndQuery: string): Promise<string> {
   return res.text();
 }
 
-/** Frischer Rahmen ohne Fotos, Kopplungen und Einstellungen. */
+/** Fresh frame without photos, pairings and settings. */
 export const reset = () => control("/reset");
 
-/** Der Code, den der Rahmen gerade anzeigt. */
+/** The code the frame is currently showing. */
 export const frameCode = () => control("/code");
 
-/** Eine Testdatei, als wäre sie per USB in den Fotoordner kopiert worden. */
+/** A test file as if it had been copied into the photo folder over USB. */
 export const usb = (fixture: string, to: string, { scan = true } = {}) =>
   control(`/usb?fixture=${encodeURIComponent(fixture)}&to=${encodeURIComponent(to)}&scan=${scan ? 1 : 0}`);
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
-/** Koppelt einen weiteren Client direkt über die API und liefert sein Token. */
+/** Pairs another client directly through the API and returns its token. */
 export async function pairOtherDevice(baseURL: string, name: string): Promise<string> {
   const code = await frameCode();
   const res = await fetch(baseURL + "/api/v1/pairing", {
@@ -33,7 +33,7 @@ export async function pairOtherDevice(baseURL: string, name: string): Promise<st
   return ((await res.json()) as { token: string }).token;
 }
 
-/** Koppelt den Browser über den Dialog. */
+/** Pairs the browser through the dialog. */
 export async function pairInUi(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Mit dem Rahmen koppeln" })).toBeVisible();
@@ -43,7 +43,7 @@ export async function pairInUi(page: Page): Promise<void> {
   await expect(page.getByRole("navigation")).toBeVisible();
 }
 
-/** Die API mit dem Token des Browsers aufrufen. */
+/** Call the API with the browser's token. */
 export async function apiAsBrowser<T>(page: Page, pathAndQuery: string): Promise<T> {
   return page.evaluate(async (p) => {
     const token = localStorage.getItem("openframe.token");
