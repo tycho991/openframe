@@ -301,6 +301,7 @@ class DisplayActivity : Activity() {
     ) {
         hintVisible = visible
         hintAutoHides = autoHide
+        clock.hidden = visible
         hint.visibility = if (visible) View.VISIBLE else View.GONE
         main.removeCallbacks(hideHint)
         if (visible && autoHide) main.postDelayed(hideHint, HINT_MS)
@@ -368,32 +369,35 @@ class DisplayActivity : Activity() {
                 text(R.string.menu_reset),
                 text(R.string.menu_info),
             )
-        AlertDialog
-            .Builder(this, R.style.Theme_OpenFrame_Dialog)
-            .setTitle(text(R.string.menu_title))
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> c.setLocalOnly(!localOnly).also { updateHint() }
-                    1 -> confirmReset(c)
-                    2 -> showInfo(c)
-                }
-            }.setNegativeButton(text(R.string.menu_close), null)
-            .setOnDismissListener {
-                menuOpen = false
-                enterImmersive()
-            }.show()
+        showImmersive(
+            AlertDialog
+                .Builder(this, R.style.Theme_OpenFrame_Dialog)
+                .setTitle(text(R.string.menu_title))
+                .setItems(items) { _, which ->
+                    when (which) {
+                        0 -> c.setLocalOnly(!localOnly).also { updateHint() }
+                        1 -> confirmReset(c)
+                        2 -> showInfo(c)
+                    }
+                }.setNegativeButton(text(R.string.menu_close), null)
+                .setOnDismissListener {
+                    menuOpen = false
+                    enterImmersive()
+                },
+        )
     }
 
     private fun confirmReset(c: FrameCore) {
-        AlertDialog
-            .Builder(this, R.style.Theme_OpenFrame_Dialog)
-            .setMessage(text(R.string.confirm_reset))
-            .setPositiveButton(text(R.string.confirm_reset_yes)) { _, _ ->
-                c.resetAllPairings()
-                setHintVisible(true, autoHide = false)
-            }.setNegativeButton(text(R.string.cancel), null)
-            .setOnDismissListener { enterImmersive() }
-            .show()
+        showImmersive(
+            AlertDialog
+                .Builder(this, R.style.Theme_OpenFrame_Dialog)
+                .setMessage(text(R.string.confirm_reset))
+                .setPositiveButton(text(R.string.confirm_reset_yes)) { _, _ ->
+                    c.resetAllPairings()
+                    setHintVisible(true, autoHide = false)
+                }.setNegativeButton(text(R.string.cancel), null)
+                .setOnDismissListener { enterImmersive() },
+        )
     }
 
     private fun showInfo(c: FrameCore) {
@@ -406,20 +410,33 @@ class DisplayActivity : Activity() {
                 address(c) ?: text(R.string.hint_no_network),
                 c.identity.id,
             )
-        AlertDialog
-            .Builder(this, R.style.Theme_OpenFrame_Dialog)
-            .setTitle(text(R.string.menu_info))
-            .setMessage(message)
-            .setPositiveButton(text(R.string.menu_close), null)
-            .setOnDismissListener { enterImmersive() }
-            .show()
+        showImmersive(
+            AlertDialog
+                .Builder(this, R.style.Theme_OpenFrame_Dialog)
+                .setTitle(text(R.string.menu_info))
+                .setMessage(message)
+                .setPositiveButton(text(R.string.menu_close), null)
+                .setOnDismissListener { enterImmersive() },
+        )
+    }
+
+    /**
+     * Shows a dialog without the system bars. A dialog window gets focus first, which would make the
+     * navigation bar appear, so it is shown unfocused, made immersive and only then focused.
+     */
+    @Suppress("DEPRECATION")
+    private fun showImmersive(builder: AlertDialog.Builder) {
+        val dialog = builder.create()
+        val window = dialog.window
+        window?.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        dialog.show()
+        window?.decorView?.systemUiVisibility = IMMERSIVE_FLAGS
+        window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
     }
 
     @Suppress("DEPRECATION")
     private fun enterImmersive() {
-        window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        window.decorView.systemUiVisibility = IMMERSIVE_FLAGS
     }
 
     /** Language on the frame: `auto` follows the system, otherwise the chosen one applies, without restart. */
@@ -476,6 +493,11 @@ class DisplayActivity : Activity() {
     private companion object {
         const val OVERLAY_Z = 10f
         const val HINT_MS = 8_000L
+
+        @Suppress("DEPRECATION")
+        const val IMMERSIVE_FLAGS =
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         const val REIMMERSE_MS = 3_000L
         const val CORNER_PRESS_MS = 3_000L
         const val CORNER_FRACTION = 0.15f

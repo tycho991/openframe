@@ -31,6 +31,13 @@ class ClockOverlay(
     private var locale: Locale = Locale.getDefault()
     private var registered = false
 
+    /** True while the hint is shown: it covers the same screen edge, so the clock steps aside. */
+    var hidden = false
+        set(value) {
+            field = value
+            refreshVisibility()
+        }
+
     private val receiver =
         object : BroadcastReceiver() {
             override fun onReceive(
@@ -45,7 +52,7 @@ class ClockOverlay(
     ) {
         settings = clock
         this.locale = locale
-        container.visibility = if (clock.enabled) View.VISIBLE else View.GONE
+        refreshVisibility()
         val scale = clock.sizePercent / 100f
         time.setTextSize(TypedValue.COMPLEX_UNIT_SP, BASE_TIME_SP * scale)
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, BASE_DATE_SP * scale)
@@ -79,6 +86,10 @@ class ClockOverlay(
         if (!registered) return
         context.unregisterReceiver(receiver)
         registered = false
+    }
+
+    private fun refreshVisibility() {
+        container.visibility = if (settings.enabled && !hidden) View.VISIBLE else View.GONE
     }
 
     private fun update() {
