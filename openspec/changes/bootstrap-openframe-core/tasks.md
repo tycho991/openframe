@@ -46,7 +46,7 @@
 ## 6. Android host
 
 - [x] 6.1 `AndroidMediaEngine`: `BitmapFactory` with `inSampleSize` in two passes, rotation from `ExifInterface` (framework class, not AndroidX), JPEG with quality 85, GIF as first frame, HEIC probe; verify: Robolectric tests with the fixture photos from 5.1
-- [ ] 6.2 Foreground service with `:core`, HTTP server, `PARTIAL_WAKE_LOCK`, `WifiLock`, notification channel from API 26 and `START_STICKY`; local binder with the `StateFlow`s; verify: on the emulator (API 21 and current) `curl http://<ip>:8080/api/v1/info` is reachable, even when the activity is in the background
+- [x] 6.2 Foreground service with `:core`, HTTP server, `PARTIAL_WAKE_LOCK`, `WifiLock`, notification channel from API 26 and `START_STICKY`; local binder with the `StateFlow`s; verify: on the emulator (API 21 and current) `curl http://<ip>:8080/api/v1/info` is reachable, even when the activity is in the background
 - [x] 6.3 `BootReceiver`, HOME intent filter, immersive fullscreen with restoration, `FLAG_KEEP_SCREEN_ON`; verify: emulator restart shows the app without intervention; `adb shell cmd package resolve-activity -c android.intent.category.HOME` offers it
 - [x] 6.4 Self-healing (`UncaughtExceptionHandler` → log + `AlarmManager` restart) and rotating file log with `GET /api/v1/logs`; verify: a debug command that triggers a crash leads to a restart within 30 s, and the log shows the cause
 - [x] 6.5 `PlatformInfo` (model, Android version, resolution, IP addresses) and rebinding of the server after a Wi-Fi change; verify: on the emulator Wi-Fi off and on, afterwards `/api/v1/info` is reachable again and the displayed address is correct
