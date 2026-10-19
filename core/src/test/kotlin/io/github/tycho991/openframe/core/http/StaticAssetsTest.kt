@@ -32,7 +32,7 @@ class StaticAssetsTest {
     fun tearDown() = http.close()
 
     @Test
-    fun `index für Wurzel und SPA-Routen`() {
+    fun `index for root and SPA routes`() {
         for (path in listOf("/", "/photos", "/settings/clock")) {
             val res = http.get(path)
             assertEquals(200, res.statusCode(), path)
@@ -56,7 +56,7 @@ class StaticAssetsTest {
     }
 
     @Test
-    fun `Assets mit MIME-Typ und langem Cache`() {
+    fun `Assets with MIME type and long cache`() {
         val js = http.get("/assets/index-abc.js")
         assertEquals(200, js.statusCode())
         assertTrue(
@@ -84,9 +84,9 @@ class StaticAssetsTest {
     }
 
     @Test
-    fun `Fehlende Datei und API-Pfade`() {
-        assertEquals(404, http.get("/assets/fehlt.js").statusCode())
-        assertEquals(404, http.get("/api/v1/fehlt").statusCode())
+    fun `Missing file and API paths`() {
+        assertEquals(404, http.get("/assets/missing.js").statusCode())
+        assertEquals(404, http.get("/api/v1/missing").statusCode())
         assertEquals(404, http.get("/../etc/passwd.txt").statusCode())
     }
 }

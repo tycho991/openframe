@@ -10,11 +10,11 @@ import java.io.File
 import java.net.URI
 
 /**
- * Prüft Antworten gegen `api/openapi.yaml`: Die Kombination aus Methode, Pfad
- * und Status muss im Vertrag stehen, und JSON-Rümpfe müssen dem Schema genügen.
+ * Checks responses against `api/openapi.yaml`: the combination of method, path
+ * and status must be in the contract, and JSON bodies must satisfy the schema.
  */
 object Contract {
-    private val file = File(System.getProperty("openframe.openapi") ?: error("System-Property openframe.openapi fehlt"))
+    private val file = File(System.getProperty("openframe.openapi") ?: error("System property openframe.openapi is missing"))
     private val doc: JsonNode = ObjectMapper(YAMLFactory()).readTree(file)
     private val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
     private val basePath =
@@ -26,7 +26,7 @@ object Contract {
                 .asText("/"),
         ).path.trimEnd('/')
 
-    /** Wirft einen [AssertionError], wenn die Antwort nicht zum Vertrag passt. */
+    /** Throws an [AssertionError] if the response does not match the contract. */
     fun check(
         method: String,
         path: String,
@@ -38,27 +38,27 @@ object Contract {
         val responses = operation.path("responses")
         val responsePointer = "/paths/${escape(template)}/${method.lowercase()}/responses/$status"
         val response = responses.path(status.toString())
-        if (response.isMissingNode) fail("Status $status für $method $template ist nicht im Vertrag beschrieben")
+        if (response.isMissingNode) fail("Status $status for $method $template is not described in the contract")
         val (resolved, pointer) = resolve(response, responsePointer)
         val content = resolved.path("content")
         if (content.isMissingNode || content.isEmpty) {
-            if (body.isNotEmpty()) fail("$method $path $status: Vertrag beschreibt keinen Rumpf, Antwort hat einen")
+            if (body.isNotEmpty()) fail("$method $path $status: contract describes no body, response has one")
             return
         }
-        val type = contentType?.substringBefore(';')?.trim() ?: fail("$method $path $status: Content-Type fehlt")
+        val type = contentType?.substringBefore(';')?.trim() ?: fail("$method $path $status: Content-Type is missing")
         if (!content.has(
                 type,
             )
         ) {
-            fail("$method $path $status: Content-Type $type nicht im Vertrag (${content.fieldNames().asSequence().toList()})")
+            fail("$method $path $status: Content-Type $type not in the contract (${content.fieldNames().asSequence().toList()})")
         }
         if (type != "application/json") return
         val schema = factory.getSchema(SchemaLocation.of("${file.toURI()}#$pointer/content/${escape(type)}/schema"))
         val errors = schema.validate(ObjectMapper().readTree(body))
-        if (errors.isNotEmpty()) fail("$method $path $status verletzt den Vertrag:\n  ${errors.joinToString("\n  ")}\nRumpf: $body")
+        if (errors.isNotEmpty()) fail("$method $path $status violates the contract:\n  ${errors.joinToString("\n  ")}\nBody: $body")
     }
 
-    /** Alle Kombinationen aus Methode und Pfadmuster im Vertrag, z. B. `GET /api/v1/info`. */
+    /** All combinations of method and path pattern in the contract, e.g. `GET /api/v1/info`. */
     fun operations(): Set<String> =
         doc
             .path("paths")
@@ -72,7 +72,7 @@ object Contract {
                     .map { "${it.uppercase()} $basePath$template" }
             }.toSet()
 
-    /** Ob die Operation laut Vertrag ohne Token aufrufbar ist. */
+    /** Whether the operation is callable without a token according to the contract. */
     fun isPublic(
         method: String,
         path: String,
@@ -86,7 +86,7 @@ object Contract {
         method: String,
         path: String,
     ): Pair<String, JsonNode> {
-        if (!path.startsWith(basePath)) fail("$path liegt nicht unter $basePath")
+        if (!path.startsWith(basePath)) fail("$path is not under $basePath")
         val relative = path.removePrefix(basePath).substringBefore('?')
         val segments = relative.trim('/').split('/')
         val match =
@@ -95,7 +95,7 @@ object Contract {
                 parts.size == segments.size &&
                     parts.zip(segments).all { (p, s) -> (p.startsWith('{') && s.isNotEmpty()) || p == s } &&
                     item.has(method.lowercase())
-            } ?: fail("$method $relative ist nicht im Vertrag beschrieben")
+            } ?: fail("$method $relative is not described in the contract")
         return match.key to match.value.path(method.lowercase())
     }
 

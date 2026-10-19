@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.time.Duration
 
-/** Spec `admin-access`: Kopplung per Code, Schutz vor Durchprobieren, Token verwalten. */
+/** Spec `admin-access`: Pairing by code, brute-force protection, manage tokens. */
 class PairingTest {
     @TempDir
     lateinit var dir: File
@@ -88,7 +88,7 @@ class PairingTest {
             .jsonPrimitive.content
 
     @Test
-    fun `Erfolgreiche Kopplung`() {
+    fun `Successful pairing`() {
         val code = requestCode()
         assertTrue(code.matches(Regex("[0-9]{6}")))
         val res = pair(code, "Laptop")
@@ -97,15 +97,15 @@ class PairingTest {
         assertEquals("Laptop", body.client.name)
         assertTrue(body.client.current)
         assertEquals(200, http.get("/api/v1/clients", mapOf("Authorization" to "Bearer ${body.token}")).statusCode())
-        // Gespeichert wird nur der Hash.
+        // Only the hash is stored.
         assertFalse(File(dir, "clients.json").readText().contains(body.token))
         assertTrue(File(dir, "clients.json").readText().contains(ClientRegistry.hash(body.token)))
-        // Nach erfolgreicher Kopplung verschwindet der Code vom Rahmen.
+        // After successful pairing the code disappears from the frame.
         assertNull(pairing.display.value.code)
     }
 
     @Test
-    fun `Code nur einmal verwendbar`() {
+    fun `Code usable only once`() {
         val code = requestCode()
         assertEquals(201, pair(code).statusCode())
         val again = pair(code)
@@ -113,29 +113,29 @@ class PairingTest {
     }
 
     @Test
-    fun `Code abgelaufen`() {
+    fun `Code expired`() {
         val code = requestCode()
         clock.advance(Duration.ofMinutes(5).plusSeconds(1))
         val res = pair(code)
         assertEquals(401, res.statusCode())
         assertEquals("expired_code", errorCode(res.body()))
-        // Auf Anfrage zeigt der Rahmen einen neuen Code.
+        // On request the frame shows a new code.
         val fresh = requestCode()
         assertEquals(201, pair(fresh).statusCode())
     }
 
     @Test
-    fun `Code am Rahmen anfordern`() {
+    fun `Request code on the frame`() {
         val res = http.request("POST", "/api/v1/pairing/code")
         assertEquals(204, res.statusCode())
         assertEquals("", res.body())
         val shown = pairing.display.value
         assertNotNull(shown.code)
         assertEquals(clock.now() + Duration.ofMinutes(5), shown.requestedUntil)
-        // Ein zweiter Aufruf erzeugt keinen neuen Code, solange der alte gilt.
+        // A second call does not create a new code as long as the old one is valid.
         http.request("POST", "/api/v1/pairing/code")
         assertEquals(shown.code, pairing.display.value.code)
-        // Nach 5 Minuten endet das Anfragefenster.
+        // After 5 minutes the request window ends.
         clock.advance(Duration.ofMinutes(5))
         pairing.tick()
         assertNull(pairing.display.value.code)
@@ -143,7 +143,7 @@ class PairingTest {
     }
 
     @Test
-    fun `Angezeigter Code wird nach Ablauf ersetzt`() {
+    fun `Displayed code is replaced after expiry`() {
         pairing.setShownOnFrame(true)
         val first = pairing.display.value.code!!
         clock.advance(Duration.ofMinutes(4))
@@ -158,12 +158,12 @@ class PairingTest {
     }
 
     @Test
-    fun `Zu viele Fehlversuche`() {
+    fun `Too many failed attempts`() {
         val code = requestCode()
         val wrong = if (code == "000000") "111111" else "000000"
         repeat(4) { assertEquals("invalid_code", errorCode(pair(wrong).body())) }
         assertEquals(401, pair(wrong).statusCode())
-        // Gesperrt, auch für den richtigen Code und für das Anfordern eines neuen.
+        // Locked, also for the right code and for requesting a new one.
         val locked = pair(code)
         assertEquals(429, locked.statusCode())
         assertEquals("60", locked.headers().firstValue("retry-after").get())
@@ -173,50 +173,50 @@ class PairingTest {
         assertEquals(429, pair(code).statusCode())
         clock.advance(Duration.ofSeconds(1))
         pairing.tick()
-        // Danach gilt ein neuer Code, der alte ist verworfen.
+        // Afterwards a new code applies, the old one is discarded.
         assertEquals(401, pair(code).statusCode())
         val fresh = requestCode()
         assertEquals(201, pair(fresh).statusCode())
     }
 
     @Test
-    fun `Geraetename aus dem User-Agent`() {
+    fun `Device name from the user agent`() {
         val ua = "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0"
         val res = pair(requestCode(), ua = ua)
-        assertEquals("Firefox auf Android", ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body()).client.name)
+        assertEquals("Firefox on Android", ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body()).client.name)
         assertEquals(
-            "Safari auf iPhone",
+            "Safari on iPhone",
             DeviceName.fromUserAgent(
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
             ),
         )
         assertEquals(
-            "Chrome auf Windows",
+            "Chrome on Windows",
             DeviceName.fromUserAgent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             ),
         )
-        assertEquals("Unbekanntes Gerät", DeviceName.fromUserAgent(null))
+        assertEquals("Unknown device", DeviceName.fromUserAgent(null))
     }
 
     @Test
-    fun `Ungueltige Eingaben`() {
+    fun `Invalid inputs`() {
         assertEquals(400, pair("12345").statusCode())
-        assertEquals(400, http.request("POST", "/api/v1/pairing", """{"kode":"123456"}""").statusCode())
+        assertEquals(400, http.request("POST", "/api/v1/pairing", """{"cod":"123456"}""").statusCode())
     }
 
     @Test
-    fun `Ohne Token, mit Token, Kopplung aufheben`() {
+    fun `Without token, with token, revoke pairing`() {
         assertEquals(401, http.get("/api/v1/settings").statusCode())
-        val laptop = ApiJson.decodeFromString(PairingResponseDto.serializer(), pair(requestCode(), "Alter Laptop").body())
-        val phone = ApiJson.decodeFromString(PairingResponseDto.serializer(), pair(requestCode(), "Handy").body())
+        val laptop = ApiJson.decodeFromString(PairingResponseDto.serializer(), pair(requestCode(), "Old laptop").body())
+        val phone = ApiJson.decodeFromString(PairingResponseDto.serializer(), pair(requestCode(), "Phone").body())
         val auth = mapOf("Authorization" to "Bearer ${phone.token}")
         assertEquals(200, http.get("/api/v1/settings", auth).statusCode())
-        assertEquals(401, http.get("/api/v1/settings", mapOf("Authorization" to "Bearer falsch")).statusCode())
+        assertEquals(401, http.get("/api/v1/settings", mapOf("Authorization" to "Bearer wrong")).statusCode())
 
         val list = Json.parseToJsonElement(http.get("/api/v1/clients", auth).body()).jsonObject["clients"]!!.jsonArray
         assertEquals(
-            listOf("Alter Laptop" to false, "Handy" to true),
+            listOf("Old laptop" to false, "Phone" to true),
             list.map {
                 it.jsonObject["name"]!!.jsonPrimitive.content to
                     (it.jsonObject["current"]!!.jsonPrimitive.content == "true")
@@ -228,13 +228,13 @@ class PairingTest {
         assertEquals(200, http.get("/api/v1/settings", auth).statusCode())
         assertEquals(404, http.request("DELETE", "/api/v1/clients/${laptop.client.id}", headers = auth).statusCode())
 
-        // Überlebt einen Neustart.
+        // Survives a restart.
         val reloaded =
             ClientRegistry(
                 JsonStore(File(dir, "clients.json"), StoredClients.serializer(), TestScope(), log),
                 clock,
             ).also { it.load() }
-        assertEquals(listOf("Handy"), reloaded.clients.value.map { it.name })
+        assertEquals(listOf("Phone"), reloaded.clients.value.map { it.name })
         assertNotNull(reloaded.authenticate(phone.token))
     }
 }

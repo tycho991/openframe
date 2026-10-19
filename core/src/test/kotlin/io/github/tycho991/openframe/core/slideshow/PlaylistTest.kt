@@ -11,7 +11,7 @@ import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
 import kotlin.random.Random
 
-/** Spec `slideshow-display`: Reihenfolge, Umlauf, Änderungen ohne Neustart. */
+/** Spec `slideshow-display`: Order, wrap-around, changes without restart. */
 class PlaylistTest {
     private fun photo(
         n: Int,
@@ -24,13 +24,13 @@ class PlaylistTest {
     private val ten = (1..10).map { photo(it) }
 
     @RepeatedTest(20)
-    fun `Shuffle ohne Wiederholung im Durchgang`() {
+    fun `Shuffle without repeats within a pass`() {
         val p = Playlist(Random(System.nanoTime()))
         p.update(ten, Order.SHUFFLE)
         val shown = mutableListOf(p.current!!)
         repeat(9) { shown += p.next()!! }
-        assertEquals(ten.toSet(), shown.toSet(), "In den ersten 10 Wechseln jedes Foto genau einmal")
-        // Auch der zweite Durchgang ist vollständig und beginnt nicht mit dem letzten Foto.
+        assertEquals(ten.toSet(), shown.toSet(), "Every photo exactly once in the first 10 changes")
+        // The second pass is complete as well and does not begin with the last photo.
         val second = mutableListOf(p.next()!!)
         assertNotEquals(shown.last(), second.first())
         repeat(9) { second += p.next()!! }
@@ -38,26 +38,26 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Chronologisch und Umlauf`() {
+    fun `Chronological and wrap-around`() {
         val p = Playlist()
         p.update(ten.shuffled(), Order.CHRONOLOGICAL)
         val shown = mutableListOf(p.current!!)
         repeat(9) { shown += p.next()!! }
-        assertEquals(ten, shown, "aufsteigend nach Aufnahmedatum")
-        assertEquals(ten.first(), p.next(), "nach dem letzten wieder das erste")
+        assertEquals(ten, shown, "ascending by capture date")
+        assertEquals(ten.first(), p.next(), "the first again after the last")
     }
 
     @Test
-    fun `Vor und zurueck`() {
+    fun `Forward and back`() {
         val p = Playlist()
         p.update(ten, Order.CHRONOLOGICAL)
         assertEquals(ten[1], p.next())
         assertEquals(ten[0], p.previous())
-        assertEquals(ten[9], p.previous(), "zurück über den Anfang")
+        assertEquals(ten[9], p.previous(), "back across the start")
     }
 
     @Test
-    fun `Zurueck im Shuffle ueber die Durchgangsgrenze`() {
+    fun `Back in shuffle across the pass boundary`() {
         val p = Playlist(Random(1))
         p.update(ten, Order.SHUFFLE)
         repeat(9) { p.next() }
@@ -67,7 +67,7 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Neues Foto erscheint noch im laufenden Durchgang`() {
+    fun `New photo still appears in the running pass`() {
         val p = Playlist(Random(3))
         p.update(ten, Order.SHUFFLE)
         repeat(3) { p.next() }
@@ -78,18 +78,18 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Album ausgeblendet`() {
-        val urlaub = (1..3).map { photo(it, "urlaub") }
-        val andere = (4..8).map { photo(it, "andere") }
+    fun `Album hidden`() {
+        val holiday = (1..3).map { photo(it, "holiday") }
+        val other = (4..8).map { photo(it, "other") }
         val p = Playlist(Random(5))
-        p.update(urlaub + andere, Order.SHUFFLE)
-        p.update(andere, Order.SHUFFLE)
+        p.update(holiday + other, Order.SHUFFLE)
+        p.update(other, Order.SHUFFLE)
         val shown = generateSequence { p.next() }.take(15).toList()
-        assertTrue(shown.none { it in urlaub }, "ab dem nächsten Wechsel kein Foto dieses Albums")
+        assertTrue(shown.none { it in holiday }, "no photo of this album from the next change on")
     }
 
     @Test
-    fun `Aktuelles Foto geloescht`() {
+    fun `Current photo deleted`() {
         val p = Playlist()
         p.update(ten, Order.CHRONOLOGICAL)
         p.next()
@@ -97,12 +97,12 @@ class PlaylistTest {
         assertEquals(ten[2], p.current)
         val removed = p.update(ten - ten[2], Order.CHRONOLOGICAL)
         assertTrue(removed)
-        assertEquals(ten[3], p.current, "das nächste Foto wird zum aktuellen")
+        assertEquals(ten[3], p.current, "the next photo becomes the current one")
         assertFalse(p.update(ten - ten[2] - ten[7], Order.CHRONOLOGICAL))
     }
 
     @Test
-    fun `Weggefallenes aktuelles Foto ueberspringt beim naechsten Wechsel keines`() {
+    fun `Dropped current photo skips none at the next change`() {
         for (order in Order.entries) {
             val p = Playlist(Random(11))
             p.update(ten, order)
@@ -116,7 +116,7 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Reihenfolge umstellen behaelt das aktuelle Foto`() {
+    fun `Changing the order keeps the current photo`() {
         val p = Playlist(Random(9))
         p.update(ten, Order.CHRONOLOGICAL)
         repeat(4) { p.next() }
@@ -127,7 +127,7 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Leer und ein Foto`() {
+    fun `Empty and one photo`() {
         val p = Playlist()
         p.update(emptyList(), Order.SHUFFLE)
         assertNull(p.current)
@@ -139,11 +139,11 @@ class PlaylistTest {
     }
 
     @Test
-    fun `Vorschau der naechsten Fotos`() {
+    fun `Preview of the next photos`() {
         val p = Playlist()
         p.update(ten, Order.CHRONOLOGICAL)
         repeat(8) { p.next() }
         assertEquals(listOf(ten[9], ten[0], ten[1]), p.upcoming(3))
-        assertEquals(ten[9], p.next(), "upcoming wechselt nicht")
+        assertEquals(ten[9], p.next(), "upcoming does not move")
     }
 }

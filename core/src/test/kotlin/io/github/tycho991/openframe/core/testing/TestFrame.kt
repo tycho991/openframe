@@ -10,7 +10,7 @@ import java.io.File
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** Ein vollständiger [FrameCore] auf einem freien Port, mit gekoppeltem Client und Contract-Prüfung. */
+/** A complete [FrameCore] on a free port, with a paired client and contract check. */
 class TestFrame(
     dir: File,
     val engine: JvmMediaEngine = JvmMediaEngine(),
@@ -45,7 +45,7 @@ class TestFrame(
 
     fun scan() = runBlocking { core.localSource.scan() }
 
-    /** Baut eine multipart-Anfrage aus Feldern und Dateien. */
+    /** Builds a multipart request from fields and files. */
     fun multipart(
         album: String?,
         vararg files: Pair<String, ByteArray>,

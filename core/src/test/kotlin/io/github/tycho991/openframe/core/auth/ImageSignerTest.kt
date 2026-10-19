@@ -19,7 +19,7 @@ import java.io.File
 import java.time.Duration
 import java.time.Instant
 
-/** Spec `admin-access`: Signierte Bild-URL, Signatur auf anderes Foto übertragen. */
+/** Spec `admin-access`: Signed image URL, signature reused for another photo. */
 class ImageSignerTest {
     @TempDir
     lateinit var dir: File
@@ -36,30 +36,30 @@ class ImageSignerTest {
     private val b = "local-" + "b".repeat(40)
 
     @Test
-    fun `Gueltige Signatur`() {
+    fun `Valid signature`() {
         val s = signer()
         assertTrue(s.verify(a, s.sign(a)))
     }
 
     @Test
-    fun `Signatur auf anderes Foto uebertragen`() {
+    fun `Signature reused for another photo`() {
         val s = signer()
         assertFalse(s.verify(b, s.sign(a)))
     }
 
     @Test
-    fun `Ablauf zur uebernaechsten vollen Stunde`() {
+    fun `Expiry at the full hour after next`() {
         val s = signer()
         val t = s.sign(a)
         assertEquals(Instant.parse("2026-05-01T12:00:00Z").epochSecond, t.substringBefore('.').toLong())
         clock.advance(Duration.ofMinutes(104))
-        assertTrue(s.verify(a, t), "11:59:30 noch gültig")
+        assertTrue(s.verify(a, t), "11:59:30 still valid")
         clock.advance(Duration.ofSeconds(30))
-        assertFalse(s.verify(a, t), "12:00:00 abgelaufen")
+        assertFalse(s.verify(a, t), "12:00:00 expired")
     }
 
     @Test
-    fun `Gleiche URL innerhalb einer Stunde`() {
+    fun `Same URL within an hour`() {
         val s = signer()
         val first = s.sign(a)
         clock.instant = Instant.parse("2026-05-01T10:59:59Z")
@@ -69,20 +69,20 @@ class ImageSignerTest {
     }
 
     @Test
-    fun `Manipulierte Signaturen`() {
+    fun `Tampered signatures`() {
         val s = signer()
         val t = s.sign(a)
         val later = (t.substringBefore('.').toLong() + 3600).toString() + "." + t.substringAfter('.')
-        assertFalse(s.verify(a, later), "verlängerter Ablauf")
+        assertFalse(s.verify(a, later), "extended expiry")
         assertFalse(s.verify(a, t.dropLast(1) + if (t.last() == 'A') "B" else "A"))
         assertFalse(s.verify(a, ""))
-        assertFalse(s.verify(a, "kaputt"))
+        assertFalse(s.verify(a, "broken"))
         val far = (clock.now().epochSecond + 3 * 3600).toString() + ".x"
-        assertFalse(s.verify(a, far), "zu weit in der Zukunft")
+        assertFalse(s.verify(a, far), "too far in the future")
     }
 
     @Test
-    fun `Schluessel ueberlebt Neustart, Rotation macht alte Signaturen ungueltig`() {
+    fun `Key survives restart, rotation invalidates old signatures`() {
         val t = signer().sign(a)
         assertTrue(signer().verify(a, t))
         val s = signer()
@@ -92,7 +92,7 @@ class ImageSignerTest {
     }
 
     @Test
-    fun `Signatur als Alternative zum Token nur fuer Bildabrufe`() {
+    fun `Signature as an alternative to the token for image requests only`() {
         val s = signer()
         val clients = ClientRegistry(JsonStore(File(dir, "clients.json"), StoredClients.serializer(), TestScope(), log), clock)
         val router =
@@ -105,7 +105,7 @@ class ImageSignerTest {
             assertEquals(204, http.get("/api/v1/photos/$a/image?size=thumb&v=1&t=$t").statusCode())
             assertEquals(401, http.get("/api/v1/photos/$b/image?size=thumb&v=1&t=$t").statusCode())
             assertEquals(401, http.get("/api/v1/photos/$a/image?size=thumb").statusCode())
-            assertEquals(401, http.get("/api/v1/photos/$a?t=$t").statusCode(), "Signatur gilt nicht für andere Endpunkte")
+            assertEquals(401, http.get("/api/v1/photos/$a?t=$t").statusCode(), "Signature does not apply to other endpoints")
         }
     }
 }

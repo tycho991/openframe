@@ -42,14 +42,14 @@ class SettingsRoutesTest {
     fun tearDown() = http.close()
 
     @Test
-    fun `Einstellungen lesen`() {
+    fun `Read settings`() {
         val res = http.get("/api/v1/settings", auth.header)
         assertEquals(200, res.statusCode())
         assertEquals(Settings.defaults("PFF_1024"), ApiJson.decodeFromString(Settings.serializer(), res.body()))
     }
 
     @Test
-    fun `Nur Intervall aendern`() {
+    fun `Change only the interval`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":60}""", auth.header)
         assertEquals(200, res.statusCode())
         assertEquals(Settings.defaults("PFF_1024").copy(intervalSeconds = 60), ApiJson.decodeFromString(Settings.serializer(), res.body()))
@@ -58,7 +58,7 @@ class SettingsRoutesTest {
     }
 
     @Test
-    fun `Fehler pro Feld`() {
+    fun `Errors per field`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":1,"clock":{"enabled":false}}""", auth.header)
         assertEquals(400, res.statusCode())
         val fields =
@@ -72,7 +72,7 @@ class SettingsRoutesTest {
     }
 
     @Test
-    fun `Ueber die API`() {
+    fun `Via the API`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"localOnly":false}""", auth.header)
         assertEquals(400, res.statusCode())
         repo.setLocalOnly(true)
@@ -81,14 +81,14 @@ class SettingsRoutesTest {
     }
 
     @Test
-    fun `Ohne Token`() {
+    fun `Without token`() {
         assertEquals(401, http.get("/api/v1/settings").statusCode())
         assertEquals(401, http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":60}""").statusCode())
         assertEquals(30, repo.settings.value.intervalSeconds)
     }
 
     @Test
-    fun `Kein Objekt`() {
+    fun `Not an object`() {
         assertEquals(400, http.request("PATCH", "/api/v1/settings", "[1]", auth.header).statusCode())
         assertFalse(repo.version.value > 0)
         val body = Json.parseToJsonElement(http.get("/api/v1/settings", auth.header).body()).jsonObject

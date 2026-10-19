@@ -15,10 +15,10 @@ import java.nio.file.Files
 import java.time.Duration
 
 /**
- * `:core` als Testserver für die Playwright-Tests der Web-UI, mit Fake-MediaEngine.
- * Liefert die gebaute Web-UI aus und hat einen Steuer-Port für die Tests.
+ * `:core` as a test server for the web UI's Playwright tests, with a fake MediaEngine.
+ * Serves the built web UI and has a control port for the tests.
  *
- * Aufruf: `./gradlew :core:runTestServer --args="<port> <steuer-port> <webadmin/dist>"`
+ * Usage: `./gradlew :core:runTestServer --args="<port> <control-port> <webadmin/dist>"`
  */
 object TestServerMain {
     private lateinit var core: FrameCore
@@ -34,7 +34,7 @@ object TestServerMain {
         dataDir = Files.createTempDirectory("openframe-testserver").toFile()
         startCore()
         Control(controlPort).start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-        println("openframe-Testserver auf http://127.0.0.1:$port/ (Steuerung auf $controlPort, Daten in $dataDir)")
+        println("openframe test server on http://127.0.0.1:$port/ (control on $controlPort, data in $dataDir)")
         Thread.currentThread().join()
     }
 
@@ -81,15 +81,15 @@ object TestServerMain {
                             ok(core.pairing.display.value.code ?: "")
                         }
 
-                        // Simuliert eine per USB kopierte Datei.
+                        // Simulates a file copied over USB.
                         "/usb" -> {
                             Fixtures.copy(q.getValue("fixture"), File(core.localSource.root, q.getValue("to")))
-                            // Ohne scan=0 gleich scannen, damit Tests nicht auf das Intervall warten.
+                            // Scan right away unless scan=0, so tests do not wait for the interval.
                             if (q["scan"] != "0") runBlocking { core.localSource.scan() }
                             ok("copied")
                         }
 
-                        // Viele Fotos auf einmal, ohne dass der Scan sie alle öffnen muss.
+                        // Many photos at once, without the scan having to open them all.
                         "/many" -> {
                             val n = q.getValue("n").toInt()
                             val fixture = Fixtures.file("landscape.jpg")
@@ -118,7 +118,7 @@ object TestServerMain {
                         }
 
                         else -> {
-                            newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "unbekannt")
+                            newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "unknown")
                         }
                     }
                 } catch (e: Exception) {

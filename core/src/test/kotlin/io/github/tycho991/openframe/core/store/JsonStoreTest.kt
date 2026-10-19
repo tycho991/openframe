@@ -34,24 +34,24 @@ class JsonStoreTest {
     private val log = AppLog(TestClock())
 
     @Test
-    fun `Rundlauf`() =
+    fun `Round trip`() =
         runBlocking {
             val scope = TestScope()
             val store = JsonStore(File(dir, "doc.json"), Doc.serializer(), scope, log)
             assertNull(store.load())
-            store.saveNow(Doc(1, "eins"))
-            assertEquals(Doc(1, "eins"), JsonStore(File(dir, "doc.json"), Doc.serializer(), scope, log).load())
+            store.saveNow(Doc(1, "one"))
+            assertEquals(Doc(1, "one"), JsonStore(File(dir, "doc.json"), Doc.serializer(), scope, log).load())
             scope.cancel()
         }
 
     @Test
-    fun `Unterbrochenes Schreiben hinterlaesst den alten Stand`() =
+    fun `Interrupted write leaves the old state`() =
         runBlocking {
             val scope = TestScope()
             val file = File(dir, "doc.json")
             val store = JsonStore(file, Doc.serializer(), scope, log)
             store.saveNow(Doc(1))
-            // Stromausfall mitten im Schreiben: die Temp-Datei ist halb geschrieben.
+            // Power loss in the middle of writing: the temp file is half written.
             File(dir, "doc.json.tmp").writeText("""{"n":2,"te""")
             assertEquals(Doc(1), JsonStore(file, Doc.serializer(), scope, log).load())
             assertFalse(File(dir, "doc.json.tmp").exists())
@@ -59,21 +59,21 @@ class JsonStoreTest {
         }
 
     @Test
-    fun `Beschaedigte Datei wird beiseitegelegt`() {
-        val file = File(dir, "doc.json").apply { writeText("{kaputt") }
+    fun `Damaged file is set aside`() {
+        val file = File(dir, "doc.json").apply { writeText("{broken") }
         assertNull(JsonStore(file, Doc.serializer(), TestScope(), log).load())
         assertFalse(file.exists())
-        assertEquals("{kaputt", File(dir, "doc.json.broken").readText())
+        assertEquals("{broken", File(dir, "doc.json.broken").readText())
     }
 
     @Test
-    fun `Unbekannte und fehlende Felder`() {
-        val file = File(dir, "doc.json").apply { writeText("""{"n":3,"entfernt":true}""") }
+    fun `Unknown and missing fields`() {
+        val file = File(dir, "doc.json").apply { writeText("""{"n":3,"removed":true}""") }
         assertEquals(Doc(3, ""), JsonStore(file, Doc.serializer(), TestScope(), log).load())
     }
 
     @Test
-    fun `Buendelung schreibt nur den letzten Stand nach der Wartezeit`() {
+    fun `Batching writes only the latest state after the wait`() {
         val scope = TestScope(StandardTestDispatcher())
         val file = File(dir, "doc.json")
         val store = JsonStore(file, Doc.serializer(), scope, log, debounceMs = 1000)
@@ -89,7 +89,7 @@ class JsonStoreTest {
     }
 
     @Test
-    fun `Parallele Schreiber`() =
+    fun `Parallel writers`() =
         runBlocking(Dispatchers.Default) {
             val scope = TestScope()
             val file = File(dir, "doc.json")

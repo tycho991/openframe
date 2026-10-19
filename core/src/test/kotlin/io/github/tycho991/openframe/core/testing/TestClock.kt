@@ -4,7 +4,7 @@ import io.github.tycho991.openframe.core.platform.Clock
 import java.time.Duration
 import java.time.Instant
 
-/** Steuerbare Uhr für Tests. */
+/** Controllable clock for tests. */
 class TestClock(
     var instant: Instant = Instant.parse("2026-05-01T10:15:30Z"),
 ) : Clock {

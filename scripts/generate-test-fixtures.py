@@ -30,4 +30,4 @@ good = open(f"{out}/landscape.jpg", "rb").read()
 open(f"{out}/broken.jpg", "wb").write(good[:300])
 # HEIF-Kopf ohne Bilddaten: auf Geräten ohne Decoder „nicht unterstützt“
 open(f"{out}/photo.heic", "wb").write(bytes.fromhex("0000001866747970686569630000000068656963") + b"mif1" + b"\0" * 200)
-open(f"{out}/notiz.txt", "w").write("keine Bilddatei\n")
+open(f"{out}/note.txt", "w").write("keine Bilddatei\n")

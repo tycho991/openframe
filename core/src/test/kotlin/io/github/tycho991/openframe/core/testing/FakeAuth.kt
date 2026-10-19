@@ -3,7 +3,7 @@ package io.github.tycho991.openframe.core.testing
 import io.github.tycho991.openframe.core.http.Authenticator
 import io.github.tycho991.openframe.core.http.HttpRequest
 
-/** Akzeptiert genau das Token [token] als Client [clientId]. */
+/** Accepts exactly the token [token] as client [clientId]. */
 class FakeAuth(
     private val token: String = "test-token",
     private val clientId: String = "client-1",

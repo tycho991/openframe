@@ -21,8 +21,8 @@ import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
 
 /**
- * [MediaEngine] auf der JVM mit ImageIO (WebP über TwelveMonkeys) und
- * metadata-extractor. Zählt, wie oft Dateien geöffnet werden.
+ * [MediaEngine] on the JVM with ImageIO (WebP through TwelveMonkeys) and
+ * metadata-extractor. Counts how often files are opened.
  */
 class JvmMediaEngine(
     private val supportsHeic: Boolean = false,
@@ -32,8 +32,8 @@ class JvmMediaEngine(
 
     override fun probe(file: File): ImageInfo {
         probes.incrementAndGet()
-        val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "Kein bekanntes Bildformat")
-        if (format == ImageFormat.HEIF && !supportsHeic) throw ImageException(SkipReason.UNSUPPORTED, "HEIC nicht decodierbar")
+        val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "No known image format")
+        if (format == ImageFormat.HEIF && !supportsHeic) throw ImageException(SkipReason.UNSUPPORTED, "HEIC not decodable")
         val orientation = orientation(file)
         val image = decode(file)
         val swap = orientation in 5..8
@@ -76,11 +76,11 @@ class JvmMediaEngine(
 
     private fun decode(file: File): BufferedImage =
         try {
-            ImageIO.read(file) ?: throw ImageException(SkipReason.CORRUPT, "Nicht decodierbar")
+            ImageIO.read(file) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
         } catch (e: ImageException) {
             throw e
         } catch (e: Exception) {
-            throw ImageException(SkipReason.CORRUPT, "Nicht decodierbar: ${e.message}", e)
+            throw ImageException(SkipReason.CORRUPT, "Not decodable: ${e.message}", e)
         }
 
     private fun orientation(file: File): Int =

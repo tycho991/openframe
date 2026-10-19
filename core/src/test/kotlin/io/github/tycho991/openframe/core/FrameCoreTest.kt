@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Zusammenspiel von Bibliothek, Cache und Slideshow im echten Kern. */
+/** Interplay of library, cache and slideshow in the real core. */
 class FrameCoreTest {
     @TempDir
     lateinit var dir: File
@@ -23,11 +23,11 @@ class FrameCoreTest {
     ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(20)
-        assertTrue(condition(), "Bedingung nicht erfüllt")
+        assertTrue(condition(), "Condition not met")
     }
 
     @Test
-    fun `Kaltstart mit leerem Cache zeigt das erste Foto`() {
+    fun `Cold start with an empty cache shows the first photo`() {
         val photos = File(dir, "photos")
         for (i in 1..4) Fixtures.copy("landscape.jpg", File(photos, "p$i.jpg"))
         TestFrame(dir).use { frame ->
@@ -35,7 +35,7 @@ class FrameCoreTest {
             waitFor { frame.core.slideshow.state.value is SlideState.Showing }
             val shown = frame.core.slideshow.state.value as SlideState.Showing
             assertTrue(shown.file.exists())
-            // Die nächsten Fotos werden vorab gerendert.
+            // The next photos are rendered ahead.
             waitFor {
                 frame.core.visiblePhotos.value
                     .count { frame.core.cache.peek(it, RenderSize.DISPLAY) != null } >= 3
@@ -44,14 +44,14 @@ class FrameCoreTest {
     }
 
     @Test
-    fun `Leerzustand ohne Fotos`() {
+    fun `Empty state without photos`() {
         TestFrame(dir).use { frame ->
             waitFor { frame.core.slideshow.state.value == SlideState.Empty }
         }
     }
 
     @Test
-    fun `Einstellungen und Bibliothek ueberstehen einen Neustart`() {
+    fun `Settings and library survive a restart`() {
         TestFrame(dir).use { frame ->
             Fixtures.copy("landscape.jpg", File(frame.photos, "a.jpg"))
             frame.scan()

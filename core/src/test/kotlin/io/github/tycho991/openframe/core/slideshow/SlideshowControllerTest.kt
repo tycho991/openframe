@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
 
-/** Spec `slideshow-display` mit virtueller Zeit. */
+/** Spec `slideshow-display` with virtual time. */
 class SlideshowControllerTest {
     private fun photo(n: Int): PhotoEntry {
         val path = "p%02d.jpg".format(n)
@@ -37,7 +37,7 @@ class SlideshowControllerTest {
 
         override suspend fun render(entry: PhotoEntry): File {
             demanded += entry.id
-            if (entry.id in broken) throw IllegalStateException("kaputt")
+            if (entry.id in broken) throw IllegalStateException("broken")
             return pending.getOrPut(entry.id) { CompletableDeferred() }.await().also { readyIds += entry.id }
         }
 
@@ -71,7 +71,7 @@ class SlideshowControllerTest {
     private val photos = (1..5).map(::photo)
 
     @Test
-    fun `Wechsel nach Intervall und Umlauf`() =
+    fun `Change after interval and wrap-around`() =
         runTest {
             val s = Setup(this, photos)
             assertEquals(photos[0], s.shown())
@@ -80,14 +80,14 @@ class SlideshowControllerTest {
             assertEquals(photos[0], s.shown())
             advanceTimeBy(2)
             runCurrent()
-            assertEquals(photos[1], s.shown(), "nach 30 Sekunden das nächste sichtbare Foto")
+            assertEquals(photos[1], s.shown(), "after 30 seconds the next visible photo")
             advanceTimeBy(30_000 * 4L)
             runCurrent()
-            assertEquals(photos[0], s.shown(), "nach dem letzten wieder das erste")
+            assertEquals(photos[0], s.shown(), "the first again after the last")
         }
 
     @Test
-    fun `Zurueckwischen startet das Intervall neu`() =
+    fun `Swiping back restarts the interval`() =
         runTest {
             val s = Setup(this, photos)
             advanceTimeBy(30_001)
@@ -99,7 +99,7 @@ class SlideshowControllerTest {
             assertEquals(-1, (s.controller.state.value as SlideState.Showing).step)
             advanceTimeBy(29_000)
             runCurrent()
-            assertEquals(photos[0], s.shown(), "das Intervall beginnt neu")
+            assertEquals(photos[0], s.shown(), "the interval starts over")
             advanceTimeBy(1_001)
             runCurrent()
             assertEquals(photos[1], s.shown())
@@ -114,7 +114,7 @@ class SlideshowControllerTest {
             assertTrue(s.controller.paused.value)
             advanceTimeBy(10 * 60_000L)
             runCurrent()
-            assertEquals(photos[0], s.shown(), "bleibt stehen, bis fortgesetzt wird")
+            assertEquals(photos[0], s.shown(), "stays until resumed")
             s.controller.togglePause()
             runCurrent()
             advanceTimeBy(30_001)
@@ -123,7 +123,7 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Intervall wirkt beim naechsten Wechsel`() =
+    fun `Interval takes effect at the next change`() =
         runTest {
             val s = Setup(this, photos)
             s.settings.value = s.settings.value.copy(intervalSeconds = 5)
@@ -136,7 +136,7 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Noch nicht gerenderte Fotos werden uebersprungen und vorab gerendert`() =
+    fun `Photos not yet rendered are skipped and rendered ahead`() =
         runTest {
             val s = Setup(this, photos)
             s.images.readyIds -= photos[1].id
@@ -147,7 +147,7 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Naechstes Foto ist vorbereitet`() =
+    fun `Next photo is prepared`() =
         runTest {
             val s = Setup(this, photos)
             assertEquals(
@@ -165,7 +165,7 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Naechste Fotos werden vorab gerendert`() =
+    fun `Next photos are rendered ahead`() =
         runTest {
             val s = Setup(this, photos)
             assertTrue(s.images.prefetched.contains(photos[1].id to RenderPriority.NEXT))
@@ -174,11 +174,11 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Erster Start mit leerem Cache rendert zuerst das erste Foto`() =
+    fun `First start with an empty cache renders the first photo first`() =
         runTest {
             val s = Setup(this, photos, allReady = false)
             assertEquals(SlideState.Loading, s.controller.state.value)
-            assertEquals(listOf(photos[0].id), s.images.demanded, "zuerst das erste Foto der Reihenfolge")
+            assertEquals(listOf(photos[0].id), s.images.demanded, "the first photo of the order first")
             s.images.pending
                 .getValue(photos[0].id)
                 .complete(File("p01.jpg"))
@@ -187,11 +187,11 @@ class SlideshowControllerTest {
         }
 
     @Test
-    fun `Defekte Datei beim ersten Rendern`() =
+    fun `Broken file on first render`() =
         runTest {
             val images = FakeImages().apply { broken += photos[0].id }
             val s = Setup(this, photos, allReady = false)
-            // Eigener Aufbau mit defektem erstem Foto.
+            // Own setup with a broken first photo.
             val controller =
                 SlideshowController(
                     MutableStateFlow(photos),
@@ -202,23 +202,23 @@ class SlideshowControllerTest {
                     AppLog(TestClock()),
                 ).also { it.start() }
             runCurrent()
-            assertEquals(listOf(photos[0].id, photos[1].id), images.demanded, "nach dem Fehler das darauf folgende Foto")
+            assertEquals(listOf(photos[0].id, photos[1].id), images.demanded, "after the error the photo that follows")
             images.pending.getValue(photos[1].id).complete(File("p02.jpg"))
             runCurrent()
             assertEquals(photos[1], (controller.state.value as SlideState.Showing).photo)
         }
 
     @Test
-    fun `Defekte Datei in der Anzeige`() =
+    fun `Broken file in the display`() =
         runTest {
             val s = Setup(this, photos)
             s.controller.reportUndecodable(photos[0])
             runCurrent()
-            assertEquals(photos[1], s.shown(), "zeigt stattdessen das darauf folgende Foto")
+            assertEquals(photos[1], s.shown(), "shows the photo that follows instead")
         }
 
     @Test
-    fun `Aktuelles Foto geloescht`() =
+    fun `Current photo deleted`() =
         runTest {
             val s = Setup(this, photos)
             advanceTimeBy(30_001)
@@ -227,23 +227,23 @@ class SlideshowControllerTest {
             s.library -= photos[1].id
             s.visible.value = photos - photos[1]
             runCurrent()
-            assertEquals(photos[2], s.shown(), "sofort zum nächsten Foto")
+            assertEquals(photos[2], s.shown(), "immediately to the next photo")
         }
 
     @Test
-    fun `Album ausgeblendet wirkt beim naechsten Wechsel`() =
+    fun `Hidden album takes effect at the next change`() =
         runTest {
             val s = Setup(this, photos)
             s.visible.value = listOf(photos[0], photos[3])
             runCurrent()
-            assertEquals(photos[0], s.shown(), "ausgeblendet, nicht gelöscht: kein sofortiger Wechsel")
+            assertEquals(photos[0], s.shown(), "hidden, not deleted: no immediate change")
             advanceTimeBy(30_001)
             runCurrent()
             assertEquals(photos[3], s.shown())
         }
 
     @Test
-    fun `Leerzustand und neues Foto`() =
+    fun `Empty state and new photo`() =
         runTest {
             val s = Setup(this, emptyList())
             assertEquals(SlideState.Empty, s.controller.state.value)

@@ -28,7 +28,7 @@ class MultipartReaderTest {
         return out.toByteArray()
     }
 
-    /** Liefert die Daten in kleinen, unregelmäßigen Stücken wie ein langsames Netz. */
+    /** Delivers the data in small, irregular chunks like a slow network. */
     private class Trickle(
         private val data: ByteArray,
     ) : InputStream() {
@@ -51,17 +51,17 @@ class MultipartReaderTest {
     }
 
     @Test
-    fun `Felder und Dateien`() {
+    fun `Fields and files`() {
         val image = Random(1).nextBytes(300_000)
-        // Bytes, die wie der Anfang einer Grenze aussehen, dürfen nicht stören.
+        // Bytes that look like the start of a boundary must not interfere.
         val tricky = "a\r\n--${boundary.dropLast(1)}X\r\n-".toByteArray() + image + "\r\n--".toByteArray()
         val reader =
             MultipartReader(
                 Trickle(
                     body(
-                        Triple("album", null, "familie".toByteArray()),
+                        Triple("album", null, "family".toByteArray()),
                         Triple("file", "a b.jpg", tricky),
-                        Triple("file", "leer.jpg", ByteArray(0)),
+                        Triple("file", "empty.jpg", ByteArray(0)),
                     ),
                 ),
                 boundary,
@@ -69,7 +69,7 @@ class MultipartReaderTest {
         val album = reader.next()!!
         assertEquals("album", album.name)
         assertNull(album.filename)
-        assertEquals("familie", album.body.readBytes().toString(Charsets.UTF_8))
+        assertEquals("family", album.body.readBytes().toString(Charsets.UTF_8))
         val file = reader.next()!!
         assertEquals("a b.jpg", file.filename)
         assertEquals("image/jpeg", file.contentType)
@@ -80,7 +80,7 @@ class MultipartReaderTest {
     }
 
     @Test
-    fun `Ungelesene Teile werden uebersprungen`() {
+    fun `Unread parts are skipped`() {
         val reader =
             MultipartReader(body(Triple("a", "1.jpg", ByteArray(100_000)), Triple("b", null, "x".toByteArray())).inputStream(), boundary)
         reader.next()
@@ -96,7 +96,7 @@ class MultipartReaderTest {
     }
 
     @Test
-    fun `Abgeschnittene Anfrage`() {
+    fun `Truncated request`() {
         val full = body(Triple("file", "a.jpg", ByteArray(10_000)))
         val reader = MultipartReader(full.copyOf(full.size - 100).inputStream(), boundary)
         val part = reader.next()!!
@@ -104,7 +104,7 @@ class MultipartReaderTest {
     }
 
     @Test
-    fun `Boundary und Parameter`() {
+    fun `Boundary and parameters`() {
         assertEquals("abc", MultipartReader.boundaryOf("multipart/form-data; boundary=abc"))
         assertEquals("a;b", MultipartReader.boundaryOf("multipart/form-data; boundary=\"a;b\""))
         assertNull(MultipartReader.boundaryOf("application/json"))

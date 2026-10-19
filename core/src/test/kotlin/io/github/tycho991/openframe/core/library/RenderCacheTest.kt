@@ -17,7 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import javax.imageio.ImageIO
 
-/** Spec `photo-library`: Gerenderte Bildgrößen, Speicherplatz begrenzen. */
+/** Spec `photo-library`: Rendered image sizes, limit storage space. */
 class RenderCacheTest {
     @TempDir
     lateinit var dir: File
@@ -41,19 +41,19 @@ class RenderCacheTest {
     }
 
     @Test
-    fun `Bildschirmdeckende Anzeigegroesse`() {
+    fun `Screen-covering display size`() {
         val landscape = RenderSizes.screen(1920, 1200, Orientation.LANDSCAPE)
         assertEquals(PixelSize(1920, 1200), landscape)
         assertEquals(PixelSize(1200, 1920), RenderSizes.screen(1920, 1200, Orientation.PORTRAIT))
         assertEquals(PixelSize(1200, 1920), RenderSizes.screen(1200, 1920, Orientation.PORTRAIT))
-        // Szenario „Hochformatfoto auf Querformat-Rahmen“.
+        // Scenario "Portrait photo on a landscape frame".
         assertEquals(PixelSize(1920, 2560), RenderSizes.display(3000, 4000, landscape))
         assertEquals(PixelSize(1920, 1280), RenderSizes.display(6000, 4000, landscape))
-        // Panorama 8:1 an der Obergrenze: höchstens das 2,5-Fache der Pixelzahl des Bildschirms.
+        // Panorama 8:1 at the upper limit: at most 2.5 times the screen's pixel count.
         val pano = RenderSizes.display(16000, 2000, landscape)
         assertTrue(pano.width.toLong() * pano.height <= (2.5 * 1920 * 1200).toLong() + pano.width + pano.height)
         assertEquals(8.0, pano.width.toDouble() / pano.height, 0.01)
-        // Kleiner als der Bildschirm: nicht hochskalieren.
+        // Smaller than the screen: do not scale up.
         assertEquals(PixelSize(800, 600), RenderSizes.display(800, 600, landscape))
         assertEquals(PixelSize(400, 300), RenderSizes.thumb(4000, 3000))
         assertEquals(PixelSize(300, 400), RenderSizes.thumb(3000, 4000))
@@ -61,7 +61,7 @@ class RenderCacheTest {
     }
 
     @Test
-    fun `Vorschaubild abrufen`() =
+    fun `Fetch thumbnail`() =
         runBlocking {
             val e = entry("a.jpg")
             val file = cache().get(e, RenderSize.THUMB)
@@ -70,9 +70,9 @@ class RenderCacheTest {
         }
 
     @Test
-    fun `Anzeigegroesse beachtet EXIF und Bildschirm`() =
+    fun `Display size respects EXIF and screen`() =
         runBlocking {
-            // rotated6: gespeichert 400×300, angezeigt 300×400.
+            // rotated6: stored 400×300, displayed 300×400.
             val e = entry("r.jpg", "rotated6.jpg", 300, 400)
             screen = PixelSize(200, 120)
             val img = ImageIO.read(cache().get(e, RenderSize.DISPLAY))
@@ -80,20 +80,20 @@ class RenderCacheTest {
         }
 
     @Test
-    fun `Wiederholter Abruf rendert nicht neu`() =
+    fun `Repeated request does not render again`() =
         runBlocking {
             val c = cache()
             val e = entry("a.jpg")
             c.get(e, RenderSize.THUMB)
             c.get(e, RenderSize.THUMB)
             assertEquals(1, engine.renders.get())
-            // Auch ein neuer Cache nach Neustart findet die Datei.
+            // A new cache after a restart finds the file as well.
             cache().get(e, RenderSize.THUMB)
             assertEquals(1, engine.renders.get())
         }
 
     @Test
-    fun `Gleichzeitige Anfragen rendern einmal`() =
+    fun `Concurrent requests render once`() =
         runBlocking {
             val c = cache()
             val e = entry("a.jpg")
@@ -102,7 +102,7 @@ class RenderCacheTest {
         }
 
     @Test
-    fun `Neue Bildversion ersetzt alte Dateien`() =
+    fun `New image version replaces old files`() =
         runBlocking {
             val c = cache()
             val v1 = entry("a.jpg")
@@ -115,23 +115,23 @@ class RenderCacheTest {
         }
 
     @Test
-    fun `Budget ueberschritten`() =
+    fun `Budget exceeded`() =
         runBlocking {
             val c = cache()
             val entries = (1..6).map { entry("p$it.jpg") }
             entries.forEach { c.get(it, RenderSize.THUMB) }
             val one = File(dir, "cache").listFiles()!!.first().length()
             budget = one * 3
-            c.get(entries[0], RenderSize.THUMB) // zuletzt genutzt
+            c.get(entries[0], RenderSize.THUMB) // last used
             c.trim()
             assertTrue(c.totalBytes() <= budget)
-            assertNotNull(c.peek(entries[0], RenderSize.THUMB), "zuletzt genutzter Eintrag bleibt")
-            assertNull(c.peek(entries[1], RenderSize.THUMB), "am längsten nicht genutzter Eintrag ist entfernt")
-            assertEquals(6, photos.listFiles()!!.size, "Originale bleiben erhalten")
+            assertNotNull(c.peek(entries[0], RenderSize.THUMB), "most recently used entry stays")
+            assertNull(c.peek(entries[1], RenderSize.THUMB), "entry unused for the longest time is removed")
+            assertEquals(6, photos.listFiles()!!.size, "Originals are kept")
         }
 
     @Test
-    fun `Gerade gerendertes Bild bleibt auch bei winzigem Budget`() =
+    fun `Image just rendered stays even with a tiny budget`() =
         runBlocking {
             budget = 1
             val f = cache().get(entry("a.jpg"), RenderSize.THUMB)
@@ -139,20 +139,20 @@ class RenderCacheTest {
         }
 
     @Test
-    fun `Entfernen und alte Anzeigegroesse`() =
+    fun `Removing and old display size`() =
         runBlocking {
             val c = cache()
             val e = entry("a.jpg")
             c.get(e, RenderSize.DISPLAY)
             screen = PixelSize(200, 320)
-            assertNull(c.peek(e, RenderSize.DISPLAY), "neues Format, noch nicht gerendert")
-            assertNotNull(c.peekAnyDisplay(e), "die alte Anzeigegröße steht bis dahin zur Verfügung")
+            assertNull(c.peek(e, RenderSize.DISPLAY), "new format, not rendered yet")
+            assertNotNull(c.peekAnyDisplay(e), "the old display size is available until then")
             c.remove(e.id)
             assertEquals(0, File(dir, "cache").list()!!.size)
         }
 
     @Test
-    fun `Fehler beim Rendern`() {
+    fun `Error while rendering`() {
         val e = entry("b.jpg", "broken.jpg")
         val result = runCatching { runBlocking { cache().get(e, RenderSize.THUMB) } }
         assertTrue(result.isFailure)

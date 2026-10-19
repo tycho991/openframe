@@ -18,7 +18,7 @@ class JvmMediaEngineTest {
     lateinit var dir: File
 
     @Test
-    fun `Masse nach Drehung`() {
+    fun `Dimensions after rotation`() {
         assertEquals(
             ImageInfo(ImageFormat.JPEG, 400, 300, Instant.parse("2024-07-14T12:30:00Z")),
             engine.probe(Fixtures.file("landscape.jpg")),
@@ -29,7 +29,7 @@ class JvmMediaEngineTest {
     }
 
     @Test
-    fun `Weitere Formate`() {
+    fun `Further formats`() {
         assertEquals(ImageFormat.PNG to (200 to 100), engine.probe(Fixtures.file("image.png")).let { it.format to (it.width to it.height) })
         assertEquals(
             ImageFormat.WEBP to (160 to 120),
@@ -39,30 +39,30 @@ class JvmMediaEngineTest {
     }
 
     @Test
-    fun `Defekt, HEIC und keine Bilddatei`() {
+    fun `Broken, HEIC and not an image file`() {
         assertEquals(SkipReason.CORRUPT, assertThrows<ImageException> { engine.probe(Fixtures.file("broken.jpg")) }.reason)
         assertEquals(SkipReason.UNSUPPORTED, assertThrows<ImageException> { engine.probe(Fixtures.file("photo.heic")) }.reason)
-        assertEquals(SkipReason.CORRUPT, assertThrows<ImageException> { engine.probe(Fixtures.file("notiz.txt")) }.reason)
+        assertEquals(SkipReason.CORRUPT, assertThrows<ImageException> { engine.probe(Fixtures.file("note.txt")) }.reason)
     }
 
     @Test
-    fun `Rendern dreht nach EXIF`() {
+    fun `Rendering rotates by EXIF`() {
         val out = File(dir, "out.jpg")
         engine.render(Fixtures.file("rotated6.jpg"), out, 150, 200)
         val img = ImageIO.read(out)
         assertEquals(150 to 200, img.width to img.height)
-        // Die rote Markierung lag oben links im gespeicherten Bild, nach Drehung um 90° im Uhrzeigersinn oben rechts.
+        // The red marker was at the top left in the stored image, after a 90° clockwise rotation it is at the top right.
         val topRight = img.getRGB(140, 10)
         val red = (topRight shr 16) and 0xff
         val green = (topRight shr 8) and 0xff
-        assertEquals(true, red > 200 && green < 80, "oben rechts rot, war ${Integer.toHexString(topRight)}")
+        assertEquals(true, red > 200 && green < 80, "top right red, was ${Integer.toHexString(topRight)}")
     }
 
     @Test
-    fun `Formaterkennung an den ersten Bytes`() {
+    fun `Format detection by the first bytes`() {
         assertEquals(ImageFormat.JPEG, ImageFormats.detect(Fixtures.file("landscape.jpg")))
         assertEquals(ImageFormat.HEIF, ImageFormats.detect(Fixtures.file("photo.heic")))
-        assertNull(ImageFormats.detect(Fixtures.file("notiz.txt")))
+        assertNull(ImageFormats.detect(Fixtures.file("note.txt")))
         assertEquals(true, ImageFormats.hasImageExtension("Urlaub/IMG_1.JPEG"))
         assertEquals(false, ImageFormats.hasImageExtension("clip.mp4"))
     }

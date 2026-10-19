@@ -11,7 +11,7 @@ import java.net.http.HttpHeaders
 import java.net.http.HttpRequest as JdkRequest
 import java.net.http.HttpResponse as JdkResponse
 
-/** Antwort eines Tests: Status, Header und Rumpf als Bytes und Text. */
+/** A test's response: status, headers and body as bytes and text. */
 class Res(
     private val raw: JdkResponse<ByteArray>,
 ) {
@@ -29,9 +29,9 @@ class Res(
 }
 
 /**
- * Ein HTTP-Client für Tests, entweder mit eigenem Server auf einem freien
- * Port oder für einen schon laufenden. Mit [checkContract] wird jede
- * Antwort unter `/api/` gegen den API-Vertrag geprüft.
+ * An HTTP client for tests, either with a server of its own on a free
+ * port or for one that is already running. With [checkContract] every
+ * response under `/api/` is checked against the API contract.
  */
 class TestHttp private constructor(
     private val server: NanoHttpServer?,
@@ -43,7 +43,7 @@ class TestHttp private constructor(
         checkContract: Boolean = false,
     ) : this(NanoHttpServer("127.0.0.1", 0, Dispatchers.IO.limitedParallelism(4), handler).also { it.startServer() }, null, checkContract)
 
-    /** Client für einen schon laufenden Server, etwa den eines [io.github.tycho991.openframe.core.FrameCore]. */
+    /** Client for a server that is already running, for example the one of a [io.github.tycho991.openframe.core.FrameCore]. */
     constructor(baseUrl: String, checkContract: Boolean = true) : this(null, baseUrl, checkContract)
 
     private val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
@@ -74,7 +74,7 @@ class TestHttp private constructor(
         return send(method, path, publisher, headers, contentType)
     }
 
-    /** Schickt den Rumpf als Strom bekannter Länge, ohne ihn im Speicher zu halten. */
+    /** Sends the body as a stream of known length without holding it in memory. */
     fun stream(
         method: String,
         path: String,

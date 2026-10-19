@@ -19,7 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import javax.imageio.ImageIO
 
-/** Spec `photo-library` über die API, jede Antwort gegen den Vertrag geprüft. */
+/** Spec `photo-library` through the API, every response checked against the contract. */
 class LibraryApiTest {
     @TempDir
     lateinit var dir: File
@@ -39,7 +39,7 @@ class LibraryApiTest {
     ) = Fixtures.copy(fixture, File(frame.photos, path))
 
     @Test
-    fun `Foto ausblenden und einblenden`() {
+    fun `Hide and unhide photo`() {
         put("a.jpg")
         frame.scan()
         val res = frame.send("PATCH", "/api/v1/photos/${id("a.jpg")}", """{"hidden":true}""")
@@ -54,50 +54,50 @@ class LibraryApiTest {
                     !it.hidden
             },
         )
-        assertEquals(1, page().total, "bleibt in der Bibliothek")
+        assertEquals(1, page().total, "stays in the library")
         frame.send("PATCH", "/api/v1/photos/${id("a.jpg")}", """{"hidden":false}""")
         assertTrue(page().items.single().visible)
         assertEquals(404, frame.send("PATCH", "/api/v1/photos/local-${"0".repeat(40)}", """{"hidden":true}""").statusCode())
     }
 
     @Test
-    fun `Ausgeblendetes Album bekommt neues Foto`() {
-        put("urlaub/1.jpg")
-        put("familie/2.jpg")
+    fun `Hidden album receives a new photo`() {
+        put("holiday/1.jpg")
+        put("family/2.jpg")
         frame.scan()
-        val res = frame.send("PATCH", "/api/v1/albums/urlaub", """{"hidden":true}""")
+        val res = frame.send("PATCH", "/api/v1/albums/holiday", """{"hidden":true}""")
         assertEquals(200, res.statusCode())
         assertTrue(ApiJson.decodeFromString(AlbumDto.serializer(), res.body()).hidden)
-        put("urlaub/neu.jpg")
+        put("holiday/new.jpg")
         frame.scan()
-        val urlaub = page("?album=urlaub").items
-        assertEquals(2, urlaub.size)
-        assertTrue(urlaub.none { it.visible }, "auch das neue Foto ist ausgeblendet")
-        assertTrue(urlaub.none { it.hidden }, "ausgeblendet über das Album, nicht einzeln")
-        assertEquals(404, frame.send("PATCH", "/api/v1/albums/gibtsnicht", """{"hidden":true}""").statusCode())
+        val holiday = page("?album=holiday").items
+        assertEquals(2, holiday.size)
+        assertTrue(holiday.none { it.visible }, "the new photo is hidden as well")
+        assertTrue(holiday.none { it.hidden }, "hidden through the album, not individually")
+        assertEquals(404, frame.send("PATCH", "/api/v1/albums/doesnotexist", """{"hidden":true}""").statusCode())
     }
 
     @Test
-    fun `Alben mit Anzahl und Titelbild`() {
-        put("urlaub/1.jpg")
-        put("urlaub/2.jpg", "rotated6.jpg")
-        put("lose.jpg")
+    fun `Albums with count and cover image`() {
+        put("holiday/1.jpg")
+        put("holiday/2.jpg", "rotated6.jpg")
+        put("loose.jpg")
         frame.scan()
         val albums = ApiJson.decodeFromString(AlbumListDto.serializer(), frame.get("/api/v1/albums").body()).albums
-        assertEquals(listOf("urlaub"), albums.map { it.name })
+        assertEquals(listOf("holiday"), albums.map { it.name })
         assertEquals(2, albums.single().count)
-        // Neuestes Foto: landscape.jpg vom 14.07.2024 gegenüber rotated6.jpg vom 02.01.2023.
+        // Newest photo: landscape.jpg of 14 Jul 2024 versus rotated6.jpg of 2 Jan 2023.
         assertTrue(
             albums
                 .single()
                 .cover!!
                 .thumb
-                .contains(id("urlaub/1.jpg")),
+                .contains(id("holiday/1.jpg")),
         )
     }
 
     @Test
-    fun `Mehrere ausblenden und loeschen per Batch`() {
+    fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }
         frame.scan()
         val ids = listOf("a.jpg", "b.jpg").map(::id)
@@ -114,57 +114,57 @@ class LibraryApiTest {
         assertEquals(1, page("?visible=true").total)
         frame.send("POST", "/api/v1/photos:batch", """{"action":"delete","ids":["${ids[0]}"]}""")
         assertFalse(File(frame.photos, "a.jpg").exists())
-        assertEquals(400, frame.send("POST", "/api/v1/photos:batch", """{"action":"drehen","ids":["${ids[1]}"]}""").statusCode())
+        assertEquals(400, frame.send("POST", "/api/v1/photos:batch", """{"action":"rotate","ids":["${ids[1]}"]}""").statusCode())
     }
 
     @Test
-    fun `Seite abrufen`() {
-        for (i in 1..250) put("urlaub/%03d.jpg".format(i))
-        for (i in 1..20) put("anderes/%03d.jpg".format(i))
+    fun `Fetch page`() {
+        for (i in 1..250) put("holiday/%03d.jpg".format(i))
+        for (i in 1..20) put("other/%03d.jpg".format(i))
         frame.scan()
-        val first = page("?album=urlaub&limit=100&sort=name_asc")
+        val first = page("?album=holiday&limit=100&sort=name_asc")
         assertEquals(250, first.total)
-        val second = page("?album=urlaub&limit=100&sort=name_asc&cursor=${first.nextCursor}")
+        val second = page("?album=holiday&limit=100&sort=name_asc&cursor=${first.nextCursor}")
         assertEquals(100, second.items.size)
-        assertTrue(second.items.all { it.album == "urlaub" })
-        assertEquals("urlaub/101.jpg", second.items.first().path)
+        assertTrue(second.items.all { it.album == "holiday" })
+        assertEquals("holiday/101.jpg", second.items.first().path)
         assertNotNull(second.nextCursor)
-        val third = page("?album=urlaub&limit=100&sort=name_asc&cursor=${second.nextCursor}")
+        val third = page("?album=holiday&limit=100&sort=name_asc&cursor=${second.nextCursor}")
         assertEquals(50, third.items.size)
         assertNull(third.nextCursor)
-        // Ändert sich die Bibliothek zwischen zwei Seiten, bleibt der Cursor gültig.
-        File(frame.photos, "urlaub/101.jpg").delete()
+        // If the library changes between two pages, the cursor stays valid.
+        File(frame.photos, "holiday/101.jpg").delete()
         frame.scan()
-        assertEquals("urlaub/102.jpg", page("?album=urlaub&limit=100&sort=name_asc&cursor=${first.nextCursor}").items.first().path)
-        assertEquals(400, frame.get("/api/v1/photos?cursor=kaputt").statusCode())
+        assertEquals("holiday/102.jpg", page("?album=holiday&limit=100&sort=name_asc&cursor=${first.nextCursor}").items.first().path)
+        assertEquals(400, frame.get("/api/v1/photos?cursor=broken").statusCode())
         assertEquals(400, frame.get("/api/v1/photos?limit=0").statusCode())
-        assertEquals(400, frame.get("/api/v1/photos?sort=zufall").statusCode())
+        assertEquals(400, frame.get("/api/v1/photos?sort=random").statusCode())
     }
 
     @Test
-    fun `Sortierung nach Datum`() {
-        put("alt.jpg", "rotated6.jpg")
-        put("neu.jpg", "landscape.jpg")
+    fun `Sorting by date`() {
+        put("old.jpg", "rotated6.jpg")
+        put("new.jpg", "landscape.jpg")
         frame.scan()
-        assertEquals(listOf("neu.jpg", "alt.jpg"), page().items.map { it.path })
-        assertEquals(listOf("alt.jpg", "neu.jpg"), page("?sort=date_asc").items.map { it.path })
+        assertEquals(listOf("new.jpg", "old.jpg"), page().items.map { it.path })
+        assertEquals(listOf("old.jpg", "new.jpg"), page("?sort=date_asc").items.map { it.path })
     }
 
     @Test
-    fun `Eintraege tragen signierte Bild-URLs`() {
+    fun `Entries carry signed image URLs`() {
         put("a.jpg")
         frame.scan()
         val photo = page().items.single()
         assertTrue(photo.urls.thumb.contains("size=thumb"))
         assertTrue(photo.urls.display.contains("t="))
-        // Ohne Token, nur mit der Signatur.
+        // Without a token, only with the signature.
         val res = frame.http.requestBytes("GET", photo.urls.thumb)
         assertEquals(200, res.statusCode())
         assertEquals("image/jpeg", res.header("content-type"))
     }
 
     @Test
-    fun `Vorschaubild abrufen und wiederholter Abruf`() {
+    fun `Fetch thumbnail and repeated request`() {
         put("a.jpg")
         frame.scan()
         val url =
@@ -180,11 +180,11 @@ class LibraryApiTest {
         val renders = frame.engine.renders.get()
         val again = frame.http.requestBytes("GET", url, headers = mapOf("If-None-Match" to res.header("etag")!!))
         assertEquals(304, again.statusCode())
-        assertEquals(renders, frame.engine.renders.get(), "ohne neu zu rendern")
+        assertEquals(renders, frame.engine.renders.get(), "without rendering again")
     }
 
     @Test
-    fun `Anzeigegroesse in Bildschirmaufloesung`() {
+    fun `Display size at screen resolution`() {
         put("a.jpg")
         frame.scan()
         val res =
@@ -196,48 +196,48 @@ class LibraryApiTest {
                     .urls.display,
             )
         val img = ImageIO.read(res.bytes().inputStream())
-        // 400×300 auf 1024×600 bedeckt nur hochskaliert, deshalb bleibt es bei der Originalgröße.
+        // 400×300 on 1024×600 would cover only when scaled up, so it stays at the original size.
         assertEquals(400 to 300, img.width to img.height)
     }
 
     @Test
-    fun `Defektes Bild liefert 503`() {
-        // Im Index, aber nicht renderbar, etwa nach einer Beschädigung auf dem Datenträger.
+    fun `Broken image yields 503`() {
+        // In the index but not renderable, for example after damage on the storage.
         val file = put("a.jpg", "broken.jpg")
         val id = id("a.jpg")
         frame.core.library.index.edit {
             it.put(PhotoEntry(id, "local", "a.jpg", 400, 300, 0, file.length(), file.lastModified(), 1))
         }
         assertEquals(503, frame.get("/api/v1/photos/$id/image?size=display").statusCode())
-        assertEquals(400, frame.get("/api/v1/photos/$id/image?size=riesig").statusCode())
+        assertEquals(400, frame.get("/api/v1/photos/$id/image?size=huge").statusCode())
     }
 
     @Test
-    fun `Foto loeschen`() {
-        put("urlaub/a.jpg")
+    fun `Delete photo`() {
+        put("holiday/a.jpg")
         frame.scan()
-        val id = id("urlaub/a.jpg")
+        val id = id("holiday/a.jpg")
         frame.get("/api/v1/photos/$id/image?size=thumb")
         assertTrue(File(frame.dirs.cache, "renders").list()!!.isNotEmpty())
         assertEquals(204, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
-        assertFalse(File(frame.photos, "urlaub/a.jpg").exists())
+        assertFalse(File(frame.photos, "holiday/a.jpg").exists())
         assertEquals(0, page().total)
-        assertEquals(0, File(frame.dirs.cache, "renders").list()!!.size, "gerenderte Größen entfernt")
-        assertTrue(frame.notified.any { it.name == "a.jpg" }, "dem MediaStore gemeldet")
+        assertEquals(0, File(frame.dirs.cache, "renders").list()!!.size, "rendered sizes removed")
+        assertTrue(frame.notified.any { it.name == "a.jpg" }, "reported to the MediaStore")
         assertEquals(404, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
     }
 
     @Test
-    fun `Uebersprungene Dateien`() {
-        put("urlaub/x.heic", "photo.heic")
-        put("kaputt.jpg", "broken.jpg")
+    fun `Skipped files`() {
+        put("holiday/x.heic", "photo.heic")
+        put("damaged.jpg", "broken.jpg")
         frame.scan()
         val items = ApiJson.decodeFromString(SkippedFileListDto.serializer(), frame.get("/api/v1/skipped-files").body()).items
-        assertEquals(mapOf("kaputt.jpg" to "corrupt", "urlaub/x.heic" to "unsupported"), items.associate { it.path to it.reason })
+        assertEquals(mapOf("damaged.jpg" to "corrupt", "holiday/x.heic" to "unsupported"), items.associate { it.path to it.reason })
     }
 
     @Test
-    fun `Neues Foto aendert die Bibliotheksversion`() {
+    fun `New photo changes the library version`() {
         val before =
             Json
                 .parseToJsonElement(frame.get("/api/v1/state").body())
@@ -254,7 +254,7 @@ class LibraryApiTest {
     }
 
     @Test
-    fun `Foto per USB kopiert erscheint ohne manuellen Scan`() {
+    fun `Photo copied over USB appears without a manual scan`() {
         put("usb.jpg")
         val deadline = System.currentTimeMillis() + 5000
         while (frame.core.visiblePhotos.value

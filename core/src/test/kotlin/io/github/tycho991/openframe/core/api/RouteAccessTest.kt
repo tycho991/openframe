@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Spec `admin-access`: Geschützte Endpunkte. Gilt für alle Routen, auch künftige. */
+/** Spec `admin-access`: Protected endpoints. Applies to all routes, also future ones. */
 class RouteAccessTest {
     @TempDir
     lateinit var dir: File
@@ -27,7 +27,7 @@ class RouteAccessTest {
         )
 
     @Test
-    fun `Nur freigegebene Routen ohne Token`() {
+    fun `Only approved routes without a token`() {
         val routes = frame.core.router.all
         val public = routes.filter { it.access == Access.PUBLIC }.map { "${it.method} ${it.pattern}" }.toSet()
         assertEquals(allowedPublic, public)
@@ -36,14 +36,14 @@ class RouteAccessTest {
     }
 
     @Test
-    fun `Jede geschuetzte Route antwortet ohne Token mit 401`() {
+    fun `Every protected route answers 401 without a token`() {
         for (route in frame.core.router.all
             .filter { it.access != Access.PUBLIC }) {
             val path =
                 route.pattern
                     .replace("{photoId}", "local-${"a".repeat(40)}")
                     .replace("{clientId}", "x")
-                    .replace("{albumName}", "urlaub")
+                    .replace("{albumName}", "holiday")
             val body = if (route.method.isMutating) "{}" else null
             val res = frame.http.request(route.method.name, path, body)
             assertEquals(401, res.statusCode(), "$route")
@@ -51,7 +51,7 @@ class RouteAccessTest {
     }
 
     @Test
-    fun `Router und Vertrag beschreiben dieselben Endpunkte`() {
+    fun `Router and contract describe the same endpoints`() {
         val routes =
             frame.core.router.all
                 .map { "${it.method} ${it.pattern}" }
@@ -59,7 +59,7 @@ class RouteAccessTest {
         assertEquals(Contract.operations(), routes)
         for (route in frame.core.router.all) {
             val public = Contract.isPublic(route.method.name, route.pattern)
-            assertEquals(route.access == Access.PUBLIC, public, "Sicherheit im Vertrag passt nicht zu $route")
+            assertEquals(route.access == Access.PUBLIC, public, "Security in the contract does not match $route")
         }
     }
 }

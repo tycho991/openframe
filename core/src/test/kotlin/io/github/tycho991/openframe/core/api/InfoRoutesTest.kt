@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Spec `frame-settings`: Identität des Rahmens. */
+/** Spec `frame-settings`: Frame identity. */
 class InfoRoutesTest {
     @TempDir
     lateinit var dir: File
@@ -56,7 +56,7 @@ class InfoRoutesTest {
     )
 
     @Test
-    fun `Info abrufen`() {
+    fun `Fetch info`() {
         val id = identity()
         server(id, settings()).use { http ->
             val res = http.get("/api/v1/info")
@@ -68,19 +68,19 @@ class InfoRoutesTest {
     }
 
     @Test
-    fun `Name aendern`() {
+    fun `Change name`() {
         val id = identity()
         val settings = settings()
         server(id, settings).use { http ->
-            assertEquals(200, http.request("PATCH", "/api/v1/settings", """{"name":"Wohnzimmer"}""", auth.header).statusCode())
+            assertEquals(200, http.request("PATCH", "/api/v1/settings", """{"name":"Living room"}""", auth.header).statusCode())
             val info = ApiJson.decodeFromString(InfoDto.serializer(), http.get("/api/v1/info").body())
-            assertEquals("Wohnzimmer", info.name)
+            assertEquals("Living room", info.name)
             assertEquals(id.id, info.id)
         }
     }
 
     @Test
-    fun `ID bleibt ueber Neustart gleich`() {
+    fun `ID stays the same across restart`() {
         val first = identity()
         assertEquals(32, first.id.length)
         assertEquals(first, identity())

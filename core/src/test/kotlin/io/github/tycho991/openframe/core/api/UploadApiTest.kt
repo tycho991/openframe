@@ -29,7 +29,7 @@ class UploadApiTest {
     @AfterEach
     fun tearDown() = frame.close()
 
-    /** Alle Dateien im Fotoordner außer dem versteckten Upload-Ordner, relativ und sortiert. */
+    /** All files in the photo folder except the hidden upload folder, relative and sorted. */
     private fun files() =
         frame.photos
             .walkTopDown()
@@ -43,27 +43,27 @@ class UploadApiTest {
         ApiJson.decodeFromString(UploadResultDto.serializer(), res.body())
 
     @Test
-    fun `Upload in Album`() {
-        val res = frame.upload("familie", "a.jpg" to jpeg, "b.jpg" to jpeg)
+    fun `Upload into album`() {
+        val res = frame.upload("family", "a.jpg" to jpeg, "b.jpg" to jpeg)
         assertEquals(201, res.statusCode())
         val photos = result(res).photos
-        assertEquals(listOf("familie/a.jpg", "familie/b.jpg"), photos.map { it.path })
-        assertEquals(listOf("familie/a.jpg", "familie/b.jpg"), files())
-        // Sofort im Index, ohne Scan.
+        assertEquals(listOf("family/a.jpg", "family/b.jpg"), photos.map { it.path })
+        assertEquals(listOf("family/a.jpg", "family/b.jpg"), files())
+        // In the index immediately, without a scan.
         assertEquals(photos.map { it.id }.toSet(), frame.core.library.index.library.value.photos.keys)
-        assertEquals(2, frame.notified.size, "dem MediaStore gemeldet")
+        assertEquals(2, frame.notified.size, "reported to the MediaStore")
         assertTrue(
             frame.photos
                 .resolve(".upload")
                 .listFiles()
                 .orEmpty()
                 .isEmpty(),
-            "keine Reste im Upload-Ordner",
+            "no leftovers in the upload folder",
         )
     }
 
     @Test
-    fun `Upload ohne Album`() {
+    fun `Upload without album`() {
         val res = frame.upload(null, "x.png" to Fixtures.file("image.png").readBytes())
         assertEquals(201, res.statusCode())
         assertEquals(null, result(res).photos.single().album)
@@ -71,7 +71,7 @@ class UploadApiTest {
     }
 
     @Test
-    fun `Pfad-Traversal`() {
+    fun `Path traversal`() {
         assertEquals(201, frame.upload(null, "../../evil.jpg" to jpeg).statusCode())
         assertEquals(201, frame.upload("../../x", "..\\..\\win.jpg" to jpeg).statusCode())
         assertEquals(201, frame.upload("a/b", "c.jpg" to jpeg).statusCode())
@@ -81,31 +81,31 @@ class UploadApiTest {
     }
 
     @Test
-    fun `Gleicher Name`() {
-        frame.upload("familie", "a.jpg" to jpeg)
-        val res = frame.upload("familie", "a.jpg" to Fixtures.file("rotated6.jpg").readBytes())
-        assertEquals("familie/a (1).jpg", result(res).photos.single().path)
-        assertEquals(jpeg.size.toLong(), File(frame.photos, "familie/a.jpg").length(), "vorhandene Datei nicht überschrieben")
+    fun `Same name`() {
+        frame.upload("family", "a.jpg" to jpeg)
+        val res = frame.upload("family", "a.jpg" to Fixtures.file("rotated6.jpg").readBytes())
+        assertEquals("family/a (1).jpg", result(res).photos.single().path)
+        assertEquals(jpeg.size.toLong(), File(frame.photos, "family/a.jpg").length(), "existing file not overwritten")
     }
 
     @Test
-    fun `Kein unterstuetztes Format`() {
-        val res = frame.upload("familie", "a.jpg" to jpeg, "notiz.txt" to "hallo".toByteArray())
+    fun `Unsupported format`() {
+        val res = frame.upload("family", "a.jpg" to jpeg, "note.txt" to "hello".toByteArray())
         assertEquals(415, res.statusCode())
-        assertEquals(emptyList<String>(), files(), "nichts gespeichert, auch nicht die gültige Datei")
-        assertEquals(415, frame.upload(null, "foto.heic" to Fixtures.file("photo.heic").readBytes()).statusCode(), "HEIC auf altem Gerät")
-        assertEquals(415, frame.upload(null, "kaputt.jpg" to Fixtures.file("broken.jpg").readBytes()).statusCode())
+        assertEquals(emptyList<String>(), files(), "nothing stored, not even the valid file")
+        assertEquals(415, frame.upload(null, "photo.heic" to Fixtures.file("photo.heic").readBytes()).statusCode(), "HEIC on an old device")
+        assertEquals(415, frame.upload(null, "damaged.jpg" to Fixtures.file("broken.jpg").readBytes()).statusCode())
         assertEquals(emptyList<String>(), files())
     }
 
     @Test
-    fun `Endung wird ergaenzt`() {
-        val res = frame.upload(null, "bild" to jpeg)
-        assertEquals("bild.jpg", result(res).photos.single().path)
+    fun `Extension is added`() {
+        val res = frame.upload(null, "image" to jpeg)
+        assertEquals("image.jpg", result(res).photos.single().path)
     }
 
     @Test
-    fun `Speicher voll`() {
+    fun `Storage full`() {
         platform.free = PhotoLibrary.RESERVE_BYTES + jpeg.size / 2
         val res = frame.upload(null, "a.jpg" to jpeg)
         assertEquals(507, res.statusCode())
@@ -116,12 +116,12 @@ class UploadApiTest {
                 .listFiles()
                 .orEmpty()
                 .isEmpty(),
-            "keine Teildatei",
+            "no partial file",
         )
     }
 
     @Test
-    fun `Speicher wird waehrend des Uploads knapp`() {
+    fun `Storage runs low during the upload`() {
         val (type, body) = frame.multipart(null, "a.jpg" to jpeg + ByteArray(8 * 1024 * 1024))
         var sent = 0L
         platform.free = Long.MAX_VALUE / 2
@@ -149,16 +149,16 @@ class UploadApiTest {
     }
 
     @Test
-    fun `Upload von 300 MB mit begrenztem Heap`() {
-        assertTrue(Runtime.getRuntime().maxMemory() < 300L * 1024 * 1024, "Test-Heap muss kleiner als der Upload sein")
+    fun `Upload of 300 MB with a limited heap`() {
+        assertTrue(Runtime.getRuntime().maxMemory() < 300L * 1024 * 1024, "Test heap must be smaller than the upload")
         val filler = 300L * 1024 * 1024
         val boundary = "----big"
-        val head = "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"gross.jpg\"\r\n\r\n".toByteArray()
+        val head = "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"big.jpg\"\r\n\r\n".toByteArray()
         val tail = "\r\n--$boundary--\r\n".toByteArray()
         val length = head.size + jpeg.size + filler + tail.size
         val res =
             frame.http.stream("POST", "/api/v1/photos", "multipart/form-data; boundary=$boundary", length, frame.auth) {
-                // Ein gültiges JPEG mit 300 MB angehängten Nullbytes, erzeugt beim Senden.
+                // A valid JPEG with 300 MB of appended null bytes, generated while sending.
                 val zeros =
                     object : InputStream() {
                         var left = filler
@@ -184,13 +184,13 @@ class UploadApiTest {
                 )
             }
         assertEquals(201, res.statusCode(), res.body())
-        assertEquals(jpeg.size + filler, File(frame.photos, "gross.jpg").length())
+        assertEquals(jpeg.size + filler, File(frame.photos, "big.jpg").length())
     }
 
     @Test
-    fun `Falscher Content-Type`() {
+    fun `Wrong content type`() {
         assertEquals(415, frame.send("POST", "/api/v1/photos", """{"file":"x"}""").statusCode())
-        val (type, _) = frame.multipart("familie")
+        val (type, _) = frame.multipart("family")
         assertEquals(
             400,
             frame.http

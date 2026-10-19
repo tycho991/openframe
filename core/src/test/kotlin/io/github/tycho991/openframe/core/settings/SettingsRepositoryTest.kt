@@ -30,7 +30,7 @@ class SettingsRepositoryTest {
     private fun json(s: String): JsonObject = Json.parseToJsonElement(s).jsonObject
 
     @Test
-    fun `Erster Start`() {
+    fun `First start`() {
         val settings = repo().settings.value
         assertEquals(Settings.defaults("PFF_1024"), settings)
         assertEquals("PFF_1024", settings.name)
@@ -44,11 +44,11 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `Update mit neuer Einstellung`() {
-        // Gespeichert von einer älteren Version, die cacheBudgetMb und orientation noch nicht kannte.
-        file.writeText("""{"values":{"name":"Flur","intervalSeconds":60,"veraltet":1},"version":7}""")
+    fun `Update with a new setting`() {
+        // Stored by an older version that did not yet know cacheBudgetMb and orientation.
+        file.writeText("""{"values":{"name":"Hallway","intervalSeconds":60,"obsolete":1},"version":7}""")
         val r = repo()
-        assertEquals("Flur", r.settings.value.name)
+        assertEquals("Hallway", r.settings.value.name)
         assertEquals(60, r.settings.value.intervalSeconds)
         assertEquals(1000, r.settings.value.cacheBudgetMb)
         assertEquals(Orientation.LANDSCAPE, r.settings.value.orientation)
@@ -56,7 +56,7 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `Ungueltiger gespeicherter Wert faellt auf den Standard zurueck`() {
+    fun `Invalid stored value falls back to the default`() {
         file.writeText("""{"values":{"intervalSeconds":1,"order":"chronological"}}""")
         val s = repo().settings.value
         assertEquals(30, s.intervalSeconds)
@@ -64,35 +64,35 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `Ungültiges Intervall`() {
+    fun `Invalid interval`() {
         val r = repo()
         val e = assertThrows<ValidationException> { r.patch(json("""{"intervalSeconds":1,"clock":{"enabled":false}}""")) }
         assertEquals(setOf("intervalSeconds"), e.fields.keys)
-        assertTrue(r.settings.value.clock.enabled, "Auch die Uhr bleibt unverändert")
+        assertTrue(r.settings.value.clock.enabled, "The clock stays unchanged as well")
         assertEquals(0, r.version.value)
     }
 
     @Test
-    fun `Unbekanntes Feld`() {
+    fun `Unknown field`() {
         val r = repo()
-        val e = assertThrows<ValidationException> { r.patch(json("""{"farbe":"rot","clock":{"blinken":true}}""")) }
-        assertEquals(setOf("farbe", "clock.blinken"), e.fields.keys)
+        val e = assertThrows<ValidationException> { r.patch(json("""{"color":"red","clock":{"blink":true}}""")) }
+        assertEquals(setOf("color", "clock.blink"), e.fields.keys)
     }
 
     @Test
-    fun `Nur lokal ist kein Feld der API`() {
+    fun `Local only is not a field of the API`() {
         val e = assertThrows<ValidationException> { repo().patch(json("""{"localOnly":true}""")) }
         assertEquals(setOf("localOnly"), e.fields.keys)
     }
 
     @Test
-    fun `Typen und Bereiche werden geprueft`() {
+    fun `Types and ranges are checked`() {
         val e =
             assertThrows<ValidationException> {
                 repo().patch(
                     json(
                         """{"name":"","order":"random","transitionDurationMs":5001,"fillMode":1,""" +
-                            """"clock":{"sizePercent":"100","format":"36h","enabled":"ja"},"cacheBudgetMb":99,"intervalSeconds":30.5}""",
+                            """"clock":{"sizePercent":"100","format":"36h","enabled":"yes"},"cacheBudgetMb":99,"intervalSeconds":30.5}""",
                     ),
                 )
             }
@@ -113,7 +113,7 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `Nur Intervall aendern und Neustart nach Aenderung`() =
+    fun `Change only the interval and restart after a change`() =
         runBlocking {
             val r = repo()
             val before = r.settings.value
@@ -127,7 +127,7 @@ class SettingsRepositoryTest {
         }
 
     @Test
-    fun `Nur lokal wird gespeichert`() =
+    fun `Local only is stored`() =
         runBlocking {
             val r = repo()
             r.setLocalOnly(true)

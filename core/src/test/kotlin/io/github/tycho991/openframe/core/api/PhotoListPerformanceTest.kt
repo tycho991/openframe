@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Spec `photo-library`: Fotoliste über die API, 10.000 Fotos ohne spürbare Verzögerung. */
+/** Spec `photo-library`: Photo list through the API, 10,000 photos without noticeable delay. */
 class PhotoListPerformanceTest {
     @TempDir
     lateinit var dir: File
@@ -21,7 +21,7 @@ class PhotoListPerformanceTest {
     fun tearDown() = frame.close()
 
     @Test
-    fun `10000 Eintraege unter 50 ms pro Seite`() {
+    fun `10000 entries under 50 ms per page`() {
         frame.core.library.index.edit { edit ->
             for (i in 0 until 10_000) {
                 val path = "album${i % 20}/foto$i.jpg"
@@ -57,7 +57,7 @@ class PhotoListPerformanceTest {
             }
         }
         val median = times.sorted()[times.size / 2]
-        assertTrue(median < 50, "Median $median ms, alle: $times")
-        assertTrue(times.max() < 200, "Ausreißer: $times")
+        assertTrue(median < 50, "Median $median ms, all: $times")
+        assertTrue(times.max() < 200, "Outliers: $times")
     }
 }
