@@ -53,6 +53,10 @@ The server SHALL run in a foreground service so that it stays reachable while th
 - **WHEN** another app comes to the foreground
 - **THEN** the admin interface stays reachable from the LAN
 
+#### Scenario: App ended by the firmware
+- **WHEN** the device's firmware ends the app because another activity started (observed on the Frameo)
+- **THEN** the server answers again within 40 seconds without any interaction, and the display returns when the Home button is pressed
+
 ### Requirement: Self-healing
 If the display or the server crashes, the app SHALL restart itself within 30 seconds. The cause SHALL be logged.
 
