@@ -27,11 +27,18 @@
     }
   }
 
+  const linkErrors = {
+    expired: "pair.linkExpired",
+    invalid: "pair.linkInvalid",
+    network: "pair.network",
+  } as const;
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (!valid || busy) return;
     busy = true;
     error = null;
+    session.linkError = null;
     try {
       await api.pair(code, deviceName.trim() || undefined);
       session.paired = true;
@@ -46,6 +53,7 @@
   async function showCode() {
     error = null;
     message = null;
+    session.linkError = null;
     try {
       await api.showCodeOnFrame();
       message = t("pair.codeShown");
@@ -86,6 +94,7 @@
       />
     </div>
 
+    {#if session.linkError}<p class="error" role="alert">{t(linkErrors[session.linkError])}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if message}<p class="muted" role="status">{message}</p>{/if}
 

@@ -45,11 +45,11 @@ class PairingTest {
     private val signer by lazy {
         ImageSigner(JsonStore(File(dir, "secret.json"), StoredSecret.serializer(), TestScope(), log), clock).also { it.load() }
     }
-    private val pairing by lazy { PairingManager(clients, clock, log) }
+    private val pairing by lazy { PairingManager(clients, clock, log, { "http://192.168.100.215:8080/" }) }
     private val http by lazy {
         val router =
             Router().apply {
-                pairingRoutes(pairing, clients)
+                pairingRoutes(pairing, clients) { "http://192.168.100.215:8080/" }
                 settingsRoutes(
                     SettingsRepository(
                         JsonStore(File(dir, "s.json"), StoredSettings.serializer(), TestScope(), log),
@@ -163,12 +163,14 @@ class PairingTest {
         val wrong = if (code == "000000") "111111" else "000000"
         repeat(4) { assertEquals("invalid_code", errorCode(pair(wrong).body())) }
         assertEquals(401, pair(wrong).statusCode())
-        // Locked, also for the right code and for requesting a new one.
+        // Locked, also for the right code. Requesting the display still works: the frame shows the QR code alone.
         val locked = pair(code)
         assertEquals(429, locked.statusCode())
         assertEquals("60", locked.headers().firstValue("retry-after").get())
-        assertEquals(429, http.request("POST", "/api/v1/pairing/code").statusCode())
+        assertEquals(204, http.request("POST", "/api/v1/pairing/code").statusCode())
         assertNull(pairing.display.value.code)
+        assertTrue(pairing.display.value.codeLocked)
+        assertNotNull(pairing.display.value.url)
         clock.advance(Duration.ofSeconds(59))
         assertEquals(429, pair(code).statusCode())
         clock.advance(Duration.ofSeconds(1))
@@ -203,6 +205,9 @@ class PairingTest {
     fun `Invalid inputs`() {
         assertEquals(400, pair("12345").statusCode())
         assertEquals(400, http.request("POST", "/api/v1/pairing", """{"cod":"123456"}""").statusCode())
+        assertEquals(400, http.request("POST", "/api/v1/pairing", """{}""").statusCode())
+        assertEquals(400, http.request("POST", "/api/v1/pairing", """{"code":"123456","secret":"${"a".repeat(22)}"}""").statusCode())
+        assertEquals(400, http.request("POST", "/api/v1/pairing", """{"secret":"too-short"}""").statusCode())
     }
 
     @Test

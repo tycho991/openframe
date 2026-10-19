@@ -16,6 +16,7 @@ desugar = "2.1.5"
 robolectric = "4.16.1"
 junit4 = "4.13.2"
 ktlint = "1.8.0"
+zxing = "3.5.3"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -31,6 +32,7 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }

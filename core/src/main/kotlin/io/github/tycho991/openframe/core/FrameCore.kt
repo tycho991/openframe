@@ -75,7 +75,7 @@ class FrameCore(
     assets: AssetSource,
     notifier: MediaStoreNotifier,
     val clock: Clock = Clock.System,
-    port: Int = DEFAULT_PORT,
+    private val port: Int = DEFAULT_PORT,
     logSinks: List<LogSink> = emptyList(),
     private val scanInterval: Duration = Duration.ofSeconds(15),
 ) {
@@ -88,7 +88,7 @@ class FrameCore(
 
     val clients = ClientRegistry(JsonStore(File(dirs.state, "clients.json"), StoredClients.serializer(), scope, log), clock)
     val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
-    val pairing = PairingManager(clients, clock, log)
+    val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log)
@@ -172,6 +172,16 @@ class FrameCore(
         server.start(settings.localOnly.value)
     }
 
+    /**
+     * Address of the admin interface as the frame shows it, e.g. `http://192.168.100.215:8080/`:
+     * first LAN address and bound port, without port for port 80. `null` without a network address.
+     */
+    fun adminUrl(): String? {
+        val ip = platform.ipAddresses().firstOrNull() ?: return null
+        val port = server.boundPort ?: port
+        return if (port == 80) "http://$ip/" else "http://$ip:$port/"
+    }
+
     /** Scans the photo folder immediately instead of at the next interval. */
     fun requestScan() {
         scanSignal.trySend(Unit)
@@ -201,7 +211,7 @@ class FrameCore(
 
     private fun registerRoutes() {
         router.infoRoutes(identity, settings, platform)
-        router.pairingRoutes(pairing, clients)
+        router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
         router.libraryRoutes(library, settings, signer)
         router.diagnosticsRoutes(log)

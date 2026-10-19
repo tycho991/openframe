@@ -1,4 +1,4 @@
-import { createApi, localTokenStore, type Info } from "./api/client";
+import { ApiError, createApi, localTokenStore, type Client, type Info } from "./api/client";
 
 export const tokens = localTokenStore();
 
@@ -8,6 +8,12 @@ class Session {
   info = $state<Info | null>(null);
   libraryVersion = $state(-1);
   settingsVersion = $state(-1);
+  /** A pairing link is being redeemed; the interface waits instead of showing the pairing dialog. */
+  linkPending = $state(false);
+  /** Why the pairing link could not be redeemed, shown in the pairing dialog. */
+  linkError = $state<"expired" | "invalid" | "network" | null>(null);
+  /** The device that was just paired through a link, for "Paired as …" once. */
+  pairedAs = $state<Client | null>(null);
 }
 
 export const session = new Session();
@@ -18,6 +24,37 @@ export const api = createApi({
     session.paired = false;
   },
 });
+
+/**
+ * Redeems the secret of a pairing link. If the browser already has a valid
+ * token, the secret is discarded without redeeming it, so the link stays valid.
+ */
+export async function redeemPairingLink(secret: string): Promise<void> {
+  if (tokens.get() !== null) {
+    try {
+      await api.state();
+      return;
+    } catch (e) {
+      // Only an invalid token (401, already discarded) lets the link pair this browser.
+      if (!(e instanceof ApiError && e.status === 401)) return;
+    }
+  }
+  session.linkPending = true;
+  try {
+    const res = await api.pairWithSecret(secret);
+    session.linkError = null;
+    session.pairedAs = res.client;
+    session.paired = true;
+  } catch (e) {
+    session.linkError = !(e instanceof ApiError)
+      ? "network"
+      : e.code === "expired_code"
+        ? "expired"
+        : "invalid";
+  } finally {
+    session.linkPending = false;
+  }
+}
 
 export const STATE_POLL_MS = 10_000;
 

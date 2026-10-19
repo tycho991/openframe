@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.auth
 
 import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.FrameServer
+import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -36,13 +39,14 @@ class LocalAccessTest {
     fun `Access lost`() {
         val clients = ClientRegistry(JsonStore(File(dir, "clients.json"), StoredClients.serializer(), TestScope(), log), clock)
         val signer = ImageSigner(JsonStore(File(dir, "secret.json"), StoredSecret.serializer(), TestScope(), log), clock).also { it.load() }
-        val pairing = PairingManager(clients, clock, log)
-        val (token1, _) = clients.create("Laptop")
+        val pairing = PairingManager(clients, clock, log, { "http://192.168.100.215:8080/" })
+        val (token1, laptop) = clients.create("Laptop")
         val (token2, _) = clients.create("Phone")
         val photo = "local-" + "a".repeat(40)
         val url = signer.sign(photo)
         pairing.setShownOnFrame(false)
         val before = pairing.display.value.code
+        val invite = pairing.createInvite(laptop.id, "http://192.168.100.215:8080/").url.substringAfter("#pair=")
 
         PairingAdmin(clients, signer, pairing, log).resetAll()
 
@@ -52,6 +56,14 @@ class LocalAccessTest {
         val shown = pairing.display.value.code
         assertNotNull(shown, "The frame shows a new pairing code")
         assertNotEquals(before, shown)
+        assertTrue(
+            pairing.display.value.url!!
+                .startsWith("http://192.168.100.215:8080/#pair="),
+            "and a new QR code",
+        )
+        // The open invitation is invalid.
+        val rejected = assertThrows(HttpException::class.java) { pairing.pairWithSecret(invite, "Guest") }
+        assertEquals(401, rejected.status)
     }
 
     @Test

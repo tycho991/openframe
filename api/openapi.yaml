@@ -7,8 +7,9 @@ info:
     Versioned JSON API of the frame under `/api/v1`. Source of truth for the
     web UI's types and for the contract tests in `:core`.
 
-    Access: a client pairs with the code that the frame shows and receives a
-    token (`Authorization: Bearer`). Image URLs carry a server-issued signature
+    Access: a client pairs with the code that the frame shows, with the secret
+    from the frame's QR code or with an invitation from a paired device, and
+    receives a token (`Authorization: Bearer`). Image URLs carry a server-issued signature
     `t` instead, which is valid for one photo only and for at most two hours.
 
     Mutating requests from foreign origins are rejected with 403.
@@ -20,7 +21,7 @@ tags:
   - name: info
     description: Identity of the frame, without pairing.
   - name: pairing
-    description: Pairing by code and paired devices.
+    description: Pairing by code, QR code or invitation, and paired devices.
   - name: settings
     description: Settings of the frame.
   - name: photos
@@ -50,7 +51,12 @@ paths:
     post:
       tags: [pairing]
       operationId: pair
-      summary: Pair with the code shown on the frame.
+      summary: Pair with the code shown on the frame or with a secret.
+      description: |
+        Send exactly one of `code` and `secret`. The secret comes from the
+        fragment `#pair=` of the frame's QR code or of an invitation. Wrong
+        secrets do not count as failed attempts, and the lockout after wrong
+        codes does not apply to secrets.
       security: []
       requestBody:
         required: true
@@ -65,7 +71,7 @@ paths:
               schema: { $ref: "#/components/schemas/PairingResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401":
-          description: Code wrong (`invalid_code`) or expired (`expired_code`).
+          description: Code or secret wrong (`invalid_code`) or expired (`expired_code`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -76,14 +82,33 @@ paths:
     post:
       tags: [pairing]
       operationId: showPairingCode
-      summary: Ask the frame to show a valid code for 5 minutes.
-      description: The response never contains the code.
+      summary: Ask the frame to show a valid code and QR code for 5 minutes.
+      description: |
+        The response never contains the code or the secret. While pairing by
+        code is locked after failed attempts, the frame shows the QR code alone.
       security: []
       responses:
         "204":
-          description: The frame shows a valid code.
+          description: The frame shows a valid code and QR code, or the QR code alone during the lockout.
         "403": { $ref: "#/components/responses/Forbidden" }
-        "429": { $ref: "#/components/responses/Locked" }
+
+  /pairing/invites:
+    post:
+      tags: [pairing]
+      operationId: createInvite
+      summary: Create an invitation that pairs one further device.
+      description: |
+        Valid for 5 minutes and only once. Each paired device has at most one
+        open invitation; a new one replaces it. The invitation ends when the
+        inviting device's pairing is revoked.
+      responses:
+        "201":
+          description: Invitation created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invite" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /clients:
     get:
@@ -104,6 +129,25 @@ paths:
         in: path
         required: true
         schema: { type: string }
+    patch:
+      tags: [pairing]
+      operationId: updateClient
+      summary: Rename a paired device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientUpdate" }
+      responses:
+        "200":
+          description: Device renamed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [pairing]
       operationId: deleteClient
@@ -502,9 +546,13 @@ components:
     PairingRequest:
       type: object
       additionalProperties: false
-      required: [code]
+      description: Exactly one of `code` and `secret`, otherwise 400.
       properties:
         code: { type: string, pattern: "^[0-9]{6}$" }
+        secret:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{22}$"
+          description: 16 bytes in Base64url without padding, from `#pair=` of a pairing link.
         deviceName:
           type: string
           maxLength: 64
@@ -528,6 +576,37 @@ components:
         pairedAt: { type: string, format: date-time }
         lastSeenAt: { type: string, format: date-time }
         current: { type: boolean, description: "The requesting device." }
+
+    ClientUpdate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Leading and trailing whitespace is removed.
+
+    Invite:
+      type: object
+      additionalProperties: false
+      required: [url, expiresAt, qr]
+      properties:
+        url:
+          type: string
+          description: Pairing link with the secret in the fragment `#pair=`, on the address the inviting device used.
+        expiresAt: { type: string, format: date-time }
+        qr: { $ref: "#/components/schemas/QrMatrix" }
+
+    QrMatrix:
+      type: array
+      description: |
+        Rows of a QR code that encodes the `url`, without quiet zone: `1` is a
+        dark module, `0` a light one. Draw it dark on light with a quiet zone
+        of 4 modules.
+      minItems: 21
+      items: { type: string, pattern: "^[01]+$" }
 
     ClientList:
       type: object

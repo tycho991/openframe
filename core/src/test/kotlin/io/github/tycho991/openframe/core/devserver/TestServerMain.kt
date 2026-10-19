@@ -5,6 +5,7 @@ import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
@@ -13,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
 import java.time.Duration
+import java.time.Instant
 
 /**
  * `:core` as a test server for the web UI's Playwright tests, with a fake MediaEngine.
@@ -25,6 +27,13 @@ object TestServerMain {
     private lateinit var dataDir: File
     private var port = 0
     private lateinit var dist: File
+
+    /** System time plus an offset that `/advance` moves, e.g. to let a pairing link expire. */
+    private object TestServerClock : Clock {
+        @Volatile var offset: Duration = Duration.ZERO
+
+        override fun now(): Instant = Instant.now() + offset
+    }
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -51,6 +60,7 @@ object TestServerMain {
                 JvmMediaEngine(supportsHeic = false),
                 assets,
                 MediaStoreNotifier.None,
+                clock = TestServerClock,
                 port = port,
                 scanInterval = Duration.ofSeconds(2),
             )
@@ -59,6 +69,7 @@ object TestServerMain {
 
     private fun reset() {
         runBlocking { core.stop() }
+        TestServerClock.offset = Duration.ZERO
         dataDir.deleteRecursively()
         dataDir.mkdirs()
         startCore()
@@ -79,6 +90,22 @@ object TestServerMain {
                         "/code" -> {
                             core.pairing.requestDisplay()
                             ok(core.pairing.display.value.code ?: "")
+                        }
+
+                        // The secret of the QR code the frame is currently showing.
+                        "/qr" -> {
+                            core.pairing.requestDisplay()
+                            ok(
+                                core.pairing.display.value.url
+                                    ?.substringAfter("#pair=") ?: "",
+                            )
+                        }
+
+                        // Moves the frame's clock forward, e.g. `/advance?seconds=301`.
+                        "/advance" -> {
+                            TestServerClock.offset += Duration.ofSeconds(q.getValue("seconds").toLong())
+                            core.pairing.tick()
+                            ok("advanced")
                         }
 
                         // Simulates a file copied over USB.

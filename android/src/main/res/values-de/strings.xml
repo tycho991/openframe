@@ -7,6 +7,8 @@
     <string name="empty_title">Noch keine Fotos</string>
     <string name="empty_body">Öffne %1$s im Browser, um Fotos hochzuladen, oder kopiere sie per USB in den Ordner %2$s.</string>
     <string name="empty_no_network">Kein Netzwerk. Kopiere Fotos per USB in den Ordner %1$s.</string>
+    <string name="qr_scan">Mit dem Handy scannen</string>
+    <string name="code_locked">Code gesperrt</string>
     <string name="pairing_code">Kopplungscode</string>
     <string name="hint_address">Verwaltung</string>
     <string name="hint_no_network">Kein Netzwerk</string>

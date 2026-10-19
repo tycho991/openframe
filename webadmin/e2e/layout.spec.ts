@@ -51,3 +51,17 @@ test("Offline on the home network", async ({ page, baseURL }) => {
   await page.waitForLoadState("networkidle");
   expect(foreign).toEqual([]);
 });
+
+test("Invitation and renaming at 360 px without horizontal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Geräte" }).click();
+  await page.getByRole("button", { name: "Gerät einladen" }).click();
+  await expect(page.getByRole("img", { name: "QR-Code der Einladung" })).toBeVisible();
+  await page.getByRole("listitem").getByRole("button", { name: "Umbenennen" }).click();
+  await expect(page.getByLabel("Neuer Name")).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});

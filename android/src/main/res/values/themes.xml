@@ -38,6 +38,15 @@
         <item name="android:lineSpacingMultiplier">1.15</item>
     </style>
 
+    <!-- Pairing QR code as the top drawable, with "Scan with your phone" below it. -->
+    <style name="FrameQr" parent="FrameText.Body">
+        <item name="android:textSize">16sp</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:drawablePadding">8dp</item>
+        <item name="android:layout_margin">12dp</item>
+        <item name="android:text">@string/qr_scan</item>
+    </style>
+
     <style name="FrameText.Code">
         <item name="android:textSize">44sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>

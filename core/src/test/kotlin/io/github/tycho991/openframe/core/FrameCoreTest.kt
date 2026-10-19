@@ -2,11 +2,16 @@ package io.github.tycho991.openframe.core
 
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.RenderSize
+import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.slideshow.SlideState
+import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
+import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -40,6 +45,28 @@ class FrameCoreTest {
                 frame.core.visiblePhotos.value
                     .count { frame.core.cache.peek(it, RenderSize.DISPLAY) != null } >= 3
             }
+        }
+    }
+
+    @Test
+    fun `Admin address as the frame shows it`() {
+        fun core(
+            port: Int,
+            platform: FakePlatform = FakePlatform(),
+        ) = FrameCore(
+            FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
+            platform,
+            JvmMediaEngine(),
+            AssetSource { null },
+            MediaStoreNotifier.None,
+            port = port,
+        )
+        assertEquals("http://192.168.100.215:8080/", core(8080).adminUrl())
+        assertEquals("http://192.168.100.215/", core(80).adminUrl())
+        assertNull(core(8080, FakePlatform(ips = emptyList())).adminUrl())
+        // A running server reports the port it is bound to.
+        TestFrame(dir).use { frame ->
+            assertEquals("http://192.168.100.215:${frame.core.server.boundPort}/", frame.core.adminUrl())
         }
     }
 

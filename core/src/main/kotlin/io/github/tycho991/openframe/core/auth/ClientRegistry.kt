@@ -78,6 +78,18 @@ class ClientRegistry(
         return true
     }
 
+    /** Renames a paired device. Returns the renamed client or `null` for an unknown [id]. */
+    @Synchronized
+    fun rename(
+        id: String,
+        name: String,
+    ): StoredClient? {
+        val client = _clients.value.firstOrNull { it.id == id } ?: return null
+        val renamed = client.copy(name = name)
+        update(_clients.value.map { if (it.id == id) renamed else it }, immediately = true)
+        return renamed
+    }
+
     @Synchronized
     fun removeAll() {
         update(emptyList(), immediately = true)

@@ -57,7 +57,7 @@ Validity stays at 5 minutes, like the code. *Alternative:* 24 hours, so that a l
 
 ### 4. QR encoder in `:core`, matrix over the API
 
-The QR code is created in `:core` as a module matrix with Nayuki `qrcodegen` (`io.nayuki:qrcodegen`, MIT, plain Java, no dependencies), wrapped in a small `QrMatrix` type. If the library does not pass the Animal Sniffer check against API 21, its single source file is copied in with its license notice. `:android` draws the matrix as a bitmap without smoothing. The API returns the matrix as a list of rows of `0` and `1`, and the web UI draws an SVG of `<rect>` elements from it.
+The QR code is created in `:core` as a module matrix with Nayuki `qrcodegen` (1.8.0, MIT, plain Java, no dependencies), wrapped in a small `QrMatrix` type. The published jar contains `QrSegmentAdvanced`, which calls `CharSequence.chars()` and `IntStream` (API 24), and Animal Sniffer does not check calls inside jars. The four files actually needed (`QrCode`, `QrSegment`, `BitBuffer`, `DataTooLongException`) are therefore copied unchanged into `core/src/main/java/io/nayuki/qrcodegen/` with their license headers, so that the API 21 check covers them. `:android` draws the matrix as a bitmap without smoothing. The API returns the matrix as a list of rows of `0` and `1`, and the web UI draws an SVG of `<rect>` elements from it.
 
 Tests run on the JVM: a decoder on the test classpath only (ZXing) reads the generated matrix back and compares the URL.
 
@@ -78,7 +78,7 @@ The QR code is always black on white with a quiet zone of 4 modules, also in the
 ## Risks / Trade-offs
 
 - **[New IP, new origin]** → The token is lost and bookmarks point nowhere. Scanning again is cheap. The README recommends a DHCP reservation. A stable name comes with mDNS at the earliest.
-- **[iOS: a web app on the home screen has its own storage]** → After "Add to Home Screen" the app is not paired. With an invitation from Safari it pairs without a trip to the frame. The README describes this.
+- **[iOS: a web app on the home screen has its own storage]** → After "Add to Home Screen" the app is not paired. It has no address bar, so neither the QR code nor an invitation link reaches it; it pairs with the code ("Show code on frame"). The README describes this.
 - **[QR code is photographed]** → It is valid for 5 minutes at most and only once, the same as the code. Every pairing appears in the device list and can be revoked.
 - **[Invitation link is passed on]** → One-time and valid for 5 minutes, and it ends with the inviting device's pairing.
 - **[Forged `Host` header]** → Only a paired client can create an invitation, and it would only produce a link to a wrong address for itself.

@@ -10,11 +10,15 @@ import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.res.Resources
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.DisplayMetrics
+import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -28,6 +32,8 @@ import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
+import io.github.tycho991.openframe.core.auth.PairingDisplay
+import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.settings.Settings
@@ -58,11 +64,14 @@ class DisplayActivity : Activity() {
     private lateinit var renderer: SlideRenderer
     private lateinit var clock: ClockOverlay
     private lateinit var loading: TextView
-    private lateinit var emptyState: View
+    private lateinit var emptyState: LinearLayout
     private lateinit var emptyBody: TextView
     private lateinit var emptyCode: TextView
     private lateinit var emptyCodeLabel: TextView
-    private lateinit var hint: View
+    private lateinit var emptyQr: TextView
+    private lateinit var hint: LinearLayout
+    private lateinit var hintRow: LinearLayout
+    private lateinit var hintQr: TextView
     private lateinit var hintName: TextView
     private lateinit var hintAddress: TextView
     private lateinit var hintCode: TextView
@@ -75,6 +84,9 @@ class DisplayActivity : Activity() {
     private var hintVisible = false
     private var showingEmpty = false
     private var menuOpen = false
+    private var arrangedPortrait: Boolean? = null
+    private var qrUrl: String? = null
+    private var qrImage: Bitmap? = null
 
     private val hideHint = Runnable { setHintVisible(false) }
     private val reimmerse = Runnable { enterImmersive() }
@@ -107,7 +119,10 @@ class DisplayActivity : Activity() {
         emptyBody = findViewById(R.id.empty_body)
         emptyCode = findViewById(R.id.empty_code)
         emptyCodeLabel = findViewById(R.id.empty_code_label)
+        emptyQr = findViewById(R.id.empty_qr)
         hint = findViewById(R.id.hint)
+        hintRow = findViewById(R.id.hint_row)
+        hintQr = findViewById(R.id.hint_qr)
         hintName = findViewById(R.id.hint_name)
         hintAddress = findViewById(R.id.hint_address)
         hintCode = findViewById(R.id.hint_code)
@@ -117,6 +132,7 @@ class DisplayActivity : Activity() {
         // Overlays are always above the photos, even if the renderer raises the image views.
         for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.clock, R.id.hint)) findViewById<View>(id).translationZ = OVERLAY_Z
         gestures = GestureDetector(this, GestureListener())
+        arrangeForOrientation()
 
         @Suppress("DEPRECATION")
         window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
@@ -130,6 +146,11 @@ class DisplayActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { setHintVisible(false) }
         }
         FrameService.start(this)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        arrangeForOrientation()
     }
 
     override fun onStart() {
@@ -258,6 +279,8 @@ class DisplayActivity : Activity() {
             findViewById<TextView>(R.id.empty_title).text = text(R.string.empty_title)
             emptyCodeLabel.text = text(R.string.pairing_code)
             findViewById<TextView>(R.id.hint_code_label).text = text(R.string.pairing_code)
+            emptyQr.text = text(R.string.qr_scan)
+            hintQr.text = text(R.string.qr_scan)
         }
         requestedOrientation =
             if (s.orientation == Orientation.LANDSCAPE) {
@@ -324,38 +347,97 @@ class DisplayActivity : Activity() {
         hintAddress.text =
             when {
                 c.settings.localOnly.value -> text(R.string.hint_local_only)
-                else -> address(c)?.let { "${text(R.string.hint_address)}: $it" } ?: text(R.string.hint_no_network)
+                else -> c.adminUrl()?.let { "${text(R.string.hint_address)}: $it" } ?: text(R.string.hint_no_network)
             }
-        val code = c.pairing.display.value.code
-        hintCodeBox.visibility = if (code != null && !c.settings.localOnly.value) View.VISIBLE else View.GONE
-        hintCode.text = code?.chunked(3)?.joinToString(" ") ?: ""
+        val shown = c.pairing.display.value
+        val localOnly = c.settings.localOnly.value
+        hintCodeBox.visibility = if ((shown.code != null || shown.codeLocked) && !localOnly) View.VISIBLE else View.GONE
+        showCode(hintCode, shown, HINT_CODE_SP)
+        showQr(hintQr, shown.url.takeIf { !localOnly })
         hintPause.text = if (c.slideshow.paused.value) text(R.string.hint_resume) else text(R.string.hint_pause)
     }
 
     private fun updateEmpty() {
         val c = core ?: return
         val folder = "Android/data/$packageName/files/photos"
-        val address = address(c)
+        val address = c.adminUrl()
         emptyBody.text =
             if (address != null && !c.settings.localOnly.value) {
                 text(R.string.empty_body, address, folder)
             } else {
                 text(R.string.empty_no_network, folder)
             }
-        val code = c.pairing.display.value.code
-        val showCode =
-            code != null &&
-                c.clients.clients.value
-                    .isEmpty() && !c.settings.localOnly.value
-        emptyCode.text = code?.chunked(3)?.joinToString(" ") ?: ""
-        emptyCode.visibility = if (showCode) View.VISIBLE else View.GONE
+        val shown = c.pairing.display.value
+        // Pairing appears in the empty state only as long as no device is paired.
+        val pairing =
+            c.clients.clients.value
+                .isEmpty() && !c.settings.localOnly.value
+        showCode(emptyCode, shown, EMPTY_CODE_SP)
+        emptyCode.visibility = if (pairing && (shown.code != null || shown.codeLocked)) View.VISIBLE else View.GONE
         emptyCodeLabel.visibility = emptyCode.visibility
+        showQr(emptyQr, shown.url.takeIf { pairing })
     }
 
-    private fun address(core: FrameCore): String? {
-        val ip = core.platform.ipAddresses().firstOrNull() ?: return null
-        val port = core.server.boundPort ?: FrameCore.DEFAULT_PORT
-        return if (port == 80) "http://$ip/" else "http://$ip:$port/"
+    /** The code in groups of three, or the lockout in its place at a smaller size and without the code's letter spacing. */
+    private fun showCode(
+        view: TextView,
+        shown: PairingDisplay,
+        sizeSp: Float,
+    ) {
+        if (shown.codeLocked) {
+            view.text = text(R.string.code_locked)
+            view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp * LOCKED_TEXT_SCALE)
+            view.letterSpacing = 0f
+        } else {
+            view.text = shown.code?.chunked(3)?.joinToString(" ") ?: ""
+            view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+            view.letterSpacing = CODE_LETTER_SPACING
+        }
+    }
+
+    /** Shows the QR code for [url] above the label of [view], or hides it for `null`. Renders only when the URL changes. */
+    private fun showQr(
+        view: TextView,
+        url: String?,
+    ) {
+        view.visibility = if (url != null) View.VISIBLE else View.GONE
+        if (url == null) return
+        if (url != qrUrl) {
+            // The whole screen, system bars included: 40 % of the short side as the frame shows it.
+            val metrics =
+                DisplayMetrics().also {
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.getRealMetrics(it)
+                }
+            qrImage = QrBitmap.render(QrMatrix.encode(url), QrBitmap.minSide(metrics.widthPixels, metrics.heightPixels))
+            qrUrl = url
+        }
+        val bitmap = qrImage!!
+        if ((view.compoundDrawables[1] as? BitmapDrawable)?.bitmap !== bitmap) {
+            // Whole pixels per module, drawn 1:1 without smoothing.
+            val drawable =
+                BitmapDrawable(resources, bitmap).apply {
+                    isFilterBitmap = false
+                    setAntiAlias(false)
+                    setBounds(0, 0, bitmap.width, bitmap.height)
+                }
+            view.setCompoundDrawables(null, drawable, null, null)
+        }
+    }
+
+    /**
+     * Landscape: the QR code to the right of the empty state's text and at the end of the hint row.
+     * Portrait: the QR code above both.
+     */
+    private fun arrangeForOrientation() {
+        val portrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        if (arrangedPortrait == portrait) return
+        arrangedPortrait = portrait
+        emptyState.orientation = if (portrait) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        emptyState.removeView(emptyQr)
+        emptyState.addView(emptyQr, if (portrait) 0 else 1)
+        (hintQr.parent as LinearLayout).removeView(hintQr)
+        if (portrait) hint.addView(hintQr, 0) else hintRow.addView(hintQr)
     }
 
     private fun openDeviceMenu() {
@@ -407,7 +489,7 @@ class DisplayActivity : Activity() {
                 c.platform.appVersion,
                 c.platform.model,
                 c.platform.androidVersion,
-                address(c) ?: text(R.string.hint_no_network),
+                c.adminUrl() ?: text(R.string.hint_no_network),
                 c.identity.id,
             )
         showImmersive(
@@ -501,5 +583,13 @@ class DisplayActivity : Activity() {
         const val REIMMERSE_MS = 3_000L
         const val CORNER_PRESS_MS = 3_000L
         const val CORNER_FRACTION = 0.15f
+        const val HINT_CODE_SP = 34f
+        const val EMPTY_CODE_SP = 44f
+
+        /** As in the style `FrameText.Code`. */
+        const val CODE_LETTER_SPACING = 0.2f
+
+        /** "Code locked" is a word, not six digits, and gets a smaller size than the code. */
+        const val LOCKED_TEXT_SCALE = 0.55f
     }
 }

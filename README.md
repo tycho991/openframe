@@ -52,14 +52,32 @@ by itself after a restart, choose it as the home screen (HOME) in the Android
 settings.
 
 1. Without photos the frame shows the address of the admin interface, for
-   example `http://192.168.100.215:8080/`, and a six-digit pairing code.
-2. Open the address in a browser and enter the code. The browser is paired
-   afterwards; further devices pair the same way ("Show code on frame").
+   example `http://192.168.100.215:8080/`, a QR code and a six-digit pairing
+   code.
+2. Scan the QR code with the phone's camera app and open the link. The admin
+   interface opens and pairs by itself, without typing anything. The device
+   gets a name from its browser ("Safari on iPhone"), which "Rename" changes.
 3. Upload photos or copy them over USB into the folder
    `Android/data/io.github.tycho991.openframe/files/photos`.
    Subfolders become albums.
 
-On the frame itself: a tap shows name, address, code and pause. Swiping pages
+The code is the fallback for devices without a camera: open the address in a
+browser and enter the code below the QR code. QR code and code are valid for
+5 minutes and only once; "Show code on frame" in the pairing dialog brings up
+a new one. After five wrong codes the code is locked for a minute, the QR code
+keeps working.
+
+Further devices do not need the frame: on a paired device, "Paired devices" ›
+"Invite device" shows a QR code and a link that pair one more device once,
+within 5 minutes.
+
+The token lives in the browser per address. If the frame gets a new IP address,
+every browser has to pair again, so give the frame a fixed address (DHCP
+reservation) in the router. On an iPhone, a web app added to the home screen
+has storage of its own and is not paired, even if Safari is. It has no address
+bar, so links do not reach it: pair it with the code ("Show code on frame").
+
+On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
 with "local only", "Revoke all pairings" and info.
 

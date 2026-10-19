@@ -54,3 +54,53 @@ test("Remove old device", async ({ page, baseURL }) => {
   await page.reload();
   await expect(page.getByRole("navigation")).toBeVisible();
 });
+
+test("Rename device", async ({ page }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Geräte" }).click();
+  const current = page.getByRole("listitem").filter({ hasText: "Dieses Gerät" });
+  await current.getByRole("button", { name: "Umbenennen" }).click();
+  await page.getByLabel("Neuer Name").fill("Büro-Laptop");
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "Dieses Gerät" })).toContainText("Büro-Laptop");
+  expect((await apiAsBrowser<{ clients: { name: string }[] }>(page, "/clients")).clients[0]?.name).toBe(
+    "Büro-Laptop",
+  );
+});
+
+test("Show invitation", async ({ page }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Geräte" }).click();
+  await page.getByRole("button", { name: "Gerät einladen" }).click();
+  await expect(page.getByRole("img", { name: "QR-Code der Einladung" })).toBeVisible();
+  await expect(page.getByLabel("Link")).toHaveValue(/^http:\/\/127\.0\.0\.1:8090\/#pair=[A-Za-z0-9_-]{22}$/);
+  await expect(page.getByRole("timer")).toHaveText(/^Noch [45]:\d\d gültig$/);
+});
+
+test("Invitation accepted", async ({ page, browser }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Geräte" }).click();
+  await page.getByRole("button", { name: "Gerät einladen" }).click();
+  const link = await page.getByLabel("Link").inputValue();
+
+  const other = await browser.newContext({ locale: "de-DE" });
+  const second = await other.newPage();
+  await second.goto(link);
+  await expect(second.getByRole("navigation")).toBeVisible();
+  await other.close();
+
+  await expect(page.getByRole("listitem")).toHaveCount(2, { timeout: 30_000 });
+  await expect(page.getByText(/^„.+“ ist jetzt gekoppelt\.$/)).toBeVisible();
+});
+
+test("Invitation expires", async ({ page }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Geräte" }).click();
+  await page.clock.install();
+  await page.getByRole("button", { name: "Gerät einladen" }).click();
+  await expect(page.getByRole("timer")).toBeVisible();
+  await page.clock.fastForward("05:01");
+  await expect(page.getByText("Die Einladung ist abgelaufen.")).toBeVisible();
+  await page.getByRole("button", { name: "Neue Einladung" }).click();
+  await expect(page.getByRole("timer")).toBeVisible();
+});

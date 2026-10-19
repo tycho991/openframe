@@ -8,6 +8,7 @@ export type Photo = S["Photo"];
 export type PhotoPage = S["PhotoPage"];
 export type Album = S["Album"];
 export type Client = S["Client"];
+export type Invite = S["Invite"];
 export type SkippedFile = S["SkippedFile"];
 export type State = S["State"];
 export type BatchResult = S["BatchResult"];
@@ -106,9 +107,18 @@ export function createApi(options: ApiOptions) {
       options.tokens.set(res.token);
       return res;
     },
+    /** Pairs with the secret from a pairing link (QR code on the frame or invitation). The name comes from the user agent. */
+    pairWithSecret: async (secret: string) => {
+      const res = await call<S["PairingResponse"]>("POST", "/pairing", { secret }, false);
+      options.tokens.set(res.token);
+      return res;
+    },
     showCodeOnFrame: () => call<void>("POST", "/pairing/code", undefined, false),
     clients: () => call<S["ClientList"]>("GET", "/clients").then((r) => r.clients),
     deleteClient: (id: string) => call<void>("DELETE", `/clients/${encodeURIComponent(id)}`),
+    renameClient: (id: string, name: string) =>
+      call<Client>("PATCH", `/clients/${encodeURIComponent(id)}`, { name }),
+    createInvite: () => call<Invite>("POST", "/pairing/invites"),
     settings: () => call<Settings>("GET", "/settings"),
     patchSettings: (patch: SettingsPatch) => call<Settings>("PATCH", "/settings", patch),
     photos: (q: PhotoQuery = {}) => call<PhotoPage>("GET", "/photos" + query({ ...q })),

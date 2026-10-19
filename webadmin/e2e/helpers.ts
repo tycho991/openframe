@@ -16,6 +16,12 @@ export const reset = () => control("/reset");
 /** The code the frame is currently showing. */
 export const frameCode = () => control("/code");
 
+/** The secret of the QR code the frame is currently showing. */
+export const frameSecret = () => control("/qr");
+
+/** Moves the frame's clock forward, e.g. to let a pairing link expire. */
+export const advanceFrameClock = (seconds: number) => control(`/advance?seconds=${seconds}`);
+
 /** A test file as if it had been copied into the photo folder over USB. */
 export const usb = (fixture: string, to: string, { scan = true } = {}) =>
   control(`/usb?fixture=${encodeURIComponent(fixture)}&to=${encodeURIComponent(to)}&scan=${scan ? 1 : 0}`);

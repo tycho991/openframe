@@ -28,6 +28,7 @@ dependencies {
     testImplementation(libs.jackson.yaml)
     testImplementation(libs.metadata.extractor)
     testImplementation(libs.twelvemonkeys.webp)
+    testImplementation(libs.zxing.core)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
@@ -39,6 +40,8 @@ tasks.test {
     val openapi = rootProject.layout.projectDirectory.file("api/openapi.yaml")
     inputs.file(openapi).withPropertyName("openapi")
     systemProperty("openframe.openapi", openapi.asFile.absolutePath)
+    // Lets tests send their own `Host` header, e.g. for invitation links.
+    systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
 }
 
 // :core must run on the plain JVM. Platform-dependent things belong behind the

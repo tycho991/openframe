@@ -37,6 +37,19 @@ describe("API client", () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
+  it("pairs with a secret from a pairing link and keeps the token", async () => {
+    const tokens = memoryTokens();
+    let body: unknown;
+    const fetch = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+      body = init?.body;
+      return respond(201, { token: "t1", client: { id: "c", name: "Firefox on Android" } });
+    });
+    const api = createApi({ tokens, onUnauthorized: () => {}, fetch });
+    await api.pairWithSecret("AbCdEfGhIjKlMnOpQrSt_-");
+    expect(body).toBe('{"secret":"AbCdEfGhIjKlMnOpQrSt_-"}');
+    expect(tokens.get()).toBe("t1");
+  });
+
   it("does not open the dialog again on a wrong code", async () => {
     const onUnauthorized = vi.fn();
     const api = createApi({
