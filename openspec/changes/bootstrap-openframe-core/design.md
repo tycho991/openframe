@@ -169,8 +169,8 @@ Gradle calls the Vite build as a task before `mergeAssets`. Node comes from `.mi
 
 1. The APK is installed on the Lenovo first, in parallel to `pictureframe`, which remains the HOME launcher. Photos arrive over USB or upload. After that the checklist in `docs/DEVICE_TEST.md` is worked through.
 2. If it is green, openframe is chosen as the HOME launcher on the Lenovo. A 24-hour endurance run and a restart test follow.
-3. After that the same follows on the Frameo. There `pictureframe` stays installed and is removed only when openframe with Nextcloud sync (follow-up change) can take over its role.
-4. Way back: set the HOME launcher back to `com.pictureframe.kiosk` in the Android settings, or through `cmd package set-home-activity`, or through the chooser dialog. Then back up the photos (`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`), because uninstalling deletes them as well, and only after that uninstall openframe. openframe does not touch system files or root changes.
+3. After that the same follows on the Frameo. There `pictureframe` was removed during acceptance, ahead of the Nextcloud sync (follow-up change), so that openframe is the only HOME launcher. Removing it required its device admin to be deactivated first, which only the user can do in the Android settings. It was uninstalled with its data kept (`pm uninstall -k`), and the APK of version 1.2.0 was backed up. Until the Nextcloud sync exists, the Frameo therefore shows only photos added locally.
+4. Way back: on the Lenovo, set the HOME launcher back to `com.pictureframe.kiosk` in the Android settings, or through `cmd package set-home-activity`, or through the chooser dialog. On the Frameo, `pictureframe` first has to be reinstalled from its backed-up APK (`adb install`) and its device admin enabled again by the user in the Android settings; only then it can be chosen as HOME launcher. Then back up the photos (`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`), because uninstalling deletes them as well, and only after that uninstall openframe. openframe does not touch system files or root changes.
 
 ## Open Questions
 

@@ -85,7 +85,7 @@
 ## 10. Acceptance on the devices
 
 - [ ] 10.1 Lenovo Yoga Tablet 2: install the APK in parallel to `pictureframe` and work through `docs/DEVICE_TEST.md` completely (after consultation, since it installs a package on the device); verify: all items ticked, measurements entered
-- [ ] 10.2 Frameo: install the APK in parallel, check slideshow, pairing, upload and endurance run, `pictureframe` remains the HOME launcher (after consultation); verify: checklist ticked without the HOME switch
+- [ ] 10.2 Frameo: install the APK (after consultation), check slideshow, pairing, upload, endurance run, restart and autostart; `pictureframe` was removed on this device (data kept), so openframe is the only HOME launcher; verify: checklist ticked, except side-by-side operation with `pictureframe`
 
 ## Workflow follow-up
 

@@ -49,5 +49,7 @@ UI and `values-de/strings.xml` on the frame. Commit messages are in English as w
 - Ask before every persistent change on the device: installing or uninstalling packages,
   changing the HOME launcher, system settings, deleting files in the photo folder. Read-only
   commands (`adb shell dumpsys`, `adb logcat`, `adb pull`) are fine without asking.
-- `pictureframe` (`com.pictureframe.kiosk`) stays installed until openframe has taken over its
-  role. Do not touch its data.
+- `pictureframe` (`com.pictureframe.kiosk`) stays installed on the Lenovo until openframe has taken
+  over its role there. On the Frameo it was removed during acceptance (uninstalled with its data kept,
+  APK 1.2.0 backed up). Do not touch its data, and do not uninstall or reinstall it anywhere without
+  asking.
