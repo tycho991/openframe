@@ -31,7 +31,7 @@
 
 ## 6. Integration
 
-- [ ] 6.1 Whole flow against the `:core` test server: frame session → link → paired → invitation → second context paired → rename → revoke the inviting device; verify: `./gradlew check` and `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/` green, `openspec validate pair-by-qr` with exit 0 and no warnings
+- [x] 6.1 Whole flow against the `:core` test server: frame session → link → paired → invitation → second context paired → rename → revoke the inviting device; verify: `./gradlew check` and `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/` green, `openspec validate pair-by-qr` with exit 0 and no warnings
 
 ## Workflow follow-up
 
