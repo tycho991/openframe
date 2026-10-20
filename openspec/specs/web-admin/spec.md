@@ -1,0 +1,132 @@
+# web-admin Specification
+
+## Purpose
+Provides a modern admin interface in the browser of a laptop or phone. It lets users maintain a frame's photos, albums and settings without having to operate anything on the frame itself.
+
+## Requirements
+
+### Requirement: Served by the frame
+The admin interface SHALL be served by the frame at `/` and work without internet access. It SHALL NOT load resources from foreign servers.
+
+#### Scenario: Offline on the home network
+- **WHEN** the home network has no internet access and the user opens the frame's address
+- **THEN** the admin interface loads completely
+
+### Requirement: Supported browsers
+The admin interface SHALL work in the two most recent major versions each of Firefox, Chrome and Safari on desktop and mobile devices. It SHALL be usable from 360 px width without horizontal scrolling.
+
+#### Scenario: Phone
+- **WHEN** the user opens the interface on a phone with 390 px width
+- **THEN** all functions are reachable without horizontal scrolling
+
+### Requirement: Pairing in the interface
+Without a valid token the interface SHALL show the pairing dialog, unless it was opened through a pairing link. After successful pairing it SHALL store the token in the browser. On a 401 response it SHALL return to the pairing dialog.
+
+#### Scenario: First visit
+- **WHEN** a browser opens the interface for the first time without a pairing link
+- **THEN** the user sees the pairing dialog with the hint to scan the QR code on the frame or to enter the code below it
+
+#### Scenario: Returning visit
+- **WHEN** a paired browser opens the interface again
+- **THEN** the user sees their photos directly
+
+### Requirement: Photo overview
+The interface SHALL show the photos as a grid of thumbnails, filterable by album and visibility. Even with 10,000 photos, scrolling SHALL stay smooth, so only the visible thumbnails may be loaded. Hidden photos SHALL be recognizable.
+
+#### Scenario: Large library
+- **WHEN** the library contains 10,000 photos and the user scrolls through the grid
+- **THEN** the interface loads only thumbnails in the visible area and responds without noticeable delay
+
+#### Scenario: Tab open for hours
+- **WHEN** the interface stays open for three hours without the library changing
+- **THEN** the grid still shows all thumbnails without the user reloading
+
+### Requirement: Skipped files
+If the photo folder contains files that the frame could not accept, the interface SHALL point this out and list them with path and reason.
+
+#### Scenario: HEIC over USB on an old device
+- **WHEN** a HEIC file has been copied into the photo folder over USB on a frame with Android 6
+- **THEN** the interface shows a hint, and the list names the file with the reason "not supported"
+
+### Requirement: Edit photos
+In the interface it SHALL be possible to hide, unhide and delete individual or several selected photos. Deleting SHALL be confirmed beforehand. A detail view SHALL show the photo larger with album, capture date and dimensions.
+
+#### Scenario: Hide several
+- **WHEN** the user selects three photos and chooses "Hide"
+- **THEN** all three are marked as hidden and no longer appear in the slideshow
+
+#### Scenario: Confirm delete
+- **WHEN** the user chooses "Delete"
+- **THEN** the interface asks for confirmation and deletes only afterwards
+
+### Requirement: Upload in the interface
+It SHALL be possible to upload photos by file selection and by drag and drop, optionally into an existing or new album. Progress SHALL be visible per file. Errors SHALL be reported per file without aborting the other uploads.
+
+#### Scenario: Partial failure
+- **WHEN** the user uploads five files, one of which is a text file
+- **THEN** four are uploaded and an error message appears for the text file
+
+### Requirement: Albums
+The interface SHALL show the albums with the number of photos and a cover image, and SHALL let the user hide and unhide an album with a switch.
+
+#### Scenario: Hide album
+- **WHEN** the user turns off the switch of the album `holiday`
+- **THEN** the slideshow shows no more photos from `holiday`
+
+### Requirement: Edit settings
+The interface SHALL be able to edit all settings that the API offers and SHALL show validation errors at the affected field. Saved changes SHALL be confirmed without reloading.
+
+#### Scenario: Error at the field
+- **WHEN** the user saves an invalid interval
+- **THEN** the error message appears at the interval field and nothing is saved
+
+### Requirement: Paired devices
+The interface SHALL list the paired devices and allow revoking a pairing and renaming a device. The current device SHALL be recognizable in the list.
+
+#### Scenario: Remove old device
+- **WHEN** the user chooses "Revoke pairing" for another device
+- **THEN** it disappears from the list and the current device stays paired
+
+#### Scenario: Rename device
+- **WHEN** the user chooses "Rename" for the current device and saves a new name
+- **THEN** the list shows the new name without reloading
+
+### Requirement: Language
+The interface SHALL support German and English and take the language from the browser as long as the user does not choose another. The choice applies per browser and is independent of the language on the frame.
+
+#### Scenario: German browser
+- **WHEN** the browser reports German as its preferred language
+- **THEN** the interface appears in German
+
+### Requirement: Current state
+The interface SHALL show changes made elsewhere, for example over USB or from a second browser, after 30 seconds at the latest, without the user reloading.
+
+#### Scenario: Photo over USB
+- **WHEN** the interface is open and a photo arrives over USB
+- **THEN** it appears in the grid after 30 seconds at the latest
+
+### Requirement: Pairing from a pairing link
+The interface SHALL redeem a pairing link on its own, after removing the secret from the address bar and the history. If the browser already has a valid token, it SHALL discard the secret without redeeming it. After pairing it SHALL show once under which name the device was paired, with the option to rename it.
+
+#### Scenario: Opened through a pairing link
+- **WHEN** a browser without a token opens the interface through a valid pairing link
+- **THEN** the user sees their photos and the name under which the device was paired, and the address bar no longer contains the secret
+
+#### Scenario: Expired pairing link
+- **WHEN** a browser without a token opens an expired pairing link
+- **THEN** the interface shows the pairing dialog with the hint to scan the QR code again
+
+#### Scenario: Already paired
+- **WHEN** a paired browser opens a valid pairing link
+- **THEN** the list of paired devices stays unchanged and the link stays valid
+
+### Requirement: Invite a device
+The interface SHALL be able to create an invitation from the list of paired devices. It SHALL show the invitation as a QR code and as a selectable link, together with the remaining validity. After expiry it SHALL offer to create a new invitation.
+
+#### Scenario: Show invitation
+- **WHEN** the user chooses "Invite device" in the list of paired devices
+- **THEN** the interface shows a QR code, the link and the remaining time
+
+#### Scenario: Invitation accepted
+- **WHEN** another device redeems the invitation shown
+- **THEN** it appears in the list of paired devices after 30 seconds at the latest

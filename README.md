@@ -21,7 +21,7 @@ APK at build time and served by the frame. The API contract is in
 `api/openapi.yaml`; the web UI's types are generated from it, and contract tests
 check every server response against it.
 
-Background and decisions: `openspec/changes/bootstrap-openframe-core/design.md`.
+Background and decisions: `openspec/changes/archive/2026-10-20-bootstrap-openframe-core/design.md`.
 
 ## Building
 
