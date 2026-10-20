@@ -182,6 +182,28 @@ class PairingTest {
     }
 
     @Test
+    fun `Wrong codes without a displayed code do not lock`() {
+        repeat(10) { assertEquals(401, pair("123456").statusCode()) }
+        val code = requestCode()
+        assertEquals(201, pair(code).statusCode())
+    }
+
+    @Test
+    fun `Failed attempts do not carry over to the next code`() {
+        val first = requestCode()
+        val wrong = if (first == "000000") "111111" else "000000"
+        repeat(4) { assertEquals(401, pair(wrong).statusCode()) }
+        clock.advance(Duration.ofMinutes(5))
+        pairing.tick()
+        // One more mistake against the new code is the first, not the fifth.
+        pairing.requestDisplay()
+        val second = pairing.display.value.code!!
+        val wrong2 = if (second == "000000") "111111" else "000000"
+        assertEquals(401, pair(wrong2).statusCode())
+        assertEquals(201, pair(second).statusCode())
+    }
+
+    @Test
     fun `Device name from the user agent`() {
         val ua = "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0"
         val res = pair(requestCode(), ua = ua)

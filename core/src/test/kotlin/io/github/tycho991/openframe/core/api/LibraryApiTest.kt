@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -97,6 +98,33 @@ class LibraryApiTest {
     }
 
     @Test
+    fun `Batch delete goes on after a photo that cannot be deleted`() {
+        put("locked/a.jpg")
+        put("b.jpg")
+        frame.scan()
+        val folder = File(frame.photos, "locked")
+        // A folder without write permission: its file cannot be deleted. Not enforced for root.
+        folder.setWritable(false)
+        try {
+            assumeTrue(!folder.canWrite(), "folder stays writable (running as root)")
+            val res =
+                frame.send(
+                    "POST",
+                    "/api/v1/photos:batch",
+                    """{"action":"delete","ids":["${id("locked/a.jpg")}","${id("b.jpg")}"]}""",
+                )
+            assertEquals(200, res.statusCode())
+            val result = ApiJson.decodeFromString(BatchResultDto.serializer(), res.body())
+            assertEquals(1, result.processed)
+            assertEquals(listOf(id("locked/a.jpg")), result.failed)
+            assertEquals(emptyList<String>(), result.missing)
+            assertFalse(File(frame.photos, "b.jpg").exists())
+        } finally {
+            folder.setWritable(true)
+        }
+    }
+
+    @Test
     fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }
         frame.scan()
@@ -111,6 +139,7 @@ class LibraryApiTest {
         val result = ApiJson.decodeFromString(BatchResultDto.serializer(), res.body())
         assertEquals(2, result.processed)
         assertEquals(listOf("local-${"f".repeat(40)}"), result.missing)
+        assertEquals(emptyList<String>(), result.failed)
         assertEquals(1, page("?visible=true").total)
         frame.send("POST", "/api/v1/photos:batch", """{"action":"delete","ids":["${ids[0]}"]}""")
         assertFalse(File(frame.photos, "a.jpg").exists())

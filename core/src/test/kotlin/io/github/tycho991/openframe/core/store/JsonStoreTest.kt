@@ -17,9 +17,12 @@ import kotlinx.serialization.Serializable
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.io.IOException
 
 class JsonStoreTest {
     @Serializable
@@ -99,4 +102,45 @@ class JsonStoreTest {
             assertEquals("x".repeat(result.n), result.text)
             scope.cancel()
         }
+
+    @Test
+    fun `Failed flush keeps the state queued`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            // A directory in the place of the temp file makes writing fail.
+            val blocker = File(dir, "doc.json.tmp").apply { mkdir() }
+            store.save(Doc(7))
+            assertThrows(IOException::class.java) { runBlocking { store.flush() } }
+            assertFalse(file.exists())
+            blocker.delete()
+            store.flush()
+            assertEquals(Doc(7), store.load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `Writer survives a failed write and retries`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val file = File(dir, "doc.json")
+        val store = JsonStore(file, Doc.serializer(), scope, log, debounceMs = 1000)
+        scope.runCurrent()
+        val blocker = File(dir, "doc.json.tmp").apply { mkdir() }
+        store.save(Doc(1))
+        scope.advanceTimeBy(1100)
+        scope.runCurrent()
+        assertFalse(file.exists())
+        blocker.delete()
+        scope.advanceTimeBy(11_000)
+        scope.runCurrent()
+        assertTrue(file.exists())
+        assertEquals(Doc(1), store.load())
+        // A later save is written as well.
+        store.save(Doc(2))
+        scope.advanceTimeBy(1100)
+        scope.runCurrent()
+        assertEquals(Doc(2), store.load())
+        scope.cancel()
+    }
 }

@@ -89,10 +89,11 @@
   async function batch(action: "hide" | "show" | "delete") {
     const ids = [...selected];
     await guard(async () => {
-      await api.batch(action, ids);
+      const result = await api.batch(action, ids);
       endSelection();
       await pages.reload();
       albums = await api.albums();
+      if (result.failed.length > 0) error = t("photos.batchFailed", { count: result.failed.length });
     });
   }
 
@@ -103,11 +104,12 @@
           ? t("photos.confirmDeleteOne")
           : tn("photos.confirmDeleteOne", "photos.confirmDeleteMany", ids.length),
       action: async () => {
-        await api.batch("delete", ids);
+        const result = await api.batch("delete", ids);
         detail = null;
         endSelection();
         await pages.reload();
         albums = await api.albums();
+        if (result.failed.length > 0) error = t("photos.batchFailed", { count: result.failed.length });
       },
     };
   }

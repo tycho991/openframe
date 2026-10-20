@@ -44,14 +44,17 @@ class ClientRegistry(
         _clients.value = store.load()?.clients ?: emptyList()
     }
 
-    /** Creates a client and returns its token. It cannot be retrieved afterwards. */
+    /**
+     * Creates a client and returns its token. It cannot be retrieved afterwards. The client is
+     * published only once it is stored; if storing fails, nothing changes and the exception is passed on.
+     */
     @Synchronized
     fun create(name: String): Pair<String, StoredClient> {
         val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes))
         val now = clock.millis()
         val id = ByteArray(8).also(random::nextBytes).joinToString("") { "%02x".format(it) }
         val client = StoredClient(id, name, hash(token), now, now)
-        update(_clients.value + client, immediately = true)
+        update(_clients.value + client, Persist.BEFORE_PUBLISH)
         return token to client
     }
 
@@ -63,18 +66,18 @@ class ClientRegistry(
         val now = clock.millis()
         if (now - client.lastSeenAtMs >= LAST_SEEN_RESOLUTION.toMillis()) {
             synchronized(this) {
-                update(_clients.value.map { if (it.id == client.id) it.copy(lastSeenAtMs = now) else it }, immediately = false)
+                update(_clients.value.map { if (it.id == client.id) it.copy(lastSeenAtMs = now) else it }, Persist.LAZY)
             }
         }
         return client
     }
 
-    /** Revokes a pairing. The token becomes invalid immediately. */
+    /** Revokes a pairing. The token becomes invalid immediately, even if storing fails. */
     @Synchronized
     fun remove(id: String): Boolean {
         val remaining = _clients.value.filterNot { it.id == id }
         if (remaining.size == _clients.value.size) return false
-        update(remaining, immediately = true)
+        update(remaining, Persist.AFTER_PUBLISH)
         return true
     }
 
@@ -86,25 +89,62 @@ class ClientRegistry(
     ): StoredClient? {
         val client = _clients.value.firstOrNull { it.id == id } ?: return null
         val renamed = client.copy(name = name)
-        update(_clients.value.map { if (it.id == id) renamed else it }, immediately = true)
+        update(_clients.value.map { if (it.id == id) renamed else it }, Persist.BEFORE_PUBLISH)
         return renamed
     }
 
     @Synchronized
     fun removeAll() {
-        update(emptyList(), immediately = true)
+        update(emptyList(), Persist.AFTER_PUBLISH)
     }
 
     suspend fun flush() = store.flush()
 
+    /** When a change is written relative to the moment it takes effect. */
+    private enum class Persist {
+        /** Written later by the store's writer. */
+        LAZY,
+
+        /** Written first; takes effect only if that worked, otherwise nothing changes and the error is thrown. */
+        BEFORE_PUBLISH,
+
+        /** Takes effect first (a revoked token must not stay valid); a failed write is retried by the store. */
+        AFTER_PUBLISH,
+    }
+
     private fun update(
         clients: List<StoredClient>,
-        immediately: Boolean,
+        persist: Persist,
     ) {
-        _clients.value = clients
-        store.save(StoredClients(clients))
-        // Pairings and revocations are meant to survive a restart reliably.
-        if (immediately) kotlinx.coroutines.runBlocking { store.flush() }
+        val previous = _clients.value
+        when (persist) {
+            Persist.LAZY -> {
+                _clients.value = clients
+                store.save(StoredClients(clients))
+            }
+
+            Persist.BEFORE_PUBLISH -> {
+                store.save(StoredClients(clients))
+                try {
+                    kotlinx.coroutines.runBlocking { store.flush() }
+                } catch (e: Exception) {
+                    // The store keeps the failed state queued; queue the one that is still valid instead.
+                    store.save(StoredClients(previous))
+                    throw e
+                }
+                _clients.value = clients
+            }
+
+            Persist.AFTER_PUBLISH -> {
+                _clients.value = clients
+                store.save(StoredClients(clients))
+                try {
+                    kotlinx.coroutines.runBlocking { store.flush() }
+                } catch (e: Exception) {
+                    // Stays queued and is retried by the store's writer, which logs the failure.
+                }
+            }
+        }
     }
 
     companion object {

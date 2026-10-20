@@ -81,6 +81,9 @@ class FrameCore(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile
+    private var lanAddressCache: Pair<Long, String?>? = null
+
     val log = AppLog(clock, RotatingFileLog(File(dirs.state, "logs")), sinks = logSinks)
 
     val settings =
@@ -177,9 +180,21 @@ class FrameCore(
      * first LAN address and bound port, without port for port 80. `null` without a network address.
      */
     fun adminUrl(): String? {
-        val ip = platform.ipAddresses().firstOrNull() ?: return null
+        val ip = lanAddress() ?: return null
         val port = server.boundPort ?: port
         return if (port == 80) "http://$ip/" else "http://$ip:$port/"
+    }
+
+    /**
+     * The first LAN address. Listing the network interfaces is not cheap and the pairing display asks
+     * every second (and the display on the UI thread), so the answer is kept for a few seconds.
+     */
+    private fun lanAddress(): String? {
+        val now = clock.millis()
+        lanAddressCache?.let { (at, ip) -> if (now - at in 0 until LAN_ADDRESS_TTL_MS) return ip }
+        val ip = platform.ipAddresses().firstOrNull()
+        lanAddressCache = now to ip
+        return ip
     }
 
     /** Scans the photo folder immediately instead of at the next interval. */
@@ -190,11 +205,15 @@ class FrameCore(
     /** "Local only" mode, only through the device menu. */
     fun setLocalOnly(enabled: Boolean) = settings.setLocalOnly(enabled)
 
-    /** "Revoke all pairings", only through the device menu. */
-    fun resetAllPairings() = admin.resetAll()
+    /**
+     * "Revoke all pairings", only through the device menu. The tokens are replaced and written
+     * with `fsync`, which must not run on the UI thread, so this runs on the core's scope.
+     */
+    fun resetAllPairings(): kotlinx.coroutines.Job = scope.launch { admin.resetAll() }
 
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
+        lanAddressCache = null
         if (!settings.localOnly.value) server.restart()
     }
 
@@ -231,6 +250,7 @@ class FrameCore(
     companion object {
         const val DEFAULT_PORT = 8080
         private const val HANDLER_THREADS = 8
+        private const val LAN_ADDRESS_TTL_MS = 5_000L
         private const val TAG = "core"
     }
 }

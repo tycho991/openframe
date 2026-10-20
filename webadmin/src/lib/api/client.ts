@@ -159,7 +159,7 @@ export function createApi(options: ApiOptions) {
             reject(toError(xhr.status, json, true));
           }
         };
-        xhr.onerror = () => reject(new ApiError(0, "network", "Netzwerkfehler"));
+        xhr.onerror = () => reject(new ApiError(0, "network", "Network error"));
         xhr.send(form);
       });
     },

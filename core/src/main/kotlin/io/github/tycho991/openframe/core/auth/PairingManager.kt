@@ -112,6 +112,8 @@ class PairingManager(
         if (current != null && equal(input, current)) return completeSession(deviceName)
         val expired = lastExpiredCode
         if (expired != null && equal(input, expired)) throw expired()
+        // Without a live code there is nothing to guess, so such attempts must not lock out the next session.
+        if (current == null) throw invalid()
         failures++
         if (failures >= MAX_FAILURES) {
             log.w(TAG, "$MAX_FAILURES wrong codes, pairing by code locked for ${LOCK.seconds} s")
@@ -208,6 +210,7 @@ class PairingManager(
         if (needed && (secret == null || (code == null && !locked))) {
             if (secret != null) expire()
             secret = newSecret()
+            failures = 0
             code = if (locked) null else (0 until 6).map { random.nextInt(10) }.joinToString("")
             expiresAt = now + VALIDITY
         }
@@ -226,6 +229,7 @@ class PairingManager(
     }
 
     private fun expire() {
+        failures = 0
         lastExpiredCode = code
         lastExpiredSecret = secret
         code = null

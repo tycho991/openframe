@@ -77,15 +77,17 @@ class LocalPhotoSource(
                             skipped++
                         }
                 }
+                // Only entries that existed when the scan began may be removed: a photo added meanwhile
+                // (an upload) is not in the file list taken earlier.
                 var removed = 0
                 for (entry in edit.entries(id)) {
-                    if (entry.path !in files) {
+                    if (entry.path !in files && entry.path in known) {
                         edit.remove(entry.id)
                         removed++
                     }
                 }
                 for (skip in edit.skipped(id)) {
-                    if (skip.path !in files) edit.unskip(id, skip.path)
+                    if (skip.path !in files && skip.path in skippedKnown) edit.unskip(id, skip.path)
                 }
                 ScanResult(added, updated, removed, skipped)
             }.also {

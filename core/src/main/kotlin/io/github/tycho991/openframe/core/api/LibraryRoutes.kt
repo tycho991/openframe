@@ -64,6 +64,7 @@ data class BatchRequestDto(
 data class BatchResultDto(
     val processed: Int,
     val missing: List<String>,
+    val failed: List<String>,
 )
 
 @Serializable
@@ -223,26 +224,32 @@ fun Router.libraryRoutes(
     post("/api/v1/photos:batch") { req ->
         val body = req.bodyAs(BatchRequestDto.serializer())
         if (body.ids.isEmpty() || body.ids.size > 10_000) throw HttpException.badRequest("1 to 10000 IDs")
+        if (body.action !in BATCH_ACTIONS) throw HttpException.badRequest("action is hide, show or delete")
         val missing = mutableListOf<String>()
+        val failed = mutableListOf<String>()
         var processed = 0
         for (id in body.ids.distinct()) {
-            val ok =
-                when (body.action) {
-                    "hide", "show" -> {
-                        runCatching { library.setHidden(id, body.action == "hide") }.isSuccess
-                    }
-
-                    "delete" -> {
+            // One photo that cannot be processed must not stop the rest, so every ID ends in exactly one list.
+            try {
+                val found =
+                    if (body.action == "delete") {
                         library.delete(id)
+                    } else {
+                        try {
+                            library.setHidden(id, body.action == "hide")
+                            true
+                        } catch (e: HttpException) {
+                            if (e.status == 404) false else throw e
+                        }
                     }
-
-                    else -> {
-                        throw HttpException.badRequest("action is hide, show or delete")
-                    }
-                }
-            if (ok) processed++ else missing += id
+                if (found) processed++ else missing += id
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed += id
+            }
         }
-        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(processed, missing))
+        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(processed, missing, failed))
     }
 
     patch("/api/v1/photos/{photoId}") { req ->
@@ -320,3 +327,5 @@ fun Router.libraryRoutes(
         HttpResponse.json(StateDto.serializer(), StateDto(index.library.value.version, settings.version.value))
     }
 }
+
+private val BATCH_ACTIONS = setOf("hide", "show", "delete")

@@ -1,6 +1,8 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.ImageInfo
+import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.Fixtures
@@ -136,6 +138,36 @@ class LocalPhotoSourceTest {
                 .isEmpty(),
         )
     }
+
+    @Test
+    fun `Photo uploaded during a scan survives it`() {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        val uploaded = File(photos, "upload.jpg")
+        var added = false
+        // The upload arrives while the scan is probing a file, after the file list was taken.
+        val racing =
+            object : MediaEngine by engine {
+                override fun probe(file: File): ImageInfo {
+                    if (!added) {
+                        added = true
+                        Fixtures.copy("image.png", uploaded)
+                        racingSource.add(uploaded)
+                    }
+                    return engine.probe(file)
+                }
+            }
+        racingSource = LocalPhotoSource(photos, racing, index, log)
+        runBlocking { racingSource.scan() }
+        assertEquals(listOf("a.jpg", "upload.jpg"), paths())
+        assertEquals(
+            1,
+            index.library.value.photos.values
+                .first { it.path == "upload.jpg" }
+                .version,
+        )
+    }
+
+    private lateinit var racingSource: LocalPhotoSource
 
     @Test
     fun `Assign album`() {

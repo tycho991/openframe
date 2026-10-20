@@ -8,6 +8,7 @@ import io.github.tycho991.openframe.core.slideshow.SlideState
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
+import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -68,6 +69,26 @@ class FrameCoreTest {
         TestFrame(dir).use { frame ->
             assertEquals("http://192.168.100.215:${frame.core.server.boundPort}/", frame.core.adminUrl())
         }
+    }
+
+    @Test
+    fun `Admin address is read from the network only every few seconds`() {
+        val clock = TestClock()
+        val platform = FakePlatform()
+        val core =
+            FrameCore(
+                FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
+                platform,
+                JvmMediaEngine(),
+                AssetSource { null },
+                MediaStoreNotifier.None,
+                clock = clock,
+            )
+        assertEquals("http://192.168.100.215:8080/", core.adminUrl())
+        platform.ips = listOf("10.0.0.5")
+        assertEquals("http://192.168.100.215:8080/", core.adminUrl())
+        clock.advance(java.time.Duration.ofSeconds(6))
+        assertEquals("http://10.0.0.5:8080/", core.adminUrl())
     }
 
     @Test

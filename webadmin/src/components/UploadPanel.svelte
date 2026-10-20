@@ -49,6 +49,7 @@
 
   function describe(e: unknown): string {
     if (e instanceof ApiError) {
+      if (e.code === "network") return t("upload.network");
       if (e.status === 415) return t("upload.unsupported");
       if (e.status === 507) return t("upload.storage");
       return t("upload.failed", { message: e.message });

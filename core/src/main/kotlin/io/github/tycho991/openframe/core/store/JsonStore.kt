@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.store
 
 import io.github.tycho991.openframe.core.log.AppLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
 
 /** JSON for stored files: tolerant of fields removed from older versions. */
 val StoreJson =
@@ -40,14 +42,22 @@ class JsonStore<T>(
     private val writeLock = Mutex()
     private val signal = Channel<Unit>(Channel.CONFLATED)
 
-    @Volatile
-    private var pending: Pending<T>? = null
+    private val pending = AtomicReference<Pending<T>?>(null)
 
     init {
         scope.launch {
             for (unused in signal) {
                 delay(debounceMs)
-                flush()
+                try {
+                    flush()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The state is back in `pending`; try again later instead of ending the writer.
+                    log.e(TAG, "${file.name} could not be written, trying again in ${RETRY_MS / 1000} s", e)
+                    delay(RETRY_MS)
+                    signal.trySend(Unit)
+                }
             }
         }
     }
@@ -72,23 +82,31 @@ class JsonStore<T>(
 
     /** Queues [value] for writing. Several calls in quick succession result in one write. */
     fun save(value: T) {
-        pending = Pending(value)
+        pending.set(Pending(value))
         signal.trySend(Unit)
     }
 
-    /** Writes a queued state immediately. */
+    /**
+     * Writes a queued state immediately. If writing fails, the state is queued again (unless a newer one
+     * arrived meanwhile) and the exception is passed on.
+     */
     suspend fun flush() {
         writeLock.withLock {
-            val value = pending ?: return
-            pending = null
-            write(value.value)
+            // getAndSet: a save() that arrives after this line stays queued and is written by the next flush.
+            val taken = pending.getAndSet(null) ?: return
+            try {
+                write(taken.value)
+            } catch (e: Exception) {
+                pending.compareAndSet(null, taken)
+                throw e
+            }
         }
     }
 
     /** Writes [value] immediately, bypassing the batching. */
     suspend fun saveNow(value: T) {
         writeLock.withLock {
-            pending = null
+            pending.set(null)
             write(value)
         }
     }
@@ -111,5 +129,6 @@ class JsonStore<T>(
 
     private companion object {
         const val TAG = "store"
+        const val RETRY_MS = 10_000L
     }
 }
