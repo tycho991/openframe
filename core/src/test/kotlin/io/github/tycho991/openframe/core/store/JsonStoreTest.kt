@@ -1,0 +1,146 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
+package io.github.tycho991.openframe.core.store
+
+import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.testing.TestClock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.serialization.Serializable
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.File
+import java.io.IOException
+
+class JsonStoreTest {
+    @Serializable
+    data class Doc(
+        val n: Int,
+        val text: String = "",
+    )
+
+    @TempDir
+    lateinit var dir: File
+
+    private val log = AppLog(TestClock())
+
+    @Test
+    fun `Round trip`() =
+        runBlocking {
+            val scope = TestScope()
+            val store = JsonStore(File(dir, "doc.json"), Doc.serializer(), scope, log)
+            assertNull(store.load())
+            store.saveNow(Doc(1, "one"))
+            assertEquals(Doc(1, "one"), JsonStore(File(dir, "doc.json"), Doc.serializer(), scope, log).load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `Interrupted write leaves the old state`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            store.saveNow(Doc(1))
+            // Power loss in the middle of writing: the temp file is half written.
+            File(dir, "doc.json.tmp").writeText("""{"n":2,"te""")
+            assertEquals(Doc(1), JsonStore(file, Doc.serializer(), scope, log).load())
+            assertFalse(File(dir, "doc.json.tmp").exists())
+            scope.cancel()
+        }
+
+    @Test
+    fun `Damaged file is set aside`() {
+        val file = File(dir, "doc.json").apply { writeText("{broken") }
+        assertNull(JsonStore(file, Doc.serializer(), TestScope(), log).load())
+        assertFalse(file.exists())
+        assertEquals("{broken", File(dir, "doc.json.broken").readText())
+    }
+
+    @Test
+    fun `Unknown and missing fields`() {
+        val file = File(dir, "doc.json").apply { writeText("""{"n":3,"removed":true}""") }
+        assertEquals(Doc(3, ""), JsonStore(file, Doc.serializer(), TestScope(), log).load())
+    }
+
+    @Test
+    fun `Batching writes only the latest state after the wait`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val file = File(dir, "doc.json")
+        val store = JsonStore(file, Doc.serializer(), scope, log, debounceMs = 1000)
+        scope.runCurrent()
+        repeat(50) { store.save(Doc(it)) }
+        scope.advanceTimeBy(500)
+        scope.runCurrent()
+        assertFalse(file.exists())
+        scope.advanceTimeBy(600)
+        scope.runCurrent()
+        assertEquals(Doc(49), store.load())
+        scope.cancel()
+    }
+
+    @Test
+    fun `Parallel writers`() =
+        runBlocking(Dispatchers.Default) {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            (1..200).map { n -> async { store.saveNow(Doc(n, "x".repeat(n))) } }.awaitAll()
+            val result = store.load()!!
+            assertEquals("x".repeat(result.n), result.text)
+            scope.cancel()
+        }
+
+    @Test
+    fun `Failed flush keeps the state queued`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            // A directory in the place of the temp file makes writing fail.
+            val blocker = File(dir, "doc.json.tmp").apply { mkdir() }
+            store.save(Doc(7))
+            assertThrows(IOException::class.java) { runBlocking { store.flush() } }
+            assertFalse(file.exists())
+            blocker.delete()
+            store.flush()
+            assertEquals(Doc(7), store.load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `Writer survives a failed write and retries`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val file = File(dir, "doc.json")
+        val store = JsonStore(file, Doc.serializer(), scope, log, debounceMs = 1000)
+        scope.runCurrent()
+        val blocker = File(dir, "doc.json.tmp").apply { mkdir() }
+        store.save(Doc(1))
+        scope.advanceTimeBy(1100)
+        scope.runCurrent()
+        assertFalse(file.exists())
+        blocker.delete()
+        scope.advanceTimeBy(11_000)
+        scope.runCurrent()
+        assertTrue(file.exists())
+        assertEquals(Doc(1), store.load())
+        // A later save is written as well.
+        store.save(Doc(2))
+        scope.advanceTimeBy(1100)
+        scope.runCurrent()
+        assertEquals(Doc(2), store.load())
+        scope.cancel()
+    }
+}

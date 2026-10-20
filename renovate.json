@@ -1,12 +1,89 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "minimumReleaseAge": "7 days",
   "packageRules": [
     {
-      "matchDepNames": ["node"],
-      "matchUpdateTypes": ["major"],
+      "matchDepNames": [
+        "node"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Kotlin, serialization and coroutines together, otherwise compiler and libraries do not fit",
+      "matchPackageNames": [
+        "org.jetbrains.kotlin{/,}**",
+        "org.jetbrains.kotlinx{/,}**"
+      ],
+      "groupName": "Kotlin"
+    },
+    {
+      "description": "Android Gradle Plugin and desugaring together; majors only after approval",
+      "matchPackageNames": [
+        "com.android.tools.build:gradle",
+        "com.android.application",
+        "com.android.tools:desugar_jdk_libs"
+      ],
+      "groupName": "Android Gradle Plugin"
+    },
+    {
+      "matchPackageNames": [
+        "com.android.tools.build:gradle",
+        "com.android.application"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Web UI tools (lint, format, types, build, tests) bundled, except majors",
+      "matchFileNames": [
+        "webadmin/package.json"
+      ],
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "Web-UI-Werkzeuge"
+    },
+    {
+      "description": "Playwright changes the browsers, own PR",
+      "matchPackageNames": [
+        "@playwright/test"
+      ],
+      "groupName": "Playwright"
+    },
+    {
+      "description": "openapi-typescript and typescript-eslint need TypeScript 5",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "JDK stays on 17 (Gradle toolchain and Android)",
+      "matchPackageNames": [
+        "java"
+      ],
+      "matchManagers": [
+        "mise"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }

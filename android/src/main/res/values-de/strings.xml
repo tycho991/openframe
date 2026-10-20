@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel">Server</string>
+    <string name="notification_title">openframe läuft</string>
+    <string name="notification_text">Die Verwaltung ist im Heimnetz erreichbar.</string>
+    <string name="loading">Fotos werden vorbereitet …</string>
+    <string name="empty_title">Noch keine Fotos</string>
+    <string name="empty_body">Öffne %1$s im Browser, um Fotos hochzuladen, oder kopiere sie per USB in den Ordner %2$s.</string>
+    <string name="empty_no_network">Kein Netzwerk. Kopiere Fotos per USB in den Ordner %1$s.</string>
+    <string name="qr_scan">Mit dem Handy scannen</string>
+    <string name="code_locked">Code gesperrt</string>
+    <string name="pairing_code">Kopplungscode</string>
+    <string name="hint_address">Verwaltung</string>
+    <string name="hint_no_network">Kein Netzwerk</string>
+    <string name="hint_pause">Pause</string>
+    <string name="hint_resume">Weiter</string>
+    <string name="hint_local_only">Nur lokal: aus dem Netzwerk nicht erreichbar</string>
+    <string name="menu_title">Rahmen</string>
+    <string name="menu_local_only_on">Nur lokal: an</string>
+    <string name="menu_local_only_off">Nur lokal: aus</string>
+    <string name="menu_reset">Alle Kopplungen aufheben</string>
+    <string name="menu_info">Info</string>
+    <string name="menu_close">Schließen</string>
+    <string name="confirm_reset">Alle Kopplungen aufheben? Jeder Browser muss sich danach mit einem neuen Code koppeln.</string>
+    <string name="confirm_reset_yes">Alle aufheben</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="info_text">openframe %1$s\nGerät: %2$s, Android %3$s\nAdresse: %4$s\nRahmen-ID: %5$s</string>
+</resources>

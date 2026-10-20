@@ -1,0 +1,832 @@
+openapi: 3.1.0
+info:
+  title: openframe API
+  version: "1"
+  summary: Management of an openframe picture frame on the LAN.
+  description: |
+    Versioned JSON API of the frame under `/api/v1`. Source of truth for the
+    web UI's types and for the contract tests in `:core`.
+
+    Access: a client pairs with the code that the frame shows, with the secret
+    from the frame's QR code or with an invitation from a paired device, and
+    receives a token (`Authorization: Bearer`). Image URLs carry a server-issued signature
+    `t` instead, which is valid for one photo only and for at most two hours.
+
+    Mutating requests from foreign origins are rejected with 403.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: info
+    description: Identity of the frame, without pairing.
+  - name: pairing
+    description: Pairing by code, QR code or invitation, and paired devices.
+  - name: settings
+    description: Settings of the frame.
+  - name: photos
+    description: Photos, upload and image sizes.
+  - name: albums
+    description: Albums from folders.
+  - name: state
+    description: Versions for detecting changes.
+  - name: diagnostics
+    description: Log of the frame.
+
+paths:
+  /info:
+    get:
+      tags: [info]
+      operationId: getInfo
+      summary: Identity and device data of the frame, retrievable without pairing.
+      security: []
+      responses:
+        "200":
+          description: The frame's info.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Info" }
+
+  /pairing:
+    post:
+      tags: [pairing]
+      operationId: pair
+      summary: Pair with the code shown on the frame or with a secret.
+      description: |
+        Send exactly one of `code` and `secret`. The secret comes from the
+        fragment `#pair=` of the frame's QR code or of an invitation. Wrong
+        secrets do not count as failed attempts, and the lockout after wrong
+        codes does not apply to secrets.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairingRequest" }
+      responses:
+        "201":
+          description: Paired. The token is delivered only this once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Code or secret wrong (`invalid_code`) or expired (`expired_code`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/Locked" }
+
+  /pairing/code:
+    post:
+      tags: [pairing]
+      operationId: showPairingCode
+      summary: Ask the frame to show a valid code and QR code for 5 minutes.
+      description: |
+        The response never contains the code or the secret. While pairing by
+        code is locked after failed attempts, the frame shows the QR code alone.
+      security: []
+      responses:
+        "204":
+          description: The frame shows a valid code and QR code, or the QR code alone during the lockout.
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /pairing/invites:
+    post:
+      tags: [pairing]
+      operationId: createInvite
+      summary: Create an invitation that pairs one further device.
+      description: |
+        Valid for 5 minutes and only once. Each paired device has at most one
+        open invitation; a new one replaces it. The invitation ends when the
+        inviting device's pairing is revoked.
+      responses:
+        "201":
+          description: Invitation created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invite" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /clients:
+    get:
+      tags: [pairing]
+      operationId: listClients
+      summary: Paired devices.
+      responses:
+        "200":
+          description: List of paired devices, the requesting one is marked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /clients/{clientId}:
+    parameters:
+      - name: clientId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [pairing]
+      operationId: updateClient
+      summary: Rename a paired device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientUpdate" }
+      responses:
+        "200":
+          description: Device renamed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [pairing]
+      operationId: deleteClient
+      summary: Revoke a pairing. The token becomes invalid immediately.
+      responses:
+        "204": { description: Pairing revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      summary: Read all settings.
+      responses:
+        "200":
+          description: All settings with their current values.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [settings]
+      operationId: patchSettings
+      summary: Change individual settings.
+      description: |
+        Settings that are not mentioned remain unchanged. The change is applied
+        completely or not at all. Unknown fields, including the "local only"
+        mode, lead to 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsPatch" }
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /photos:
+    get:
+      tags: [photos]
+      operationId: listPhotos
+      summary: Photos page by page, filtered and sorted.
+      parameters:
+        - name: album
+          in: query
+          description: Only photos of this album.
+          schema: { type: string }
+        - name: visible
+          in: query
+          description: Only visible (`true`) or only hidden (`false`) photos.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [date_desc, date_asc, name_asc, name_desc]
+            default: date_desc
+        - name: cursor
+          in: query
+          description: Value of `nextCursor` from the previous page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: One page of the photo list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhotoPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [photos]
+      operationId: uploadPhotos
+      summary: Upload one or more files, optionally into an album.
+      description: |
+        Streamed to disk. If the request contains a file without a supported
+        format, nothing is stored (415). If less than 100 MB would remain free
+        after the upload, nothing is stored (507).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                album:
+                  type: string
+                  description: Album, that is, a folder directly below the photo folder. Is sanitized.
+                file:
+                  type: array
+                  items: { type: string, format: binary }
+              required: [file]
+      responses:
+        "201":
+          description: Stored and in the index.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMedia" }
+        "507": { $ref: "#/components/responses/InsufficientStorage" }
+
+  /photos:batch:
+    post:
+      tags: [photos]
+      operationId: batchPhotos
+      summary: Hide, unhide or delete several photos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+      responses:
+        "200":
+          description: |
+            Done. Unknown IDs are listed in `missing`, IDs the frame could not process
+            (for example a file that could not be deleted) in `failed`. The other IDs are processed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /photos/{photoId}:
+    parameters:
+      - $ref: "#/components/parameters/PhotoId"
+    patch:
+      tags: [photos]
+      operationId: patchPhoto
+      summary: Hide or unhide one photo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhotoPatch" }
+      responses:
+        "200":
+          description: The photo after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Photo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [photos]
+      operationId: deletePhoto
+      summary: Remove file, index entry and rendered sizes.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /photos/{photoId}/image:
+    parameters:
+      - $ref: "#/components/parameters/PhotoId"
+    get:
+      tags: [photos]
+      operationId: getPhotoImage
+      summary: Rendered image size as JPEG.
+      description: |
+        Retrievable with a token or with the signature `t` from the photo list. If `v`
+        matches the current image version, the response is `immutable`.
+      security:
+        - bearerAuth: []
+        - imageSignature: []
+      parameters:
+        - name: size
+          in: query
+          required: true
+          schema: { type: string, enum: [thumb, display] }
+        - name: v
+          in: query
+          description: Image version, for caches only.
+          schema: { type: integer }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The image.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "304": { description: Not modified. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: The image could not be rendered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /skipped-files:
+    get:
+      tags: [photos]
+      operationId: listSkippedFiles
+      summary: Files with an image extension that could not be accepted.
+      responses:
+        "200":
+          description: List with path and reason.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkippedFileList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /albums:
+    get:
+      tags: [albums]
+      operationId: listAlbums
+      summary: All albums.
+      responses:
+        "200":
+          description: All albums with count and cover image.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlbumList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /albums/{albumName}:
+    parameters:
+      - name: albumName
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [albums]
+      operationId: patchAlbum
+      summary: Hide or unhide an album as a whole.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlbumPatch" }
+      responses:
+        "200":
+          description: The album after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Album" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /state:
+    get:
+      tags: [state]
+      operationId: getState
+      summary: Library and settings version for detecting changes.
+      responses:
+        "200":
+          description: Current versions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/State" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /logs:
+    get:
+      tags: [diagnostics]
+      operationId: getLogs
+      summary: Latest entries of the log.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 500 }
+      responses:
+        "200":
+          description: The latest entries of the log, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    imageSignature:
+      type: apiKey
+      in: query
+      name: t
+
+  parameters:
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z]+-[0-9a-f]{40}$" }
+
+  responses:
+    BadRequest:
+      description: Invalid request. For validation errors with an entry per field.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No token or no valid token, or no valid signature.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Mutating request from a foreign origin.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: Request too large.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMedia:
+      description: Unsupported format.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Locked:
+      description: Too many failed attempts. Pairing is temporarily locked.
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InsufficientStorage:
+      description: Not enough free storage.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code, e.g. `validation_failed`, `invalid_code`, `unauthorized`.
+            message: { type: string }
+            fields:
+              type: object
+              description: Errors per field, the key is the field path (e.g. `clock.sizePercent`).
+              additionalProperties: { type: string }
+
+    Info:
+      type: object
+      additionalProperties: false
+      required: [id, name, appVersion, androidVersion, screen, apiVersion]
+      properties:
+        id: { type: string, description: "Random, durable ID of the frame." }
+        name: { type: string }
+        appVersion: { type: string }
+        androidVersion: { type: string }
+        screen: { $ref: "#/components/schemas/Size" }
+        apiVersion: { type: integer, const: 1 }
+
+    Size:
+      type: object
+      additionalProperties: false
+      required: [width, height]
+      properties:
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+
+    PairingRequest:
+      type: object
+      additionalProperties: false
+      description: Exactly one of `code` and `secret`, otherwise 400.
+      properties:
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        secret:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{22}$"
+          description: 16 bytes in Base64url without padding, from `#pair=` of a pairing link.
+        deviceName:
+          type: string
+          maxLength: 64
+          description: If the name is missing, it is derived from the user agent.
+
+    PairingResponse:
+      type: object
+      additionalProperties: false
+      required: [token, client]
+      properties:
+        token: { type: string }
+        client: { $ref: "#/components/schemas/Client" }
+
+    Client:
+      type: object
+      additionalProperties: false
+      required: [id, name, pairedAt, lastSeenAt, current]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        pairedAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        current: { type: boolean, description: "The requesting device." }
+
+    ClientUpdate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Leading and trailing whitespace is removed.
+
+    Invite:
+      type: object
+      additionalProperties: false
+      required: [url, expiresAt, qr]
+      properties:
+        url:
+          type: string
+          description: Pairing link with the secret in the fragment `#pair=`, on the address the inviting device used.
+        expiresAt: { type: string, format: date-time }
+        qr: { $ref: "#/components/schemas/QrMatrix" }
+
+    QrMatrix:
+      type: array
+      description: |
+        Rows of a QR code that encodes the `url`, without quiet zone: `1` is a
+        dark module, `0` a light one. Draw it dark on light with a quiet zone
+        of 4 modules.
+      minItems: 21
+      items: { type: string, pattern: "^[01]+$" }
+
+    ClientList:
+      type: object
+      additionalProperties: false
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items: { $ref: "#/components/schemas/Client" }
+
+    Order: { type: string, enum: [shuffle, chronological] }
+    Transition: { type: string, enum: [fade, slide, none] }
+    FillMode: { type: string, enum: [fill, fit] }
+    Orientation: { type: string, enum: [landscape, portrait] }
+    ClockPosition: { type: string, enum: [top-left, top-right, bottom-left, bottom-right] }
+    ClockFormat: { type: string, enum: ["24h", "12h"] }
+    FrameLanguage: { type: string, enum: [auto, de, en] }
+
+    Clock:
+      type: object
+      additionalProperties: false
+      required: [enabled, position, sizePercent, format]
+      properties:
+        enabled: { type: boolean }
+        position: { $ref: "#/components/schemas/ClockPosition" }
+        sizePercent: { type: integer, minimum: 50, maximum: 300 }
+        format: { $ref: "#/components/schemas/ClockFormat" }
+
+    Settings:
+      type: object
+      additionalProperties: false
+      required:
+        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, language, cacheBudgetMb]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        intervalSeconds: { type: integer, minimum: 5, maximum: 86400 }
+        order: { $ref: "#/components/schemas/Order" }
+        transition: { $ref: "#/components/schemas/Transition" }
+        transitionDurationMs: { type: integer, minimum: 0, maximum: 5000 }
+        fillMode: { $ref: "#/components/schemas/FillMode" }
+        orientation: { $ref: "#/components/schemas/Orientation" }
+        clock: { $ref: "#/components/schemas/Clock" }
+        language: { $ref: "#/components/schemas/FrameLanguage" }
+        cacheBudgetMb: { type: integer, minimum: 100, maximum: 10000 }
+
+    SettingsPatch:
+      type: object
+      description: Like `Settings`, all fields optional, `clock` also partially.
+      properties:
+        name: { type: string }
+        intervalSeconds: { type: integer }
+        order: { type: string }
+        transition: { type: string }
+        transitionDurationMs: { type: integer }
+        fillMode: { type: string }
+        orientation: { type: string }
+        clock:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            position: { type: string }
+            sizePercent: { type: integer }
+            format: { type: string }
+        language: { type: string }
+        cacheBudgetMb: { type: integer }
+
+    ImageUrls:
+      type: object
+      additionalProperties: false
+      required: [thumb, display]
+      properties:
+        thumb: { type: string, description: "Signed URL of the thumbnail." }
+        display: { type: string, description: "Signed URL of the display size." }
+
+    Photo:
+      type: object
+      additionalProperties: false
+      required: [id, path, album, hidden, visible, width, height, takenAt, fileSize, version, urls]
+      properties:
+        id: { type: string }
+        path: { type: string, description: "Path relative to the photo folder." }
+        album: { type: [string, "null"] }
+        hidden: { type: boolean, description: "The photo itself is hidden." }
+        visible: { type: boolean, description: "Neither photo nor album is hidden." }
+        width: { type: integer, description: "Width after EXIF rotation." }
+        height: { type: integer, description: "Height after EXIF rotation." }
+        takenAt: { type: string, format: date-time, description: "Capture date from EXIF, falling back to the file date." }
+        fileSize: { type: integer }
+        version: { type: integer, description: "Image version, increases with every change of the file." }
+        urls: { $ref: "#/components/schemas/ImageUrls" }
+
+    PhotoPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Photo" }
+        total: { type: integer, description: "Number of all photos that match the filter." }
+        nextCursor: { type: [string, "null"] }
+
+    PhotoPatch:
+      type: object
+      additionalProperties: false
+      required: [hidden]
+      properties:
+        hidden: { type: boolean }
+
+    UploadResult:
+      type: object
+      additionalProperties: false
+      required: [photos]
+      properties:
+        photos:
+          type: array
+          items: { $ref: "#/components/schemas/Photo" }
+
+    BatchRequest:
+      type: object
+      additionalProperties: false
+      required: [action, ids]
+      properties:
+        action: { type: string, enum: [hide, show, delete] }
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: { type: string }
+
+    BatchResult:
+      type: object
+      additionalProperties: false
+      required: [processed, missing, failed]
+      properties:
+        processed: { type: integer }
+        missing:
+          type: array
+          items: { type: string }
+        failed:
+          type: array
+          items: { type: string }
+
+    SkippedFile:
+      type: object
+      additionalProperties: false
+      required: [path, reason, fileSize, modifiedAt]
+      properties:
+        path: { type: string }
+        reason:
+          type: string
+          enum: [unsupported, corrupt]
+          description: "`unsupported`: format cannot be decoded on this device; `corrupt`: file damaged."
+        fileSize: { type: integer }
+        modifiedAt: { type: string, format: date-time }
+
+    SkippedFileList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SkippedFile" }
+
+    Album:
+      type: object
+      additionalProperties: false
+      required: [name, count, hidden, cover]
+      properties:
+        name: { type: string }
+        count: { type: integer }
+        hidden: { type: boolean }
+        cover:
+          description: Cover image, the newest photo of the album.
+          oneOf:
+            - $ref: "#/components/schemas/ImageUrls"
+            - type: "null"
+
+    AlbumList:
+      type: object
+      additionalProperties: false
+      required: [albums]
+      properties:
+        albums:
+          type: array
+          items: { $ref: "#/components/schemas/Album" }
+
+    AlbumPatch:
+      type: object
+      additionalProperties: false
+      required: [hidden]
+      properties:
+        hidden: { type: boolean }
+
+    State:
+      type: object
+      additionalProperties: false
+      required: [libraryVersion, settingsVersion]
+      properties:
+        libraryVersion: { type: integer }
+        settingsVersion: { type: integer }
+
+    LogEntry:
+      type: object
+      additionalProperties: false
+      required: [time, level, tag, message]
+      properties:
+        time: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error] }
+        tag: { type: string }
+        message: { type: string }
+
+    LogList:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/LogEntry" }

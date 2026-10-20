@@ -1,4 +1,5 @@
 [tools]
+java = "temurin-17.0.16+8"
 node = "24.22.0"
 "npm:@fission-ai/openspec" = "1.14.3"
 
@@ -6,17 +7,17 @@ node = "24.22.0"
 OPENSPEC_TELEMETRY = "0"
 DO_NOT_TRACK = "1"
 
-# Profil und Delivery liest OpenSpec aus der globalen Config des Rechners
-# (~/.config/openspec/config.json). Die Tasks setzen sie vor init und vor
-# jedem Update, damit jeder Rechner und die CI dieselben Skills erzeugen.
+# OpenSpec reads profile and delivery from the machine's global config
+# (~/.config/openspec/config.json). The tasks set them before init and before
+# every update so that every machine and the CI generate the same skills.
 [tasks.openspec-profile]
-description = "OpenSpec-Profil und -Delivery fuer dieses Projekt setzen (vor openspec init)"
+description = "Set the OpenSpec profile and delivery for this project (before openspec init)"
 run = [
   "openspec config set profile core",
   "openspec config set delivery both",
 ]
 
 [tasks.openspec-sync]
-description = "Skills und Commands an die gepinnte OpenSpec-Version und das Projektprofil anpassen"
+description = "Adapt skills and commands to the pinned OpenSpec version and the project profile"
 depends = ["openspec-profile"]
 run = "openspec update --force"

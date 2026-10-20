@@ -1,97 +1,126 @@
 # openframe
 
-<!-- Kurzbeschreibung des Projekts folgt mit dem ersten OpenSpec-Change. -->
+Digital picture frame for old Android tablets and Frameo frames. The slideshow
+runs natively on the device and is managed in the browser of a laptop or phone.
+There is no cloud: photos get onto the frame by USB or upload, and the frame
+itself is the server.
 
-Projekt mit OpenSpec und Claude Code, angelegt aus
-`tycho991/openspec-project-template`. Einrichtung, Updates und Ablauf pro
-Änderung: siehe unten.
+Target devices run Android 5.0 (API 21) or newer, tested on the Frameo `PFF_1024`
+(Android 6.0.1) and the Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
 
----
+## Architecture
 
-## Vorlage: openspec-project-template
+One codebase in Kotlin. `:core` contains all the business logic and runs on the
+plain JVM: settings, photo library with index, image size cache, slideshow
+control, pairing and the HTTP API under `/api/v1` (NanoHTTPD as transport).
+`:android` is the kiosk APK: a foreground service holding the core, a native
+display with two `ImageView`s and the binding to `BitmapFactory`. The display
+receives its data directly as `StateFlow`s from the core, not over HTTP. The
+admin interface in `webadmin/` (Svelte 5, TypeScript, Vite) is placed into the
+APK at build time and served by the frame. The API contract is in
+`api/openapi.yaml`; the web UI's types are generated from it, and contract tests
+check every server response against it.
 
-Vorlage für Projekte mit [OpenSpec](https://github.com/Fission-AI/OpenSpec) und
-Claude Code (Desktop-App, Code-Tab). Die Maschinen-Seite (mise, Node,
-Claude-Code-Einstellungen, globale Skills) kommt aus `ansible-terminal`
-(`playbooks/dev_tools.yml`). Planung und Hintergründe:
-`Planung OpenSpec + Claude Code Multi-Maschinen-Setup v4.md`.
+Background and decisions: `openspec/changes/archive/2026-10-20-bootstrap-openframe-core/design.md`.
 
-## Inhalt
+## Building
 
-| Datei | Zweck |
-|---|---|
-| `.mise.toml` | Node und OpenSpec exakt gepinnt, Telemetrie aus, Task `openspec-sync` |
-| `.gitignore` | `.claude/settings.local.json` (persönliche Freigaben) bleibt lokal |
-| `renovate.json` | Updates per PR, 7 Tage Mindestalter, Node-Majors nur nach Freigabe |
-| `.github/workflows/openspec-drift.yml` | prüft, dass die committeten Skills und Commands genau zur gepinnten Version passen |
-
-## Neues Projekt
-
-```bash
-gh repo create tycho991/<name> --private --template tycho991/openspec-project-template --clone
-cd <name>
-mise trust
-mise install
-mise run openspec-profile
-openspec init --tools claude
-git status
-```
-
-`openspec-profile` setzt Profil und Delivery, bevor die ersten Dateien
-entstehen. `openspec-sync` ruft es danach jedes Mal selbst auf. OpenSpec 1.14.3 legt an:
-
-- `openspec/` mit Specs, Changes und `config.yaml`
-- `.claude/commands/opsx/<id>.md`, in Claude Code als `/opsx:<id>`
-- `.claude/skills/openspec-*/` für die Skills
-
-Danach gezielt committen:
+Prerequisites: [mise](https://mise.jdx.dev) for JDK 17 and Node, plus an
+Android SDK with platform 36.
 
 ```bash
-git add openspec .claude
-git commit -m "OpenSpec einrichten"
+mise trust && mise install
+# Path to the Android SDK, if ANDROID_HOME is not set:
+echo "sdk.dir=$HOME/android-sdk" > local.properties
+./gradlew :android:assembleDebug
 ```
 
-`mise trust` ist pro Projekt einmal nötig. Ein pauschales Vertrauen für ganze
-Verzeichnisse (`trusted_config_paths`) ist bewusst nicht eingerichtet.
+The APK ends up at `android/build/outputs/apk/debug/android-debug.apk`.
+Without Node the build aborts with a message instead of building an APK without
+the web UI. Without an Android SDK `:android` is skipped; `:core` and the web UI
+can still be built and tested.
 
-Dann den Projektordner im Code-Tab der Desktop-App öffnen.
+## Installing and first pairing
 
-## Bestehendes Projekt
+```bash
+adb install -r android/build/outputs/apk/debug/android-debug.apk
+adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
+```
 
-`.mise.toml`, `.gitignore`, `renovate.json` und den Workflow (nach
-`.github/workflows/`) ins Projekt kopieren, dann wie oben ab `mise trust`. Hat
-das Projekt schon einen `openspec/`-Ordner, statt `openspec init` nur
-`mise run openspec-sync`.
+openframe runs in parallel to `pictureframe` (own package ID). To have it appear
+by itself after a restart, choose it as the home screen (HOME) in the Android
+settings.
 
-## OpenSpec aktualisieren
+1. Without photos the frame shows the address of the admin interface, for
+   example `http://192.168.100.215:8080/`, a QR code and a six-digit pairing
+   code.
+2. Scan the QR code with the phone's camera app and open the link. The admin
+   interface opens and pairs by itself, without typing anything. The device
+   gets a name from its browser ("Safari on iPhone"), which "Rename" changes.
+3. Upload photos or copy them over USB into the folder
+   `Android/data/io.github.tycho991.openframe/files/photos`.
+   Subfolders become albums.
 
-Renovate öffnet einen PR, der `.mise.toml` erhöht. Im Branch dieses PRs:
+The code is the fallback for devices without a camera: open the address in a
+browser and enter the code below the QR code. QR code and code are valid for
+5 minutes and only once; "Show code on frame" in the pairing dialog brings up
+a new one. After five wrong codes the code is locked for a minute, the QR code
+keeps working.
+
+Further devices do not need the frame: on a paired device, "Paired devices" ›
+"Invite device" shows a QR code and a link that pair one more device once,
+within 5 minutes.
+
+The token lives in the browser per address. If the frame gets a new IP address,
+every browser has to pair again, so give the frame a fixed address (DHCP
+reservation) in the router. On an iPhone, a web app added to the home screen
+has storage of its own and is not paired, even if Safari is. It has no address
+bar, so links do not reach it: pair it with the code ("Show code on frame").
+
+On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
+through the photos. Pressing a corner for three seconds opens the device menu
+with "local only", "Revoke all pairings" and info.
+
+Uninstalling deletes the photo folder as well. Back it up first:
+`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`.
+
+## Developing
+
+```bash
+./gradlew check                 # formatting, :core tests, Android imports, API 21, Android Lint
+./gradlew :android:testDebugUnitTest
+cd webadmin
+npm ci
+npm run lint && npm run typecheck && npm test
+npm run e2e                     # builds the web UI and tests it with Playwright against a :core test server
+OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite with hot reload, API proxied to the frame
+```
+
+The `:core` test server with fake images can also be started with
+`./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; the web UI is
+then at `http://127.0.0.1:8090/`.
+
+What can be verified only on real hardware is listed in
+[`docs/DEVICE_TEST.md`](docs/DEVICE_TEST.md).
+
+## Workflow with OpenSpec
+
+Changes are planned as an OpenSpec change (proposal, specs, design, tasks under
+`openspec/changes/`) and then implemented. In Claude Code:
+
+1. `/opsx:propose` for a new change
+2. `openspec validate <name>` and `openspec show <name>`
+3. `/opsx:apply` to implement
+4. `/opsx:archive` or `openspec archive <name> --yes`
+
+Node and OpenSpec are pinned in `.mise.toml`. Renovate raises the version by PR;
+in the PR's branch then:
 
 ```bash
 mise install
 mise run openspec-sync
-git add -A && git commit -m "OpenSpec-Skills aktualisieren"
+git add -A && git commit -m "Update OpenSpec skills"
 ```
 
-Erst dann wird die Drift-Prüfung grün. Für mehrere Projekte auf einmal:
-`scripts/bump-openspec.sh` in `ansible-terminal`.
-
-## Eigene Skills im Projekt
-
-- Ordner `.claude/skills/<name>/` mit `SKILL.md`. Der Ordnername ist der
-  Skill-Name: `^[a-z0-9]+(-[a-z0-9]+)*$`, nicht mit `openspec-` beginnend.
-- `description` im Frontmatter ist Pflicht, sonst wählt Claude den Skill nicht
-  von selbst aus. Die Drift-Prüfung meldet beides.
-- Persönliche Skills (`~/.claude/skills/`) haben Vorrang vor Projekt-Skills
-  gleichen Namens.
-
-## Arbeitsablauf pro Änderung
-
-1. `/opsx:propose` im Code-Tab (Proposal, Tasks und Spec-Deltas unter
-   `openspec/changes/<name>/`)
-2. `openspec validate <name>` und `openspec show <name>`
-3. `/opsx:apply` zum Umsetzen
-4. `/opsx:archive` bzw. `openspec archive <name> --yes`
-
-Die genauen Commands stehen in `.claude/commands/opsx/` und richten sich nach
-der gepinnten OpenSpec-Version.
+The drift check in `.github/workflows/openspec-drift.yml` makes sure that the
+committed skills and commands match the pinned version exactly.

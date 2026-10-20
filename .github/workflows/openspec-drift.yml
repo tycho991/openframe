@@ -12,27 +12,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Die Vorlage selbst hat noch kein openspec/ - dann gibt es nichts zu pruefen
-      - uses: jdx/mise-action@v5          # installiert node und openspec aus .mise.toml
+      # The template itself has no openspec/ yet - then there is nothing to check
+      - uses: jdx/mise-action@v5          # installs node and openspec from .mise.toml
         if: hashFiles('openspec/config.yaml') != ''
 
-      - name: Skills neu erzeugen
+      - name: Regenerate skills
         if: hashFiles('openspec/config.yaml') != ''
         run: mise run openspec-sync
 
-      - name: Skills muessen zu Version und Profil passen
+      - name: Skills must match version and profile
         if: hashFiles('openspec/config.yaml') != ''
         run: |
           git add -A
           git diff --cached --stat --exit-code
 
-      - name: Skill-Namen pruefen
+      - name: Check skill names
         run: |
           rc=0
           for f in .claude/skills/*/SKILL.md; do
             [ -e "$f" ] || continue
             name=$(basename "$(dirname "$f")")
-            echo "$name" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$' || { echo "::error file=$f::ungueltiger Skill-Name $name"; rc=1; }
-            grep -Eq '^description:[[:space:]]*[^[:space:]]' "$f" || { echo "::error file=$f::description fehlt"; rc=1; }
+            echo "$name" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$' || { echo "::error file=$f::invalid skill name $name"; rc=1; }
+            grep -Eq '^description:[[:space:]]*[^[:space:]]' "$f" || { echo "::error file=$f::description missing"; rc=1; }
           done
           exit $rc

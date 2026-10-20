@@ -1,0 +1,7 @@
+extends:
+  - recommended
+rules:
+  # GET /info has no error case: no auth, no parameters.
+  operation-4xx-response: off
+  # License is still open (design.md, Open Questions).
+  info-license: off
