@@ -338,6 +338,7 @@ class DisplayActivity : Activity() {
             )
         }
         updateHint()
+        updateEmpty()
     }
 
     private fun updateHint() {
@@ -368,10 +369,11 @@ class DisplayActivity : Activity() {
                 text(R.string.empty_no_network, folder)
             }
         val shown = c.pairing.display.value
-        // Pairing appears in the empty state only as long as no device is paired.
+        // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:
+        // the hint shows the same code and QR code, and the two would be drawn on top of each other.
         val pairing =
             c.clients.clients.value
-                .isEmpty() && !c.settings.localOnly.value
+                .isEmpty() && !c.settings.localOnly.value && !hintVisible
         showCode(emptyCode, shown, EMPTY_CODE_SP)
         emptyCode.visibility = if (pairing && (shown.code != null || shown.codeLocked)) View.VISIBLE else View.GONE
         emptyCodeLabel.visibility = emptyCode.visibility
