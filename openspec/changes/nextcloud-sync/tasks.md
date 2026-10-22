@@ -21,14 +21,14 @@
 
 ## 4. Schedule and status
 
-- [ ] 4.1 Implement the schedule (first sync after 30 s, interval, doubling retry from 60 s capped at the interval, reset on success, wake-up by configuration change, "sync now" and a network change, a mutex against overlaps) and the status (running, last time, ok, error, added, updated, removed); verify tests with a test clock for each delay, for no overlap and for the wake-ups
-- [ ] 4.2 Keep the status across a restart (a file next to the configuration); verify a restart test
+- [x] 4.1 Implement the schedule (first sync after 30 s, interval, doubling retry from 60 s capped at the interval, reset on success, wake-up by configuration change, "sync now" and a network change, a mutex against overlaps) and the status (running, last time, ok, error, added, updated, removed); verify tests with a test clock for each delay, for no overlap and for the wake-ups
+- [x] 4.2 Keep the status across a restart (a file next to the configuration); verify a restart test
 
 ## 5. API
 
-- [ ] 5.1 Describe the endpoints in `api/openapi.yaml` first (`GET`, `PATCH` and `DELETE /nextcloud`, `POST /nextcloud/login`, `GET /nextcloud/login/{flowId}`, `POST /nextcloud/sync`, the error codes `read_only_source`, `nextcloud_not_connected`, `nextcloud_unreachable` and `nextcloud_login_failed`, `source` of a photo), then the DTOs by hand and the routes; verify `RouteAccessTest` (all new endpoints need a token) and the contract check pass
-- [ ] 5.2 Wire the source into `FrameCore` (start, stop, `onNetworkChanged`, disconnect); verify a `TestFrame` test with a fake Nextcloud that goes from connect over sync to the photo list and a refused delete
-- [ ] 5.3 Run `npm run gen:api` and commit the types; verify `npm run typecheck`
+- [x] 5.1 Describe the endpoints in `api/openapi.yaml` first (`GET`, `PATCH` and `DELETE /nextcloud`, `POST /nextcloud/login`, `GET /nextcloud/login/{flowId}`, `POST /nextcloud/sync`, the error codes `read_only_source`, `nextcloud_not_connected`, `nextcloud_unreachable` and `nextcloud_login_failed`, `source` of a photo), then the DTOs by hand and the routes; verify `RouteAccessTest` (all new endpoints need a token) and the contract check pass
+- [x] 5.2 Wire the source into `FrameCore` (start, stop, `onNetworkChanged`, disconnect); verify a `TestFrame` test with a fake Nextcloud that goes from connect over sync to the photo list and a refused delete
+- [x] 5.3 Run `npm run gen:api` (the types are generated and not committed); verify `npm run typecheck`
 
 ## 6. Web UI
 

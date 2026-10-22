@@ -32,6 +32,8 @@ tags:
     description: Versions for detecting changes.
   - name: diagnostics
     description: Log of the frame.
+  - name: nextcloud
+    description: A Nextcloud folder as a second source of photos, read only.
 
 paths:
   /info:
@@ -428,6 +430,111 @@ paths:
               schema: { $ref: "#/components/schemas/State" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /nextcloud:
+    get:
+      tags: [nextcloud]
+      operationId: getNextcloud
+      summary: Connection, settings and status of the Nextcloud source.
+      description: "The app password is never part of it."
+      responses:
+        "200":
+          description: The state of the source.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextcloudState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [nextcloud]
+      operationId: patchNextcloud
+      summary: Change settings of the source.
+      description: "Partial change, validated completely or not at all. A change makes the source sync again soon."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NextcloudSettingsPatch" }
+      responses:
+        "200":
+          description: The state after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextcloudState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [nextcloud]
+      operationId: disconnectNextcloud
+      summary: Disconnect the source.
+      description: >-
+        Revokes the app password on the server (if the server answers), deletes the credentials, stops the sync and
+        removes the photos of the source and their downloaded originals. Local photos are not touched.
+      responses:
+        "204": { description: Disconnected. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /nextcloud/login:
+    post:
+      tags: [nextcloud]
+      operationId: startNextcloudLogin
+      summary: Start Nextcloud's Login Flow v2.
+      description: >-
+        The frame asks the server for a login page; the client opens `loginUrl` in a new browser tab and polls
+        `GET /nextcloud/login/{flowId}`. There is at most one flow, a new one replaces the old.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NextcloudLoginRequest" }
+      responses:
+        "201":
+          description: The flow is started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextcloudLogin" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /nextcloud/login/{flowId}:
+    parameters:
+      - name: flowId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [nextcloud]
+      operationId: pollNextcloudLogin
+      summary: Ask whether the user has approved the login.
+      description: >-
+        Makes the frame ask the server once. On `done` the credentials are stored and the source is connected.
+        An unknown or old flow is `expired`.
+      responses:
+        "200":
+          description: The state of the flow.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextcloudLoginState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /nextcloud/sync:
+    post:
+      tags: [nextcloud]
+      operationId: syncNextcloud
+      summary: Start a sync now.
+      description: Answers at once. If a sync is already running, nothing is started and `started` is false.
+      responses:
+        "202":
+          description: A sync was started or is already running.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextcloudSyncRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /logs:
     get:
       tags: [diagnostics]
@@ -485,7 +592,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), or syncing a source that is not connected (`nextcloud_not_connected`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -503,6 +610,11 @@ components:
       description: Too many failed attempts. Pairing is temporarily locked.
       headers:
         Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: "The frame could not talk to the Nextcloud server (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -531,6 +643,85 @@ components:
               type: object
               description: Errors per field, the key is the field path (e.g. `clock.sizePercent`).
               additionalProperties: { type: string }
+
+    NextcloudSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, folder, includeSubfolders, removeVanished, intervalMinutes, originalsBudgetMb]
+      properties:
+        enabled: { type: boolean }
+        folder: { type: string, description: "Folder on the server as `/a/b`, `/` for the top." }
+        includeSubfolders: { type: boolean }
+        removeVanished: { type: boolean, description: "Remove photos that are no longer in the folder." }
+        intervalMinutes: { type: integer, minimum: 5, maximum: 1440 }
+        originalsBudgetMb: { type: integer, minimum: 100, maximum: 50000, description: "Budget for downloaded originals." }
+
+    NextcloudSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+        folder: { type: string }
+        includeSubfolders: { type: boolean }
+        removeVanished: { type: boolean }
+        intervalMinutes: { type: integer }
+        originalsBudgetMb: { type: integer }
+
+    NextcloudStatus:
+      type: object
+      additionalProperties: false
+      required: [syncing, lastSyncAt, ok, error, added, updated, removed]
+      properties:
+        syncing: { type: boolean }
+        lastSyncAt: { type: [string, "null"], format: date-time }
+        ok: { type: [boolean, "null"], description: "Result of the last sync, `null` before the first." }
+        error: { type: [string, "null"], description: "Readable error of the last sync. Never contains a credential." }
+        added: { type: integer }
+        updated: { type: integer }
+        removed: { type: integer }
+
+    NextcloudState:
+      type: object
+      additionalProperties: false
+      required: [connected, serverUrl, user, settings, status]
+      properties:
+        connected: { type: boolean }
+        serverUrl: { type: [string, "null"] }
+        user: { type: [string, "null"], description: "Login name of the account." }
+        settings: { $ref: "#/components/schemas/NextcloudSettings" }
+        status: { $ref: "#/components/schemas/NextcloudStatus" }
+
+    NextcloudLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [serverUrl]
+      properties:
+        serverUrl: { type: string, description: "Address of the server, `http://` or `https://`." }
+
+    NextcloudLogin:
+      type: object
+      additionalProperties: false
+      required: [flowId, loginUrl, expiresAt]
+      properties:
+        flowId: { type: string }
+        loginUrl: { type: string, description: "The page where the user approves, to open in a new browser tab." }
+        expiresAt: { type: string, format: date-time }
+
+    NextcloudLoginState:
+      type: object
+      additionalProperties: false
+      required: [state, user, error]
+      properties:
+        state: { type: string, enum: [pending, done, failed, expired] }
+        user: { type: [string, "null"], description: "Set when `done`." }
+        error: { type: [string, "null"], description: "Set when `failed`." }
+
+    NextcloudSyncRequest:
+      type: object
+      additionalProperties: false
+      required: [started]
+      properties:
+        started: { type: boolean, description: "False if a sync was already running." }
 
     Info:
       type: object

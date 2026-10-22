@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core
 import io.github.tycho991.openframe.core.api.diagnosticsRoutes
 import io.github.tycho991.openframe.core.api.infoRoutes
 import io.github.tycho991.openframe.core.api.libraryRoutes
+import io.github.tycho991.openframe.core.api.nextcloudRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
 import io.github.tycho991.openframe.core.auth.AccessControl
@@ -23,10 +24,20 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSizes
+import io.github.tycho991.openframe.core.library.SourceOriginals
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.log.LogSink
 import io.github.tycho991.openframe.core.log.RotatingFileLog
+import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
+import io.github.tycho991.openframe.core.nextcloud.NextcloudConfigStore
+import io.github.tycho991.openframe.core.nextcloud.NextcloudScheduler
+import io.github.tycho991.openframe.core.nextcloud.NextcloudService
+import io.github.tycho991.openframe.core.nextcloud.NextcloudSource
+import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
+import io.github.tycho991.openframe.core.nextcloud.OriginalsStore
+import io.github.tycho991.openframe.core.nextcloud.StoredNextcloud
+import io.github.tycho991.openframe.core.nextcloud.StoredSyncResult
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -78,6 +89,8 @@ class FrameCore(
     private val port: Int = DEFAULT_PORT,
     logSinks: List<LogSink> = emptyList(),
     private val scanInterval: Duration = Duration.ofSeconds(15),
+    /** Where the Nextcloud source gets its connections from; the real ones unless a test hands in fakes. */
+    nextcloudClients: NextcloudClients? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -97,11 +110,36 @@ class FrameCore(
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log)
     private val index = PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log))
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log)
-    val cache =
+    private val nextcloudConfig =
+        NextcloudConfigStore(JsonStore(File(dirs.state, "nextcloud.json"), StoredNextcloud.serializer(), scope, log))
+    private val nextcloudClients = nextcloudClients ?: OkHttpNextcloudClients()
+    private val nextcloudSource =
+        NextcloudSource(
+            nextcloudConfig,
+            this.nextcloudClients,
+            index,
+            engine,
+            OriginalsStore(File(dirs.cache, "nextcloud")),
+            { cache.remove(it.id) },
+            log,
+        )
+    private val nextcloudScheduler =
+        NextcloudScheduler(
+            scope,
+            nextcloudSource,
+            nextcloudConfig,
+            JsonStore(File(dirs.state, "nextcloud-status.json"), StoredSyncResult.serializer(), scope, log),
+            clock,
+            log,
+        )
+
+    /** The Nextcloud source: settings, login, sync on request. */
+    val nextcloud = NextcloudService(nextcloudConfig, nextcloudSource, nextcloudScheduler, this.nextcloudClients, clock)
+    val cache: RenderCache =
         RenderCache(
             File(dirs.cache, "renders"),
             engine,
-            localSource::fileOf,
+            SourceOriginals(localSource, nextcloudSource)::fileOf,
             { RenderSizes.screen(platform.screenWidth, platform.screenHeight, settings.settings.value.orientation) },
             { settings.settings.value.cacheBudgetMb * 1024L * 1024L },
             log,
@@ -150,9 +188,11 @@ class FrameCore(
         clients.load()
         signer.load()
         index.load()
+        nextcloudConfig.load()
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()
+        nextcloudScheduler.start()
         _ready.value = true
 
         scope.launch { scanLoop() }
@@ -214,6 +254,7 @@ class FrameCore(
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         lanAddressCache = null
+        nextcloudScheduler.networkChanged()
         if (!settings.localOnly.value) server.restart()
     }
 
@@ -225,6 +266,7 @@ class FrameCore(
         settings.flush()
         clients.flush()
         index.flush()
+        nextcloudConfig.flush()
         scope.cancel()
     }
 
@@ -233,6 +275,7 @@ class FrameCore(
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
         router.libraryRoutes(library, settings, signer)
+        router.nextcloudRoutes(nextcloud)
         router.diagnosticsRoutes(log)
     }
 

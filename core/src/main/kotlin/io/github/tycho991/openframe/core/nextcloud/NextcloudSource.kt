@@ -86,6 +86,12 @@ class NextcloudSource(
             }
         }
         configs.disconnect()
+        val removed = clearPhotos()
+        log.i(TAG, "Disconnected, $removed photos removed")
+    }
+
+    /** Removes the photos of this source with their skipped files and originals, for a disconnect or another account. */
+    fun clearPhotos(): Int {
         val removed =
             index.edit { edit ->
                 val gone = edit.entries(id)
@@ -95,7 +101,7 @@ class NextcloudSource(
             }
         removed.forEach(onRemoved)
         originals.clear()
-        log.i(TAG, "Disconnected, ${removed.size} photos removed")
+        return removed.size
     }
 
     private suspend fun sync(): ScanResult {

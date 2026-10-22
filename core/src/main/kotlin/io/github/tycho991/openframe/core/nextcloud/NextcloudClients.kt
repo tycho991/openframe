@@ -9,8 +9,11 @@ interface NextcloudClients {
 }
 
 class OkHttpNextcloudClients(
-    private val http: NextcloudHttp = NextcloudHttp(),
+    httpFactory: () -> NextcloudHttp = { NextcloudHttp() },
 ) : NextcloudClients {
+    /** Created at the first use: reading the trust anchors and building the TLS context is not needed on a frame without Nextcloud. */
+    private val http by lazy(httpFactory)
+
     override fun loginFlow(): LoginFlow = OkHttpLoginFlow(http)
 
     override fun remoteFolder(config: StoredNextcloud): RemoteFolder =

@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.testing
 
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import kotlinx.coroutines.runBlocking
@@ -16,12 +17,24 @@ class TestFrame(
     val engine: JvmMediaEngine = JvmMediaEngine(),
     val platform: FakePlatform = FakePlatform(),
     scanInterval: Duration = Duration.ofMillis(200),
+    nextcloudClients: NextcloudClients? = null,
 ) : AutoCloseable {
     val dirs = FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"))
     val notified = CopyOnWriteArrayList<File>()
     val assets = AssetSource { path -> if (path == "index.html") "<!doctype html>".byteInputStream() else null }
     val core =
-        FrameCore(dirs, platform, engine, assets, MediaStoreNotifier { notified += it }, port = 0, scanInterval = scanInterval).also {
+        FrameCore(
+            dirs,
+            platform,
+            engine,
+            assets,
+            MediaStoreNotifier {
+                notified += it
+            },
+            port = 0,
+            scanInterval = scanInterval,
+            nextcloudClients = nextcloudClients,
+        ).also {
             runBlocking { it.start() }
         }
     val http = TestHttp("http://127.0.0.1:${core.server.boundPort}")

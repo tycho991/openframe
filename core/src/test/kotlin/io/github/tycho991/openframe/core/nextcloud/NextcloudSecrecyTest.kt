@@ -47,7 +47,7 @@ class NextcloudSecrecyTest {
     }
 
     private val source by lazy {
-        val clients = OkHttpNextcloudClients(NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 5)))
+        val clients = OkHttpNextcloudClients { NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 5)) }
         val index = PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() }
         NextcloudSource(configs, clients, index, JvmMediaEngine(), OriginalsStore(File(dir, "originals")), {}, log)
     }
