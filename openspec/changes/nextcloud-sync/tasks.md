@@ -39,8 +39,8 @@
 
 ## 7. Documentation and acceptance rows
 
-- [ ] 7.1 Document the source in the README (connect, what is stored where, the storage budget, `http` caveat) and add the rows of the device acceptance to `docs/DEVICE_TEST.md`; verify every row names its spec scenario
-- [ ] 7.2 Run `./gradlew check`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`; verify all pass
+- [x] 7.1 Document the source in the README (connect, what is stored where, the storage budget, `http` caveat) and add the rows of the device acceptance to `docs/DEVICE_TEST.md`; verify every row names its spec scenario
+- [x] 7.2 Run `./gradlew check`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`; verify all pass
 
 ## 8. Acceptance on the devices
 

@@ -2,8 +2,8 @@
 
 Digital picture frame for old Android tablets and Frameo frames. The slideshow
 runs natively on the device and is managed in the browser of a laptop or phone.
-There is no cloud: photos get onto the frame by USB or upload, and the frame
-itself is the server.
+There is no cloud service of its own: photos get onto the frame by USB, by upload
+or from a Nextcloud folder, and the frame itself is the server.
 
 Target devices run Android 5.0 (API 21) or newer, tested on the Frameo `PFF_1024`
 (Android 6.0.1) and the Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
@@ -80,6 +80,28 @@ bar, so links do not reach it: pair it with the code ("Show code on frame").
 On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
 with "local only", "Revoke all pairings" and info.
+
+## Photos from Nextcloud
+
+Next to the local photo folder the frame can show a folder of a Nextcloud server. The frame only reads it; nothing
+is changed on the server.
+
+1. Open "Nextcloud" in the admin interface, enter the address of the server and choose "Connect". A Nextcloud page
+   opens in a new tab; approve the access there. The frame receives an app password, so no password is typed into
+   the frame or the interface.
+2. Choose the folder, whether subfolders are included (the first one is the album) and how often the frame syncs
+   (every 20 minutes by default, at least 5). "Sync now" starts a sync at once; the status shows the result.
+3. Photos from Nextcloud are hidden or shown like local ones, but not deleted: they would come back with the next
+   sync. "Disconnect" removes them from the frame again and revokes the app password on the server.
+
+Where things are stored: the app password only in the app's private storage (`nextcloud.json`, never in an API
+answer or the log), the downloaded originals in the app's cache folder, next to the rendered sizes, with a budget of
+their own (2,000 MB by default). When it is exceeded, the originals unused for the longest time are removed and
+fetched again when a rendering needs them. A photo stays on the frame without its original.
+
+An address with `http://` sends the access without encryption; the interface says so. With `https://` the frame
+trusts what the system trusts plus the root certificates delivered with the app, so that Let's Encrypt works on the
+old devices (Android 5 and 6). A server with a certificate of another authority is refused.
 
 Uninstalling deletes the photo folder as well. Back it up first:
 `adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`.
