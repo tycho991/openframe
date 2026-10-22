@@ -19,6 +19,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.nanohttpd)
+    implementation(libs.okhttp)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

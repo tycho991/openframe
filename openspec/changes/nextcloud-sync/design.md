@@ -6,7 +6,7 @@ openframe has one photo source, the local folder (`LocalPhotoSource`). The libra
 
 `pictureframe` is the reference for behavior (Login Flow v2, WebDAV, ETag comparison, retry with doubling delays, bundled trust anchors). Nothing is taken over from it: its code, its configuration and its hosts stay in the other repository.
 
-Constraints: `:core` has no `android.*` imports and is checked against API 21 (`java.net.HttpURLConnection` and `javax.xml` are there, `java.nio.file` and Java 9+ are not). The devices are an Android 5.0.1 tablet and an Android 6.0.1 frame with 1 GB of RAM or less; both are old enough not to trust the root certificate of Let's Encrypt. The API is defined in `api/openapi.yaml` first.
+Constraints: `:core` has no `android.*` imports and is checked against API 21 (`javax.xml` and the SAX parser are there, `java.nio.file` and Java 9+ are not). The devices are an Android 5.0.1 tablet and an Android 6.0.1 frame with 1 GB of RAM or less; both are old enough not to trust the root certificate of Let's Encrypt. The API is defined in `api/openapi.yaml` first.
 
 ## Goals / Non-Goals
 
@@ -24,15 +24,15 @@ Constraints: `:core` has no `android.*` imports and is checked against API 21 (`
 
 ### 1. A package `nextcloud` in `:core`, with the network behind two small interfaces
 
-`NextcloudSource : PhotoSource` does the sync. It talks to the server through `RemoteFolder` (`list(path)`, `download(file, target)`) and to the login through `LoginFlow` (`start(url)`, `poll(flow)`). The real implementations use `HttpURLConnection`; the tests use an in-memory fake for the sync logic and a small HTTP server for the real client. The interfaces are not about the platform (HTTP works the same everywhere) but about testing without sockets.
+`NextcloudSource : PhotoSource` does the sync. It talks to the server through `RemoteFolder` (`list(path)`, `download(file, target)`) and to the login through `LoginFlow` (`start(url)`, `poll(flow)`). The real implementations use OkHttp; the tests use an in-memory fake for the sync logic and a small HTTP server for the real client. The interfaces are not about the platform (OkHttp works the same everywhere) but about testing without sockets.
 
-*Alternative:* OkHttp, as `pictureframe` uses. Rejected: a dependency of several hundred kilobytes and its own rules for old TLS stacks, for two requests types.
+*Alternative:* `java.net.HttpURLConnection`, which needs no dependency. Rejected after trying it: it refuses every method outside `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `OPTIONS` and `TRACE` (`ProtocolException: Invalid HTTP method: PROPFIND`), on the JVM and on Android, and `PROPFIND` is the listing. A client of our own on sockets would have to get TLS, redirects and chunked bodies right; that is more to get wrong than a dependency. OkHttp 4.12 supports API 21 and is a pure Java and Kotlin library (no native code; the APK check for that stays green). It adds about 1 MB to the APK.
 
 ### 2. WebDAV: one `PROPFIND` per folder, user ID looked up once
 
 The listing uses `PROPFIND` with `Depth: 1` per folder and walks the subfolders itself, because Nextcloud refuses `Depth: infinity`. It asks for `getetag`, `getcontentlength`, `getlastmodified` and `resourcetype`, and the answer is read with a SAX parser (`javax.xml.parsers`, on the JVM and on API 21 alike, and it streams instead of building a tree). The path is `/remote.php/dav/files/<user id>/<folder>`. The user ID is not always the login name, so it is read once after the login with `ocs/v2.php/cloud/user` and stored with the configuration.
 
-Redirects (typically `http` to `https`) are followed up to five times, only within the same host, and the `Authorization` header goes only to that host. A listing that fails in any folder fails the whole sync: nothing is removed from a partial listing.
+OkHttp's own redirect handling is switched off. Redirects (typically `http` to `https`) are followed by the client itself, up to five times, only within the same host and never from `https` back to `http`, and the `Authorization` header goes only to that host. A listing that fails in any folder fails the whole sync: nothing is removed from a partial listing.
 
 ### 3. The login runs through the frame, one request per poll
 
@@ -46,7 +46,7 @@ The address the user gives is the only address (besides the login URL it returns
 
 ### 5. TLS: the system's anchors plus delivered ones, in one trust manager
 
-`TrustAnchors` loads the PEM files delivered as resources of `:core` (the root of Let's Encrypt, `ISRG Root X1`, and the other roots the devices need), adds them to a `KeyStore` and builds an `X509TrustManager` that accepts a chain if the platform's default manager or the delivered one accepts it. `HttpsURLConnection` gets the resulting `SSLSocketFactory`. The hostname check stays the platform's. A test starts an HTTPS server with a test root and checks that the chain is accepted with that root delivered and refused without.
+`TrustAnchors` loads the PEM files delivered as resources of `:core` (the root of Let's Encrypt, `ISRG Root X1`, and the other roots the devices need), adds them to a `KeyStore` and builds an `X509TrustManager` that accepts a chain if the platform's default manager or the delivered one accepts it. The OkHttp client gets the resulting `SSLSocketFactory` and trust manager. The hostname check stays the platform's. A test starts an HTTPS server with a test root and checks that the chain is accepted with that root delivered and refused without.
 
 *Alternative:* tell users to install a certificate on the device. Rejected: the point is that it works after pairing.
 

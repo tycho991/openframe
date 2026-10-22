@@ -2,15 +2,15 @@
 
 ## 1. Configuration and credentials
 
-- [ ] 1.1 Add the configuration of the source (`nextcloud.json` in the state folder through `JsonStore`: server, user ID, login name, app password, enabled, folder, subfolders, remove vanished, interval, originals budget) with validation and partial changes; verify unit tests cover each limit of the spec (interval 5 to 1,440, budget 100 to 50,000 MB, folder normalized, only `http` and `https`) and a restart that reads the file back
+- [x] 1.1 Add the configuration of the source (`nextcloud.json` in the state folder through `JsonStore`: server, user ID, login name, app password, enabled, folder, subfolders, remove vanished, interval, originals budget) with validation and partial changes; verify unit tests cover each limit of the spec (interval 5 to 1,440, budget 100 to 50,000 MB, folder normalized, only `http` and `https`) and a restart that reads the file back
 - [ ] 1.2 Make the password unreachable outside the client: a view of the configuration without it for the API, and no password in any log line or error text; verify a test that fails with a wrong password and checks status text, log and the API view for the secret
 
 ## 2. Talking to Nextcloud
 
-- [ ] 2.1 Deliver the trust anchors as resources of `:core` (the root of Let's Encrypt and the others the first servers need) and build the combined trust manager with the platform's; verify a test with an HTTPS server and a test root (accepted with the anchor, refused without) and that every delivered PEM file parses
-- [ ] 2.2 Add `LoginFlow` (start, poll, user ID lookup, revoke of the app password) over `HttpURLConnection` with timeouts of 15 s and 60 s and no secret in error texts; verify tests against a fake Nextcloud on NanoHTTPD (test sources) for pending, done, expired and an unreachable server
-- [ ] 2.3 Add `RemoteFolder` over WebDAV: `PROPFIND` with `Depth: 1` per folder read by a SAX parser, subfolders on request, redirects within the host, a streamed download to a `.part` file renamed when complete; verify tests with the fake server for a folder tree, ETags, a redirect from `http` to `https`, `401`, `404`, an error in a subfolder and a download that stalls
-- [ ] 2.4 Check `./gradlew :core:check` (Android 21 API check, no `android.*` imports); verify it passes with the new package
+- [x] 2.1 Deliver the trust anchors as resources of `:core` (the root of Let's Encrypt and the others the first servers need) and build the combined trust manager with the platform's; verify a test with an HTTPS server and a test root (accepted with the anchor, refused without) and that every delivered PEM file parses
+- [x] 2.2 Add `LoginFlow` (start, poll, user ID lookup, revoke of the app password) over OkHttp with timeouts of 15 s and 60 s and no secret in error texts; verify tests against a fake Nextcloud on NanoHTTPD (test sources) for pending, done, expired and an unreachable server
+- [x] 2.3 Add `RemoteFolder` over WebDAV with OkHttp (a catalog entry for it, nothing else new): `PROPFIND` with `Depth: 1` per folder read by a SAX parser, subfolders on request, redirects within the host, a streamed download to a `.part` file renamed when complete; verify tests with the fake server for a folder tree, ETags, a redirect from `http` to `https`, `401`, `404`, an error in a subfolder and a download that stalls
+- [x] 2.4 Check `./gradlew :core:check` (Android 21 API check, no `android.*` imports); verify it passes with the new package
 
 ## 3. The source and the library
 
