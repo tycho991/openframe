@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ApiError } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
   import { api, session } from "../lib/session.svelte";
 
   let code = $state("");
@@ -23,7 +24,7 @@
       case "network":
         return t("pair.network");
       default:
-        return t("common.error", { message: e.message });
+        return errorText(e);
     }
   }
 

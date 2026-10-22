@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Client, Invite } from "../lib/api/client";
   import { i18n, t } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
   import { inviteDeadline } from "../lib/pairingLink";
   import { api, session, tokens } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -24,7 +25,7 @@
   const accepted = $derived(invite && clients ? (clients.find((c) => !knownIds.has(c.id)) ?? null) : null);
 
   function message(e: unknown) {
-    return t("common.error", { message: e instanceof Error ? e.message : String(e) });
+    return errorText(e);
   }
 
   async function load() {

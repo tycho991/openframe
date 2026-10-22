@@ -23,6 +23,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 
@@ -166,16 +167,27 @@ class FrameService : Service() {
         private const val CHANNEL = "server"
         private const val NOTIFICATION_ID = 1
         private const val NETWORK_SETTLE_MS = 2_000L
-        private const val WATCHDOG_MS = 20_000L
+        internal const val WATCHDOG_MS = 20_000L
         private const val ACTION_WATCHDOG = "io.github.tycho991.openframe.WATCHDOG"
+
+        /**
+         * Whether the watchdog is armed on a device with this API level. It exists for firmware like the one of
+         * the Frameo (Android 6). From Android 12 (API 31) a foreground service may not be started from the
+         * background by an alarm like this one, the system drops the intent and the chain would end silently; such
+         * devices do not end the app on their own either, and the alarm would only wake them every [WATCHDOG_MS].
+         */
+        internal fun watchdogNeeded(sdk: Int) = sdk < 31
 
         /**
          * Brings the service back after the system killed the app. The Frameo firmware ends the HOME app as soon
          * as another activity starts ("user request after error") and then treats its process as bad: broadcasts
          * and background activity starts are refused, but a started service is not. So an alarm starts the service
          * itself, every [WATCHDOG_MS]. Each start re-arms the next alarm, while the process lives that is cheap.
+         * The alarm counts the time since boot: the Frameo starts with its clock in 2021 and corrects it later,
+         * and an alarm on the wall clock would then wait until the clock catches up.
          */
-        fun scheduleWatchdog(context: Context) {
+        internal fun scheduleWatchdog(context: Context) {
+            if (!watchdogNeeded(Build.VERSION.SDK_INT)) return
             val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, FrameService::class.java).setAction(ACTION_WATCHDOG)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
@@ -185,11 +197,11 @@ class FrameService : Service() {
                 } else {
                     PendingIntent.getService(context, 1, intent, flags)
                 }
-            val at = System.currentTimeMillis() + WATCHDOG_MS
+            val at = SystemClock.elapsedRealtime() + WATCHDOG_MS
             if (Build.VERSION.SDK_INT >= 23) {
-                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+                alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
             } else {
-                alarms.set(AlarmManager.RTC_WAKEUP, at, pending)
+                alarms.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
             }
         }
 

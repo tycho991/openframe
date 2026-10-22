@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Album } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
   import { api, session } from "../lib/session.svelte";
 
   let albums = $state<Album[] | null>(null);
@@ -10,7 +11,7 @@
     try {
       albums = await api.albums();
     } catch (e) {
-      error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      error = errorText(e);
     }
   }
 
@@ -24,7 +25,7 @@
       const updated = await api.setAlbumHidden(album.name, !album.hidden);
       albums = albums!.map((a) => (a.name === updated.name ? updated : a));
     } catch (e) {
-      error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      error = errorText(e);
     }
   }
 </script>

@@ -2,6 +2,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { Album, Photo, PhotoSort, SkippedFile } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
   import { PhotoPages } from "../lib/photos";
   import { api, session } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -48,7 +49,7 @@
       error = null;
       await fn();
     } catch (e) {
-      error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      error = errorText(e);
     }
   }
 
