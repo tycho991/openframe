@@ -5,9 +5,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.Socket
+import java.net.SocketException
 import io.github.tycho991.openframe.core.http.Method as ApiMethod
 
 /**
@@ -49,7 +51,18 @@ class NanoHttpServer(
         val nano = toNano(response, request)
         // Unread bodies would disturb the next request on the same connection. Discard instead of
         // closing right away, otherwise a TCP reset makes the client drop the response already sent.
-        if (!body.drain(MAX_DRAIN_BYTES)) nano.closeConnection(true)
+        // A client that announced a body and does not send it must not hold the answer back for the
+        // whole read timeout, so waiting for the rest is limited to a short time.
+        val connection = ConnectionInput.current()
+        connection?.setReadTimeout(DRAIN_TIMEOUT_MS)
+        val drained =
+            try {
+                body.drain(MAX_DRAIN_BYTES)
+            } catch (e: IOException) {
+                false
+            }
+        connection?.setReadTimeout(SOCKET_READ_TIMEOUT_MS)
+        if (!drained) nano.closeConnection(true)
         return nano
     }
 
@@ -59,7 +72,7 @@ class NanoHttpServer(
         inputStream: InputStream,
     ): ClientHandler {
         runCatching { finalAccept.tcpNoDelay = true }
-        return super.createClientHandler(finalAccept, inputStream)
+        return super.createClientHandler(finalAccept, ConnectionInput(finalAccept, inputStream))
     }
 
     override fun useGzipWhenAccepted(r: Response): Boolean {
@@ -132,6 +145,9 @@ class NanoHttpServer(
 
     companion object {
         const val SOCKET_READ_TIMEOUT_MS = 30_000
+
+        /** How long to wait for the rest of a body that is not needed any more. */
+        const val DRAIN_TIMEOUT_MS = 2_000
         private const val MAX_DRAIN_BYTES = 8L * 1024 * 1024
         private const val JSON_TYPE = "application/json; charset=utf-8"
 
@@ -175,6 +191,50 @@ class NanoHttpServer(
                 429 to "Too Many Requests",
                 507 to "Insufficient Storage",
             )
+    }
+}
+
+/**
+ * The input of a connection with its socket, so that the read timeout can be shortened for a while.
+ * NanoHTTPD wraps it in a buffer of its own and reads and serves a connection on one thread, hence
+ * [current] finds the connection that the calling thread is reading from.
+ */
+private class ConnectionInput(
+    private val socket: Socket,
+    input: InputStream,
+) : FilterInputStream(input) {
+    override fun read(): Int {
+        current.set(this)
+        return super.read()
+    }
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int {
+        current.set(this)
+        return super.read(b, off, len)
+    }
+
+    override fun close() {
+        if (current.get() === this) current.remove()
+        super.close()
+    }
+
+    fun setReadTimeout(millis: Int) {
+        try {
+            socket.soTimeout = millis
+        } catch (e: SocketException) {
+            // The connection is closed anyway.
+        }
+    }
+
+    companion object {
+        private val current = ThreadLocal<ConnectionInput?>()
+
+        /** The connection the calling thread reads from, `null` outside a request. */
+        fun current(): ConnectionInput? = current.get()
     }
 }
 

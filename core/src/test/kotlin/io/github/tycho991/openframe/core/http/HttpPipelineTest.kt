@@ -53,6 +53,26 @@ class HttpPipelineTest {
     }
 
     @Test
+    fun `A body that is announced but not sent does not hold back the answer`() {
+        // The batch route answers without reading the body. The rest of it never arrives.
+        java.net.Socket("127.0.0.1", http.base.substringAfterLast(':').toInt()).use { socket ->
+            socket.soTimeout = 10_000
+            socket.getOutputStream().write(
+                "POST /api/v1/photos:batch HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000000\r\n\r\n"
+                    .toByteArray(),
+            )
+            socket.getOutputStream().flush()
+            val started = System.nanoTime()
+            val reply = socket.getInputStream().bufferedReader().readText()
+            val seconds = (System.nanoTime() - started) / 1e9
+            assertTrue(reply.startsWith("HTTP/1.1 200"), reply)
+            assertTrue("batch" in reply, reply)
+            // Without the short drain timeout this takes the whole read timeout of 30 s.
+            assertTrue(seconds < NanoHttpServer.DRAIN_TIMEOUT_MS / 1000.0 + 3, "answer after $seconds s")
+        }
+    }
+
+    @Test
     fun `Route with path parameter`() {
         val res = http.get("/api/v1/hello/World")
         assertEquals(200, res.statusCode())

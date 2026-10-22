@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.ImageView
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.settings.FillMode
@@ -30,6 +31,8 @@ class SlideRenderer(
         val photo: PhotoEntry,
         val file: File,
         val bitmap: Bitmap,
+        /** What the bitmap was trimmed for. */
+        val target: Target,
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -40,12 +43,35 @@ class SlideRenderer(
     private var generation = 0L
     private var animating = false
     private var pendingOld: Decoded? = null
+    private var lastNext: Pair<PhotoEntry, File>? = null
+
+    /** What the views show at the moment: bitmaps are trimmed to it, see [BitmapFit]. */
+    private data class Target(
+        val width: Int,
+        val height: Int,
+        val fill: Boolean,
+    )
+
+    private fun target() = Target(front.width, front.height, fillMode == FillMode.FILL)
+
+    init {
+        // A new size, for example after switching the frame's orientation, needs bitmaps trimmed for it.
+        val onResize =
+            View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) main.post { refit() }
+            }
+        front.addOnLayoutChangeListener(onResize)
+        back.addOnLayoutChangeListener(onResize)
+    }
 
     var fillMode: FillMode = FillMode.FILL
         set(value) {
+            val changed = field != value
             field = value
             front.scaleType = scaleType()
             back.scaleType = scaleType()
+            // The bitmaps were trimmed for the old mode.
+            if (changed) refit()
         }
 
     /** Shows [photo] with the transition [transition]. [step] +1 comes from the right, -1 from the left. */
@@ -66,15 +92,16 @@ class SlideRenderer(
         // Not decoded ahead, for example after swiping back: decode now.
         preloaded?.bitmap?.recycle()
         preloaded = null
+        val target = target()
         decoder.execute {
-            val bitmap = decode(file)
+            val bitmap = decode(file, target)
             main.post {
                 if (gen != generation) {
                     bitmap?.recycle()
                 } else if (bitmap == null) {
                     onUndecodable(photo)
                 } else {
-                    swapTo(Decoded(photo, file, bitmap), step, transition, durationMs)
+                    swapTo(Decoded(photo, file, bitmap, target), step, transition, durationMs)
                 }
             }
         }
@@ -83,6 +110,7 @@ class SlideRenderer(
     /** Decodes the next photo ahead so that the transition starts without waiting. */
     fun preload(next: Pair<PhotoEntry, File>?) {
         if (next == null) return
+        lastNext = next
         val (photo, file) = next
         if (preloaded?.photo?.id == photo.id && preloaded?.file == file) return
         if (preloading == photo.id to file) return
@@ -94,8 +122,9 @@ class SlideRenderer(
         preloaded?.bitmap?.recycle()
         preloaded = null
         preloading = photo.id to file
+        val target = target()
         decoder.execute {
-            val bitmap = decode(file)
+            val bitmap = decode(file, target)
             main.post {
                 preloading = null
                 if (bitmap == null) return@post
@@ -103,8 +132,40 @@ class SlideRenderer(
                     bitmap.recycle()
                 } else {
                     preloaded?.bitmap?.recycle()
-                    preloaded = Decoded(photo, file, bitmap)
+                    preloaded = Decoded(photo, file, bitmap, target)
                 }
+            }
+        }
+    }
+
+    /**
+     * The fill mode changed: the shown photo and the one decoded ahead are decoded again for the new mode.
+     * A running transition is waited for.
+     */
+    private fun refit() {
+        val shown = current ?: return
+        val target = target()
+        if (shown.target == target) return
+        if (animating) {
+            main.postDelayed({ refit() }, 200)
+            return
+        }
+        generation++
+        preloaded?.bitmap?.recycle()
+        preloaded = null
+        preloading = null
+        decoder.execute {
+            val bitmap = decode(shown.file, target)
+            main.post {
+                if (bitmap == null || current !== shown || animating) {
+                    bitmap?.recycle()
+                    return@post
+                }
+                val replacement = Decoded(shown.photo, shown.file, bitmap, target)
+                current = replacement
+                front.setImageBitmap(bitmap)
+                shown.bitmap.recycle()
+                preload(lastNext)
             }
         }
     }
@@ -221,9 +282,15 @@ class SlideRenderer(
 
     private fun scaleType() = if (fillMode == FillMode.FILL) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
 
-    private fun decode(file: File): Bitmap? =
+    /** The photo from [file], trimmed for [target]. `null` if it cannot be decoded. */
+    private fun decode(
+        file: File,
+        target: Target,
+    ): Bitmap? =
         try {
-            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })
+            BitmapFactory
+                .decodeFile(file.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })
+                ?.let { BitmapFit.forView(it, target.width, target.height, target.fill) }
         } catch (e: OutOfMemoryError) {
             null
         }
