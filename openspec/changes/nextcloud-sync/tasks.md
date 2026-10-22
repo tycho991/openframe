@@ -3,7 +3,7 @@
 ## 1. Configuration and credentials
 
 - [x] 1.1 Add the configuration of the source (`nextcloud.json` in the state folder through `JsonStore`: server, user ID, login name, app password, enabled, folder, subfolders, remove vanished, interval, originals budget) with validation and partial changes; verify unit tests cover each limit of the spec (interval 5 to 1,440, budget 100 to 50,000 MB, folder normalized, only `http` and `https`) and a restart that reads the file back
-- [ ] 1.2 Make the password unreachable outside the client: a view of the configuration without it for the API, and no password in any log line or error text; verify a test that fails with a wrong password and checks status text, log and the API view for the secret
+- [x] 1.2 Make the password unreachable outside the client: a view of the configuration without it for the API, and no password in any log line or error text; verify a test that fails with a wrong password and checks status text, log and the API view for the secret
 
 ## 2. Talking to Nextcloud
 
@@ -14,10 +14,10 @@
 
 ## 3. The source and the library
 
-- [ ] 3.1 Add the nullable `etag` to the index entry and the originals store (path, `.part` handling, last-use time, budget and eviction by the oldest use, 100 MB reserve); verify unit tests for eviction order, the reserve and a missing file
-- [ ] 3.2 Implement `NextcloudSource` (listing, downloads one at a time at low priority, probe, one `index.edit` for the result, removal only of entries known at the start, hidden state and ID kept, skipped files remembered); verify tests with an in-memory `RemoteFolder` for the scenarios of `nextcloud-source` (new, unchanged, replaced, deleted with removal on and off, partial listing, failure, album from a subfolder, a file that cannot be decoded)
-- [ ] 3.3 Route originals per source for `RenderCache` and fetch a missing Nextcloud original before rendering; verify a test in which an original is removed, a rendering is requested and the file is fetched again
-- [ ] 3.4 Refuse deleting a Nextcloud photo (`409`, `read_only_source`, reported in `failed` for a batch), add `source` to the photo in the API, and remove the photos and originals of the source on disconnect; verify `LibraryApiTest` cases for the three delete scenarios of `photo-library`
+- [x] 3.1 Add the nullable `etag` to the index entry and the originals store (path, `.part` handling, last-use time, budget and eviction by the oldest use, 100 MB reserve); verify unit tests for eviction order, the reserve and a missing file
+- [x] 3.2 Implement `NextcloudSource` (listing, downloads one at a time at low priority, probe, one `index.edit` for the result, removal only of entries known at the start, hidden state and ID kept, skipped files remembered); verify tests with an in-memory `RemoteFolder` for the scenarios of `nextcloud-source` (new, unchanged, replaced, deleted with removal on and off, partial listing, failure, album from a subfolder, a file that cannot be decoded)
+- [x] 3.3 Route originals per source for `RenderCache` and fetch a missing Nextcloud original before rendering; verify a test in which an original is removed, a rendering is requested and the file is fetched again
+- [x] 3.4 Refuse deleting a Nextcloud photo (`409`, `read_only_source`, reported in `failed` for a batch), add `source` to the photo in the API, and remove the photos and originals of the source on disconnect; verify `LibraryApiTest` cases for the three delete scenarios of `photo-library`
 
 ## 4. Schedule and status
 

@@ -124,6 +124,56 @@ class LibraryApiTest {
         }
     }
 
+    /** A photo as the Nextcloud source would have put it into the index: no file in the photo folder. */
+    private fun putRemote(path: String = "holiday/r.jpg"): String {
+        val entry = PhotoEntry(PhotoEntry.idFor("nextcloud", path), "nextcloud", path, 400, 300, 0, 1, 1, 1, etag = "e1")
+        frame.core.library.index
+            .edit { it.put(entry) }
+        return entry.id
+    }
+
+    @Test
+    fun `The photo list names the source`() {
+        put("a.jpg")
+        frame.scan()
+        putRemote()
+        val sources = page().items.associate { it.path to it.source }
+        assertEquals(mapOf("a.jpg" to "local", "holiday/r.jpg" to "nextcloud"), sources)
+    }
+
+    @Test
+    fun `A Nextcloud photo cannot be deleted but can be hidden`() {
+        val id = putRemote()
+        val res = frame.send("DELETE", "/api/v1/photos/$id")
+        assertEquals(409, res.statusCode())
+        assertEquals(
+            "read_only_source",
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["code"]!!
+                .jsonPrimitive.content,
+        )
+        assertEquals(1, page().total, "the photo stays")
+        val hidden = frame.send("PATCH", "/api/v1/photos/$id", """{"hidden":true}""")
+        assertEquals(200, hidden.statusCode())
+        assertEquals("nextcloud", ApiJson.decodeFromString(PhotoDto.serializer(), hidden.body()).source)
+    }
+
+    @Test
+    fun `A batch that deletes a local and a Nextcloud photo reports the Nextcloud one as failed`() {
+        put("a.jpg")
+        frame.scan()
+        val remote = putRemote()
+        val res = frame.send("POST", "/api/v1/photos:batch", """{"action":"delete","ids":["${id("a.jpg")}","$remote"]}""")
+        assertEquals(200, res.statusCode())
+        val result = ApiJson.decodeFromString(BatchResultDto.serializer(), res.body())
+        assertEquals(1, result.processed)
+        assertEquals(listOf(remote), result.failed)
+        assertFalse(File(frame.photos, "a.jpg").exists())
+        assertEquals(listOf("holiday/r.jpg"), page().items.map { it.path })
+    }
+
     @Test
     fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }

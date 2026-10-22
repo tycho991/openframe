@@ -41,9 +41,17 @@ class PhotoLibrary(
         edit.setAlbumHidden(album, hidden)
     }
 
-    /** Deletes file, index entry and rendered sizes. `false` if the photo does not exist. */
+    /** Deletes file, index entry and rendered sizes. `false` if the photo does not exist, 409 for a photo of a read-only source. */
     fun delete(id: String): Boolean {
         val entry = index.library.value.photos[id] ?: return false
+        // A photo that the frame only reads would come back with the next sync.
+        if (entry.source != LocalPhotoSource.SOURCE_ID) {
+            throw HttpException(
+                409,
+                "read_only_source",
+                "This photo comes from ${entry.source} and cannot be deleted here. Hide it instead.",
+            )
+        }
         val file = local.fileOf(entry)
         if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "File could not be deleted")
         index.edit { it.remove(id) }

@@ -55,11 +55,15 @@ A sync SHALL list the configured folder (and its subfolders if included) and mak
 - **THEN** the photo belongs to the album `holiday`
 
 ### Requirement: No repeated downloads
-A photo whose ETag on the server is the same as at the last sync SHALL NOT be downloaded again. A changed ETag SHALL replace the photo, keep its ID and hidden state and raise its image version. A photo whose original is missing from the cache SHALL be fetched again.
+A photo whose ETag on the server is the same as at the last sync SHALL NOT be downloaded again. A changed ETag SHALL replace the photo, keep its ID and hidden state and raise its image version. A photo whose original was removed from the cache SHALL be fetched again when a rendering needs it, and by a sync only while the budget has room for it.
 
 #### Scenario: Nothing changed
 - **WHEN** a sync runs and no file on the server has changed
 - **THEN** no photo is downloaded and the index stays the same
+
+#### Scenario: Budget smaller than the folder
+- **WHEN** the originals do not all fit into the budget and a sync runs repeatedly
+- **THEN** it does not download the same originals again and again
 
 #### Scenario: Photo replaced on the server
 - **WHEN** a photo is replaced on the server by another file of the same name

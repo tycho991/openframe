@@ -311,11 +311,13 @@ paths:
       tags: [photos]
       operationId: deletePhoto
       summary: Remove file, index entry and rendered sizes.
+      description: "A photo of a read-only source (`nextcloud`) is refused with 409 and the error code `read_only_source`."
       responses:
         "204": { description: Deleted. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /photos/{photoId}/image:
     parameters:
@@ -479,6 +481,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -686,10 +693,14 @@ components:
     Photo:
       type: object
       additionalProperties: false
-      required: [id, path, album, hidden, visible, width, height, takenAt, fileSize, version, urls]
+      required: [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, urls]
       properties:
         id: { type: string }
-        path: { type: string, description: "Path relative to the photo folder." }
+        source:
+          type: string
+          enum: [local, nextcloud]
+          description: "Where the photo comes from. Photos of `nextcloud` are read only: they cannot be deleted, only hidden."
+        path: { type: string, description: "Path relative to the folder of its source." }
         album: { type: [string, "null"] }
         hidden: { type: boolean, description: "The photo itself is hidden." }
         visible: { type: boolean, description: "Neither photo nor album is hidden." }
