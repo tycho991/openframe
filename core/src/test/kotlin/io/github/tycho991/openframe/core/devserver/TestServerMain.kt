@@ -4,6 +4,9 @@ import fi.iki.elonen.NanoHTTPD
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.library.PhotoEntry
+import io.github.tycho991.openframe.core.nextcloud.FakeClients
+import io.github.tycho991.openframe.core.nextcloud.FakeLoginFlow
+import io.github.tycho991.openframe.core.nextcloud.NextcloudException
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
@@ -24,6 +27,9 @@ import java.time.Instant
  */
 object TestServerMain {
     private lateinit var core: FrameCore
+
+    /** The Nextcloud the frame talks to: in memory, steered through the control port. */
+    private var nextcloud = FakeClients()
     private lateinit var dataDir: File
     private var port = 0
     private lateinit var dist: File
@@ -53,6 +59,7 @@ object TestServerMain {
                 File(dist, path).takeIf { it.isFile && it.canonicalPath.startsWith(dist.canonicalPath) }?.inputStream()
             }
         val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"))
+        nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
         core =
             FrameCore(
                 dirs,
@@ -63,6 +70,7 @@ object TestServerMain {
                 clock = TestServerClock,
                 port = port,
                 scanInterval = Duration.ofSeconds(2),
+                nextcloudClients = nextcloud,
             )
         runBlocking { core.start() }
     }
@@ -142,6 +150,40 @@ object TestServerMain {
                                 }
                             }
                             ok("added $n")
+                        }
+
+                        // The user approves the login in the Nextcloud tab.
+                        "/nextcloud/approve" -> {
+                            (nextcloud.login as FakeLoginFlow).approved = true
+                            ok("approved")
+                        }
+
+                        // A file in the Nextcloud folder: `/nextcloud/put?fixture=landscape.jpg&path=holiday/a.jpg&etag=e1`.
+                        "/nextcloud/put" -> {
+                            val path = q.getValue("path")
+                            nextcloud.remote.put(path, Fixtures.file(q.getValue("fixture")).readBytes(), q["etag"] ?: "etag-$path")
+                            ok("put")
+                        }
+
+                        "/nextcloud/remove" -> {
+                            nextcloud.remote.remove(q.getValue("path"))
+                            ok("removed")
+                        }
+
+                        // `/nextcloud/fail?on=1` lets listing the folder fail like a server that is down, `on=0` ends it.
+                        "/nextcloud/fail" -> {
+                            nextcloud.remote.listFailure =
+                                if (q["on"] ==
+                                    "1"
+                                ) {
+                                    NextcloudException(
+                                        NextcloudException.Kind.UNREACHABLE,
+                                        "The server cloud.example.org did not answer in time",
+                                    )
+                                } else {
+                                    null
+                                }
+                            ok("fail ${q["on"]}")
                         }
 
                         else -> {

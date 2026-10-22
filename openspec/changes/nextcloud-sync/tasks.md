@@ -32,10 +32,10 @@
 
 ## 6. Web UI
 
-- [ ] 6.1 Add the Nextcloud view (connect through the login flow in a new tab with polling, configuration with the field errors, sync now, status, disconnect after a confirmation) and the entry in the navigation; verify the unit tests of the view's logic and `npm run lint`
-- [ ] 6.2 Hide deleting for Nextcloud photos in the overview and the detail view and point to hiding; verify an e2e case
-- [ ] 6.3 Add the texts to `en.json` and `de.json`, including a text for each new error code; verify the test that every error code of `:core` has a text passes
-- [ ] 6.4 Add a fake Nextcloud to the test server of the e2e run and cover connect, first sync, a photo deleted on the server, a failing sync and disconnect; verify `npm run e2e`
+- [x] 6.1 Add the Nextcloud view (connect through the login flow in a new tab with polling, configuration with the field errors, sync now, status, disconnect after a confirmation) and the entry in the navigation; verify the unit tests of the view's logic and `npm run lint`
+- [x] 6.2 Hide deleting for Nextcloud photos in the overview and the detail view and point to hiding; verify an e2e case
+- [x] 6.3 Add the texts to `en.json` and `de.json`, including a text for each new error code; verify the test that every error code of `:core` has a text passes
+- [x] 6.4 Add a fake Nextcloud to the test server of the e2e run and cover connect, first sync, a photo deleted on the server, a failing sync and disconnect; verify `npm run e2e`
 
 ## 7. Documentation and acceptance rows
 
