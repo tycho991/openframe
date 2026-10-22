@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ApiError, type Settings } from "../lib/api/client";
   import { t, type Key } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
   import { api, session } from "../lib/session.svelte";
 
   let saved = $state<Settings | null>(null);
@@ -24,7 +25,7 @@
       saved = s;
       form = structuredClone(s);
     } catch (e) {
-      error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      error = errorText(e);
     }
   }
 
@@ -74,7 +75,7 @@
     } catch (e) {
       status = "idle";
       if (e instanceof ApiError && Object.keys(e.fields).length > 0) errors = e.fields;
-      else error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      else error = errorText(e);
     }
   }
 

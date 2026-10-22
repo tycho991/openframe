@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ApiError, type Album } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
+  import { errorMessage } from "../lib/i18n/errors";
   import { api } from "../lib/session.svelte";
 
   interface Props {
@@ -52,9 +53,9 @@
       if (e.code === "network") return t("upload.network");
       if (e.status === 415) return t("upload.unsupported");
       if (e.status === 507) return t("upload.storage");
-      return t("upload.failed", { message: e.message });
+      return t("upload.failed", { message: errorMessage(e) });
     }
-    return t("upload.failed", { message: String(e) });
+    return t("upload.failed", { message: errorMessage(e) });
   }
 
   async function start() {

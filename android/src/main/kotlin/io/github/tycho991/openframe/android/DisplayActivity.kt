@@ -324,6 +324,8 @@ class DisplayActivity : Activity() {
     ) {
         hintVisible = visible
         hintAutoHides = autoHide
+        // The hint covers the corner of the clock, so the clock steps aside for as long as it is up. This also
+        // holds for a hint asked for through `POST /api/v1/pairing/code` (FINDINGS.md, 5: accepted).
         clock.hidden = visible
         hint.visibility = if (visible) View.VISIBLE else View.GONE
         main.removeCallbacks(hideHint)

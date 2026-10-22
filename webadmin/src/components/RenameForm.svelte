@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../lib/i18n/i18n.svelte";
+  import { errorText } from "../lib/i18n/errors";
 
   interface Props {
     name: string;
@@ -24,7 +25,7 @@
     try {
       await onsave(value.trim());
     } catch (e) {
-      error = t("common.error", { message: e instanceof Error ? e.message : String(e) });
+      error = errorText(e);
     } finally {
       busy = false;
     }

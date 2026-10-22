@@ -7,6 +7,7 @@
 ## What Changes
 
 - The open rows are run on the devices and their results are entered in `docs/DEVICE_TEST.md`: USB and MTP (rows 73 to 76), HEIC on the Frameo (77), Wi-Fi off (32, 34), hours without touch (30), side-by-side operation with `pictureframe` (26) and the iPhone QR scan (59).
+- The checks that need a device that is not here yet (the Galaxy Tab S7) are listed as a task and wait for it.
 - Findings that come out of it go to `docs/FINDINGS.md`. Fixes are separate changes.
 - The way back from openframe to `pictureframe` and the photo backup (rows 86 to 89) stay documented. They are run only if openframe is taken off a device.
 - No code, no API and no requirement changes. If a check fails, the failing behavior gets its own change.

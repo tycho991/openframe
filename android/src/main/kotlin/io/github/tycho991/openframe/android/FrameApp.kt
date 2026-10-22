@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
@@ -67,16 +68,18 @@ class FrameApp : Application() {
     private fun installCrashHandler() {
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
-                core.log.e("crash", "Absturz in ${thread.name}", error)
+                core.log.e("crash", "Crash in ${thread.name}", error)
                 scheduleRestart(this, RESTART_DELAY_MS)
             } catch (ignored: Throwable) {
                 // Do not risk anything more during a crash.
             }
             // Do not hand over to the default handler: it reports the crash to the system, and on
             // some devices (Frameo) that shows an error dialog that keeps the process alive until
-            // "OK" is tapped. The restart would then never come. So end the process ourselves.
+            // "OK" is tapped. The restart would then never come. So end the process ourselves. What the
+            // default handler would have put into Logcat is written here, the report to the system
+            // (`am_crash`, the drop box) is given up on purpose.
+            Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}\nProcess: $packageName, PID: ${Process.myPid()}", error)
             Process.killProcess(Process.myPid())
-            kotlin.system.exitProcess(10)
         }
     }
 
@@ -91,7 +94,8 @@ class FrameApp : Application() {
             val flags = PendingIntent.FLAG_CANCEL_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
             val pending = PendingIntent.getActivity(context, 0, intent, flags)
             val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarms.set(AlarmManager.RTC, System.currentTimeMillis() + delayMs, pending)
+            // Time since boot: the clock of some devices is set only after the start.
+            alarms.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + delayMs, pending)
         }
     }
 }

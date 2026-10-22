@@ -34,10 +34,14 @@
 
 - [ ] 6.1 Scan the QR code of the hint with the camera of an iPhone from 1 m, straight and at an angle; verify: the link opens the admin interface and pairs without input, row 59
 
-## 7. Close out
+## 7. Hardware that is not here yet
 
-- [ ] 7.1 Check that every row of `docs/DEVICE_TEST.md` that belongs to this change is ticked or has a reason and a finding
-- [ ] 7.2 Check both devices against their state before the run: settings, photos, pairings, HOME launcher
+- [ ] 7.1 Galaxy Tab S7 (when it is available): run the rows of "Photos and USB" with real MTP on a current Android, pair with a real browser, and check the uploaded file with the media store (`content query` shows no row on the API 37 emulator, so only a device can show it); verify: results entered, a finding for anything that differs
+
+## 8. Close out
+
+- [ ] 8.1 Check that every row of `docs/DEVICE_TEST.md` that belongs to this change is ticked or has a reason and a finding
+- [ ] 8.2 Check both devices against their state before the run: settings, photos, pairings, HOME launcher
 
 ## Workflow follow-up
 
