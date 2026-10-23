@@ -193,10 +193,16 @@ class NextcloudSourceTest {
     fun `A removed original comes back by a sync while the budget has room`() {
         remote.put("a.jpg", jpg(), "e1")
         sync()
-        originals.fileOf(photos().getValue("a.jpg")).delete()
+        val before = photos().getValue("a.jpg")
+        val libraryVersion = index.library.value.version
+        originals.fileOf(before).delete()
         remote.downloads.clear()
-        sync()
+        // Only the original comes back: the photo, its version and the library are not touched, and nothing is counted.
+        assertEquals(ScanResult(0, 0, 0, 0), sync())
         assertEquals(listOf("a.jpg"), remote.downloads)
+        assertTrue(originals.has(before))
+        assertEquals(before, photos().getValue("a.jpg"))
+        assertEquals(libraryVersion, index.library.value.version)
     }
 
     @Test

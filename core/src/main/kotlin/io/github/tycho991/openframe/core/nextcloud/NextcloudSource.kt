@@ -142,6 +142,8 @@ class NextcloudSource(
             for ((path, result) in results) {
                 result
                     .onSuccess {
+                        // An original that came back for an unchanged photo: the entry is the same, nothing to apply or count.
+                        if (it == edit.get(it.id)) return@onSuccess
                         if (edit.get(it.id) == null) added++ else updated++
                         edit.put(it)
                     }.onFailure { e ->
@@ -217,6 +219,8 @@ class NextcloudSource(
                 hidden = previous?.hidden ?: false,
                 etag = file.etag,
             )
+        // The same ETag as before: only the original is gone from the cache, the photo is the one in the index.
+        val unchanged = previous != null && previous.etag == file.etag
         synchronized(downloadLock) {
             val part = originals.partOf(draft)
             try {
@@ -235,6 +239,7 @@ class NextcloudSource(
                     return Result.failure(e)
                 }
             originals.commit(draft)
+            if (unchanged) return Result.success(previous!!)
             return Result.success(
                 draft.copy(
                     width = info.width,
