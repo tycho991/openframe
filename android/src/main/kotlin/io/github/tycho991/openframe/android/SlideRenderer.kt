@@ -26,6 +26,8 @@ class SlideRenderer(
     private var back: ImageView,
     /** A photo could not be decoded. */
     private val onUndecodable: (PhotoEntry) -> Unit,
+    /** A transition ended: how many frames it had and how many of them were late. */
+    onTransitionMeasured: (frames: Int, late: Int) -> Unit = { _, _ -> },
 ) {
     private class Decoded(
         val photo: PhotoEntry,
@@ -36,6 +38,8 @@ class SlideRenderer(
     )
 
     private val main = Handler(Looper.getMainLooper())
+    private val monitor =
+        FrameMonitor({ (1_000_000_000L / (front.display?.refreshRate?.takeIf { it > 1f } ?: 60f)).toLong() }, onTransitionMeasured)
     private val decoder = Executors.newSingleThreadExecutor { r -> Thread(r, "decode").apply { priority = Thread.NORM_PRIORITY - 1 } }
     private var current: Decoded? = null
     private var preloaded: Decoded? = null
@@ -173,6 +177,7 @@ class SlideRenderer(
     /** Shows nothing any more, for example in the empty state. */
     fun clear() {
         generation++
+        monitor.stop()
         front.animate().cancel()
         back.animate().cancel()
         front.setImageDrawable(null)
@@ -196,6 +201,7 @@ class SlideRenderer(
     ) {
         // A running transition is completed before the next one begins. cancel() does not trigger withEndAction.
         if (animating) {
+            monitor.stop()
             front.animate().cancel()
             back.animate().cancel()
             done(pendingOld)
@@ -216,6 +222,7 @@ class SlideRenderer(
         }
         animating = true
         pendingOld = old
+        monitor.start()
         when (transition) {
             Transition.FADE -> {
                 back.alpha = 0f
@@ -252,6 +259,7 @@ class SlideRenderer(
     }
 
     private fun done(old: Decoded?) {
+        monitor.finish()
         animating = false
         pendingOld = null
         exchangeViews()

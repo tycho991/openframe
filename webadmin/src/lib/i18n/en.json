@@ -110,6 +110,7 @@
   "settings.transition.slide": "Slide",
   "settings.transition.none": "None",
   "settings.transitionDuration": "Transition duration (ms)",
+  "settings.transitionFallback": "This frame’s display cannot show the transition smoothly, so photos change instantly. Change the transition or its duration to try it again.",
   "settings.fillMode": "Fill mode",
   "settings.fillMode.fill": "Fill the screen (crop)",
   "settings.fillMode.fit": "Show entire photo (with borders)",

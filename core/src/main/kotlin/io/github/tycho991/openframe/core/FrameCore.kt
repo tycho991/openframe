@@ -47,6 +47,8 @@ import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
 import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
+import io.github.tycho991.openframe.core.slideshow.StoredTransitionGovernor
+import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -101,6 +103,9 @@ class FrameCore(
 
     val settings =
         SettingsRepository(JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log), platform.model, log)
+
+    val transitions =
+        TransitionGovernor(JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log), log)
 
     val clients = ClientRegistry(JsonStore(File(dirs.state, "clients.json"), StoredClients.serializer(), scope, log), clock)
     val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
@@ -185,6 +190,7 @@ class FrameCore(
     suspend fun start() {
         log.i(TAG, "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion}")
         settings.load()
+        transitions.load()
         clients.load()
         signer.load()
         index.load()
@@ -192,6 +198,7 @@ class FrameCore(
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()
+        scope.launch { settings.settings.collect(transitions::onSettings) }
         nextcloudScheduler.start()
         _ready.value = true
 
@@ -274,7 +281,7 @@ class FrameCore(
         router.infoRoutes(identity, settings, platform)
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
-        router.libraryRoutes(library, settings, signer)
+        router.libraryRoutes(library, settings, signer, transitions)
         router.nextcloudRoutes(nextcloud)
         router.diagnosticsRoutes(log)
     }

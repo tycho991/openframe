@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.settings.SettingsRepository
+import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -103,6 +104,7 @@ data class AlbumPatchDto(
 data class StateDto(
     val libraryVersion: Long,
     val settingsVersion: Long,
+    val transitionFallback: Boolean,
 )
 
 /** Position in a sorted list: key of the last entry of the previous page. */
@@ -144,6 +146,7 @@ fun Router.libraryRoutes(
     library: PhotoLibrary,
     settings: SettingsRepository,
     signer: ImageSigner,
+    transitions: TransitionGovernor,
 ) {
     val index = library.index
 
@@ -326,7 +329,7 @@ fun Router.libraryRoutes(
     }
 
     get("/api/v1/state") {
-        HttpResponse.json(StateDto.serializer(), StateDto(index.library.value.version, settings.version.value))
+        HttpResponse.json(StateDto.serializer(), StateDto(index.library.value.version, settings.version.value, transitions.cut.value))
     }
 }
 

@@ -2,7 +2,7 @@
   import { ApiError, type Settings } from "../lib/api/client";
   import { t, type Key } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
-  import { api, session } from "../lib/session.svelte";
+  import { api, refreshState, session } from "../lib/session.svelte";
 
   let saved = $state<Settings | null>(null);
   let form = $state<Settings | null>(null);
@@ -68,6 +68,7 @@
       const s = await api.patchSettings(patch(saved, form));
       saved = s;
       form = structuredClone(s);
+      void refreshState();
       status = "saved";
       setTimeout(() => {
         if (status === "saved") status = "idle";
@@ -78,6 +79,16 @@
       else error = errorText(e);
     }
   }
+
+  // The note is about the saved transition: while it is edited the frame will try again anyway.
+  const showsInstantChange = $derived(
+    session.transitionFallback &&
+      !!form &&
+      !!saved &&
+      saved.transition !== "none" &&
+      form.transition === saved.transition &&
+      form.transitionDurationMs === saved.transitionDurationMs,
+  );
 
   function option(prefix: string, value: string) {
     return t(`${prefix}.${value}` as Key);
@@ -132,6 +143,7 @@
         {#if fieldError("transitionDurationMs")}<span class="error" role="alert"
             >{fieldError("transitionDurationMs")}</span
           >{/if}
+        {#if showsInstantChange}<span class="hint">{t("settings.transitionFallback")}</span>{/if}
       </div>
       <div class="field">
         <label for="s-fill">{t("settings.fillMode")}</label>

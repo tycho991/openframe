@@ -43,6 +43,9 @@ export const nextcloudRemove = (from: string) =>
 /** Lets listing the folder fail like a server that is down. */
 export const nextcloudFail = (on: boolean) => control(`/nextcloud/fail?on=${on ? 1 : 0}`);
 
+/** The frame's display reports stuttering transitions, so it changes photos instantly from now on. */
+export const stutterTransitions = () => control("/transitions/stutter");
+
 /** Pairs another client directly through the API and returns its token. */
 export async function pairOtherDevice(baseURL: string, name: string): Promise<string> {
   const code = await frameCode();

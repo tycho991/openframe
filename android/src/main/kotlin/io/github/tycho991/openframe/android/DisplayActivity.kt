@@ -37,6 +37,7 @@ import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.settings.Settings
+import io.github.tycho991.openframe.core.settings.Transition
 import io.github.tycho991.openframe.core.slideshow.SlideState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,7 +113,13 @@ class DisplayActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         setContentView(R.layout.activity_display)
-        renderer = SlideRenderer(findViewById(R.id.photo_a), findViewById(R.id.photo_b)) { core?.slideshow?.reportUndecodable(it) }
+        renderer =
+            SlideRenderer(
+                findViewById(R.id.photo_a),
+                findViewById(R.id.photo_b),
+                { core?.slideshow?.reportUndecodable(it) },
+                { frames, late -> core?.transitions?.report(frames, late) },
+            )
         clock = ClockOverlay(this, findViewById(R.id.clock), findViewById(R.id.clock_time), findViewById(R.id.clock_date))
         loading = findViewById(R.id.loading)
         emptyState = findViewById(R.id.empty_state)
@@ -300,9 +307,19 @@ class DisplayActivity : Activity() {
         loading.visibility = if (state == SlideState.Loading) View.VISIBLE else View.GONE
         emptyState.visibility = if (showingEmpty) View.VISIBLE else View.GONE
         when (state) {
-            is SlideState.Showing -> renderer.show(state.photo, state.file, state.step, s.transition, s.transitionDurationMs.toLong())
-            SlideState.Empty -> renderer.clear()
-            SlideState.Loading -> Unit
+            is SlideState.Showing -> {
+                // A display that could not keep up with the transitions gets instant changes, the setting stays as it is.
+                val transition = if (core?.transitions?.cut?.value == true) Transition.NONE else s.transition
+                renderer.show(state.photo, state.file, state.step, transition, s.transitionDurationMs.toLong())
+            }
+
+            SlideState.Empty -> {
+                renderer.clear()
+            }
+
+            SlideState.Loading -> {
+                Unit
+            }
         }
         core?.let { c ->
             c.pairing.setShownOnFrame(

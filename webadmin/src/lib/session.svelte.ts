@@ -8,6 +8,8 @@ class Session {
   info = $state<Info | null>(null);
   libraryVersion = $state(-1);
   settingsVersion = $state(-1);
+  /** The frame changes photos instantly because its display could not keep up with the transition. */
+  transitionFallback = $state(false);
   /** A pairing link is being redeemed; the interface waits instead of showing the pairing dialog. */
   linkPending = $state(false);
   /** Why the pairing link could not be redeemed, shown in the pairing dialog. */
@@ -58,6 +60,18 @@ export async function redeemPairingLink(secret: string): Promise<void> {
 
 export const STATE_POLL_MS = 10_000;
 
+/** Reads the versions and the transition fallback from the frame now. */
+export async function refreshState(): Promise<void> {
+  try {
+    const s = await api.state();
+    session.libraryVersion = s.libraryVersion;
+    session.settingsVersion = s.settingsVersion;
+    session.transitionFallback = s.transitionFallback;
+  } catch {
+    // Frame briefly unreachable: try again next time.
+  }
+}
+
 /**
  * Polls the versions every 10 seconds while the tab is visible, and
  * immediately when it becomes visible again. Changes over USB or from a
@@ -67,13 +81,7 @@ export function startStatePolling(): () => void {
   let stopped = false;
   const poll = async () => {
     if (stopped || !session.paired || document.visibilityState !== "visible") return;
-    try {
-      const s = await api.state();
-      session.libraryVersion = s.libraryVersion;
-      session.settingsVersion = s.settingsVersion;
-    } catch {
-      // Frame briefly unreachable: try again next time.
-    }
+    await refreshState();
   };
   const timer = setInterval(poll, STATE_POLL_MS);
   const onVisible = () => void poll();

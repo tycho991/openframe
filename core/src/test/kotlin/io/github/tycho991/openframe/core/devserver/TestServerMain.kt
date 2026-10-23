@@ -186,6 +186,12 @@ object TestServerMain {
                             ok("fail ${q["on"]}")
                         }
 
+                        // The display reports three stuttering transitions: the frame falls back to instant changes.
+                        "/transitions/stutter" -> {
+                            repeat(3) { core.transitions.report(frames = 85, late = 40) }
+                            ok("stuttering")
+                        }
+
                         else -> {
                             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "unknown")
                         }

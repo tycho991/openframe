@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiAsBrowser, pairInUi, pairOtherDevice, reset, usb } from "./helpers";
+import { apiAsBrowser, pairInUi, pairOtherDevice, reset, stutterTransitions, usb } from "./helpers";
 
 test.beforeEach(async () => {
   await reset();
@@ -103,4 +103,26 @@ test("Invitation expires", async ({ page }) => {
   await expect(page.getByText("Die Einladung ist abgelaufen.")).toBeVisible();
   await page.getByRole("button", { name: "Neue Einladung" }).click();
   await expect(page.getByRole("timer")).toBeVisible();
+});
+
+test("Note on instant changes", async ({ page }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Einstellungen" }).click();
+  const note = page.getByText("deshalb wechseln die Fotos sofort");
+  await expect(note).toBeHidden();
+  await stutterTransitions();
+  // The interface polls the state every 10 seconds; a reload shows it at once.
+  await page.reload();
+  await page.getByRole("link", { name: "Einstellungen" }).click();
+  await expect(note).toBeVisible();
+  // The transition stays as chosen; changing its duration tries it again.
+  expect((await apiAsBrowser<{ transition: string }>(page, "/settings")).transition).toBe("fade");
+  await page.getByLabel("Dauer des Übergangs (ms)").fill("1200");
+  await expect(note).toBeHidden();
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByRole("status")).toHaveText("Gespeichert");
+  await expect(note).toBeHidden();
+  expect((await apiAsBrowser<{ transitionFallback: boolean }>(page, "/state")).transitionFallback).toBe(
+    false,
+  );
 });
