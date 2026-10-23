@@ -29,6 +29,13 @@ async function connect(page: Page) {
   await expect(page.getByText("Verbunden mit http://127.0.0.1:8090 als Anna.")).toBeVisible({
     timeout: 15_000,
   });
+  // No folder is chosen yet: nothing syncs, and the interface says so.
+  await expect(page.getByText("Wähle den Ordner")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Jetzt abgleichen" })).toBeDisabled();
+  await page.getByLabel("Ordner auf dem Server").fill("/");
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Gespeichert")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Jetzt abgleichen" })).toBeEnabled();
 }
 
 test("Connect, first sync, a photo deleted on the server, a failing sync and disconnect", async ({

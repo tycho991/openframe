@@ -88,8 +88,10 @@
     errors = {};
     error = null;
     try {
-      nc = await api.patchNextcloud(settingsPatch(nc.settings, form));
-      form = structuredClone(nc.settings);
+      const next = await api.patchNextcloud(settingsPatch(nc.settings, form));
+      nc = next;
+      // Of the answer, not of `nc`: the reactive state is a proxy, which structuredClone cannot copy.
+      form = structuredClone(next.settings);
       saved = true;
       setTimeout(() => (saved = false), 3000);
     } catch (e) {
@@ -174,13 +176,20 @@
   <form onsubmit={save} novalidate>
     <fieldset class="card">
       <legend>{t("nextcloud.section.folder")}</legend>
+      {#if nc.settings.folder === ""}<p class="hint warn" role="status">{t("nextcloud.noFolder")}</p>{/if}
       <label class="check">
         <input type="checkbox" bind:checked={form.enabled} />
         <span>{t("nextcloud.enabled")}</span>
       </label>
       <div class="field">
         <label for="nc-folder">{t("nextcloud.folder")}</label>
-        <input id="nc-folder" type="text" bind:value={form.folder} aria-invalid={!!errors["folder"]} />
+        <input
+          id="nc-folder"
+          type="text"
+          placeholder={t("nextcloud.folderPlaceholder")}
+          bind:value={form.folder}
+          aria-invalid={!!errors["folder"]}
+        />
         <span class="hint">{t("nextcloud.folderHint")}</span>
         {#if fieldError("folder")}<span class="error" role="alert">{fieldError("folder")}</span>{/if}
       </div>
@@ -251,7 +260,9 @@
     {/if}
     {#if syncMessage}<p role="status">{syncMessage}</p>{/if}
     <div class="actions">
-      <button type="button" onclick={syncNow} disabled={nc.status.syncing}>{t("nextcloud.sync")}</button>
+      <button type="button" onclick={syncNow} disabled={nc.status.syncing || nc.settings.folder === ""}
+        >{t("nextcloud.sync")}</button
+      >
       <button type="button" class="danger" onclick={() => (confirmDisconnect = true)}
         >{t("nextcloud.disconnect")}</button
       >

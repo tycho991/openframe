@@ -592,7 +592,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), or syncing a source that is not connected (`nextcloud_not_connected`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing a source that is not connected (`nextcloud_not_connected`) or has no folder chosen (`nextcloud_no_folder`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -650,7 +650,7 @@ components:
       required: [enabled, folder, includeSubfolders, removeVanished, intervalMinutes, originalsBudgetMb]
       properties:
         enabled: { type: boolean }
-        folder: { type: string, description: "Folder on the server as `/a/b`, `/` for the top." }
+        folder: { type: string, description: "Folder on the server as `/a/b`, `/` for the top. Empty until one is chosen: then nothing syncs." }
         includeSubfolders: { type: boolean }
         removeVanished: { type: boolean, description: "Remove photos that are no longer in the folder." }
         intervalMinutes: { type: integer, minimum: 5, maximum: 1440 }

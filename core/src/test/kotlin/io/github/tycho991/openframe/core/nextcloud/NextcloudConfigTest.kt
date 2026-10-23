@@ -35,7 +35,7 @@ class NextcloudConfigTest {
     fun `Defaults without a file`() {
         val config = newStore().view()
         assertFalse(config.connected)
-        assertEquals("/", config.folder)
+        assertEquals("", config.folder, "no default folder")
         assertEquals(20, config.intervalMinutes)
         assertEquals(2_000, config.originalsBudgetMb)
         assertTrue(config.includeSubfolders)
@@ -73,7 +73,7 @@ class NextcloudConfigTest {
         val store = newStore()
         val fields = fieldsOf { store.patch(json("""{"folder":"/Photos","intervalMinutes":1,"colour":"red"}""")) }
         assertEquals(setOf("intervalMinutes", "colour"), fields.keys)
-        assertEquals("/", store.view().folder)
+        assertEquals("", store.view().folder)
     }
 
     @Test
@@ -116,7 +116,8 @@ class NextcloudConfigTest {
         val view = store.view()
         assertFalse(view.connected)
         assertEquals(null, view.user)
-        assertEquals("/Photos", view.folder, "The options stay")
+        assertEquals("", view.folder, "the folder belongs to the account")
+        assertTrue(view.removeVanished && view.includeSubfolders)
     }
 
     @Test

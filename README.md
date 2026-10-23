@@ -90,7 +90,8 @@ is changed on the server.
    opens in a new tab; approve the access there. The frame receives an app password, so no password is typed into
    the frame or the interface.
 2. Choose the folder, whether subfolders are included (the first one is the album) and how often the frame syncs
-   (every 20 minutes by default, at least 5). "Sync now" starts a sync at once; the status shows the result.
+   (every 20 minutes by default, at least 5). Nothing is synced until a folder is chosen; `/` means the whole account.
+   "Sync now" starts a sync at once; the status shows the result.
 3. Photos from Nextcloud are hidden or shown like local ones, but not deleted: they would come back with the next
    sync. "Disconnect" removes them from the frame again and revokes the app password on the server.
 

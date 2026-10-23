@@ -26,13 +26,17 @@ data class StoredNextcloud(
     val loginName: String = "",
     val appPassword: String = "",
     val enabled: Boolean = true,
-    val folder: String = "/",
+    /** Empty until the user has chosen one: a source that is connected but has no folder syncs nothing. */
+    val folder: String = "",
     val includeSubfolders: Boolean = true,
     val removeVanished: Boolean = true,
     val intervalMinutes: Int = DEFAULT_INTERVAL_MINUTES,
     val originalsBudgetMb: Int = DEFAULT_BUDGET_MB,
 ) {
     val connected: Boolean get() = serverUrl.isNotEmpty() && appPassword.isNotEmpty()
+
+    /** Connected, switched on and a folder chosen: only then the source syncs. */
+    val ready: Boolean get() = connected && enabled && folder.isNotEmpty()
 
     override fun toString() = "StoredNextcloud(server=$serverUrl, user=$loginName, connected=$connected, enabled=$enabled, folder=$folder)"
 
@@ -126,9 +130,9 @@ class NextcloudConfigStore(
         appPassword: String,
     ) = update(_config.value.copy(serverUrl = serverUrl, userId = userId, loginName = loginName, appPassword = appPassword, enabled = true))
 
-    /** Forgets server and credentials, keeps the options. */
+    /** Forgets server, credentials and the folder (it belongs to the account), keeps the other options. */
     @Synchronized
-    fun disconnect() = update(_config.value.copy(serverUrl = "", userId = "", loginName = "", appPassword = ""))
+    fun disconnect() = update(_config.value.copy(serverUrl = "", userId = "", loginName = "", appPassword = "", folder = ""))
 
     suspend fun flush() = store.flush()
 

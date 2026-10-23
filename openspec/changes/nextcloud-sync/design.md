@@ -80,7 +80,11 @@ One coroutine in the frame's scope runs the sync: once 30 seconds after start (t
 
 Connections time out after 15 s (connect) and 60 s (read) so that a hung server does not block the sync thread for long. With no network the sync fails at once, the status shows the error, the slideshow is not affected. A frame that starts with no network and no cache shows the empty state, as without any photos.
 
-### 11. Tests
+### 11. No default folder
+
+Connecting does not choose what is synced. A first version defaulted to `/` and started a sync two seconds after the login, which on a real account means the whole account: every folder is listed and every image up to the budget is downloaded. The configuration therefore has no default folder; the user chooses one in the interface (or enters `/` on purpose), and until then the schedule does not run, "sync now" answers `409 nextcloud_no_folder` and the interface says what to do. Disconnecting forgets the folder too, because it belongs to the account.
+
+### 12. Tests
 
 - JVM: the sync logic against an in-memory `RemoteFolder` (new, changed, unchanged, removed, partial listing, failure, hidden state kept, albums, storage reserve, eviction); the schedule function; `TrustAnchors` with a test root; the real client against a fake Nextcloud on NanoHTTPD (login flow, `PROPFIND`, `GET`, redirects, `401`, `404`, a stalled download) with the contract check of the new endpoints and `RouteAccessTest`.
 - Web UI: unit tests of the new view's logic and an end-to-end test with the fake Nextcloud added to the test server of the e2e run (connect, sync, photos appear, remote delete, disconnect).

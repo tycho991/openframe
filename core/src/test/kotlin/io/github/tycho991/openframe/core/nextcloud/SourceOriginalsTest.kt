@@ -38,6 +38,7 @@ class SourceOriginalsTest {
         NextcloudConfigStore(JsonStore(File(dir, "nextcloud.json"), StoredNextcloud.serializer(), TestScope(), log)).also {
             it.load()
             it.connect("https://cloud.example.org", "anna", "Anna", "app-pw")
+            it.patch(kotlinx.serialization.json.buildJsonObject { put("folder", kotlinx.serialization.json.JsonPrimitive("/")) })
         }
     }
     private val originals by lazy { OriginalsStore(File(dir, "originals")) }

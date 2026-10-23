@@ -96,9 +96,11 @@ class NextcloudService(
         }
     }
 
-    /** `false` if a sync is already running. Throws a 409 if there is no account. */
+    /** `false` if a sync is already running. Throws a 409 if there is no account or no folder is chosen. */
     fun requestSync(): Boolean {
-        if (!configs.config.value.connected) throw HttpException(409, "nextcloud_not_connected", "The Nextcloud source is not connected")
+        val config = configs.config.value
+        if (!config.connected) throw HttpException(409, "nextcloud_not_connected", "The Nextcloud source is not connected")
+        if (config.folder.isEmpty()) throw HttpException(409, "nextcloud_no_folder", "Choose a folder first")
         return scheduler.requestSync()
     }
 

@@ -43,6 +43,7 @@ class NextcloudSecrecyTest {
         NextcloudConfigStore(JsonStore(File(dir, "nextcloud.json"), StoredNextcloud.serializer(), TestScope(), log)).also {
             it.load()
             it.connect(nextcloud.baseUrl, nextcloud.userId, nextcloud.loginName, wrongPassword)
+            it.patch(kotlinx.serialization.json.buildJsonObject { put("folder", kotlinx.serialization.json.JsonPrimitive("/")) })
         }
     }
 

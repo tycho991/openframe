@@ -51,6 +51,7 @@ class NextcloudSchedulerTest {
         NextcloudConfigStore(JsonStore(File(dir, "nextcloud.json"), StoredNextcloud.serializer(), TestScope(), log)).also {
             it.load()
             it.connect("https://cloud.example.org", "anna", "Anna", "app-pw")
+            it.patch(kotlinx.serialization.json.buildJsonObject { put("folder", kotlinx.serialization.json.JsonPrimitive("/")) })
         }
     }
     private val resultStore by lazy { JsonStore(File(dir, "status.json"), StoredSyncResult.serializer(), TestScope(), log) }
@@ -187,11 +188,31 @@ class NextcloudSchedulerTest {
         advance(2 * 60 * 60_000L)
         assertEquals(0, source.scans)
         configs.connect("https://cloud.example.org", "anna", "Anna", "app-pw")
+        configs.patch(buildJsonObject { put("folder", JsonPrimitive("/")) })
         scheduler.configChanged()
         scope.runCurrent()
         advance(1_999)
         assertEquals(0, source.scans)
         advance(1)
+        assertEquals(1, source.scans)
+    }
+
+    @Test
+    fun `A connected frame without a folder does not sync`() {
+        // Connected, but no folder chosen (a disconnect forgets the folder).
+        configs.disconnect()
+        configs.connect("https://cloud.example.org", "anna", "Anna", "app-pw")
+        scheduler
+        advance(2 * 60 * 60_000L)
+        assertEquals(0, source.scans, "nothing runs until a folder is chosen")
+        scheduler.configChanged()
+        scope.runCurrent()
+        advance(10_000)
+        assertEquals(0, source.scans)
+        configs.patch(buildJsonObject { put("folder", JsonPrimitive("/Photos")) })
+        scheduler.configChanged()
+        scope.runCurrent()
+        advance(2_000)
         assertEquals(1, source.scans)
     }
 

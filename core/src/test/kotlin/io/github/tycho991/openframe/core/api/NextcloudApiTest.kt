@@ -40,13 +40,14 @@ class NextcloudApiTest {
             .jsonPrimitive.content
 
     /** Connects through the login flow the way the web UI does and returns the flow ID. */
-    private fun connect(): String {
+    private fun connect(folder: String? = "/"): String {
         val started = frame.send("POST", "/api/v1/nextcloud/login", """{"serverUrl":"https://cloud.example.org"}""")
         assertEquals(201, started.statusCode())
         val flow = ApiJson.decodeFromString(NextcloudLoginDto.serializer(), started.body())
         login.approved = true
         val done = ApiJson.decodeFromString(NextcloudLoginStateDto.serializer(), frame.get("/api/v1/nextcloud/login/${flow.flowId}").body())
         assertEquals("done", done.state)
+        if (folder != null) assertEquals(200, frame.send("PATCH", "/api/v1/nextcloud", """{"folder":"$folder"}""").statusCode())
         return flow.flowId
     }
 
@@ -67,7 +68,7 @@ class NextcloudApiTest {
         assertFalse(s.connected)
         assertNull(s.serverUrl)
         assertNull(s.user)
-        assertEquals(NextcloudSettingsDto(true, "/", true, true, 20, 2000), s.settings)
+        assertEquals(NextcloudSettingsDto(true, "", true, true, 20, 2000), s.settings)
         assertFalse(s.status.syncing)
         assertNull(s.status.ok)
     }
@@ -163,6 +164,19 @@ class NextcloudApiTest {
         assertEquals(400, bad.statusCode())
         assertTrue("intervalMinutes" in bad.body())
         assertEquals(45, state().settings.intervalMinutes)
+    }
+
+    @Test
+    fun `A connected frame without a folder syncs nothing and says why`() {
+        connect(folder = null)
+        assertEquals("", state().settings.folder)
+        clients.remote.put("a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")
+        val res = frame.send("POST", "/api/v1/nextcloud/sync")
+        assertEquals(409, res.statusCode())
+        assertEquals("nextcloud_no_folder", errorCode(res.body()))
+        Thread.sleep(300)
+        assertEquals(0, ApiJson.decodeFromString(PhotoPageDto.serializer(), frame.get("/api/v1/photos").body()).total)
+        assertEquals(emptyList<String>(), clients.remote.downloads)
     }
 
     @Test

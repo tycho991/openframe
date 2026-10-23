@@ -193,5 +193,8 @@
   "photos.noDeleteNextcloud": "Photos from Nextcloud cannot be deleted here. Hide them instead.",
   "error.read_only_source": "This photo comes from Nextcloud and cannot be deleted here. Hide it instead.",
   "error.nextcloud_unreachable": "The frame cannot reach the Nextcloud server, or does not trust its certificate.",
-  "error.nextcloud_not_connected": "The frame is not connected to Nextcloud."
+  "error.nextcloud_not_connected": "The frame is not connected to Nextcloud.",
+  "error.nextcloud_no_folder": "Choose a folder first.",
+  "nextcloud.noFolder": "Choose the folder whose photos should be shown, then save. Until then nothing is synced.",
+  "nextcloud.folderPlaceholder": "/Photos"
 }

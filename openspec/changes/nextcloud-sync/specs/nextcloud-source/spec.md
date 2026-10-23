@@ -33,11 +33,15 @@ The app password SHALL be stored only in the frame's private storage. The API SH
 - **THEN** the error in the status and in the log contains no password and no authorization header
 
 ### Requirement: Configuration
-The Nextcloud source SHALL have these settings: enabled, folder (default `/`), subfolders included (default on), remove vanished photos (default on), interval in minutes (5 to 1,440, default 20) and a budget for downloaded originals (100 to 50,000 MB, default 2,000 MB). Invalid values SHALL be rejected with the field named, changes SHALL be partial and SHALL take effect without a restart.
+The Nextcloud source SHALL have these settings: enabled, folder, subfolders included (default on), remove vanished photos (default on), interval in minutes (5 to 1,440, default 20) and a budget for originals (100 to 50,000 MB, default 2,000 MB). There is no default folder: until one is chosen nothing syncs, not even on request. Invalid values SHALL be rejected naming the field; changes SHALL be partial and take effect without a restart.
 
 #### Scenario: Interval too short
 - **WHEN** a client sets the interval to 2 minutes
 - **THEN** the API answers 400 and names the interval field
+
+#### Scenario: Connected without a folder
+- **WHEN** the user has connected and has not chosen a folder
+- **THEN** nothing is listed or downloaded, and a request to sync is answered with 409
 
 #### Scenario: Change of the folder
 - **WHEN** the folder is changed

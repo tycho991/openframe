@@ -106,7 +106,7 @@ class NextcloudSource(
 
     private suspend fun sync(): ScanResult {
         val config = configs.config.value
-        if (!config.connected || !config.enabled) return ScanResult(0, 0, 0, 0)
+        if (!config.ready) return ScanResult(0, 0, 0, 0)
         val remote = clients.remoteFolder(config)
         // The whole listing or an exception: nothing below runs on a part of it.
         val listing = remote.list(config.includeSubfolders).filter { ImageFormats.hasImageExtension(it.path) }.sortedBy { it.path }

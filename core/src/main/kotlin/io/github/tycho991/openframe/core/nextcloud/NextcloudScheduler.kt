@@ -91,7 +91,7 @@ class NextcloudScheduler(
         var wait: Long? = SyncSchedule.FIRST_SYNC_MS
         while (scope.isActive) {
             val config = configs.config.value
-            val active = config.connected && config.enabled
+            val active = config.ready
             val timeout = if (active) wait else null
             val reason = if (timeout == null) wake.receive() else withTimeoutOrNull(timeout) { wake.receive() }
             when (reason) {
@@ -122,7 +122,7 @@ class NextcloudScheduler(
 
     private suspend fun sync() {
         val config = configs.config.value
-        if (!config.connected || !config.enabled) {
+        if (!config.ready) {
             _status.value = _status.value.copy(syncing = false)
             return
         }
