@@ -104,6 +104,17 @@ class NextcloudClientTest {
     }
 
     @Test
+    fun `Names with characters that URI refuses are listed and downloaded`() {
+        nextcloud.put("Fotos [2025]/a|b {c}.jpg", ByteArray(5), "e1")
+        nextcloud.put("Fotos [2025]/Sub Ordner/100%.jpg", ByteArray(6), "e2")
+        val files = folder("/Fotos [2025]").list(recursive = true).sortedBy { it.path }
+        assertEquals(listOf("Sub Ordner/100%.jpg", "a|b {c}.jpg"), files.map { it.path })
+        val target = File(dir, "x.part")
+        folder("/Fotos [2025]").download(files.first { it.path.startsWith("a|b") }, target)
+        assertEquals(5, target.length())
+    }
+
+    @Test
     fun `An empty folder`() {
         nextcloud.folders += "Photos"
         assertEquals(emptyList<RemoteFile>(), folder("/Photos").list(recursive = true))

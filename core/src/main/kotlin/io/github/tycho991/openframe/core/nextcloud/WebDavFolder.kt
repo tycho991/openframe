@@ -68,7 +68,7 @@ class WebDavFolder(
         out: MutableList<RemoteFile>,
     ) {
         val url = urlOf(dir)
-        val own = url.encodedPath.trimEnd('/')
+        val own = PathDecoding.decode(url.encodedPath).trimEnd('/')
         val body = PROPFIND_BODY.toRequestBody("application/xml".toMediaType())
         val request =
             Request
@@ -91,14 +91,7 @@ class WebDavFolder(
             }
         for (entry in entries) {
             // The first entry of a listing is the folder itself.
-            if (entry.path ==
-                java.net
-                    .URI(own)
-                    .path
-                    .trimEnd('/')
-            ) {
-                continue
-            }
+            if (entry.path == own) continue
             val path = if (dir.isEmpty()) entry.name else "$dir/${entry.name}"
             if (entry.isFolder) {
                 if (recursive) walk(path, recursive, out)

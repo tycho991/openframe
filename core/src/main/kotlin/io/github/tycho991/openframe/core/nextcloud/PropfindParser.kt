@@ -4,7 +4,6 @@ import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.helpers.DefaultHandler
 import java.io.InputStream
-import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -128,12 +127,7 @@ object PropfindParser {
             text.setLength(0)
         }
 
-        private fun decodedPath(href: String): String =
-            try {
-                URI(href).path ?: href
-            } catch (e: java.net.URISyntaxException) {
-                href
-            }.trimEnd('/')
+        private fun decodedPath(href: String): String = PathDecoding.decode(href.substringBefore('?')).trimEnd('/')
 
         private fun parseDate(value: String): Long =
             try {

@@ -58,3 +58,24 @@ class PropfindParserTest {
         assertTrue(entries.none { "root:" in it.path })
     }
 }
+
+class PathDecodingTest {
+    @Test
+    fun `Escapes become characters and a plus stays a plus`() {
+        assertEquals("/a b/München+Ulm.jpg", PathDecoding.decode("/a%20b/M%C3%BCnchen+Ulm.jpg"))
+        assertEquals("/x+y", PathDecoding.decode("/x%2By"))
+    }
+
+    @Test
+    fun `Characters that java net URI refuses are kept`() {
+        assertEquals("/Fotos [2025]/a|b {c}.jpg", PathDecoding.decode("/Fotos%20[2025]/a|b%20{c}.jpg"))
+        assertEquals("/Fotos [2025]/a|b {c}.jpg", PathDecoding.decode("/Fotos [2025]/a|b {c}.jpg"))
+    }
+
+    @Test
+    fun `A malformed escape stays as it is`() {
+        assertEquals("/100%", PathDecoding.decode("/100%"))
+        assertEquals("/a%zzb", PathDecoding.decode("/a%zzb"))
+        assertEquals("/a%2", PathDecoding.decode("/a%2"))
+    }
+}
