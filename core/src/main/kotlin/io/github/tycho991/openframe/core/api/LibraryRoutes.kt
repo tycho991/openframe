@@ -25,6 +25,7 @@ data class ImageUrlsDto(
 @Serializable
 data class PhotoDto(
     val id: String,
+    val source: String,
     val path: String,
     val album: String?,
     val hidden: Boolean,
@@ -156,6 +157,7 @@ fun Router.libraryRoutes(
         lib: Library,
     ) = PhotoDto(
         id = entry.id,
+        source = entry.source,
         path = entry.path,
         album = entry.album,
         hidden = entry.hidden,

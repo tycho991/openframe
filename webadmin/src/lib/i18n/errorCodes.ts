@@ -24,4 +24,8 @@ export const errorKeys: Record<string, Key> = {
   internal_error: "error.internal_error",
   method_not_allowed: "error.method_not_allowed",
   network: "error.network",
+  read_only_source: "error.read_only_source",
+  nextcloud_unreachable: "error.nextcloud_unreachable",
+  nextcloud_not_connected: "error.nextcloud_not_connected",
+  nextcloud_no_folder: "error.nextcloud_no_folder",
 };

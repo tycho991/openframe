@@ -13,6 +13,11 @@ export type SkippedFile = S["SkippedFile"];
 export type State = S["State"];
 export type BatchResult = S["BatchResult"];
 export type UploadResult = S["UploadResult"];
+export type NextcloudState = S["NextcloudState"];
+export type NextcloudSettings = S["NextcloudSettings"];
+export type NextcloudSettingsPatch = S["NextcloudSettingsPatch"];
+export type NextcloudLogin = S["NextcloudLogin"];
+export type NextcloudLoginState = S["NextcloudLoginState"];
 export type PhotoSort = "date_desc" | "date_asc" | "name_asc" | "name_desc";
 
 /** Error response of the API with code and optional errors per field. */
@@ -131,6 +136,14 @@ export function createApi(options: ApiOptions) {
     setAlbumHidden: (name: string, hidden: boolean) =>
       call<Album>("PATCH", `/albums/${encodeURIComponent(name)}`, { hidden }),
     state: () => call<State>("GET", "/state"),
+    nextcloud: () => call<NextcloudState>("GET", "/nextcloud"),
+    patchNextcloud: (patch: NextcloudSettingsPatch) => call<NextcloudState>("PATCH", "/nextcloud", patch),
+    disconnectNextcloud: () => call<void>("DELETE", "/nextcloud"),
+    startNextcloudLogin: (serverUrl: string) =>
+      call<NextcloudLogin>("POST", "/nextcloud/login", { serverUrl }),
+    pollNextcloudLogin: (flowId: string) =>
+      call<NextcloudLoginState>("GET", `/nextcloud/login/${encodeURIComponent(flowId)}`),
+    syncNextcloud: () => call<S["NextcloudSyncRequest"]>("POST", "/nextcloud/sync"),
 
     /** Uploads a file, with progress from 0 to 1. Through XHR, because fetch knows no upload progress. */
     upload(file: File, album: string | null, onProgress: (fraction: number) => void): Promise<UploadResult> {

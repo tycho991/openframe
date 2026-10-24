@@ -1,6 +1,6 @@
-export type Route = "photos" | "albums" | "settings" | "devices";
+export type Route = "photos" | "albums" | "nextcloud" | "settings" | "devices";
 
-export const ROUTES: Route[] = ["photos", "albums", "settings", "devices"];
+export const ROUTES: Route[] = ["photos", "albums", "nextcloud", "settings", "devices"];
 
 function parse(pathname: string): Route {
   const first = pathname.replace(/^\/+/, "").split("/")[0] as Route;

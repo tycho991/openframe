@@ -23,6 +23,8 @@ data class PhotoEntry(
     /** Increases with every change of the file so that caches become invalid. */
     val version: Int,
     val hidden: Boolean = false,
+    /** The ETag of the file on the server for photos of a remote source, `null` for local photos. */
+    val etag: String? = null,
 ) {
     /** The first folder below the photo folder, `null` for photos directly in it. */
     val album: String? get() = path.substringBefore('/', "").ifEmpty { null }

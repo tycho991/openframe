@@ -25,6 +25,10 @@
 
   let selecting = $state(false);
   const selected = new SvelteSet<string>();
+  // Photos from Nextcloud are only read by the frame: they can be hidden, not deleted.
+  const canDelete = $derived(
+    [...selected].every((id) => items.find((p) => p.id === id)?.source !== "nextcloud"),
+  );
   let detail = $state<Photo | null>(null);
   let confirm = $state<{ message: string; action: () => Promise<void> } | null>(null);
   let uploadFiles = $state<File[] | null>(null);
@@ -206,9 +210,13 @@
       <span>{t("photos.selected", { n: selected.size })}</span>
       <button type="button" onclick={() => batch("hide")}>{t("photos.hide")}</button>
       <button type="button" onclick={() => batch("show")}>{t("photos.show")}</button>
-      <button type="button" class="danger" onclick={() => askDelete([...selected], false)}
-        >{t("common.delete")}</button
-      >
+      {#if canDelete}
+        <button type="button" class="danger" onclick={() => askDelete([...selected], false)}
+          >{t("common.delete")}</button
+        >
+      {:else}
+        <span class="muted">{t("photos.noDeleteNextcloud")}</span>
+      {/if}
     </div>
   {/if}
 </section>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import AlbumsView from "./components/AlbumsView.svelte";
   import DevicesView from "./components/DevicesView.svelte";
+  import NextcloudView from "./components/NextcloudView.svelte";
   import PairedBanner from "./components/PairedBanner.svelte";
   import PairingDialog from "./components/PairingDialog.svelte";
   import PhotosView from "./components/PhotosView.svelte";
@@ -27,6 +28,7 @@
   const labels: Record<Route, Parameters<typeof t>[0]> = {
     photos: "nav.photos",
     albums: "nav.albums",
+    nextcloud: "nav.nextcloud",
     settings: "nav.settings",
     devices: "nav.devices",
   };
@@ -96,6 +98,8 @@
       <PhotosView />
     {:else if router.route === "albums"}
       <AlbumsView />
+    {:else if router.route === "nextcloud"}
+      <NextcloudView />
     {:else if router.route === "settings"}
       <SettingsView />
     {:else}

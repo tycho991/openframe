@@ -28,6 +28,21 @@ export const usb = (fixture: string, to: string, { scan = true } = {}) =>
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
+/** The user approves the login in the Nextcloud tab. */
+export const nextcloudApprove = () => control("/nextcloud/approve");
+
+/** A file in the Nextcloud folder of the fake server. */
+export const nextcloudPut = (fixture: string, to: string, etag = "etag-" + to) =>
+  control(
+    `/nextcloud/put?fixture=${encodeURIComponent(fixture)}&path=${encodeURIComponent(to)}&etag=${etag}`,
+  );
+
+export const nextcloudRemove = (from: string) =>
+  control(`/nextcloud/remove?path=${encodeURIComponent(from)}`);
+
+/** Lets listing the folder fail like a server that is down. */
+export const nextcloudFail = (on: boolean) => control(`/nextcloud/fail?on=${on ? 1 : 0}`);
+
 /** Pairs another client directly through the API and returns its token. */
 export async function pairOtherDevice(baseURL: string, name: string): Promise<string> {
   const code = await frameCode();
