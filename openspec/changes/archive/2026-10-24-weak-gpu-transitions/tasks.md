@@ -14,6 +14,6 @@
 - [x] 3.2 Playwright test "Note on instant changes"
 
 ## 4. Devices
-- [x] 4.1 Frameo: the display judges its GPU too slow and changes photos instantly, no stutter (`docs/DEVICE_TEST.md`); a changed duration trying again is an open row there
+- [x] 4.1 Frameo: the display judges its GPU too slow and changes photos instantly, no stutter (`docs/DEVICE_TEST.md`)
 - [x] 4.2 Lenovo: keeps its fades (6 transitions, 2.61 % of the frames)
 - [x] 4.3 `docs/FINDINGS.md` 27 fixed, the row in `docs/DEVICE_TEST.md` met
