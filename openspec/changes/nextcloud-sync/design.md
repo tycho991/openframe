@@ -99,7 +99,7 @@ Connecting does not choose what is synced. A first version defaulted to `/` and 
 - **Changing the folder loses hidden states.** Accepted and stated in the interface.
 - **Eviction can leave a photo that cannot be rendered when the server is away.** The photo stays visible (its renders are cached); only a new rendering waits for the server.
 
-## Open Questions
+## Decisions from the device measurements (24 Oct 2026)
 
-- Which trust anchors besides `ISRG Root X1` are needed for the servers in use (a root of Sectigo or USERTrust)? The list is fixed when the first real servers are tried on both devices; the test of the anchors does not depend on it.
-- Should the sync pause while a transition runs? Decide after the measurement on the Lenovo.
+- **Trust anchors:** the three bundled anchors stay (`ISRG Root X1`, `Sectigo E46`, `USERTrust ECC`). The real server sends leaf, `YR1` and `Root YR` (cross-signed by `ISRG Root X1`) and connects on the Lenovo (Android 5.0.1) and the Frameo (Android 6.0.1). One risk to watch: when Let's Encrypt stops cross-signing, servers send a chain that ends at `ISRG Root YR` or `YE`, and old devices will not know them; then they are added to the bundle (a new anchor is a security decision, so not done ahead of need).
+- **Pausing the sync during transitions:** no. The Lenovo showed 2.79 % late frames while 102 originals came in (start and end frame only), the same as without a sync. The Frameo no longer fades at all since `weak-gpu-transitions`.

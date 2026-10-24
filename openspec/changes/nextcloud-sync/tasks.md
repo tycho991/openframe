@@ -47,7 +47,7 @@
 - [x] 8.1 Frameo (Android 6): connect to a real Nextcloud with a Let's Encrypt certificate and sync a folder; verify the rows of `docs/DEVICE_TEST.md` for the login, the first sync (time and memory) and a second sync without downloads
 - [x] 8.2 Lenovo (Android 5): the same rows; verify them
 - [ ] 8.3 On both: a photo deleted on the server, Wi-Fi off during a sync with the recovery afterwards, eviction and a new rendering, the jank of the slideshow during a sync (measured as in `FINDINGS.md`), disconnecting; verify the rows are ticked or have a finding
-- [ ] 8.4 Decide the two open questions of the design (further trust anchors, pausing the sync during transitions) from the measurements and record the result in `design.md`
+- [x] 8.4 Decide the two open questions of the design (further trust anchors, pausing the sync during transitions) from the measurements and record the result in `design.md`
 
 ## Workflow follow-up
 
