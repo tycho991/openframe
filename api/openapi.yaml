@@ -1009,10 +1009,15 @@ components:
     State:
       type: object
       additionalProperties: false
-      required: [libraryVersion, settingsVersion]
+      required: [libraryVersion, settingsVersion, transitionFallback]
       properties:
         libraryVersion: { type: integer }
         settingsVersion: { type: integer }
+        transitionFallback:
+          type: boolean
+          description: >-
+            The frame changes photos instantly because its display could not keep up with the transition in the
+            settings. Changing the transition or its duration tries it again.
 
     LogEntry:
       type: object

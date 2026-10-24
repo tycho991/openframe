@@ -37,16 +37,19 @@ import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.settings.Settings
+import io.github.tycho991.openframe.core.settings.Transition
 import io.github.tycho991.openframe.core.slideshow.SlideState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 
@@ -245,6 +248,7 @@ class DisplayActivity : Activity() {
         s.launch {
             // Wait only for the core, not for server or network.
             core.ready.filter { it }.first()
+            launch { core.transitions.judgementDue.collect { if (it) judgeTransitions(core) } }
             launch { core.settings.settings.collect(::applySettings) }
             launch { core.slideshow.state.collect(::render) }
             launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
@@ -267,6 +271,25 @@ class DisplayActivity : Activity() {
                     }
             }
         }
+    }
+
+    /** Measures what a crossfade costs this display while the first photo is up; the best of three runs counts. */
+    private suspend fun judgeTransitions(core: FrameCore) {
+        delay(JUDGE_DELAY_MS)
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        val frameMs =
+            withContext(Dispatchers.Default) {
+                (1..3)
+                    .mapNotNull {
+                        GpuProbe.fadeFrameMs(
+                            maxOf(metrics.widthPixels, metrics.heightPixels),
+                            minOf(metrics.widthPixels, metrics.heightPixels),
+                        )
+                    }.minOrNull()
+            }
+        val refresh = windowManager.defaultDisplay.refreshRate.takeIf { it > 1f } ?: 60f
+        core.transitions.judge(frameMs, 1000f / refresh)
     }
 
     private fun applySettings(s: Settings) {
@@ -300,9 +323,19 @@ class DisplayActivity : Activity() {
         loading.visibility = if (state == SlideState.Loading) View.VISIBLE else View.GONE
         emptyState.visibility = if (showingEmpty) View.VISIBLE else View.GONE
         when (state) {
-            is SlideState.Showing -> renderer.show(state.photo, state.file, state.step, s.transition, s.transitionDurationMs.toLong())
-            SlideState.Empty -> renderer.clear()
-            SlideState.Loading -> Unit
+            is SlideState.Showing -> {
+                // A display that could not keep up with the transitions gets instant changes, the setting stays as it is.
+                val transition = if (core?.transitions?.cut?.value == true) Transition.NONE else s.transition
+                renderer.show(state.photo, state.file, state.step, transition, s.transitionDurationMs.toLong())
+            }
+
+            SlideState.Empty -> {
+                renderer.clear()
+            }
+
+            SlideState.Loading -> {
+                Unit
+            }
         }
         core?.let { c ->
             c.pairing.setShownOnFrame(
@@ -579,6 +612,7 @@ class DisplayActivity : Activity() {
     private companion object {
         const val OVERLAY_Z = 10f
         const val HINT_MS = 8_000L
+        const val JUDGE_DELAY_MS = 5_000L
 
         @Suppress("DEPRECATION")
         const val IMMERSIVE_FLAGS =

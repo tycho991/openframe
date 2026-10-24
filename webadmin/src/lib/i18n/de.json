@@ -110,6 +110,7 @@
   "settings.transition.slide": "Schieben",
   "settings.transition.none": "Keiner",
   "settings.transitionDuration": "Dauer des Übergangs (ms)",
+  "settings.transitionFallback": "Das Display dieses Rahmens kann den Übergang nicht ruckelfrei zeigen, deshalb wechseln die Fotos sofort. Ändere den Übergang oder seine Dauer, um es erneut zu versuchen.",
   "settings.fillMode": "Füllmodus",
   "settings.fillMode.fill": "Bildschirm füllen (beschneiden)",
   "settings.fillMode.fit": "Ganz zeigen (mit Rändern)",

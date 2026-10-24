@@ -316,6 +316,18 @@ class LibraryApiTest {
     }
 
     @Test
+    fun `State tells that the frame changes photos instantly`() {
+        fun fallback() =
+            Json
+                .parseToJsonElement(frame.get("/api/v1/state").body())
+                .jsonObject["transitionFallback"]!!
+                .jsonPrimitive.content
+        assertEquals("false", fallback())
+        frame.core.transitions.judge(frameMs = 14f, refreshMs = 17.65f)
+        assertEquals("true", fallback())
+    }
+
+    @Test
     fun `New photo changes the library version`() {
         val before =
             Json

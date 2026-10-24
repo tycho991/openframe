@@ -186,6 +186,12 @@ object TestServerMain {
                             ok("fail ${q["on"]}")
                         }
 
+                        // The display measured that its GPU is too slow to fade: the frame changes photos instantly.
+                        "/transitions/slow" -> {
+                            core.transitions.judge(frameMs = 14f, refreshMs = 17.65f)
+                            ok("slow")
+                        }
+
                         else -> {
                             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "unknown")
                         }

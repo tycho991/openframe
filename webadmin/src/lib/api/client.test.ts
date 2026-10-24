@@ -15,7 +15,9 @@ function respond(status: number, body?: unknown): Response {
 
 describe("API client", () => {
   it("sends the token as Bearer", async () => {
-    const fetch = vi.fn(async () => respond(200, { libraryVersion: 1, settingsVersion: 2 }));
+    const fetch = vi.fn(async () =>
+      respond(200, { libraryVersion: 1, settingsVersion: 2, transitionFallback: false }),
+    );
     const api = createApi({ tokens: memoryTokens("abc"), onUnauthorized: () => {}, fetch });
     await api.state();
     expect(fetch).toHaveBeenCalledWith(
