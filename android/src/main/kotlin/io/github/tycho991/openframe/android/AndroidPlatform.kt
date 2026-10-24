@@ -2,16 +2,22 @@ package io.github.tycho991.openframe.android
 
 import android.content.Context
 import android.media.MediaScannerConnection
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.util.DisplayMetrics
 import android.view.Surface
 import android.view.WindowManager
+import io.github.tycho991.openframe.core.platform.AddressCandidate
 import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.ConnectionKind
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
+import io.github.tycho991.openframe.core.platform.lanAddresses
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.NetworkInterface
 
 /** Device data from the system. */
@@ -29,17 +35,52 @@ class AndroidPlatformInfo(
     override val screenWidth: Int get() = natural.first
     override val screenHeight: Int get() = natural.second
 
-    override fun ipAddresses(): List<String> =
-        runCatching {
-            NetworkInterface
-                .getNetworkInterfaces()
-                .toList()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.toList() }
-                .filterIsInstance<Inet4Address>()
-                .map { it.hostAddress }
-                .filterNotNull()
-        }.getOrDefault(emptyList())
+    override fun ipAddresses(): List<String> = lanAddresses(addressCandidates())
+
+    /**
+     * Every IPv4 address of the device with the kind of connection it is on. The system says what a network is
+     * (Wi-Fi, mobile data, VPN); interface names differ by vendor and cannot tell. Interfaces that no network
+     * of the device owns, such as a Wi-Fi hotspot or USB tethering, count as [ConnectionKind.OTHER]. If the
+     * system cannot be asked, every interface is a candidate, as before.
+     */
+    private fun addressCandidates(): List<AddressCandidate> {
+        val interfaces = runCatching { NetworkInterface.getNetworkInterfaces().toList() }.getOrDefault(emptyList())
+        val fromInterfaces = { skip: Set<String> ->
+            interfaces
+                .filter { !it.isLoopback && it.isUp && it.name !in skip }
+                .flatMap { ipv4(it.inetAddresses.toList()) }
+        }
+        return runCatching {
+            val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val owned = mutableSetOf<String>()
+
+            // getAllNetworks is deprecated from API 31 but still works; its replacement, a NetworkCallback, is
+            // asynchronous, and the address is read synchronously.
+            @Suppress("DEPRECATION")
+            val networks = connectivity.allNetworks
+            val classified =
+                networks.flatMap { network ->
+                    val capabilities = connectivity.getNetworkCapabilities(network)
+                    val properties = connectivity.getLinkProperties(network)
+                    if (capabilities == null || properties == null) return@flatMap emptyList()
+                    properties.interfaceName?.let { owned += it }
+                    val kind = connectionKind(capabilities)
+                    ipv4(properties.linkAddresses.map { it.address }).map { AddressCandidate(it, kind) }
+                }
+            classified + fromInterfaces(owned).map { AddressCandidate(it, ConnectionKind.OTHER) }
+        }.getOrElse { fromInterfaces(emptySet()).map { AddressCandidate(it, ConnectionKind.OTHER) } }
+    }
+
+    private fun connectionKind(capabilities: NetworkCapabilities): ConnectionKind =
+        when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> ConnectionKind.VPN
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionKind.CELLULAR
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionKind.WIFI
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionKind.ETHERNET
+            else -> ConnectionKind.OTHER
+        }
+
+    private fun ipv4(addresses: List<InetAddress>): List<String> = addresses.filterIsInstance<Inet4Address>().mapNotNull { it.hostAddress }
 
     /** Resolution in the device's natural orientation, independent of the current rotation. */
     @Suppress("DEPRECATION")

@@ -25,7 +25,10 @@ interface PlatformInfo {
     val screenWidth: Int
     val screenHeight: Int
 
-    /** IPv4 addresses on the LAN that the hint on the frame shows. */
+    /**
+     * IPv4 addresses that a browser on the local network can reach, best first (see [lanAddresses]). The hint on
+     * the frame shows the first. Mobile data addresses are not included, so the list is empty without Wi-Fi.
+     */
     fun ipAddresses(): List<String>
 
     /** Free storage on the volume that contains [dir]. */
