@@ -323,7 +323,7 @@ class LibraryApiTest {
                 .jsonObject["transitionFallback"]!!
                 .jsonPrimitive.content
         assertEquals("false", fallback())
-        repeat(3) { frame.core.transitions.report(frames = 85, late = 40) }
+        frame.core.transitions.judge(frameMs = 14f, refreshMs = 17.65f)
         assertEquals("true", fallback())
     }
 

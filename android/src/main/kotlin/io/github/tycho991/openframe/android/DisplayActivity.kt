@@ -44,10 +44,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 
@@ -113,13 +115,7 @@ class DisplayActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         setContentView(R.layout.activity_display)
-        renderer =
-            SlideRenderer(
-                findViewById(R.id.photo_a),
-                findViewById(R.id.photo_b),
-                { core?.slideshow?.reportUndecodable(it) },
-                { frames, late -> core?.transitions?.report(frames, late) },
-            )
+        renderer = SlideRenderer(findViewById(R.id.photo_a), findViewById(R.id.photo_b)) { core?.slideshow?.reportUndecodable(it) }
         clock = ClockOverlay(this, findViewById(R.id.clock), findViewById(R.id.clock_time), findViewById(R.id.clock_date))
         loading = findViewById(R.id.loading)
         emptyState = findViewById(R.id.empty_state)
@@ -252,6 +248,7 @@ class DisplayActivity : Activity() {
         s.launch {
             // Wait only for the core, not for server or network.
             core.ready.filter { it }.first()
+            launch { core.transitions.judgementDue.collect { if (it) judgeTransitions(core) } }
             launch { core.settings.settings.collect(::applySettings) }
             launch { core.slideshow.state.collect(::render) }
             launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
@@ -274,6 +271,25 @@ class DisplayActivity : Activity() {
                     }
             }
         }
+    }
+
+    /** Measures what a crossfade costs this display while the first photo is up; the best of three runs counts. */
+    private suspend fun judgeTransitions(core: FrameCore) {
+        delay(JUDGE_DELAY_MS)
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        val frameMs =
+            withContext(Dispatchers.Default) {
+                (1..3)
+                    .mapNotNull {
+                        GpuProbe.fadeFrameMs(
+                            maxOf(metrics.widthPixels, metrics.heightPixels),
+                            minOf(metrics.widthPixels, metrics.heightPixels),
+                        )
+                    }.minOrNull()
+            }
+        val refresh = windowManager.defaultDisplay.refreshRate.takeIf { it > 1f } ?: 60f
+        core.transitions.judge(frameMs, 1000f / refresh)
     }
 
     private fun applySettings(s: Settings) {
@@ -596,6 +612,7 @@ class DisplayActivity : Activity() {
     private companion object {
         const val OVERLAY_Z = 10f
         const val HINT_MS = 8_000L
+        const val JUDGE_DELAY_MS = 5_000L
 
         @Suppress("DEPRECATION")
         const val IMMERSIVE_FLAGS =

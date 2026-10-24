@@ -6,10 +6,10 @@ On the Frameo the crossfade of two full-screen photos runs at about 28 instead o
 
 ## What Changes
 
-- **The display measures its own transitions** (the frames that arrive late while a fade or slide runs) and, when a device cannot keep up, **changes photos instantly** instead of stuttering. The photos stay sharp.
-- The rule: three of the last four transitions had more than a fifth of their frames late. The fallback is kept across restarts and ends when the user changes the transition or its duration, which tries again.
+- **The display measures once what a fade costs it** (a short test that blends two textures of the screen's size outside any window) and, when a frame takes more than half a refresh interval, **changes photos instantly** instead of stuttering. The photos stay sharp.
+- The verdict is kept across restarts and is made anew when the user changes the transition or its duration, which also tries again.
 - The setting for the transition is not changed. The API tells the interface (`transitionFallback` in `GET /api/v1/state`), and the interface says next to the setting that this frame shows instant changes and how to try again.
-- Devices that manage the transition (the Lenovo) are not affected.
+- Devices that manage the transition (the Lenovo: 6 ms of 16.7 ms) are not affected; the Frameo takes 13.9 ms of 17.7 ms.
 
 Out of scope: smaller or compressed textures, a transition that is cheaper than the fade (the slide was measured and is not smooth enough either), and a setting to switch the fallback off.
 

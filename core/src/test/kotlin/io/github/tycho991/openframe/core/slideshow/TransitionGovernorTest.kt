@@ -20,102 +20,84 @@ class TransitionGovernorTest {
 
     private val log = AppLog(TestClock())
     private val settings = Settings.defaults("PFF_1024")
-
     private val store by lazy { JsonStore(File(dir, "transitions.json"), StoredTransitionGovernor.serializer(), TestScope(), log) }
 
-    private fun governor() =
+    private fun governor(with: Settings = settings) =
         TransitionGovernor(store, log).also {
             it.load()
-            it.onSettings(settings)
+            it.onSettings(with)
         }
 
-    private fun TransitionGovernor.smooth() = report(frames = 85, late = 2)
-
-    private fun TransitionGovernor.stuttering() = report(frames = 85, late = 40)
-
     @Test
-    fun `A device that keeps up stays on its transitions`() {
+    fun `A device that blends in a third of a frame keeps its transitions`() {
         val g = governor()
-        repeat(20) { g.smooth() }
+        assertTrue(g.judgementDue.value)
+        g.judge(frameMs = 5.4f, refreshMs = 16.7f)
         assertFalse(g.cut.value)
+        assertFalse(g.judgementDue.value)
     }
 
     @Test
-    fun `Three late transitions of the last four switch to instant changes`() {
+    fun `A device that needs most of a frame to blend changes photos instantly`() {
         val g = governor()
-        g.stuttering()
-        g.stuttering()
-        g.smooth()
-        assertFalse(g.cut.value)
-        g.stuttering()
+        g.judge(frameMs = 13.9f, refreshMs = 17.65f)
         assertTrue(g.cut.value)
+        assertFalse(g.judgementDue.value)
     }
 
     @Test
-    fun `Two late transitions in a row are not enough`() {
+    fun `The limit is half a refresh interval`() {
         val g = governor()
-        g.stuttering()
-        g.stuttering()
+        g.judge(frameMs = 8.35f, refreshMs = 16.7f)
         assertFalse(g.cut.value)
+        val other = governor(settings.copy(transitionDurationMs = 1000))
+        other.judge(frameMs = 8.4f, refreshMs = 16.7f)
+        assertTrue(other.cut.value)
     }
 
     @Test
-    fun `An old late transition drops out of the window`() {
+    fun `A device that cannot be measured keeps its transitions`() {
         val g = governor()
-        g.stuttering()
-        g.smooth()
-        g.smooth()
-        g.smooth()
-        g.stuttering()
-        g.stuttering()
+        g.judge(frameMs = null, refreshMs = 16.7f)
         assertFalse(g.cut.value)
+        assertFalse(g.judgementDue.value)
     }
 
     @Test
-    fun `The limit is a fifth of the frames`() {
-        val g = governor()
-        repeat(4) { g.report(frames = 100, late = 20) }
-        assertFalse(g.cut.value)
-        repeat(4) { g.report(frames = 100, late = 21) }
-        assertTrue(g.cut.value)
+    fun `Without a transition nothing is measured`() {
+        val g = governor(settings.copy(transition = Transition.NONE))
+        assertFalse(g.judgementDue.value)
+        g.onSettings(settings.copy(transition = Transition.NONE, transitionDurationMs = 0))
+        assertFalse(g.judgementDue.value)
+        g.onSettings(settings)
+        assertTrue(g.judgementDue.value)
     }
 
     @Test
-    fun `A transition with few frames says nothing`() {
-        val g = governor()
-        repeat(10) { g.report(frames = 5, late = 5) }
-        assertFalse(g.cut.value)
-    }
-
-    @Test
-    fun `The fallback survives a restart`() {
-        val g = governor()
-        repeat(3) { g.stuttering() }
+    fun `The verdict survives a restart and is not measured again`() {
+        governor().judge(frameMs = 13.9f, refreshMs = 17.65f)
         runBlocking { store.flush() }
-        assertTrue(g.cut.value)
         val again = governor()
         assertTrue(again.cut.value)
+        assertFalse(again.judgementDue.value)
     }
 
     @Test
     fun `Another transition or duration tries again`() {
         val g = governor()
-        repeat(3) { g.stuttering() }
-        assertTrue(g.cut.value)
+        g.judge(frameMs = 13.9f, refreshMs = 17.65f)
         g.onSettings(settings)
         assertTrue(g.cut.value)
         g.onSettings(settings.copy(transitionDurationMs = settings.transitionDurationMs + 500))
         assertFalse(g.cut.value)
-        g.onSettings(settings.copy(transition = Transition.SLIDE))
-        repeat(3) { g.stuttering() }
-        assertTrue(g.cut.value)
+        assertTrue(g.judgementDue.value)
     }
 
     @Test
-    fun `While photos change instantly nothing is measured`() {
+    fun `A second report for the same setting is ignored`() {
         val g = governor()
-        repeat(3) { g.stuttering() }
-        repeat(10) { g.smooth() }
+        g.judge(frameMs = 13.9f, refreshMs = 17.65f)
+        g.judge(frameMs = 1f, refreshMs = 17.65f)
         assertTrue(g.cut.value)
     }
 }

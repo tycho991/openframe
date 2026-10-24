@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.slideshow
 
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.settings.Settings
+import io.github.tycho991.openframe.core.settings.Transition
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,27 +11,34 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class StoredTransitionGovernor(
-    /** The transition and duration the verdicts are about: another one tries again. */
+    /** The transition and duration the verdict is about: another one is judged anew. */
     val key: String = "",
-    /** Whether the last transitions were late, oldest first, at most [TransitionGovernor.WINDOW]. */
-    val recent: List<Boolean> = emptyList(),
+    /** Whether the device was measured for [key]. */
+    val judged: Boolean = false,
     val cut: Boolean = false,
 )
 
 /**
- * Decides whether a device can show transitions. The display reports how many frames of each finished transition
- * arrived late; when most of the recent transitions were mostly late, photos change instantly ([cut]) until the
- * transition or its duration is changed. The setting itself is never touched.
+ * Decides whether a device can show transitions. The display cannot see from inside the slideshow that its GPU is
+ * behind (the transitions run on the render thread), so it measures what one blended frame of the screen's size costs
+ * and reports it with [judge]. When that takes more than half a refresh interval there is no room left for the rest of
+ * the frame and photos change instantly ([cut]) until the transition or its duration is changed. The setting itself is
+ * never touched.
  */
 class TransitionGovernor(
     private val store: JsonStore<StoredTransitionGovernor>,
     private val log: AppLog,
 ) {
     private var state = StoredTransitionGovernor()
+    private var transition = Transition.NONE
     private val _cut = MutableStateFlow(false)
+    private val _judgementDue = MutableStateFlow(false)
 
     /** Photos change instantly because the display could not keep up with the transition. */
     val cut: StateFlow<Boolean> = _cut.asStateFlow()
+
+    /** The display is to measure and call [judge]. */
+    val judgementDue: StateFlow<Boolean> = _judgementDue.asStateFlow()
 
     @Synchronized
     fun load() {
@@ -41,24 +49,35 @@ class TransitionGovernor(
     /** The settings changed (or were loaded): another transition or duration starts over. */
     @Synchronized
     fun onSettings(settings: Settings) {
+        transition = if (settings.transitionDurationMs <= 0) Transition.NONE else settings.transition
         val key = "${settings.transition}/${settings.transitionDurationMs}"
-        if (key == state.key) return
-        val wasCut = state.cut
-        update(StoredTransitionGovernor(key = key))
-        if (wasCut) log.i(TAG, "Transition setting changed, trying it again")
+        if (key != state.key) {
+            if (state.cut) log.i(TAG, "Transition setting changed, trying it again")
+            update(StoredTransitionGovernor(key = key))
+        }
+        _judgementDue.value = !state.judged && transition != Transition.NONE
     }
 
-    /** A transition ended with [late] of [frames] frames too late. Transitions that were cut short are not reported. */
+    /**
+     * One blended frame took [frameMs] on this device, with a refresh interval of [refreshMs]. `null` if the device
+     * could not be measured: then the transitions stay.
+     */
     @Synchronized
-    fun report(
-        frames: Int,
-        late: Int,
+    fun judge(
+        frameMs: Float?,
+        refreshMs: Float,
     ) {
-        if (state.cut || frames < MIN_FRAMES) return
-        val recent = (state.recent + (late * LATE_DENOMINATOR > frames)).takeLast(WINDOW)
-        val cut = recent.count { it } >= BAD_OF_WINDOW
-        update(state.copy(recent = recent, cut = cut))
-        if (cut) log.w(TAG, "$late of $frames frames of the transition were late again, photos change instantly from now on")
+        if (state.judged) return
+        val cut = frameMs != null && frameMs > refreshMs * LIMIT
+        update(state.copy(judged = true, cut = cut))
+        _judgementDue.value = false
+        if (frameMs == null) {
+            log.w(TAG, "The display could not be measured, transitions stay")
+        } else if (cut) {
+            log.w(TAG, "A blended frame takes $frameMs ms of $refreshMs ms, photos change instantly from now on")
+        } else {
+            log.i(TAG, "A blended frame takes $frameMs ms of $refreshMs ms, transitions stay")
+        }
     }
 
     private fun update(next: StoredTransitionGovernor) {
@@ -68,17 +87,8 @@ class TransitionGovernor(
     }
 
     companion object {
-        /** The last transitions that count. */
-        const val WINDOW = 4
-
-        /** So many of them must have been late. */
-        const val BAD_OF_WINDOW = 3
-
-        /** More than 1/5 of the frames late makes a transition late. */
-        const val LATE_DENOMINATOR = 5
-
-        /** Fewer frames say nothing about the device. */
-        const val MIN_FRAMES = 10
+        /** A blended frame may take half of a refresh interval: measured 0.33 on a device that fades well, 0.79 on one that does not. */
+        const val LIMIT = 0.5f
         private const val TAG = "transitions"
     }
 }

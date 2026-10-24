@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiAsBrowser, pairInUi, pairOtherDevice, reset, stutterTransitions, usb } from "./helpers";
+import { apiAsBrowser, pairInUi, pairOtherDevice, reset, slowDisplay, usb } from "./helpers";
 
 test.beforeEach(async () => {
   await reset();
@@ -110,7 +110,7 @@ test("Note on instant changes", async ({ page }) => {
   await page.getByRole("link", { name: "Einstellungen" }).click();
   const note = page.getByText("deshalb wechseln die Fotos sofort");
   await expect(note).toBeHidden();
-  await stutterTransitions();
+  await slowDisplay();
   // The interface polls the state every 10 seconds; a reload shows it at once.
   await page.reload();
   await page.getByRole("link", { name: "Einstellungen" }).click();

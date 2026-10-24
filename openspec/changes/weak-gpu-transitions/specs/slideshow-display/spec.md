@@ -14,8 +14,12 @@ Transitions SHALL run without visible stutter on the reference devices (Frameo `
 - **THEN** at most 5 % of the frames are dropped during the transition (measured with `dumpsys gfxinfo` or equivalent)
 
 #### Scenario: A GPU that cannot fade
-- **WHEN** in three of the last four transitions more than a fifth of the frames arrived late
+- **WHEN** blending two textures of the screen's size takes the display more than half a refresh interval per frame
 - **THEN** the frame changes photos instantly from then on, also after a restart, and the setting for the transition is unchanged
+
+#### Scenario: A GPU that can fade
+- **WHEN** blending two textures of the screen's size takes at most half a refresh interval per frame
+- **THEN** the frame shows the transition as set
 
 #### Scenario: Trying again
 - **WHEN** the user changes the transition or its duration while the frame changes photos instantly
