@@ -25,9 +25,9 @@
 
   let selecting = $state(false);
   const selected = new SvelteSet<string>();
-  // Photos from Nextcloud are only read by the frame: they can be hidden, not deleted.
+  // Photos of a remote source are only read by the frame: they can be hidden, not deleted.
   const canDelete = $derived(
-    [...selected].every((id) => items.find((p) => p.id === id)?.source !== "nextcloud"),
+    [...selected].every((id) => (items.find((p) => p.id === id)?.source ?? "local") === "local"),
   );
   let detail = $state<Photo | null>(null);
   let confirm = $state<{ message: string; action: () => Promise<void> } | null>(null);
@@ -215,7 +215,7 @@
           >{t("common.delete")}</button
         >
       {:else}
-        <span class="muted">{t("photos.noDeleteNextcloud")}</span>
+        <span class="muted">{t("photos.noDeleteRemote")}</span>
       {/if}
     </div>
   {/if}

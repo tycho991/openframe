@@ -1,5 +1,7 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.sources.RemoteFile
+import io.github.tycho991.openframe.core.sources.SourceException
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -11,7 +13,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Spec `nextcloud-source`: Connect with the login flow, Sync of a folder (the client side), Secrecy of the credentials. */
+/**
+ * Spec `nextcloud-source`: Connect with the login flow, Connect with a share link, Password of a share, Secrecy of the
+ * credentials; `remote-sources`: Sync of a folder (the client side).
+ */
 class NextcloudClientTest {
     @TempDir
     lateinit var dir: File
@@ -34,7 +39,7 @@ class NextcloudClientTest {
         password: String = nextcloud.appPassword,
     ) = WebDavFolder(http, nextcloud.baseUrl, nextcloud.userId, nextcloud.loginName, password, path)
 
-    private fun kindOf(block: () -> Unit) = assertThrows(NextcloudException::class.java, block).kind
+    private fun kindOf(block: () -> Unit) = assertThrows(SourceException::class.java, block).kind
 
     // --- Login flow
 
@@ -62,7 +67,7 @@ class NextcloudClientTest {
     @Test
     fun `A server that does not answer like Nextcloud`() {
         nextcloud.faults["/index.php/login/v2"] = 500
-        assertEquals(NextcloudException.Kind.SERVER, kindOf { OkHttpLoginFlow(http).start(nextcloud.baseUrl) })
+        assertEquals(SourceException.Kind.SERVER, kindOf { OkHttpLoginFlow(http).start(nextcloud.baseUrl) })
     }
 
     @Test
@@ -70,7 +75,7 @@ class NextcloudClientTest {
         val closed = FakeNextcloud().also { it.start() }
         val url = closed.baseUrl
         closed.stop()
-        assertEquals(NextcloudException.Kind.UNREACHABLE, kindOf { OkHttpLoginFlow(http).start(url) })
+        assertEquals(SourceException.Kind.UNREACHABLE, kindOf { OkHttpLoginFlow(http).start(url) })
     }
 
     // --- Listing
@@ -122,13 +127,13 @@ class NextcloudClientTest {
 
     @Test
     fun `A folder that does not exist`() {
-        assertEquals(NextcloudException.Kind.NOT_FOUND, kindOf { folder("/Nowhere").list(true) })
+        assertEquals(SourceException.Kind.NOT_FOUND, kindOf { folder("/Nowhere").list(true) })
     }
 
     @Test
     fun `Wrong credentials are refused without naming them`() {
-        val failure = assertThrows(NextcloudException::class.java) { folder("/", password = "wrong-pw-1234").list(true) }
-        assertEquals(NextcloudException.Kind.UNAUTHORIZED, failure.kind)
+        val failure = assertThrows(SourceException::class.java) { folder("/", password = "wrong-pw-1234").list(true) }
+        assertEquals(SourceException.Kind.UNAUTHORIZED, failure.kind)
         assertFalse(failure.message.orEmpty().contains("wrong-pw-1234"))
         assertFalse(failure.message.orEmpty().contains(nextcloud.appPassword))
     }
@@ -138,7 +143,7 @@ class NextcloudClientTest {
         nextcloud.put("Photos/a.jpg")
         nextcloud.put("Photos/holiday/b.jpg")
         nextcloud.faults["/remote.php/dav/files/anna/Photos/holiday"] = 503
-        assertEquals(NextcloudException.Kind.SERVER, kindOf { folder("/Photos").list(true) })
+        assertEquals(SourceException.Kind.SERVER, kindOf { folder("/Photos").list(true) })
     }
 
     // --- Redirects
@@ -169,7 +174,7 @@ class NextcloudClientTest {
                 .url("${nextcloud.baseUrl}/go")
                 .get()
                 .build()
-        assertEquals(NextcloudException.Kind.PROTOCOL, kindOf { http.execute(request).close() })
+        assertEquals(SourceException.Kind.PROTOCOL, kindOf { http.execute(request).close() })
     }
 
     // --- Download
@@ -186,7 +191,7 @@ class NextcloudClientTest {
     @Test
     fun `A file that is gone`() {
         val target = File(dir, "x.part")
-        assertEquals(NextcloudException.Kind.NOT_FOUND, kindOf { folder("/Photos").download(RemoteFile("nope.jpg", "e", 1, 0), target) })
+        assertEquals(SourceException.Kind.NOT_FOUND, kindOf { folder("/Photos").download(RemoteFile("nope.jpg", "e", 1, 0), target) })
     }
 
     @Test
@@ -195,9 +200,96 @@ class NextcloudClientTest {
         nextcloud.downloadDelayMs = 3_000
         val target = File(dir, "slow.part")
         assertEquals(
-            NextcloudException.Kind.UNREACHABLE,
+            SourceException.Kind.UNREACHABLE,
             kindOf { folder("/Photos").download(RemoteFile("slow.jpg", "e", 1000, 0), target) },
         )
         assertFalse(target.exists())
+    }
+
+    // --- Shares
+
+    private fun share(
+        token: String = "AbC123",
+        password: String = "",
+        path: String = "/",
+    ) = ShareFolder(http, nextcloud.baseUrl, token, password, path)
+
+    @Test
+    fun `A share lists its subfolders and sends the token and password as credentials`() {
+        nextcloud.put("Shared/holiday/a.jpg", ByteArray(10), "e1")
+        nextcloud.put("Shared/holiday/2025/b.png", ByteArray(20), "e2")
+        nextcloud.put("Shared/top.jpg", ByteArray(30), "e3")
+        nextcloud.put("Private/x.jpg")
+        nextcloud.shares["AbC123"] = FakeNextcloud.Share("Shared", password = "pw-ä1")
+        val files = share(password = "pw-ä1").list(recursive = true).sortedBy { it.path }
+        assertEquals(listOf("holiday/2025/b.png", "holiday/a.jpg", "top.jpg"), files.map { it.path })
+        assertEquals(listOf("e2", "e1", "e3"), files.map { it.etag })
+        val expected =
+            "Basic " +
+                java.util.Base64
+                    .getEncoder()
+                    .encodeToString("AbC123:pw-ä1".toByteArray(Charsets.UTF_8))
+        assertTrue(nextcloud.authorizations.isNotEmpty() && nextcloud.authorizations.all { it == expected })
+        assertTrue(nextcloud.requests.all { "AbC123" !in it }, "the token is never in a URL: ${nextcloud.requests}")
+        assertEquals(listOf("top.jpg"), share(password = "pw-ä1").list(recursive = false).map { it.path })
+        assertEquals(listOf("a.jpg"), share(password = "pw-ä1", path = "/holiday").list(recursive = false).map { it.path })
+    }
+
+    @Test
+    fun `A file of a share is downloaded by its listing`() {
+        val content = ByteArray(5_000) { (it % 251).toByte() }
+        nextcloud.put("Shared/a.jpg", content, "e1")
+        nextcloud.shares["AbC123"] = FakeNextcloud.Share("Shared")
+        val file = share().list(true).single()
+        assertEquals("e1", file.etag)
+        val target = File(dir, "a.part")
+        share().download(file, target)
+        assertArrayEquals(content, target.readBytes())
+    }
+
+    @Test
+    fun `Reading the top of a share tells a folder from a single file and names it`() {
+        nextcloud.put("Shared/a.jpg")
+        nextcloud.put("Single/photo.jpg")
+        nextcloud.shares["AbC123"] = FakeNextcloud.Share("Shared")
+        nextcloud.shares["File42"] = FakeNextcloud.Share("Single/photo.jpg")
+        assertEquals(ShareInfo(ShareRoot.FOLDER, "Shared"), share().probe())
+        assertEquals(ShareInfo(ShareRoot.FILE, "photo.jpg"), share(token = "File42").probe())
+        assertTrue(nextcloud.requests.filter { it.startsWith("PROPFIND") }.size == 2, "one request per share")
+    }
+
+    @Test
+    fun `A missing or wrong password is refused, an unknown or withdrawn share is not found`() {
+        nextcloud.put("Shared/a.jpg")
+        nextcloud.shares["AbC123"] = FakeNextcloud.Share("Shared", password = "right")
+        assertEquals(SourceException.Kind.UNAUTHORIZED, kindOf { share().probe() })
+        val wrong = assertThrows(SourceException::class.java) { share(password = "wrong-Kz71").list(true) }
+        assertEquals(SourceException.Kind.UNAUTHORIZED, wrong.kind)
+        assertFalse(wrong.message.orEmpty().contains("wrong-Kz71") || wrong.message.orEmpty().contains("AbC123"))
+        // Nextcloud answers an unknown token with 401 as well; the page of the share tells it apart.
+        val unknown = assertThrows(SourceException::class.java) { share(token = "Nope99").probe() }
+        assertEquals(SourceException.Kind.NOT_FOUND, unknown.kind)
+        assertFalse(unknown.message.orEmpty().contains("Nope99"))
+        // A server that answers 404 itself.
+        nextcloud.faults["/public.php/webdav"] = 404
+        assertEquals(SourceException.Kind.NOT_FOUND, kindOf { share(password = "right").probe() })
+    }
+
+    @Test
+    fun `A file drop that only accepts uploads is not readable`() {
+        nextcloud.folders += "Drop"
+        nextcloud.shares["Drop42"] = FakeNextcloud.Share("Drop", uploadOnly = true)
+        val probe = assertThrows(SourceException::class.java) { share(token = "Drop42").probe() }
+        assertEquals(SourceException.Kind.NOT_READABLE, probe.kind)
+        assertFalse(probe.message.orEmpty().contains("Drop42"))
+        assertEquals(SourceException.Kind.NOT_READABLE, kindOf { share(token = "Drop42").list(true) })
+    }
+
+    @Test
+    fun `A server that is not there for a share`() {
+        val closed = FakeNextcloud().also { it.start() }
+        val url = closed.baseUrl
+        closed.stop()
+        assertEquals(SourceException.Kind.UNREACHABLE, kindOf { ShareFolder(http, url, "AbC123", "", "/").probe() })
     }
 }

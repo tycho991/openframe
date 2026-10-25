@@ -49,7 +49,7 @@ class PhotoLibrary(
             throw HttpException(
                 409,
                 "read_only_source",
-                "This photo comes from ${entry.source} and cannot be deleted here. Hide it instead.",
+                "This photo comes from a remote source and cannot be deleted here. Hide it instead.",
             )
         }
         val file = local.fileOf(entry)

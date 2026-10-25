@@ -31,17 +31,32 @@ export const many = (n: number) => control(`/many?n=${n}`);
 /** The user approves the login in the Nextcloud tab. */
 export const nextcloudApprove = () => control("/nextcloud/approve");
 
-/** A file in the Nextcloud folder of the fake server. */
-export const nextcloudPut = (fixture: string, to: string, etag = "etag-" + to) =>
+/**
+ * A share on the fake server, of a folder called [name]; `file` makes it the share of a single file, `drop` a
+ * "file drop" that only accepts uploads.
+ */
+export const nextcloudShare = (
+  token: string,
+  { password = "", file = false, drop = false, name = "Geteilt" } = {},
+) =>
   control(
-    `/nextcloud/put?fixture=${encodeURIComponent(fixture)}&path=${encodeURIComponent(to)}&etag=${etag}`,
+    `/nextcloud/share?token=${token}&password=${encodeURIComponent(password)}&file=${file ? 1 : 0}&drop=${drop ? 1 : 0}` +
+      `&name=${encodeURIComponent(name)}`,
   );
 
-export const nextcloudRemove = (from: string) =>
-  control(`/nextcloud/remove?path=${encodeURIComponent(from)}`);
+/** A file in the folder of the account on the fake server, or of the share with the token `share`. */
+export const nextcloudPut = (fixture: string, to: string, { etag = "etag-" + to, share = "" } = {}) =>
+  control(
+    `/nextcloud/put?fixture=${encodeURIComponent(fixture)}&path=${encodeURIComponent(to)}&etag=${etag}` +
+      (share ? `&share=${share}` : ""),
+  );
 
-/** Lets listing the folder fail like a server that is down. */
-export const nextcloudFail = (on: boolean) => control(`/nextcloud/fail?on=${on ? 1 : 0}`);
+export const nextcloudRemove = (from: string, { share = "" } = {}) =>
+  control(`/nextcloud/remove?path=${encodeURIComponent(from)}` + (share ? `&share=${share}` : ""));
+
+/** Lets listing the folder of the account (or of a share) fail like a server that is down. */
+export const nextcloudFail = (on: boolean, { share = "" } = {}) =>
+  control(`/nextcloud/fail?on=${on ? 1 : 0}` + (share ? `&share=${share}` : ""));
 
 /** The frame's display found its GPU too slow to fade, so it changes photos instantly from now on. */
 export const slowDisplay = () => control("/transitions/slow");

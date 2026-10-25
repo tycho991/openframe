@@ -2,6 +2,7 @@
 
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.sources.SourceException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -38,12 +39,27 @@ class PropfindParserTest {
         assertEquals("e1", file.etag, "quotes and the weak marker are dropped")
         assertEquals(2048, file.size)
         assertEquals(1_760_517_000_000L, file.modifiedMs)
+        assertEquals("", file.displayName, "no displayname sent")
+    }
+
+    @Test
+    fun `The display name of the top of a share`() {
+        val entries =
+            parse(
+                """<?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:">
+                  <d:response><d:href>/public.php/webdav/</d:href>
+                    <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype><d:displayname>Urlaub &amp; Familie</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                </d:multistatus>""",
+            )
+        assertEquals("Urlaub & Familie", entries.single().displayName)
+        assertEquals("/public.php/webdav", entries.single().path, "the path stays the address, not the name")
     }
 
     @Test
     fun `An answer that is no XML is a protocol error`() {
-        val failure = assertThrows(NextcloudException::class.java) { parse("<html><body>Maintenance") }
-        assertEquals(NextcloudException.Kind.PROTOCOL, failure.kind)
+        val failure = assertThrows(SourceException::class.java) { parse("<html><body>Maintenance") }
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
     }
 
     @Test
@@ -52,7 +68,7 @@ class PropfindParserTest {
         val entries =
             try {
                 parse(xml)
-            } catch (e: NextcloudException) {
+            } catch (e: SourceException) {
                 emptyList()
             }
         assertTrue(entries.none { "root:" in it.path })

@@ -1,11 +1,11 @@
 <script lang="ts">
   import AlbumsView from "./components/AlbumsView.svelte";
   import DevicesView from "./components/DevicesView.svelte";
-  import NextcloudView from "./components/NextcloudView.svelte";
   import PairedBanner from "./components/PairedBanner.svelte";
   import PairingDialog from "./components/PairingDialog.svelte";
   import PhotosView from "./components/PhotosView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
+  import SourcesView from "./components/SourcesView.svelte";
   import type { Lang } from "./lib/i18n/detect";
   import { i18n, t } from "./lib/i18n/i18n.svelte";
   import { router, ROUTES, type Route } from "./lib/router.svelte";
@@ -28,7 +28,7 @@
   const labels: Record<Route, Parameters<typeof t>[0]> = {
     photos: "nav.photos",
     albums: "nav.albums",
-    nextcloud: "nav.nextcloud",
+    sources: "nav.sources",
     settings: "nav.settings",
     devices: "nav.devices",
   };
@@ -98,8 +98,8 @@
       <PhotosView />
     {:else if router.route === "albums"}
       <AlbumsView />
-    {:else if router.route === "nextcloud"}
-      <NextcloudView />
+    {:else if router.route === "sources"}
+      <SourcesView />
     {:else if router.route === "settings"}
       <SettingsView />
     {:else}

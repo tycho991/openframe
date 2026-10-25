@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.nextcloud
 
 import com.sun.net.httpserver.HttpsConfigurator
 import com.sun.net.httpserver.HttpsServer
+import io.github.tycho991.openframe.core.sources.SourceException
 import okhttp3.Request
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -73,14 +74,14 @@ class TrustAnchorsTest {
     @Test
     fun `A chain under an unknown authority is refused`() {
         val url = start("server.p12")
-        val failure = assertThrows(NextcloudException::class.java) { get(url, TrustAnchors.delivered()) }
-        assertEquals(NextcloudException.Kind.TLS, failure.kind)
+        val failure = assertThrows(SourceException::class.java) { get(url, TrustAnchors.delivered()) }
+        assertEquals(SourceException.Kind.TLS, failure.kind)
     }
 
     @Test
     fun `A delivered root does not vouch for another authority`() {
         val url = start("other.p12")
-        val failure = assertThrows(NextcloudException::class.java) { get(url, listOf(testRoot("root.pem"))) }
-        assertEquals(NextcloudException.Kind.TLS, failure.kind)
+        val failure = assertThrows(SourceException::class.java) { get(url, listOf(testRoot("root.pem"))) }
+        assertEquals(SourceException.Kind.TLS, failure.kind)
     }
 }

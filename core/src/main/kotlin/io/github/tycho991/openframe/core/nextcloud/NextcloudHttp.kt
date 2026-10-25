@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.sources.SourceException
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,7 +20,7 @@ import javax.net.ssl.SSLException
 class NextcloudHttp(
     private val client: OkHttpClient = defaultClient(),
 ) {
-    /** Runs [request] and returns the final response. The caller closes it. Throws [NextcloudException]. */
+    /** Runs [request] and returns the final response. The caller closes it. Throws [SourceException]. */
     fun execute(request: Request): Response {
         var current = request
         repeat(MAX_REDIRECTS + 1) {
@@ -32,13 +33,13 @@ class NextcloudHttp(
             if (response.code !in REDIRECTS) return response
             val target = response.header("Location")?.let { response.request.url.resolve(it) }
             response.close()
-            if (target == null) throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The server redirects without an address")
+            if (target == null) throw SourceException(SourceException.Kind.PROTOCOL, "The server redirects without an address")
             if (target.host != current.url.host || (current.url.isHttps && !target.isHttps)) {
-                throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The server redirects to another address (${target.host})")
+                throw SourceException(SourceException.Kind.PROTOCOL, "The server redirects to another address (${target.host})")
             }
             current = current.newBuilder().url(target).build()
         }
-        throw NextcloudException(NextcloudException.Kind.PROTOCOL, "Too many redirects from ${request.url.host}")
+        throw SourceException(SourceException.Kind.PROTOCOL, "Too many redirects from ${request.url.host}")
     }
 
     /** Throws for an answer that is not a success; [what] names the thing asked for. */
@@ -50,33 +51,33 @@ class NextcloudHttp(
         val code = response.code
         response.close()
         throw when (code) {
-            401, 403 -> NextcloudException(NextcloudException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP $code)")
-            404 -> NextcloudException(NextcloudException.Kind.NOT_FOUND, "$what was not found (HTTP 404)")
-            in 500..599 -> NextcloudException(NextcloudException.Kind.SERVER, "The server answered with an error (HTTP $code)")
-            else -> NextcloudException(NextcloudException.Kind.PROTOCOL, "Unexpected answer of the server (HTTP $code)")
+            401, 403 -> SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP $code)")
+            404 -> SourceException(SourceException.Kind.NOT_FOUND, "$what was not found (HTTP 404)")
+            in 500..599 -> SourceException(SourceException.Kind.SERVER, "The server answered with an error (HTTP $code)")
+            else -> SourceException(SourceException.Kind.PROTOCOL, "Unexpected answer of the server (HTTP $code)")
         }
     }
 
     private fun translate(
         e: IOException,
         url: HttpUrl,
-    ): NextcloudException {
+    ): SourceException {
         val host = url.host
         return when {
             e is SSLException || e.cause is CertificateException -> {
-                NextcloudException(NextcloudException.Kind.TLS, "The certificate of $host is not trusted", e)
+                SourceException(SourceException.Kind.TLS, "The certificate of $host is not trusted", e)
             }
 
             e is UnknownHostException -> {
-                NextcloudException(NextcloudException.Kind.UNREACHABLE, "The server $host was not found", e)
+                SourceException(SourceException.Kind.UNREACHABLE, "The server $host was not found", e)
             }
 
             e is SocketTimeoutException -> {
-                NextcloudException(NextcloudException.Kind.UNREACHABLE, "The server $host did not answer in time", e)
+                SourceException(SourceException.Kind.UNREACHABLE, "The server $host did not answer in time", e)
             }
 
             else -> {
-                NextcloudException(NextcloudException.Kind.UNREACHABLE, "The server $host is not reachable", e)
+                SourceException(SourceException.Kind.UNREACHABLE, "The server $host is not reachable", e)
             }
         }
     }

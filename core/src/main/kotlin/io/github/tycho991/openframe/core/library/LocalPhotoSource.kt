@@ -9,7 +9,7 @@ import java.io.File
 
 /**
  * A source of photos. Every source manages only its own entries in the
- * index. `local` now, `nextcloud` in a follow-up change.
+ * index: `local`, and each remote source with its own ID.
  */
 interface PhotoSource {
     val id: String

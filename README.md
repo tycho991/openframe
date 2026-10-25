@@ -3,7 +3,7 @@
 Digital picture frame for old Android tablets and Frameo frames. The slideshow
 runs natively on the device and is managed in the browser of a laptop or phone.
 There is no cloud service of its own: photos get onto the frame by USB, by upload
-or from a Nextcloud folder, and the frame itself is the server.
+or from Nextcloud (a share link or an account), and the frame itself is the server.
 
 Target devices run Android 5.0 (API 21) or newer, tested on the Frameo `PFF_1024`
 (Android 6.0.1) and the Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
@@ -81,24 +81,53 @@ On the frame itself: a tap shows name, address, code, QR code and pause. Swiping
 through the photos. Pressing a corner for three seconds opens the device menu
 with "local only", "Revoke all pairings" and info.
 
-## Photos from Nextcloud
+## Photos from other sources
 
-Next to the local photo folder the frame can show a folder of a Nextcloud server. The frame only reads it; nothing
-is changed on the server.
+Next to the local photo folder the frame can show photos from up to eight remote sources at the same time: the link
+of a shared Nextcloud folder, or a folder of a Nextcloud account. The frame only reads them; nothing is changed on
+the server. Each source has its own settings, status, schedule and storage for downloaded originals, and adding,
+syncing or removing one leaves the others as they are. Folders of the same name in different sources are one album.
 
-1. Open "Nextcloud" in the admin interface, enter the address of the server and choose "Connect". A Nextcloud page
-   opens in a new tab; approve the access there. The frame receives an app password, so no password is typed into
-   the frame or the interface.
-2. Choose the folder, whether subfolders are included (the first one is the album) and how often the frame syncs
-   (every 20 minutes by default, at least 5). Nothing is synced until a folder is chosen; `/` means the whole account.
-   "Sync now" starts a sync at once; the status shows the result.
-3. Photos from Nextcloud are hidden or shown like local ones, but not deleted: they would come back with the next
-   sync. "Disconnect" removes them from the frame again and revokes the app password on the server.
+Open "Sources" in the admin interface and choose "Add a source":
 
-Where things are stored: the app password only in the app's private storage (`nextcloud.json`, never in an API
-answer or the log), the downloaded originals in the app's cache folder, next to the rendered sizes, with a budget of
-their own (2,000 MB by default). When it is exceeded, the originals unused for the longest time are removed and
-fetched again when a rendering needs them. A photo stays on the frame without its original.
+- **Share link**: paste the link that Nextcloud shows for a shared folder (`https://cloud.example.org/s/AbC123`, also
+  with `/index.php/` or in a sub-path) and, if the share has one, its password. No account is needed. The frame reads
+  the share once before it keeps it and syncs it at once; the shared folder is the folder of the source, and its name
+  is the name in the list unless you give another. The share of
+  a single file and a "file drop" share, which only accepts uploads, are refused.
+- **Nextcloud account**: enter the address of the server and choose "Connect". A Nextcloud page opens in a new tab;
+  approve the access there. The frame receives an app password, so no password is typed into the frame or the
+  interface. Then choose the folder in the settings of the source; nothing is synced until one is chosen, `/` means
+  the whole account. Logging in again to the same account renews its access and keeps its photos.
+
+For each source: whether subfolders are included (the first one is the album), how often the frame syncs (every 20
+minutes by default, at least 5), whether photos deleted on the server are removed, and the storage for its originals.
+"Sync now" starts a sync at once; the status shows the result or a readable error, for example when the owner
+withdrew the share or changed its password. Photos of a source are hidden or shown like local ones, but not deleted:
+they would come back with the next sync. "Remove" takes the source and its photos off the frame and revokes the app
+password of an account on the server.
+
+Where things are stored: the app password, the share link and the password of a share only in the app's private
+storage (`sources.json`, never in an API answer or the log), the downloaded originals in the app's cache folder,
+next to the rendered sizes, with a budget per source (2,000 MB by default). When it is exceeded, the originals of that
+source unused for the longest time are removed and fetched again when a rendering needs them. A photo stays on the
+frame without its original. A download never leaves less than 100 MB free.
+
+A frame that had a Nextcloud connection before (0.1.0) keeps it as the source `nextcloud`, with its photos, their IDs
+and hidden states, without a new login. Its old `nextcloud.json` stays until that source is removed, so the older
+build can still be installed again.
+
+### Further providers
+
+Each kind of source only brings its connection and a way to list and download a folder; sync, schedule, status and
+storage are shared. These are prepared, not built, and each is a change of its own:
+
+| Kind | What blocks it today |
+|---|---|
+| A plain WebDAV address (URL, user, password) | Nothing technical; the existing WebDAV code reads it |
+| Dropbox | It needs an app key of the project and an OAuth login with a way back to the frame |
+| Google Drive | Google reviews apps that read Drive, and an API key for public folders would be shared by all frames |
+| iCloud shared album | There is only an unofficial web interface, which can change without notice, and an album has no folders |
 
 An address with `http://` sends the access without encryption; the interface says so. With `https://` the frame
 trusts what the system trusts plus the root certificates delivered with the app, so that Let's Encrypt works on the

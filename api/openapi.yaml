@@ -32,8 +32,8 @@ tags:
     description: Versions for detecting changes.
   - name: diagnostics
     description: Log of the frame.
-  - name: nextcloud
-    description: A Nextcloud folder as a second source of photos, read only.
+  - name: sources
+    description: Remote sources of photos (a Nextcloud account or share link), read only.
 
 paths:
   /info:
@@ -313,7 +313,7 @@ paths:
       tags: [photos]
       operationId: deletePhoto
       summary: Remove file, index entry and rendered sizes.
-      description: "A photo of a read-only source (`nextcloud`) is refused with 409 and the error code `read_only_source`."
+      description: "A photo of a read-only source (any source but `local`) is refused with 409 and the error code `read_only_source`."
       responses:
         "204": { description: Deleted. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -430,109 +430,162 @@ paths:
               schema: { $ref: "#/components/schemas/State" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /nextcloud:
+  /sources:
     get:
-      tags: [nextcloud]
-      operationId: getNextcloud
-      summary: Connection, settings and status of the Nextcloud source.
-      description: "The app password is never part of it."
+      tags: [sources]
+      operationId: listSources
+      summary: All remote sources with their settings and status.
+      description: "No password, app password or share token is part of it."
       responses:
         "200":
-          description: The state of the source.
+          description: The sources, in the order they were added.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NextcloudState" }
+              schema: { $ref: "#/components/schemas/SourceList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-    patch:
-      tags: [nextcloud]
-      operationId: patchNextcloud
-      summary: Change settings of the source.
-      description: "Partial change, validated completely or not at all. A change makes the source sync again soon."
+    post:
+      tags: [sources]
+      operationId: addShare
+      summary: Add the link of a Nextcloud folder share as a source.
+      description: >-
+        The frame reads the share once before storing it; on any failure nothing is stored. A link that is no share
+        is a field error at `link` (`validation_failed`), a share that does not exist `share_not_found`, the share
+        of a single file `share_not_a_folder` and a "file drop" share that only accepts uploads `share_not_readable`, all
+        at `link`; a protected share without a password
+        `share_password_required` and with a wrong one `share_password_wrong`, both at `password`. An account is
+        added with the login flow instead (`POST /sources/login`).
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/NextcloudSettingsPatch" }
+            schema: { $ref: "#/components/schemas/ShareRequest" }
       responses:
-        "200":
-          description: The state after the change.
+        "201":
+          description: The share is a source; its first sync follows soon.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NextcloudState" }
+              schema: { $ref: "#/components/schemas/Source" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-    delete:
-      tags: [nextcloud]
-      operationId: disconnectNextcloud
-      summary: Disconnect the source.
-      description: >-
-        Revokes the app password on the server (if the server answers), deletes the credentials, stops the sync and
-        removes the photos of the source and their downloaded originals. Local photos are not touched.
-      responses:
-        "204": { description: Disconnected. }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { $ref: "#/components/responses/BadGateway" }
 
-  /nextcloud/login:
+  /sources/login:
     post:
-      tags: [nextcloud]
-      operationId: startNextcloudLogin
-      summary: Start Nextcloud's Login Flow v2.
+      tags: [sources]
+      operationId: startSourceLogin
+      summary: Start Nextcloud's Login Flow v2 for an account.
       description: >-
         The frame asks the server for a login page; the client opens `loginUrl` in a new browser tab and polls
-        `GET /nextcloud/login/{flowId}`. There is at most one flow, a new one replaces the old.
+        `GET /sources/login/{flowId}`. There is at most one flow, a new one replaces the old. Refused with
+        `too_many_sources` when eight sources exist and none of them is an account that the login could renew.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/NextcloudLoginRequest" }
+            schema: { $ref: "#/components/schemas/SourceLoginRequest" }
       responses:
         "201":
           description: The flow is started.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NextcloudLogin" }
+              schema: { $ref: "#/components/schemas/SourceLogin" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "502": { $ref: "#/components/responses/BadGateway" }
 
-  /nextcloud/login/{flowId}:
+  /sources/login/{flowId}:
     parameters:
       - name: flowId
         in: path
         required: true
         schema: { type: string }
     get:
-      tags: [nextcloud]
-      operationId: pollNextcloudLogin
+      tags: [sources]
+      operationId: pollSourceLogin
       summary: Ask whether the user has approved the login.
       description: >-
-        Makes the frame ask the server once. On `done` the credentials are stored and the source is connected.
-        An unknown or old flow is `expired`.
+        Makes the frame ask the server once. On `done` the account is a source: a new one, or, for a server and user
+        that already are a source, that source with the new credentials. An unknown or old flow is `expired`.
       responses:
         "200":
           description: The state of the flow.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NextcloudLoginState" }
+              schema: { $ref: "#/components/schemas/SourceLoginState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /nextcloud/sync:
+  /sources/{sourceId}:
+    parameters:
+      - $ref: "#/components/parameters/SourceId"
+    get:
+      tags: [sources]
+      operationId: getSource
+      summary: Settings and status of one source.
+      responses:
+        "200":
+          description: The source.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [sources]
+      operationId: patchSource
+      summary: Change settings of one source.
+      description: "Partial change, validated completely or not at all. A change makes the source sync again soon."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceSettingsPatch" }
+      responses:
+        "200":
+          description: The source after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [sources]
+      operationId: removeSource
+      summary: Remove one source.
+      description: >-
+        Revokes the app password of an account on the server (if the server answers), deletes the stored
+        credentials, stops the sync and removes the photos of the source and their downloaded originals. Local photos
+        and the other sources are not touched.
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sources/{sourceId}/sync:
+    parameters:
+      - $ref: "#/components/parameters/SourceId"
     post:
-      tags: [nextcloud]
-      operationId: syncNextcloud
-      summary: Start a sync now.
-      description: Answers at once. If a sync is already running, nothing is started and `started` is false.
+      tags: [sources]
+      operationId: syncSource
+      summary: Start a sync of one source now.
+      description: >-
+        Answers at once. If a sync of this source is already running, nothing is started and `started` is false. An
+        account without a folder is refused with `source_no_folder`.
       responses:
         "202":
           description: A sync was started or is already running.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NextcloudSyncRequest" }
+              schema: { $ref: "#/components/schemas/SyncRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /logs:
@@ -568,7 +621,12 @@ components:
       name: photoId
       in: path
       required: true
-      schema: { type: string, pattern: "^[a-z]+-[0-9a-f]{40}$" }
+      schema: { type: string, pattern: "^[a-z][a-z0-9]*-[0-9a-f]{40}$" }
+    SourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema: { type: string }
 
   responses:
     BadRequest:
@@ -592,7 +650,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing a source that is not connected (`nextcloud_not_connected`) or has no folder chosen (`nextcloud_no_folder`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`) or a share that already is a source (`source_exists`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -614,7 +672,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     BadGateway:
-      description: "The frame could not talk to the Nextcloud server (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server)."
+      description: "The frame could not talk to the server of a source (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -644,22 +702,33 @@ components:
               description: Errors per field, the key is the field path (e.g. `clock.sizePercent`).
               additionalProperties: { type: string }
 
-    NextcloudSettings:
+    SourceKind:
+      type: string
+      enum: [nextcloud-account, nextcloud-share]
+      description: "`nextcloud-account`: an account connected with the login flow; `nextcloud-share`: the link of a folder share."
+
+    SourceSettings:
       type: object
       additionalProperties: false
-      required: [enabled, folder, includeSubfolders, removeVanished, intervalMinutes, originalsBudgetMb]
+      required: [name, enabled, folder, includeSubfolders, removeVanished, intervalMinutes, originalsBudgetMb]
       properties:
+        name: { type: string, minLength: 1, maxLength: 64, description: "What the source is called in the list." }
         enabled: { type: boolean }
-        folder: { type: string, description: "Folder on the server as `/a/b`, `/` for the top. Empty until one is chosen: then nothing syncs." }
+        folder:
+          type: string
+          description: >-
+            Folder as `/a/b`, `/` for the top: below the account's files or below the shared folder. Empty for an
+            account until one is chosen: then nothing syncs.
         includeSubfolders: { type: boolean }
         removeVanished: { type: boolean, description: "Remove photos that are no longer in the folder." }
         intervalMinutes: { type: integer, minimum: 5, maximum: 1440 }
-        originalsBudgetMb: { type: integer, minimum: 100, maximum: 50000, description: "Budget for downloaded originals." }
+        originalsBudgetMb: { type: integer, minimum: 100, maximum: 50000, description: "Budget for the downloaded originals of this source." }
 
-    NextcloudSettingsPatch:
+    SourceSettingsPatch:
       type: object
       additionalProperties: false
       properties:
+        name: { type: string }
         enabled: { type: boolean }
         folder: { type: string }
         includeSubfolders: { type: boolean }
@@ -667,7 +736,7 @@ components:
         intervalMinutes: { type: integer }
         originalsBudgetMb: { type: integer }
 
-    NextcloudStatus:
+    SourceStatus:
       type: object
       additionalProperties: false
       required: [syncing, lastSyncAt, ok, error, added, updated, removed]
@@ -675,30 +744,53 @@ components:
         syncing: { type: boolean }
         lastSyncAt: { type: [string, "null"], format: date-time }
         ok: { type: [boolean, "null"], description: "Result of the last sync, `null` before the first." }
-        error: { type: [string, "null"], description: "Readable error of the last sync. Never contains a credential." }
+        error: { type: [string, "null"], description: "Readable error of the last sync. Never contains a credential or a share token." }
         added: { type: integer }
         updated: { type: integer }
         removed: { type: integer }
 
-    NextcloudState:
+    Source:
       type: object
       additionalProperties: false
-      required: [connected, serverUrl, user, settings, status]
+      required: [id, kind, serverUrl, user, settings, status]
       properties:
-        connected: { type: boolean }
-        serverUrl: { type: [string, "null"] }
-        user: { type: [string, "null"], description: "Login name of the account." }
-        settings: { $ref: "#/components/schemas/NextcloudSettings" }
-        status: { $ref: "#/components/schemas/NextcloudStatus" }
+        id: { type: string, pattern: "^[a-z][a-z0-9]{0,15}$", description: "The source part of the IDs of its photos." }
+        kind: { $ref: "#/components/schemas/SourceKind" }
+        serverUrl: { type: string, description: "Address of the server, without the share token." }
+        user: { type: [string, "null"], description: "Login name of an account, `null` for a share." }
+        settings: { $ref: "#/components/schemas/SourceSettings" }
+        status: { $ref: "#/components/schemas/SourceStatus" }
 
-    NextcloudLoginRequest:
+    SourceList:
+      type: object
+      additionalProperties: false
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/Source" }
+
+    ShareRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, link]
+      properties:
+        kind: { type: string, const: nextcloud-share }
+        link:
+          type: string
+          description: "The link of the share, `http(s)://host[/path][/index.php]/s/<token>`."
+        password: { type: string, description: "The password of a protected share. Only given here, never returned." }
+        name: { type: string, description: "Name in the list; if missing, the name of the shared folder (the host of the server if it names none)." }
+
+    SourceLoginRequest:
       type: object
       additionalProperties: false
       required: [serverUrl]
       properties:
         serverUrl: { type: string, description: "Address of the server, `http://` or `https://`." }
 
-    NextcloudLogin:
+    SourceLogin:
       type: object
       additionalProperties: false
       required: [flowId, loginUrl, expiresAt]
@@ -707,21 +799,22 @@ components:
         loginUrl: { type: string, description: "The page where the user approves, to open in a new browser tab." }
         expiresAt: { type: string, format: date-time }
 
-    NextcloudLoginState:
+    SourceLoginState:
       type: object
       additionalProperties: false
-      required: [state, user, error]
+      required: [state, user, sourceId, error]
       properties:
         state: { type: string, enum: [pending, done, failed, expired] }
         user: { type: [string, "null"], description: "Set when `done`." }
+        sourceId: { type: [string, "null"], description: "The source of the account, set when `done`." }
         error: { type: [string, "null"], description: "Set when `failed`." }
 
-    NextcloudSyncRequest:
+    SyncRequest:
       type: object
       additionalProperties: false
       required: [started]
       properties:
-        started: { type: boolean, description: "False if a sync was already running." }
+        started: { type: boolean, description: "False if a sync of this source was already running." }
 
     Info:
       type: object
@@ -889,8 +982,8 @@ components:
         id: { type: string }
         source:
           type: string
-          enum: [local, nextcloud]
-          description: "Where the photo comes from. Photos of `nextcloud` are read only: they cannot be deleted, only hidden."
+          pattern: "^[a-z][a-z0-9]*$"
+          description: "Where the photo comes from: `local` or the ID of a remote source. Photos of a remote source are read only: they cannot be deleted, only hidden."
         path: { type: string, description: "Path relative to the folder of its source." }
         album: { type: [string, "null"] }
         hidden: { type: boolean, description: "The photo itself is hidden." }
