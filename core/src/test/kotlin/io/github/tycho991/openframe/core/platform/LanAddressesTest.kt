@@ -61,4 +61,24 @@ class LanAddressesTest {
     fun `The same address on two interfaces is listed once`() {
         assertEquals(listOf("192.168.100.7"), pick("192.168.100.7" to WIFI, "192.168.100.7" to OTHER))
     }
+
+    @Test
+    fun `The IPv4 side of 464XLAT on an IPv6-only mobile network is never shown`() {
+        assertEquals(emptyList<String>(), pick("192.0.0.4" to OTHER))
+        assertEquals(listOf("192.168.100.7"), pick("192.0.0.4" to OTHER, "192.168.100.7" to WIFI))
+        // Only the /29 is reserved; a LAN in 192.0.0.x above it is unusual but not refused.
+        assertEquals(listOf("192.0.0.20"), pick("192.0.0.20" to OTHER))
+    }
+
+    @Test
+    fun `Interfaces that no network owns are classified by their name`() {
+        assertEquals(CELLULAR, kindOfInterfaceName("rmnet_data0"))
+        assertEquals(CELLULAR, kindOfInterfaceName("v4-rmnet_data0"))
+        assertEquals(CELLULAR, kindOfInterfaceName("ccmni0"))
+        assertEquals(VPN, kindOfInterfaceName("tun0"))
+        assertEquals(VPN, kindOfInterfaceName("wg0"))
+        assertEquals(OTHER, kindOfInterfaceName("ap0"))
+        assertEquals(OTHER, kindOfInterfaceName("wlan1"))
+        assertEquals(OTHER, kindOfInterfaceName("rndis0"))
+    }
 }

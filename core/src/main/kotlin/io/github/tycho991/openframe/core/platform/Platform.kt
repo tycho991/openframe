@@ -27,7 +27,8 @@ interface PlatformInfo {
 
     /**
      * IPv4 addresses that a browser on the local network can reach, best first (see [lanAddresses]). The hint on
-     * the frame shows the first. Mobile data addresses are not included, so the list is empty without Wi-Fi.
+     * the frame shows the first. Mobile data and VPN addresses are not included, so with mobile data only the list is
+     * empty; a hotspot or tethering of the device's own still gives its address.
      */
     fun ipAddresses(): List<String>
 

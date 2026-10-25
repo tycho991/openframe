@@ -23,8 +23,30 @@ data class AddressCandidate(
  * dropped, no other device on the LAN can open them. Duplicates are removed.
  */
 fun lanAddresses(candidates: List<AddressCandidate>): List<String> {
+    val usable = candidates.filterNot { isClatAddress(it.address) }
     val order = listOf(ConnectionKind.WIFI, ConnectionKind.ETHERNET)
-    val preferred = candidates.filter { it.kind in order }.sortedBy { order.indexOf(it.kind) }
-    val others = candidates.filter { it.kind == ConnectionKind.OTHER }
+    val preferred = usable.filter { it.kind in order }.sortedBy { order.indexOf(it.kind) }
+    val others = usable.filter { it.kind == ConnectionKind.OTHER }
     return (preferred + others).map { it.address }.distinct()
 }
+
+/**
+ * The kind of an interface that no network of the device owns, guessed from its name. Only a fallback: names differ by
+ * vendor, so this knows the common mobile data and VPN names and calls everything else [ConnectionKind.OTHER].
+ */
+fun kindOfInterfaceName(name: String): ConnectionKind =
+    when {
+        CELLULAR_PREFIXES.any { name.startsWith(it) } -> ConnectionKind.CELLULAR
+        VPN_PREFIXES.any { name.startsWith(it) } -> ConnectionKind.VPN
+        else -> ConnectionKind.OTHER
+    }
+
+/** `192.0.0.0/29` is the range of 464XLAT (RFC 7335): the IPv4 side of an IPv6-only mobile network, never on a LAN. */
+private fun isClatAddress(address: String): Boolean {
+    val parts = address.split('.')
+    return parts.size == 4 && parts[0] == "192" && parts[1] == "0" && parts[2] == "0" && (parts[3].toIntOrNull() ?: 8) < 8
+}
+
+/** `v4-` and `clat` are the stacked 464XLAT interfaces on top of mobile data, e.g. `v4-rmnet_data0`. */
+private val CELLULAR_PREFIXES = listOf("rmnet", "ccmni", "pdp", "rev_rmnet", "v4-", "clat")
+private val VPN_PREFIXES = listOf("tun", "ppp", "ipsec", "wg")

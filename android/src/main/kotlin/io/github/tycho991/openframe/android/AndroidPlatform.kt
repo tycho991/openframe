@@ -13,6 +13,7 @@ import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.ConnectionKind
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
+import io.github.tycho991.openframe.core.platform.kindOfInterfaceName
 import io.github.tycho991.openframe.core.platform.lanAddresses
 import java.io.FileNotFoundException
 import java.io.InputStream
@@ -39,16 +40,17 @@ class AndroidPlatformInfo(
 
     /**
      * Every IPv4 address of the device with the kind of connection it is on. The system says what a network is
-     * (Wi-Fi, mobile data, VPN); interface names differ by vendor and cannot tell. Interfaces that no network
-     * of the device owns, such as a Wi-Fi hotspot or USB tethering, count as [ConnectionKind.OTHER]. If the
-     * system cannot be asked, every interface is a candidate, as before.
+     * (Wi-Fi, mobile data, VPN); interface names differ by vendor and cannot tell. Interfaces that no network of the
+     * device owns, such as a Wi-Fi hotspot or USB tethering, are classified by their name ([kindOfInterfaceName]), so
+     * that a stacked 464XLAT interface (`v4-rmnet_data0`) or a mobile data interface of a network the system did not
+     * describe still counts as mobile data. The same holds if the system cannot be asked at all.
      */
     private fun addressCandidates(): List<AddressCandidate> {
         val interfaces = runCatching { NetworkInterface.getNetworkInterfaces().toList() }.getOrDefault(emptyList())
         val fromInterfaces = { skip: Set<String> ->
             interfaces
                 .filter { !it.isLoopback && it.isUp && it.name !in skip }
-                .flatMap { ipv4(it.inetAddresses.toList()) }
+                .flatMap { iface -> ipv4(iface.inetAddresses.toList()).map { AddressCandidate(it, kindOfInterfaceName(iface.name)) } }
         }
         return runCatching {
             val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -62,13 +64,15 @@ class AndroidPlatformInfo(
                 networks.flatMap { network ->
                     val capabilities = connectivity.getNetworkCapabilities(network)
                     val properties = connectivity.getLinkProperties(network)
+                    // A network the system describes only in part (while it comes up or goes down) still owns its
+                    // interface: without a kind its addresses are not shown at all.
+                    properties?.interfaceName?.let { owned += it }
                     if (capabilities == null || properties == null) return@flatMap emptyList()
-                    properties.interfaceName?.let { owned += it }
                     val kind = connectionKind(capabilities)
                     ipv4(properties.linkAddresses.map { it.address }).map { AddressCandidate(it, kind) }
                 }
-            classified + fromInterfaces(owned).map { AddressCandidate(it, ConnectionKind.OTHER) }
-        }.getOrElse { fromInterfaces(emptySet()).map { AddressCandidate(it, ConnectionKind.OTHER) } }
+            classified + fromInterfaces(owned)
+        }.getOrElse { fromInterfaces(emptySet()) }
     }
 
     private fun connectionKind(capabilities: NetworkCapabilities): ConnectionKind =
