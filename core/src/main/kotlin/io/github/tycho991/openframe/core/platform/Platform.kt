@@ -25,7 +25,11 @@ interface PlatformInfo {
     val screenWidth: Int
     val screenHeight: Int
 
-    /** IPv4 addresses on the LAN that the hint on the frame shows. */
+    /**
+     * IPv4 addresses that a browser on the local network can reach, best first (see [lanAddresses]). The hint on
+     * the frame shows the first. Mobile data and VPN addresses are not included, so with mobile data only the list is
+     * empty; a hotspot or tethering of the device's own still gives its address.
+     */
     fun ipAddresses(): List<String>
 
     /** Free storage on the volume that contains [dir]. */
