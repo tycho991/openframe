@@ -131,8 +131,16 @@ The interface SHALL be able to create an invitation from the list of paired devi
 - **WHEN** another device redeems the invitation shown
 - **THEN** it appears in the list of paired devices after 30 seconds at the latest
 
-### Requirement: Nextcloud in the interface
-The interface SHALL have a section for the Nextcloud source: connect through the login flow, show server and user, edit folder, subfolders, interval, removal of vanished photos and the storage budget, start a sync, show the status of the last sync with its error in readable form, and disconnect after a confirmation. Validation errors SHALL appear at the affected field.
+### Requirement: Sources in the interface
+The interface SHALL have a section for sources: list them with name, kind and status, add one by the Nextcloud login flow or by a share link (with an optional password), and for each edit name, folder, subfolders, interval, removal of vanished photos and the storage budget, start a sync, show the status of the last sync with its error in readable form, and remove it after a confirmation. Validation errors SHALL appear at the affected field.
+
+#### Scenario: Add a share link
+- **WHEN** the user pastes the link of a share and chooses "Add"
+- **THEN** the source appears in the list and shows that its first sync is running
+
+#### Scenario: Share needs a password
+- **WHEN** the share is protected and no password was given
+- **THEN** the interface asks for the password at the password field
 
 #### Scenario: Connect
 - **WHEN** the user gives a server address and chooses "Connect"
@@ -140,19 +148,23 @@ The interface SHALL have a section for the Nextcloud source: connect through the
 
 #### Scenario: Connected
 - **WHEN** the approval has been given
-- **THEN** the interface shows the user name and the settings of the source
+- **THEN** the interface lists the account with its user name and shows its settings
+
+#### Scenario: Several sources
+- **WHEN** two sources exist
+- **THEN** the list shows both with their own status, and syncing or removing one leaves the other as it is
 
 #### Scenario: Sync now
-- **WHEN** the user chooses "Sync now"
+- **WHEN** the user chooses "Sync now" for a source
 - **THEN** the interface shows that a sync is running and then its result with the three numbers
 
 #### Scenario: Error of the last sync
-- **WHEN** the last sync failed
-- **THEN** the interface shows the time and a readable error, and no password
+- **WHEN** the last sync of a source failed
+- **THEN** the interface shows the time and a readable error, and no password and no share link token
 
 #### Scenario: Disconnect
-- **WHEN** the user disconnects and confirms
-- **THEN** the interface shows the source as not connected and the Nextcloud photos disappear from the overview
+- **WHEN** the user removes a source and confirms
+- **THEN** the source leaves the list and its photos disappear from the overview
 
 ### Requirement: Photos from Nextcloud in the overview
 The photo overview SHALL show photos from Nextcloud like local ones, with albums and hiding. For them the interface SHALL NOT offer deleting, but point to hiding.
