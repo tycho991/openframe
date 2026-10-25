@@ -13,6 +13,7 @@ const base = {
 
 const status = {
   syncing: false,
+  waiting: false,
   lastSyncAt: "2026-10-22T10:00:00Z",
   ok: true as boolean | null,
   error: null as string | null,
@@ -76,8 +77,9 @@ describe("Share links", () => {
 });
 
 describe("Status line", () => {
-  it("says whether a sync runs, never ran, worked or failed", () => {
+  it("says whether a sync runs, waits for another source, never ran, worked or failed", () => {
     expect(statusLine({ ...status, syncing: true }, "en").key).toBe("sources.syncing");
+    expect(statusLine({ ...status, waiting: true }, "en").key).toBe("sources.waitingForOther");
     expect(statusLine({ ...status, ok: null, lastSyncAt: null }, "en").key).toBe("sources.never");
     const ok = statusLine(status, "en");
     expect(ok.key).toBe("sources.lastOk");

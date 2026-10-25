@@ -473,7 +473,7 @@ class SourcesApiTest {
         frame.send("POST", "/api/v1/sources/$id/sync")
         waitFor("the sync") { synced(id) && photos().total == 1 }
         assertEquals(204, frame.send("DELETE", "/api/v1/sources/$id").statusCode())
-        assertEquals(1, login.revoked)
+        waitFor("the revoke") { login.revoked == 1 }
         assertEquals(0, photos().total)
         assertEquals(emptyList<SourceDto>(), list())
     }

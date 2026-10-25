@@ -17,6 +17,7 @@ import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -94,6 +95,7 @@ class NextcloudSecrecyTest {
     fun `A failing revoke on removal is logged without the password`() {
         nextcloud.faults["/ocs/v2.php/core/apppassword"] = 500
         registry.remove("nextcloud")
+        scope.runCurrent()
         assertFalse(everythingTheFrameSays().contains(wrongPassword))
         assertNull(configs.get("nextcloud"))
     }

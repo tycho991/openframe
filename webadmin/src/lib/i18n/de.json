@@ -173,7 +173,7 @@
   "sources.shareName": "Name in der Liste (optional)",
   "sources.addShare": "Hinzufügen",
   "sources.adding": "Lese die Freigabe …",
-  "sources.full": "Der Rahmen hat 8 Quellen, mehr geht nicht. Entferne eine, um eine andere hinzuzufügen.",
+  "sources.full": "Der Rahmen hat 8 Quellen, mehr geht nicht. Entferne eine, um eine andere hinzuzufügen. Ein Konto, das schon eine Quelle ist, kann sich hier neu anmelden, um seinen Zugang zu erneuern.",
   "sources.server": "Adresse des Servers",
   "sources.serverHint": "Zum Beispiel https://cloud.example.org",
   "sources.serverInvalid": "Eine Adresse, die mit http:// oder https:// beginnt",
@@ -220,5 +220,6 @@
   "error.share_not_a_folder": "Dieser Link teilt eine einzelne Datei. Teile stattdessen einen Ordner.",
   "error.share_password_required": "Diese Freigabe ist geschützt. Gib ihr Passwort ein.",
   "error.share_password_wrong": "Das Passwort ist falsch.",
-  "error.share_not_readable": "Dieser Link nimmt nur Uploads an (Datei-Ablage). Der Rahmen kann Freigaben nur lesen; teile den Ordner mit „Nur lesen“ oder „Hochladen und Bearbeiten erlauben“."
+  "error.share_not_readable": "Dieser Link nimmt nur Uploads an (Datei-Ablage). Der Rahmen kann Freigaben nur lesen; teile den Ordner mit „Nur lesen“ oder „Hochladen und Bearbeiten erlauben“.",
+  "sources.waitingForOther": "Wartet auf den Abgleich einer anderen Quelle …"
 }

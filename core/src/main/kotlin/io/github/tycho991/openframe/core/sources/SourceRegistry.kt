@@ -1,17 +1,17 @@
 package io.github.tycho991.openframe.core.sources
 
 import io.github.tycho991.openframe.core.http.HttpException
+import io.github.tycho991.openframe.core.library.LocalPhotoSource
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonObject
 import java.io.File
-import java.net.URI
-import java.net.URISyntaxException
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -45,8 +45,12 @@ class SourceRegistry(
     private val running = ConcurrentHashMap<String, Running>()
     private val syncLock = Mutex()
 
-    /** Starts the schedules of the stored sources. */
+    /**
+     * Starts the schedules of the stored sources. Photos, skipped files and originals of a source that is not stored any
+     * more (its configuration was lost) go first: no source would sync, render or remove them.
+     */
     fun start() {
+        removeOrphans()
         for (config in configs.sources.value) launch(config)
     }
 
@@ -62,7 +66,7 @@ class SourceRegistry(
         val added = configs.add(source)
         val started = launch(added)
         if (added.ready) started?.scheduler?.requestSync()
-        log.i(TAG, "Source ${added.id} (${added.kind}) on ${hostOf(added.connection.serverUrl)} added")
+        log.i(TAG, "Source ${added.id} (${added.kind}) on ${SourceConfigStore.hostOf(added.connection.serverUrl)} added")
         return added
     }
 
@@ -96,20 +100,17 @@ class SourceRegistry(
     }
 
     /**
-     * Removes [id]: stops its sync, asks the server to revoke its credentials, deletes them and removes its photos,
-     * skipped files and originals. Other sources and the local photos are not touched. `false` for an unknown ID.
+     * Removes [id]: stops its sync, deletes its credentials and removes its photos, skipped files and originals, then asks
+     * the server to revoke the credentials in the background, so that a server that does not answer does not hold up the
+     * request. Other sources and the local photos are not touched. `false` for an unknown ID, also for the second of two
+     * removals at once.
      */
+    @Synchronized
     fun remove(id: String): Boolean {
-        val config = configs.get(id) ?: return false
+        // The configuration goes first: a sync that is still running sees it gone and applies nothing.
+        val config = configs.remove(id) ?: return false
         val gone = running.remove(id)
         gone?.scheduler?.stop()
-        try {
-            kindOf(config)?.revoke(config)
-        } catch (e: Exception) {
-            log.w(TAG, "The credentials of $id could not be revoked on the server: ${e.message}")
-        }
-        // The configuration goes first: a sync that is still running sees it gone and applies nothing.
-        configs.remove(id)
         results.remove(id)
         val removed =
             index.edit { edit ->
@@ -122,6 +123,15 @@ class SourceRegistry(
         (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes)).delete()
         onSourceRemoved(config)
         log.i(TAG, "Source $id removed, ${removed.size} photos removed")
+        kindOf(config)?.let { kind ->
+            scope.launch {
+                try {
+                    kind.revoke(config)
+                } catch (e: Exception) {
+                    log.w(TAG, "The credentials of $id could not be revoked on the server: ${e.message}")
+                }
+            }
+        }
         return true
     }
 
@@ -134,6 +144,26 @@ class SourceRegistry(
     fun original(entry: PhotoEntry): File =
         source(entry.source)?.original(entry)
             ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source of ${entry.path} is not there")
+
+    private fun removeOrphans() {
+        val known = configs.sources.value.mapTo(HashSet()) { it.id } + LocalPhotoSource.SOURCE_ID
+        val orphans =
+            index.edit { edit ->
+                val photos = edit.photos.values.filter { it.source !in known }
+                photos.forEach { edit.remove(it.id) }
+                edit.skipped.values
+                    .filter { it.source !in known }
+                    .forEach { edit.unskip(it.source, it.path) }
+                photos
+            }
+        orphans.forEach(onPhotoRemoved)
+        originalsDir
+            .listFiles()
+            .orEmpty()
+            .filter { it.isDirectory && it.name !in known }
+            .forEach { OriginalsStore(it, freeBytes).delete() }
+        if (orphans.isNotEmpty()) log.w(TAG, "${orphans.size} photos of sources that are not stored any more removed")
+    }
 
     private fun launch(config: StoredSource): Running? {
         val kind = kindOf(config)
@@ -162,13 +192,5 @@ class SourceRegistry(
 
     private companion object {
         const val TAG = "sources"
-
-        /** The host for the log: the address of a share holds no token, but the log names no more than it needs. */
-        fun hostOf(serverUrl: String): String =
-            try {
-                URI(serverUrl).host ?: serverUrl
-            } catch (e: URISyntaxException) {
-                serverUrl
-            }
     }
 }

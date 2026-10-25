@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** When to sync. Pure, so that it is tested without time passing. */
@@ -71,12 +70,12 @@ class SourceScheduler(
     }
 
     /**
-     * Asks for a sync now. `false` if one is already running or asked for; the API says so. The status shows the sync as running
-     * at once, before the loop has picked it up.
+     * Asks for a sync now. `false` if one is already running, asked for or waiting for another source; the API says so. The
+     * status shows the sync as running at once, before the loop has picked it up.
      */
     @Synchronized
     fun requestSync(): Boolean {
-        if (_status.value.syncing) return false
+        if (_status.value.syncing || _status.value.waiting) return false
         _status.value = _status.value.copy(syncing = true)
         wake.trySend(Wake.REQUEST)
         return true
@@ -132,8 +131,19 @@ class SourceScheduler(
         _status.value = _status.value.copy(syncing = true)
         val result =
             try {
+                if (!syncLock.tryLock()) {
+                    // Another source syncs: this one waits and says so, it does not run yet.
+                    _status.value = _status.value.copy(syncing = false, waiting = true)
+                    syncLock.lock()
+                }
+                _status.value = _status.value.copy(syncing = true, waiting = false)
                 // A failure leaves the lock at once, so a source that cannot be reached does not hold the others up.
-                val counts = syncLock.withLock { source.scan() }
+                val counts =
+                    try {
+                        source.scan()
+                    } finally {
+                        syncLock.unlock()
+                    }
                 failures = 0
                 StoredSyncResult(clock.millis(), true, null, counts.added, counts.updated, counts.removed)
             } catch (e: CancellationException) {

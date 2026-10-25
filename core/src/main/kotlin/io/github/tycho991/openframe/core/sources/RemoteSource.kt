@@ -201,7 +201,8 @@ class RemoteSource(
                 remote.download(file, part)
             } catch (e: SourceException) {
                 part.delete()
-                // A file that vanished since the listing is the next sync's business, not a reason to stop.
+                // A file that vanished since the listing is the next sync's business, not a reason to stop. A source that is
+                // gone as a whole (a withdrawn share) is: every further download would fail the same way.
                 if (e.kind == SourceException.Kind.NOT_FOUND) return Result.failure(e)
                 throw e
             }

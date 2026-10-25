@@ -12,6 +12,7 @@ import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -112,6 +113,9 @@ class SourceRegistryTest {
         assertTrue(registry.source("sa")!!.originals.has(gone))
 
         assertTrue(registry.remove("sa"))
+        assertFalse(registry.remove("sa"), "a second removal of the same source does nothing")
+        assertEquals(0, kind.revoked, "the server is asked afterwards, not inside the request")
+        scope.runCurrent()
 
         assertEquals(
             setOf("mine.jpg", "b.jpg"),
@@ -126,7 +130,36 @@ class SourceRegistryTest {
         assertEquals(1, kind.revoked)
         assertEquals(listOf(gone.id), removedPhotos.map { it.id })
         assertEquals(listOf("sa"), removedSources)
-        assertFalse(registry.remove("sa"), "an unknown source")
+        assertFalse(registry.remove("nope"), "an unknown source")
+    }
+
+    @Test
+    fun `At the start photos and originals of a source that is not stored any more are removed`() {
+        val orphan = PhotoEntry(PhotoEntry.idFor("sgone", "a.jpg"), "sgone", "a.jpg", 1, 1, 0, 1, 1, 1)
+        val local = PhotoEntry(PhotoEntry.idFor("local", "mine.jpg"), "local", "mine.jpg", 1, 1, 0, 1, 1, 1)
+        index.edit {
+            it.put(orphan)
+            it.put(local)
+            it.skip(
+                io.github.tycho991.openframe.core.library.SkippedFile(
+                    "sgone",
+                    "b.jpg",
+                    io.github.tycho991.openframe.core.platform.SkipReason.CORRUPT,
+                    1,
+                    1,
+                ),
+            )
+        }
+        configs.add(FakeKind.source("skept"))
+        File(dir, "sources/sgone").mkdirs()
+        File(dir, "sources/sgone/${orphan.id}.jpg").writeBytes(ByteArray(10))
+        File(dir, "sources/skept").mkdirs()
+        registry
+        assertEquals(setOf(local.id), index.library.value.photos.keys)
+        assertEquals(emptyList<Any>(), index.library.value.skipped)
+        assertFalse(File(dir, "sources/sgone").exists())
+        assertTrue(File(dir, "sources/skept").exists(), "the folder of a stored source stays")
+        assertEquals(listOf(orphan.id), removedPhotos.map { it.id })
     }
 
     @Test

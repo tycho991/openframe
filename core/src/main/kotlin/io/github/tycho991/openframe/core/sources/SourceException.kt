@@ -19,8 +19,11 @@ class SourceException(
         /** The server refused the credentials or the password of a share. */
         UNAUTHORIZED,
 
-        /** The folder, the file or the share is not there. */
+        /** The folder or the file is not there. */
         NOT_FOUND,
+
+        /** The source itself is not there any more, such as a share that was withdrawn: nothing of it can be read. */
+        GONE,
 
         /** The source is there but does not allow reading, such as a share that only accepts uploads. */
         NOT_READABLE,

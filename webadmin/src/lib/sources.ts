@@ -51,6 +51,7 @@ export interface StatusLine {
 /** The status line of a source in the interface language [lang]. */
 export function statusLine(status: SourceStatus, lang: string): StatusLine {
   if (status.syncing) return { key: "sources.syncing", params: {}, failed: false };
+  if (status.waiting) return { key: "sources.waitingForOther", params: {}, failed: false };
   if (status.ok === null) return { key: "sources.never", params: {}, failed: false };
   const time = formatTime(status.lastSyncAt, lang);
   if (status.ok) {

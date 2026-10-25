@@ -42,14 +42,21 @@
     return () => clearInterval(id);
   });
 
-  // While the user approves in the other tab, ask the frame every two seconds.
+  // While the user approves in the other tab, ask the frame every two seconds: one question at a time, and an answer
+  // that comes after the flow was cancelled or ended is dropped.
   $effect(() => {
     if (!login) return;
     const flowId = login.flowId;
-    const id = setInterval(async () => {
+    let over = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ask = async () => {
       try {
         const polled = await api.pollSourceLogin(flowId);
-        if (polled.state === "pending") return;
+        if (over) return;
+        if (polled.state === "pending") {
+          timer = setTimeout(ask, 2000);
+          return;
+        }
         login = null;
         if (polled.state === "expired") loginMessage = t("sources.loginExpired");
         else if (polled.state === "failed")
@@ -60,11 +67,16 @@
           await load();
         }
       } catch (e) {
+        if (over) return;
         login = null;
         loginMessage = errorText(e);
       }
-    }, 2000);
-    return () => clearInterval(id);
+    };
+    timer = setTimeout(ask, 2000);
+    return () => {
+      over = true;
+      clearTimeout(timer);
+    };
   });
 
   async function addShare(event: SubmitEvent) {
@@ -126,6 +138,7 @@
   <section class="card add" aria-labelledby="add-source">
     <h2 id="add-source">{t("sources.add")}</h2>
     {#if full}
+      <!-- No new source fits, but an account that is one can log in again to get new credentials. -->
       <p class="muted" role="status">{t("sources.full")}</p>
     {:else}
       <div class="tabs" role="tablist">
@@ -146,101 +159,103 @@
           onclick={() => (tab = "account")}>{t("sources.tab.account")}</button
         >
       </div>
+    {/if}
 
-      {#if tab === "share"}
-        <div id="panel-share" role="tabpanel" aria-labelledby="tab-share">
-          <form onsubmit={addShare} novalidate>
-            <div class="field">
-              <label for="share-link">{t("sources.link")}</label>
-              <input
-                id="share-link"
-                type="url"
-                inputmode="url"
-                placeholder="https://cloud.example.org/s/…"
-                bind:value={link}
-                disabled={adding}
-                aria-invalid={!!linkError}
-                aria-describedby="share-link-hint"
-              />
-              <span class="hint" id="share-link-hint">{t("sources.linkHint")}</span>
-              {#if isPlainHttp(link)}<span class="hint warn" role="status">{t("sources.httpWarning")}</span
-                >{/if}
-              {#if linkError}<span class="error" role="alert">{linkError}</span>{/if}
-            </div>
-            <div class="field">
-              <label for="share-password">{t("sources.password")}</label>
-              <input
-                id="share-password"
-                type="password"
-                autocomplete="off"
-                bind:value={password}
-                disabled={adding}
-                aria-invalid={!!passwordError}
-                aria-describedby="share-password-hint"
-              />
-              <span class="hint" id="share-password-hint">{t("sources.passwordHint")}</span>
-              {#if passwordError}<span class="error" role="alert">{passwordError}</span>{/if}
-            </div>
-            <div class="field">
-              <label for="share-name">{t("sources.shareName")}</label>
-              <input
-                id="share-name"
-                type="text"
-                bind:value={name}
-                disabled={adding}
-                aria-invalid={!!nameError}
-              />
-              {#if nameError}<span class="error" role="alert">{nameError}</span>{/if}
-            </div>
+    {#if !full && tab === "share"}
+      <div id="panel-share" role="tabpanel" aria-labelledby="tab-share">
+        <form onsubmit={addShare} novalidate>
+          <div class="field">
+            <label for="share-link">{t("sources.link")}</label>
+            <input
+              id="share-link"
+              type="url"
+              inputmode="url"
+              placeholder="https://cloud.example.org/s/…"
+              bind:value={link}
+              disabled={adding}
+              aria-invalid={!!linkError}
+              aria-describedby="share-link-hint"
+            />
+            <span class="hint" id="share-link-hint">{t("sources.linkHint")}</span>
+            {#if isPlainHttp(link)}<span class="hint warn" role="status">{t("sources.httpWarning")}</span
+              >{/if}
+            {#if linkError}<span class="error" role="alert">{linkError}</span>{/if}
+          </div>
+          <div class="field">
+            <label for="share-password">{t("sources.password")}</label>
+            <input
+              id="share-password"
+              type="password"
+              autocomplete="off"
+              bind:value={password}
+              disabled={adding}
+              aria-invalid={!!passwordError}
+              aria-describedby="share-password-hint"
+            />
+            <span class="hint" id="share-password-hint">{t("sources.passwordHint")}</span>
+            {#if passwordError}<span class="error" role="alert">{passwordError}</span>{/if}
+          </div>
+          <div class="field">
+            <label for="share-name">{t("sources.shareName")}</label>
+            <input
+              id="share-name"
+              type="text"
+              bind:value={name}
+              disabled={adding}
+              aria-invalid={!!nameError}
+            />
+            {#if nameError}<span class="error" role="alert">{nameError}</span>{/if}
+          </div>
+          <div class="actions">
+            {#if adding}<span role="status">{t("sources.adding")}</span>{/if}
+            <button type="submit" class="primary" disabled={link.trim() === "" || adding}
+              >{t("sources.addShare")}</button
+            >
+          </div>
+          {#if shareMessage}<p class="error" role="alert">{shareMessage}</p>{/if}
+        </form>
+      </div>
+    {:else}
+      <div
+        id="panel-account"
+        role={full ? undefined : "tabpanel"}
+        aria-labelledby={full ? undefined : "tab-account"}
+      >
+        <form onsubmit={connect} novalidate>
+          <div class="field">
+            <label for="nc-server">{t("sources.server")}</label>
+            <input
+              id="nc-server"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://cloud.example.org"
+              bind:value={serverUrl}
+              disabled={login !== null}
+              aria-invalid={!!serverError}
+              aria-describedby="nc-server-hint"
+            />
+            <span class="hint" id="nc-server-hint">{t("sources.serverHint")}</span>
+            {#if isPlainHttp(serverUrl)}<span class="hint warn" role="status">{t("sources.httpWarning")}</span
+              >{/if}
+            {#if serverError}<span class="error" role="alert">{serverError}</span>{/if}
+          </div>
+          {#if login}
+            <p role="status">{t("sources.waiting")}</p>
+            <p>
+              <a href={login.loginUrl} target="_blank" rel="noopener noreferrer">{t("sources.openLogin")}</a>
+              <button type="button" onclick={() => (login = null)}>{t("sources.cancelLogin")}</button>
+            </p>
+          {:else}
             <div class="actions">
-              {#if adding}<span role="status">{t("sources.adding")}</span>{/if}
-              <button type="submit" class="primary" disabled={link.trim() === "" || adding}
-                >{t("sources.addShare")}</button
+              <button type="submit" class="primary" disabled={serverUrl.trim() === ""}
+                >{t("sources.connect")}</button
               >
             </div>
-            {#if shareMessage}<p class="error" role="alert">{shareMessage}</p>{/if}
-          </form>
-        </div>
-      {:else}
-        <div id="panel-account" role="tabpanel" aria-labelledby="tab-account">
-          <form onsubmit={connect} novalidate>
-            <div class="field">
-              <label for="nc-server">{t("sources.server")}</label>
-              <input
-                id="nc-server"
-                type="url"
-                inputmode="url"
-                autocomplete="url"
-                placeholder="https://cloud.example.org"
-                bind:value={serverUrl}
-                disabled={login !== null}
-                aria-invalid={!!serverError}
-                aria-describedby="nc-server-hint"
-              />
-              <span class="hint" id="nc-server-hint">{t("sources.serverHint")}</span>
-              {#if isPlainHttp(serverUrl)}<span class="hint warn" role="status"
-                  >{t("sources.httpWarning")}</span
-                >{/if}
-              {#if serverError}<span class="error" role="alert">{serverError}</span>{/if}
-            </div>
-            {#if login}
-              <p role="status">{t("sources.waiting")}</p>
-              <p>
-                <a href={login.loginUrl} target="_blank" rel="noopener noreferrer">{t("sources.openLogin")}</a
-                >
-                <button type="button" onclick={() => (login = null)}>{t("sources.cancelLogin")}</button>
-              </p>
-            {:else}
-              <div class="actions">
-                <button type="submit" class="primary" disabled={serverUrl.trim() === ""}
-                  >{t("sources.connect")}</button
-                >
-              </div>
-            {/if}
-            {#if loginMessage}<p class="error" role="alert">{loginMessage}</p>{/if}
-          </form>
-        </div>
-      {/if}
+          {/if}
+          {#if loginMessage}<p class="error" role="alert">{loginMessage}</p>{/if}
+        </form>
+      </div>
     {/if}
   </section>
 {:else if !error}

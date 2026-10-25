@@ -115,7 +115,11 @@ class NextcloudMigrationTest {
         TestFrame(dir, nextcloudClients = clients).use { frame ->
             assertEquals(listOf("nextcloud"), frame.sources().map { it.id }, "not migrated a second time")
             assertEquals(204, frame.send("DELETE", "/api/v1/sources/nextcloud").statusCode())
-            assertEquals(1, (clients.login as FakeLoginFlow).revoked)
+            val deadline = System.currentTimeMillis() + 10_000
+            while ((clients.login as FakeLoginFlow).revoked == 0) {
+                check(System.currentTimeMillis() < deadline) { "the app password was not revoked" }
+                Thread.sleep(25)
+            }
             assertFalse(File(state, "nextcloud.json").exists())
             assertFalse(File(state, "nextcloud-status.json").exists())
             assertEquals(emptyList<Any>(), frame.photos())
@@ -123,6 +127,19 @@ class NextcloudMigrationTest {
         }
         TestFrame(dir, nextcloudClients = clients).use { frame ->
             assertEquals(emptyList<Any>(), frame.sources(), "a removed source does not come back")
+        }
+    }
+
+    @Test
+    fun `A sources json that cannot be read is not replaced by a second migration`() {
+        oldFrame()
+        TestFrame(dir, nextcloudClients = clients).close()
+        File(state, "sources.json").writeText("{ not json")
+        TestFrame(dir, nextcloudClients = clients).use { frame ->
+            assertEquals(emptyList<Any>(), frame.sources(), "the lost sources are not replaced by the source of 0.1.0")
+            assertTrue(File(state, "sources.json.broken").isFile, "the unreadable file is set aside")
+            assertEquals(emptyList<Any>(), frame.photos(), "photos of sources that are not stored any more go")
+            assertFalse(File(cache, "sources/nextcloud").exists())
         }
     }
 

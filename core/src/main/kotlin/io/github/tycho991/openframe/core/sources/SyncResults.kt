@@ -20,10 +20,13 @@ data class StoredSyncResults(
     val results: Map<String, StoredSyncResult> = emptyMap(),
 )
 
-/** What the API reports for a source: the stored result and whether a sync is running at the moment. */
+/** What the API reports for a source: the stored result and whether a sync is running or waiting at the moment. */
 data class SourceStatus(
+    /** A sync of this source runs, or is asked for and about to start. */
     val syncing: Boolean,
     val last: StoredSyncResult,
+    /** A sync of this source is due but waits until the sync of another source ends. */
+    val waiting: Boolean = false,
 )
 
 /** The last results of all sources in one file. */

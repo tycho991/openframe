@@ -48,6 +48,7 @@ class FakeRemoteFolder : RemoteFolder {
 class FakeKind(
     override val id: String = ID,
     override val needsFolder: Boolean = true,
+    override val listsFlat: Boolean = false,
     val folders: (StoredSource) -> RemoteFolder,
 ) : SourceKind {
     var revoked = 0

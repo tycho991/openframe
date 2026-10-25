@@ -173,7 +173,7 @@
   "sources.shareName": "Name in the list (optional)",
   "sources.addShare": "Add",
   "sources.adding": "Reading the share …",
-  "sources.full": "The frame has 8 sources, the most it can hold. Remove one to add another.",
+  "sources.full": "The frame has 8 sources, the most it can hold. Remove one to add another. An account that is already a source can log in again here to renew its access.",
   "sources.server": "Server address",
   "sources.serverHint": "For example https://cloud.example.org",
   "sources.serverInvalid": "An address that starts with http:// or https://",
@@ -220,5 +220,6 @@
   "error.share_not_a_folder": "This link shares a single file. Share a folder instead.",
   "error.share_password_required": "This share is protected. Enter its password.",
   "error.share_password_wrong": "The password is wrong.",
-  "error.share_not_readable": "This link only accepts uploads (a file drop). The frame can only read shares; share the folder with “view only” or “allow upload and editing”."
+  "error.share_not_readable": "This link only accepts uploads (a file drop). The frame can only read shares; share the folder with “view only” or “allow upload and editing”.",
+  "sources.waitingForOther": "Waiting for the sync of another source …"
 }

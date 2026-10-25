@@ -98,7 +98,7 @@ The frame SHALL sync every enabled source shortly after start and then every con
 - **THEN** the other keeps syncing on its schedule
 
 ### Requirement: Status
-The API SHALL report for every source whether a sync is running, the time and the result of the last one, its error text and the numbers of photos added, updated and removed.
+The API SHALL report for every source whether a sync is running or waits for the sync of another source, the time and the result of the last one, its error text and the numbers of photos added, updated and removed. A request to sync a source that waits SHALL NOT start another.
 
 #### Scenario: After a sync
 - **WHEN** a sync of a source has finished
@@ -107,6 +107,10 @@ The API SHALL report for every source whether a sync is running, the time and th
 #### Scenario: After a failure
 - **WHEN** a sync of a source has failed
 - **THEN** its status shows `ok` false and a readable error text
+
+#### Scenario: Waiting for another source
+- **WHEN** a sync of a source is due while another source syncs
+- **THEN** its status shows that it waits, not that it syncs, and its sync follows when the other one ends
 
 ### Requirement: Sync on request
 The API SHALL start a sync of one source on request and answer at once. If one is already running for that source, the request SHALL NOT start another and SHALL say so.

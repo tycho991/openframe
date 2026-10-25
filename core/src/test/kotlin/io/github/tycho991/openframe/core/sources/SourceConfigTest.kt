@@ -46,7 +46,7 @@ class SourceConfigTest {
     @Test
     fun `No file means no sources, and the defaults of a new one`() {
         val store = SourceConfigStore(JsonStore(File(dir, "sources.json"), StoredSources.serializer(), TestScope(), log))
-        assertFalse(store.load(), "no sources.json")
+        assertEquals(SourceConfigStore.Loaded.MISSING, store.load(), "no sources.json")
         assertEquals(emptyList<StoredSource>(), store.sources.value)
         val added = store.add(account())
         assertEquals("", added.folder, "no default folder for an account")
@@ -54,6 +54,18 @@ class SourceConfigTest {
         assertEquals(2_000, added.originalsBudgetMb)
         assertTrue(added.enabled && added.includeSubfolders && added.removeVanished)
         assertFalse(added.ready, "not ready without a folder")
+    }
+
+    @Test
+    fun `A file that is there is read, one that cannot be read says so`() {
+        val store = newStore()
+        store.add(account())
+        runBlocking { store.flush() }
+        assertEquals(SourceConfigStore.Loaded.READ, newStore().load())
+        File(dir, "sources.json").writeText("{ broken")
+        val broken = SourceConfigStore(JsonStore(File(dir, "sources.json"), StoredSources.serializer(), TestScope(), log))
+        assertEquals(SourceConfigStore.Loaded.UNREADABLE, broken.load())
+        assertEquals(emptyList<StoredSource>(), broken.sources.value)
     }
 
     @Test
@@ -167,6 +179,8 @@ class SourceConfigTest {
     fun `Only http and https addresses are accepted`() {
         assertEquals("https://cloud.example.org", SourceConfigStore.normalizeServerUrl(" https://cloud.example.org/ "))
         assertEquals("http://nas.local:8080/nextcloud", SourceConfigStore.normalizeServerUrl("http://nas.local:8080/nextcloud/"))
+        assertEquals("https://Cloud.example.org", SourceConfigStore.normalizeServerUrl("Https://Cloud.example.org"), "a capitalized scheme")
+        assertEquals("http://nas", SourceConfigStore.normalizeServerUrl("HTTP://nas"))
         for (bad in listOf(
             "ftp://x.org",
             "cloud.example.org",

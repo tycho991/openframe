@@ -27,6 +27,7 @@ data class SourceSettingsDto(
 @Serializable
 data class SourceStatusDto(
     val syncing: Boolean,
+    val waiting: Boolean,
     val lastSyncAt: String?,
     val ok: Boolean?,
     val error: String?,
@@ -113,6 +114,7 @@ fun Router.sourcesRoutes(
             status =
                 SourceStatusDto(
                     syncing = status.syncing,
+                    waiting = status.waiting,
                     lastSyncAt = last.lastSyncAtMs?.let { Instant.ofEpochMilli(it).toString() },
                     ok = last.lastSyncOk,
                     error = last.error,
@@ -167,7 +169,6 @@ fun Router.sourcesRoutes(
 
     patch("/api/v1/sources/{sourceId}") { req ->
         val id = req.pathParam("sourceId")
-        known(id)
         val patch = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
         HttpResponse.json(SourceDto.serializer(), dto(sources.patch(id, patch)))
     }

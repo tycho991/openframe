@@ -220,7 +220,7 @@ class ShareFolder(
         response.close()
         if (shareIsGone()) {
             throw SourceException(
-                SourceException.Kind.NOT_FOUND,
+                SourceException.Kind.GONE,
                 "The share on ${serverUrl.toHttpUrl().host} was not found; it may have been withdrawn",
             )
         }

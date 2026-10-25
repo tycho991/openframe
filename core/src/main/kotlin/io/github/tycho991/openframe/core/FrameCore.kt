@@ -196,7 +196,8 @@ class FrameCore(
         signer.load()
         index.load()
         syncResults.load()
-        if (!sourceConfigs.load()) migration.migrate()
+        // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
+        if (sourceConfigs.load() == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()

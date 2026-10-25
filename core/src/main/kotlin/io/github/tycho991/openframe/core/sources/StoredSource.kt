@@ -107,11 +107,28 @@ class SourceConfigStore(
     /** Includes the secrets: for the sources and the API's rules only, never for a response. */
     val sources: StateFlow<List<StoredSource>> = _sources.asStateFlow()
 
-    /** Reads `sources.json`. `false` if there is none: a new frame, or one that has only the `nextcloud.json` of 0.1.0. */
-    fun load(): Boolean {
+    /** What [load] found. */
+    enum class Loaded {
+        /** `sources.json` was read. */
+        READ,
+
+        /** There is no `sources.json`: a new frame, or one that has only the `nextcloud.json` of 0.1.0. */
+        MISSING,
+
+        /** `sources.json` is there but could not be read; the [JsonStore] set it aside. The sources it held are gone. */
+        UNREADABLE,
+    }
+
+    /** Reads `sources.json`. */
+    fun load(): Loaded {
+        val existed = store.exists()
         val stored = store.load()
         _sources.value = stored?.sources.orEmpty()
-        return stored != null
+        return when {
+            stored != null -> Loaded.READ
+            existed -> Loaded.UNREADABLE
+            else -> Loaded.MISSING
+        }
     }
 
     fun get(id: String): StoredSource? = _sources.value.firstOrNull { it.id == id }
@@ -276,7 +293,8 @@ class SourceConfigStore(
         }
 
         /**
-         * The address of a server as it is stored: `http` or `https`, a host, no user, query or fragment, no trailing `/`.
+         * The address of a server as it is stored: `http` or `https` (in any case, stored in lower case, as phone keyboards
+         * like to capitalize the first letter), a host, no user, query or fragment, no trailing `/`.
          * Throws [ValidationException] for the field `serverUrl`.
          */
         fun normalizeServerUrl(raw: String): String {
@@ -287,16 +305,25 @@ class SourceConfigStore(
                 } catch (e: URISyntaxException) {
                     null
                 }
+            val scheme = uri?.scheme?.lowercase()
             val ok =
                 uri != null &&
-                    (uri.scheme == "http" || uri.scheme == "https") &&
+                    (scheme == "http" || scheme == "https") &&
                     !uri.host.isNullOrEmpty() &&
                     uri.userInfo == null &&
                     uri.rawQuery == null &&
                     uri.rawFragment == null
             if (!ok) throw ValidationException(mapOf("serverUrl" to "An address starting with http:// or https://"))
-            return text.trimEnd('/')
+            return scheme + text.substring(scheme!!.length).trimEnd('/')
         }
+
+        /** The host of [serverUrl] for a name or a log line, the address itself if it has none. */
+        fun hostOf(serverUrl: String): String =
+            try {
+                URI(serverUrl).host ?: serverUrl
+            } catch (e: URISyntaxException) {
+                serverUrl
+            }
 
         /**
          * The server as it is compared: host and path without the scheme, so that a server that moved from `http` to

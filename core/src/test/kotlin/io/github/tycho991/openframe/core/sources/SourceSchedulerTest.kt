@@ -277,12 +277,15 @@ class SourceSchedulerTest {
         val otherScheduler = schedulerOf(other)
         advance(30_000)
         assertEquals(1 to 0, source.scans to other.scans, "the second waits for the lock")
-        assertTrue(otherScheduler.status.value.syncing, "it shows as running while it waits")
+        assertTrue(otherScheduler.status.value.waiting, "it says that it waits")
+        assertFalse(otherScheduler.status.value.syncing, "and not that it syncs")
+        assertFalse(otherScheduler.requestSync(), "a request while it waits starts nothing more")
         gate.complete(Unit)
         scope.runCurrent()
         assertEquals(1 to 1, source.scans to other.scans)
         assertEquals(1, maxRunning, "never both at once")
         assertEquals(true, otherScheduler.status.value.last.lastSyncOk)
+        assertFalse(otherScheduler.status.value.waiting)
     }
 
     @Test

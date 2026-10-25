@@ -153,8 +153,9 @@ object TestServerMain {
                             ok("added $n")
                         }
 
-                        // The user approves the login in the Nextcloud tab.
+                        // The user approves the login in the Nextcloud tab; `slow=3000` makes the answer take that many ms.
                         "/nextcloud/approve" -> {
+                            (nextcloud.login as FakeLoginFlow).donePollDelayMs = q["slow"]?.toLong() ?: 0L
                             (nextcloud.login as FakeLoginFlow).approved = true
                             ok("approved")
                         }

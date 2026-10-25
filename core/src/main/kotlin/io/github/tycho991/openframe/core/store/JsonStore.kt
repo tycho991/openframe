@@ -62,6 +62,9 @@ class JsonStore<T>(
         }
     }
 
+    /** Whether the file is there, readable or not. */
+    fun exists(): Boolean = file.exists()
+
     /** Reads the stored state or `null` if there is no readable one. */
     fun load(): T? {
         if (tmp.exists()) {

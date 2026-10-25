@@ -78,6 +78,9 @@ class FakeLoginFlow(
 
     @Volatile var revoked = 0
 
+    /** How long an approved poll takes, like a slow server that also has to name the user. */
+    @Volatile var donePollDelayMs = 0L
+
     val started = ArrayList<String>()
 
     override fun start(serverUrl: String): LoginStart {
@@ -86,8 +89,11 @@ class FakeLoginFlow(
         return LoginStart(serverUrl, "$serverUrl/index.php/login/v2/flow/abc", "$serverUrl/index.php/login/v2/poll", "token")
     }
 
-    override fun poll(start: LoginStart): LoginPoll =
-        if (approved) LoginPoll.Done(start.serverUrl, loginName, appPassword) else LoginPoll.Pending
+    override fun poll(start: LoginStart): LoginPoll {
+        if (!approved) return LoginPoll.Pending
+        if (donePollDelayMs > 0) Thread.sleep(donePollDelayMs)
+        return LoginPoll.Done(start.serverUrl, loginName, appPassword)
+    }
 
     override fun userId(
         serverUrl: String,

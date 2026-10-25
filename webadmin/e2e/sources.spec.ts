@@ -228,6 +228,37 @@ test("A photo of a source cannot be deleted, only hidden", async ({ page }) => {
   expect({ deletable, hints }).toEqual({ deletable: 1, hints: 1 });
 });
 
+test("A slow approval is not reported as expired", async ({ page }) => {
+  await pairInUi(page);
+  await openSources(page);
+  await page.getByRole("tab", { name: "Nextcloud-Konto" }).click();
+  await page.getByLabel("Adresse des Servers").fill("http://127.0.0.1:8090");
+  const popup = page.waitForEvent("popup").catch(() => null);
+  await page.getByRole("button", { name: "Verbinden" }).click();
+  await popup;
+  // The answer to the approved login takes longer than the interval between two questions.
+  await nextcloudApprove(5_000);
+  await expect(card(page, "127.0.0.1").getByText("Anna auf http://127.0.0.1:8090")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText("Die Anmeldung ist abgelaufen")).toHaveCount(0);
+});
+
+test("A full frame offers no new share, but an account can log in again", async ({ page }) => {
+  await pairInUi(page);
+  await openSources(page);
+  for (let i = 1; i <= 8; i++) {
+    await nextcloudShare(`Voll${i}`, { name: `Ordner ${i}` });
+    await addShare(page, `Voll${i}`);
+    await expect(card(page, `Ordner ${i}`)).toBeVisible();
+  }
+  await expect(page.getByText("Der Rahmen hat 8 Quellen")).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByLabel("Link der Freigabe")).toHaveCount(0);
+  await expect(page.getByLabel("Adresse des Servers")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verbinden" })).toBeVisible();
+});
+
 test("The address of the Nextcloud section of earlier versions leads to the sources", async ({ page }) => {
   await pairInUi(page);
   await page.goto("/nextcloud");

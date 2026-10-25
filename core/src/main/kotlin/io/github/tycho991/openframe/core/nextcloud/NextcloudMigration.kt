@@ -10,7 +10,6 @@ import io.github.tycho991.openframe.core.store.StoreJson
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import java.io.File
-import java.net.URI
 
 /** What `nextcloud.json` of 0.1.0 holds. Read for the migration only; [toString] hides the password. */
 @Serializable
@@ -62,7 +61,7 @@ class NextcloudMigration(
             StoredSource(
                 id = ID,
                 kind = NextcloudAccountKind.ID,
-                name = URI(old.serverUrl).host ?: old.serverUrl,
+                name = SourceConfigStore.hostOf(old.serverUrl),
                 connection = Connection.Account(old.serverUrl, old.userId, old.loginName, old.appPassword),
                 enabled = old.enabled,
                 folder = old.folder,

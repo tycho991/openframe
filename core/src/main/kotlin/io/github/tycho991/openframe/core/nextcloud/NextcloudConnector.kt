@@ -8,7 +8,6 @@ import io.github.tycho991.openframe.core.sources.SourceConfigStore
 import io.github.tycho991.openframe.core.sources.SourceException
 import io.github.tycho991.openframe.core.sources.SourceRegistry
 import io.github.tycho991.openframe.core.sources.StoredSource
-import java.net.URI
 import java.security.SecureRandom
 import java.time.Instant
 
@@ -93,11 +92,17 @@ class NextcloudConnector(
                         sources.reconnect(known.id, account)
                         LoginState("done", user = polled.loginName, sourceId = known.id)
                     } else if (configs.sources.value.size >= StoredSource.MAX_SOURCES) {
+                        // The server issued an app password the frame cannot use: it must not stay active there.
+                        try {
+                            login.revoke(polled.serverUrl, polled.loginName, polled.appPassword)
+                        } catch (e: SourceException) {
+                            // Nothing more to do; the user can remove the login in Nextcloud's settings.
+                        }
                         LoginState("failed", error = "The frame has ${StoredSource.MAX_SOURCES} sources already; remove one first")
                     } else {
                         val added =
                             sources.add(
-                                StoredSource(configs.newId(), NextcloudAccountKind.ID, hostOf(polled.serverUrl), account),
+                                StoredSource(configs.newId(), NextcloudAccountKind.ID, SourceConfigStore.hostOf(polled.serverUrl), account),
                             )
                         LoginState("done", user = polled.loginName, sourceId = added.id)
                     }
@@ -155,7 +160,7 @@ class NextcloudConnector(
                         }
                     }
 
-                    SourceException.Kind.NOT_FOUND -> {
+                    SourceException.Kind.NOT_FOUND, SourceException.Kind.GONE -> {
                         HttpException(400, "share_not_found", "The share was not found", mapOf("link" to "No such share"))
                     }
 
@@ -172,7 +177,7 @@ class NextcloudConnector(
             throw HttpException(400, "share_not_a_folder", "The link is the share of a single file", mapOf("link" to "Not a folder"))
         }
         // Without a name of its own a share is called after the shared folder, so that several shares can be told apart.
-        val shownName = normalizedName ?: SourceConfigStore.normalizeName(info.name) ?: hostOf(share.serverUrl)
+        val shownName = normalizedName ?: SourceConfigStore.normalizeName(info.name) ?: SourceConfigStore.hostOf(share.serverUrl)
         return sources.add(StoredSource(configs.newId(), NextcloudShareKind.ID, shownName, share, folder = "/"))
     }
 
@@ -189,8 +194,6 @@ class NextcloudConnector(
     ) = stored is Connection.Share &&
         stored.token == share.token &&
         SourceConfigStore.serverKey(stored.serverUrl) == SourceConfigStore.serverKey(share.serverUrl)
-
-    private fun hostOf(serverUrl: String) = URI(serverUrl).host ?: serverUrl
 
     private fun randomId() = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it) }
 

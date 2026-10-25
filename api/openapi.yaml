@@ -739,9 +739,12 @@ components:
     SourceStatus:
       type: object
       additionalProperties: false
-      required: [syncing, lastSyncAt, ok, error, added, updated, removed]
+      required: [syncing, waiting, lastSyncAt, ok, error, added, updated, removed]
       properties:
-        syncing: { type: boolean }
+        syncing: { type: boolean, description: "A sync of this source runs, or is asked for and about to start." }
+        waiting:
+          type: boolean
+          description: "A sync of this source is due but waits until the sync of another source ends: one sync runs at a time."
         lastSyncAt: { type: [string, "null"], format: date-time }
         ok: { type: [boolean, "null"], description: "Result of the last sync, `null` before the first." }
         error: { type: [string, "null"], description: "Readable error of the last sync. Never contains a credential or a share token." }

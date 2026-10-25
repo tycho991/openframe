@@ -169,6 +169,49 @@ class RemoteSourceTest {
     }
 
     @Test
+    fun `A source that is gone as a whole ends the sync at once and removes nothing`() {
+        remote.put("a.jpg", jpg(), "e1")
+        sync()
+        remote.put("b.jpg", jpg(), "e2")
+        remote.put("c.jpg", jpg(), "e3")
+        remote.remove("a.jpg")
+        var attempts = 0
+        remote.beforeDownload = {
+            attempts++
+            throw SourceException(SourceException.Kind.GONE, "The share on cloud.example.org was not found; it may have been withdrawn")
+        }
+        val failure = assertThrows(SourceException::class.java) { sync() }
+        assertEquals(SourceException.Kind.GONE, failure.kind)
+        assertEquals(1, attempts, "no further download is tried")
+        assertEquals(setOf("a.jpg"), photos().keys, "nothing is removed after a failure")
+    }
+
+    @Test
+    fun `A kind without folders lists everything even without subfolders`() {
+        val flat =
+            RemoteSource(
+                "nextcloud",
+                { configs.get("nextcloud") },
+                FakeKind(listsFlat = true) { remote },
+                index,
+                engine,
+                originals,
+                {},
+                log,
+            )
+        configs.patch(
+            "nextcloud",
+            kotlinx.serialization.json.buildJsonObject {
+                put("includeSubfolders", kotlinx.serialization.json.JsonPrimitive(false))
+            },
+        )
+        remote.put("album/a.jpg", jpg(), "e1")
+        remote.put("top.jpg", jpg(), "e2")
+        assertEquals(ScanResult(2, 0, 0, 0), runBlocking { flat.scan() })
+        assertEquals(ScanResult(0, 0, 1, 0), sync(), "a kind with folders does not list the subfolder, so its photo goes")
+    }
+
+    @Test
     fun `A file that cannot be decoded is skipped and not downloaded again`() {
         remote.put("broken.jpg", Fixtures.file("broken.jpg").readBytes(), "e1")
         remote.put("heic.heic", Fixtures.file("photo.heic").readBytes(), "e2")

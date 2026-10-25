@@ -7,6 +7,7 @@ import io.github.tycho991.openframe.core.sources.Connection
 import io.github.tycho991.openframe.core.sources.SourceConfigStore
 import io.github.tycho991.openframe.core.sources.SourceException
 import io.github.tycho991.openframe.core.sources.SourceRegistry
+import io.github.tycho991.openframe.core.sources.StoredSource
 import io.github.tycho991.openframe.core.sources.StoredSources
 import io.github.tycho991.openframe.core.sources.StoredSyncResults
 import io.github.tycho991.openframe.core.sources.SyncResultStore
@@ -88,6 +89,31 @@ class NextcloudConnectorTest {
         assertEquals(id, connector.pollLogin(again.flowId).sourceId)
         assertEquals(1, configs.sources.value.size)
         assertEquals("https://cloud.example.org", (configs.get(id)!!.connection as Connection.Account).serverUrl)
+    }
+
+    @Test
+    fun `A new account at a full frame fails and its app password is revoked again`() {
+        repeat(7) {
+            configs.add(
+                StoredSource(
+                    configs.newId(),
+                    NextcloudShareKind.ID,
+                    "Share",
+                    Connection.Share("https://cloud.example.org", "token$it"),
+                    folder = "/",
+                ),
+            )
+        }
+        val first = connector.startLogin("https://cloud.example.org")
+        login.approved = true
+        connector.pollLogin(first.flowId)
+        assertEquals(8, configs.sources.value.size)
+        login.userId = "bert"
+        val second = connector.startLogin("https://cloud.example.org")
+        val state = connector.pollLogin(second.flowId)
+        assertEquals("failed", state.state)
+        assertEquals(1, login.revoked, "the unused app password does not stay active on the server")
+        assertEquals(8, configs.sources.value.size)
     }
 
     @Test

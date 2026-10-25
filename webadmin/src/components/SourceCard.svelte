@@ -123,8 +123,10 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   <div class="actions">
-    <button type="button" onclick={syncNow} disabled={source.status.syncing || needsFolder}
-      >{t("sources.sync")}</button
+    <button
+      type="button"
+      onclick={syncNow}
+      disabled={source.status.syncing || source.status.waiting || needsFolder}>{t("sources.sync")}</button
     >
     <button type="button" class="danger" onclick={() => (confirmRemove = true)}>{t("sources.remove")}</button>
   </div>

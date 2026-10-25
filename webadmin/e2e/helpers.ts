@@ -28,8 +28,8 @@ export const usb = (fixture: string, to: string, { scan = true } = {}) =>
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
-/** The user approves the login in the Nextcloud tab. */
-export const nextcloudApprove = () => control("/nextcloud/approve");
+/** The user approves the login in the Nextcloud tab; with [slowMs] the frame's question after it takes that long. */
+export const nextcloudApprove = (slowMs = 0) => control(`/nextcloud/approve?slow=${slowMs}`);
 
 /**
  * A share on the fake server, of a folder called [name]; `file` makes it the share of a single file, `drop` a

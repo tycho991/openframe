@@ -268,11 +268,20 @@ class NextcloudClientTest {
         assertFalse(wrong.message.orEmpty().contains("wrong-Kz71") || wrong.message.orEmpty().contains("AbC123"))
         // Nextcloud answers an unknown token with 401 as well; the page of the share tells it apart.
         val unknown = assertThrows(SourceException::class.java) { share(token = "Nope99").probe() }
-        assertEquals(SourceException.Kind.NOT_FOUND, unknown.kind)
+        assertEquals(SourceException.Kind.GONE, unknown.kind)
         assertFalse(unknown.message.orEmpty().contains("Nope99"))
         // A server that answers 404 itself.
         nextcloud.faults["/public.php/webdav"] = 404
         assertEquals(SourceException.Kind.NOT_FOUND, kindOf { share(password = "right").probe() })
+    }
+
+    @Test
+    fun `A download from a share that was withdrawn meanwhile is gone, not a vanished file`() {
+        nextcloud.put("Shared/a.jpg", ByteArray(10), "e1")
+        nextcloud.shares["AbC123"] = FakeNextcloud.Share("Shared")
+        val file = share().list(true).single()
+        nextcloud.shares.remove("AbC123")
+        assertEquals(SourceException.Kind.GONE, kindOf { share().download(file, File(dir, "a.part")) })
     }
 
     @Test
