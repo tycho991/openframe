@@ -15,8 +15,8 @@
 
 - [x] 3.1 Galaxy Tab S7 (Wi-Fi plus SIM): install the build, tap the frame and read the hint and the empty state with `uiautomator dump`; verify: `Verwaltung: http://192.168.100.7:8080/` and the address opens the admin interface from the computer; ask before installing
 - [x] 3.2 Galaxy Tab S7 with Wi-Fi off (mobile data on): verify: the hint says "Kein Netzwerk", and 10 s after Wi-Fi is switched on again the Wi-Fi address is shown without a restart; ask before switching Wi-Fi off
-- [ ] 3.3 Lenovo and Frameo: install the build and read the hint; verify: the address is the same as before; ask before installing, and not while a run on the Lenovo is going
-- [ ] 3.4 Enter the results in `docs/DEVICE_TEST.md` (a row for Wi-Fi plus SIM, a note for Lenovo and Frameo) and mark the finding "Galaxy Tab S7, wrong address on the display" in `docs/FINDINGS.md` as fixed; verify: `git diff docs` shows the row and the changed finding
+- [x] 3.3 Lenovo and Frameo: install the build and read the hint; verify: the address is the same as before; ask before installing, and not while a run on the Lenovo is going
+- [x] 3.4 Enter the results in `docs/DEVICE_TEST.md` (a row for Wi-Fi plus SIM, a note for Lenovo and Frameo) and mark the finding "Galaxy Tab S7, wrong address on the display" in `docs/FINDINGS.md` as fixed; verify: `git diff docs` shows the row and the changed finding
 
 ## 4. Close out
 
