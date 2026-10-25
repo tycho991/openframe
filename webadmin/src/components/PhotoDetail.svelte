@@ -41,8 +41,8 @@
         <button type="button" onclick={() => ontogglehidden(photo)}
           >{photo.hidden ? t("photos.show") : t("photos.hide")}</button
         >
-        {#if photo.source === "nextcloud"}
-          <span class="muted">{t("photos.noDeleteNextcloud")}</span>
+        {#if photo.source !== "local"}
+          <span class="muted">{t("photos.noDeleteRemote")}</span>
         {:else}
           <button type="button" class="danger" onclick={() => ondelete(photo)}>{t("common.delete")}</button>
         {/if}

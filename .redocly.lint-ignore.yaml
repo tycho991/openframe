@@ -1,0 +1,7 @@
+# Problems of the linter that are accepted on purpose, each at its own location.
+# See https://redocly.com/docs/cli/ for more information.
+api/openapi.yaml:
+  # `/sources/login/sync` would match both this path and `/sources/login/{flowId}`, but the two have different
+  # methods (POST and GET) and no source ID is `login` (they are `nextcloud` or `s` plus hex digits).
+  no-ambiguous-paths:
+    - '#/paths/~1sources~1{sourceId}~1sync'

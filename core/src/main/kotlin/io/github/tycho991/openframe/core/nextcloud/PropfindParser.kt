@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.sources.SourceException
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.helpers.DefaultHandler
@@ -17,12 +18,14 @@ data class DavEntry(
     val etag: String,
     val size: Long,
     val modifiedMs: Long,
+    /** `displayname` as the server sends it, empty if it sends none: for the top of a share the name of the shared folder. */
+    val displayName: String = "",
 ) {
     val name: String get() = path.substringAfterLast('/')
 }
 
 /**
- * Reads the answer of a `PROPFIND` with a SAX parser, which streams and keeps only the four properties of each
+ * Reads the answer of a `PROPFIND` with a SAX parser, which streams and keeps only the five properties of each
  * entry. `javax.xml.parsers` is on the JVM and on Android alike.
  */
 object PropfindParser {
@@ -31,7 +34,7 @@ object PropfindParser {
         try {
             newParser().parse(InputSource(input), handler)
         } catch (e: org.xml.sax.SAXException) {
-            throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The listing of the folder could not be read", e)
+            throw SourceException(SourceException.Kind.PROTOCOL, "The listing of the folder could not be read", e)
         }
         return handler.entries
     }
@@ -63,6 +66,7 @@ object PropfindParser {
         private var size = 0L
         private var modified = 0L
         private var folder = false
+        private var displayName = ""
 
         override fun startElement(
             uri: String?,
@@ -79,6 +83,7 @@ object PropfindParser {
                     size = 0L
                     modified = 0L
                     folder = false
+                    displayName = ""
                 }
 
                 "collection" -> {
@@ -119,9 +124,13 @@ object PropfindParser {
                     modified = parseDate(value)
                 }
 
+                "displayname" -> {
+                    displayName = value
+                }
+
                 "response" -> {
                     inResponse = false
-                    entries += DavEntry(decodedPath(href), folder, etag, size, modified)
+                    entries += DavEntry(decodedPath(href), folder, etag, size, modified, displayName)
                 }
             }
             text.setLength(0)

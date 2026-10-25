@@ -6,10 +6,11 @@ import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.nextcloud.FakeClients
 import io.github.tycho991.openframe.core.nextcloud.FakeLoginFlow
-import io.github.tycho991.openframe.core.nextcloud.NextcloudException
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
+import io.github.tycho991.openframe.core.sources.FakeRemoteFolder
+import io.github.tycho991.openframe.core.sources.SourceException
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -28,7 +29,7 @@ import java.time.Instant
 object TestServerMain {
     private lateinit var core: FrameCore
 
-    /** The Nextcloud the frame talks to: in memory, steered through the control port. */
+    /** The Nextcloud the frame talks to, with its shares: in memory, steered through the control port. */
     private var nextcloud = FakeClients()
     private lateinit var dataDir: File
     private var port = 0
@@ -152,32 +153,47 @@ object TestServerMain {
                             ok("added $n")
                         }
 
-                        // The user approves the login in the Nextcloud tab.
+                        // The user approves the login in the Nextcloud tab; `slow=3000` makes the answer take that many ms.
                         "/nextcloud/approve" -> {
+                            (nextcloud.login as FakeLoginFlow).donePollDelayMs = q["slow"]?.toLong() ?: 0L
                             (nextcloud.login as FakeLoginFlow).approved = true
                             ok("approved")
                         }
 
-                        // A file in the Nextcloud folder: `/nextcloud/put?fixture=landscape.jpg&path=holiday/a.jpg&etag=e1`.
+                        // A share on the server: `/nextcloud/share?token=AbC123&password=pw`, `file=1` for the share of a single file,
+                        // `drop=1` for a "file drop" that only accepts uploads, `name` for the name of the shared folder.
+                        "/nextcloud/share" -> {
+                            nextcloud.share(
+                                q.getValue("token"),
+                                q["password"].orEmpty(),
+                                q["file"] != "1",
+                                q["drop"] == "1",
+                                q["name"] ?: "Geteilt",
+                            )
+                            ok("shared")
+                        }
+
+                        // A file in the folder of the account, or of a share with `share=<token>`:
+                        // `/nextcloud/put?fixture=landscape.jpg&path=holiday/a.jpg&etag=e1`.
                         "/nextcloud/put" -> {
                             val path = q.getValue("path")
-                            nextcloud.remote.put(path, Fixtures.file(q.getValue("fixture")).readBytes(), q["etag"] ?: "etag-$path")
+                            remoteOf(q).put(path, Fixtures.file(q.getValue("fixture")).readBytes(), q["etag"] ?: "etag-$path")
                             ok("put")
                         }
 
                         "/nextcloud/remove" -> {
-                            nextcloud.remote.remove(q.getValue("path"))
+                            remoteOf(q).remove(q.getValue("path"))
                             ok("removed")
                         }
 
                         // `/nextcloud/fail?on=1` lets listing the folder fail like a server that is down, `on=0` ends it.
                         "/nextcloud/fail" -> {
-                            nextcloud.remote.listFailure =
+                            remoteOf(q).listFailure =
                                 if (q["on"] ==
                                     "1"
                                 ) {
-                                    NextcloudException(
-                                        NextcloudException.Kind.UNREACHABLE,
+                                    SourceException(
+                                        SourceException.Kind.UNREACHABLE,
                                         "The server cloud.example.org did not answer in time",
                                     )
                                 } else {
@@ -203,5 +219,9 @@ object TestServerMain {
             }
 
         private fun ok(text: String) = newFixedLengthResponse(Response.Status.OK, "text/plain", text)
+
+        /** The folder of the share named by `share`, or of the account without it. */
+        private fun remoteOf(q: Map<String, String>): FakeRemoteFolder =
+            q["share"]?.let { nextcloud.shares.getValue(it).remote } ?: nextcloud.remote
     }
 }

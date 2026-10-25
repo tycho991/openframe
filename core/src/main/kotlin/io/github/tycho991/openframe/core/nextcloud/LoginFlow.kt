@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.nextcloud
 
 import io.github.tycho991.openframe.core.http.ApiJson
+import io.github.tycho991.openframe.core.sources.SourceException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -37,7 +38,7 @@ sealed interface LoginPoll {
  * sees a password the user typed. A second interface so that the sync and the API are tested without a server.
  */
 interface LoginFlow {
-    /** Starts a flow at [serverUrl] (already normalized). Throws [NextcloudException]. */
+    /** Starts a flow at [serverUrl] (already normalized). Throws [SourceException]. */
     fun start(serverUrl: String): LoginStart
 
     /** Asks once whether the user has approved. */
@@ -78,12 +79,12 @@ class OkHttpLoginFlow(
         val endpoint = poll?.get("endpoint")?.jsonPrimitive?.contentOrNull
         val login = json["login"]?.jsonPrimitive?.contentOrNull
         if (token == null || endpoint == null || login == null) {
-            throw NextcloudException(NextcloudException.Kind.PROTOCOL, "${base.host} does not answer like a Nextcloud server")
+            throw SourceException(SourceException.Kind.PROTOCOL, "${base.host} does not answer like a Nextcloud server")
         }
         // The frame asks only the server it was given; an answer that points elsewhere is not followed.
         val endpointUrl = endpoint.toHttpUrlOrNull()
         if (endpointUrl == null || endpointUrl.host != base.host) {
-            throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The login of ${base.host} points to another server")
+            throw SourceException(SourceException.Kind.PROTOCOL, "The login of ${base.host} points to another server")
         }
         return LoginStart(serverUrl, login, endpoint, token)
     }
@@ -105,7 +106,7 @@ class OkHttpLoginFlow(
             val password = json["appPassword"]?.jsonPrimitive?.contentOrNull
             val server = json["server"]?.jsonPrimitive?.contentOrNull
             if (login == null || password == null) {
-                throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The login ended without an app password")
+                throw SourceException(SourceException.Kind.PROTOCOL, "The login ended without an app password")
             }
             return LoginPoll.Done(upgradedServer(start.serverUrl, server), login, password)
         }
@@ -140,7 +141,7 @@ class OkHttpLoginFlow(
             ?.get("id")
             ?.jsonPrimitive
             ?.contentOrNull
-            ?: throw NextcloudException(NextcloudException.Kind.PROTOCOL, "The server did not name the user")
+            ?: throw SourceException(SourceException.Kind.PROTOCOL, "The server did not name the user")
     }
 
     override fun revoke(
@@ -183,8 +184,8 @@ class OkHttpLoginFlow(
             } catch (e: kotlinx.serialization.SerializationException) {
                 null
             }
-                ?: throw NextcloudException(
-                    NextcloudException.Kind.PROTOCOL,
+                ?: throw SourceException(
+                    SourceException.Kind.PROTOCOL,
                     "${it.request.url.host} does not answer like a Nextcloud server",
                 )
         }

@@ -44,6 +44,7 @@ class RouteAccessTest {
                     .replace("{photoId}", "local-${"a".repeat(40)}")
                     .replace("{clientId}", "x")
                     .replace("{flowId}", "x")
+                    .replace("{sourceId}", "s00000001")
                     .replace("{albumName}", "holiday")
             val body = if (route.method.isMutating) "{}" else null
             val res = frame.http.request(route.method.name, path, body)

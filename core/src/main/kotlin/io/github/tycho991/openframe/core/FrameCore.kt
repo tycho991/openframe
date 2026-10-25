@@ -3,9 +3,9 @@ package io.github.tycho991.openframe.core
 import io.github.tycho991.openframe.core.api.diagnosticsRoutes
 import io.github.tycho991.openframe.core.api.infoRoutes
 import io.github.tycho991.openframe.core.api.libraryRoutes
-import io.github.tycho991.openframe.core.api.nextcloudRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
+import io.github.tycho991.openframe.core.api.sourcesRoutes
 import io.github.tycho991.openframe.core.auth.AccessControl
 import io.github.tycho991.openframe.core.auth.ClientRegistry
 import io.github.tycho991.openframe.core.auth.ImageSigner
@@ -24,20 +24,16 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSizes
-import io.github.tycho991.openframe.core.library.SourceOriginals
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.log.LogSink
 import io.github.tycho991.openframe.core.log.RotatingFileLog
+import io.github.tycho991.openframe.core.nextcloud.NextcloudAccountKind
 import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
-import io.github.tycho991.openframe.core.nextcloud.NextcloudConfigStore
-import io.github.tycho991.openframe.core.nextcloud.NextcloudScheduler
-import io.github.tycho991.openframe.core.nextcloud.NextcloudService
-import io.github.tycho991.openframe.core.nextcloud.NextcloudSource
+import io.github.tycho991.openframe.core.nextcloud.NextcloudConnector
+import io.github.tycho991.openframe.core.nextcloud.NextcloudMigration
+import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
-import io.github.tycho991.openframe.core.nextcloud.OriginalsStore
-import io.github.tycho991.openframe.core.nextcloud.StoredNextcloud
-import io.github.tycho991.openframe.core.nextcloud.StoredSyncResult
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -49,6 +45,12 @@ import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import io.github.tycho991.openframe.core.slideshow.StoredTransitionGovernor
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
+import io.github.tycho991.openframe.core.sources.SourceConfigStore
+import io.github.tycho991.openframe.core.sources.SourceOriginals
+import io.github.tycho991.openframe.core.sources.SourceRegistry
+import io.github.tycho991.openframe.core.sources.StoredSources
+import io.github.tycho991.openframe.core.sources.StoredSyncResults
+import io.github.tycho991.openframe.core.sources.SyncResultStore
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -91,7 +93,7 @@ class FrameCore(
     private val port: Int = DEFAULT_PORT,
     logSinks: List<LogSink> = emptyList(),
     private val scanInterval: Duration = Duration.ofSeconds(15),
-    /** Where the Nextcloud source gets its connections from; the real ones unless a test hands in fakes. */
+    /** Where the Nextcloud sources get their connections from; the real ones unless a test hands in fakes. */
     nextcloudClients: NextcloudClients? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -115,36 +117,35 @@ class FrameCore(
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log)
     private val index = PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log))
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log)
-    private val nextcloudConfig =
-        NextcloudConfigStore(JsonStore(File(dirs.state, "nextcloud.json"), StoredNextcloud.serializer(), scope, log))
+    private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
+    private val syncResults =
+        SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
     private val nextcloudClients = nextcloudClients ?: OkHttpNextcloudClients()
-    private val nextcloudSource =
-        NextcloudSource(
-            nextcloudConfig,
-            this.nextcloudClients,
+    private val migration = NextcloudMigration(dirs.state, dirs.cache, sourceConfigs, syncResults, log)
+
+    /** The remote sources: settings, status, sync on request, removal. */
+    val sources =
+        SourceRegistry(
+            scope,
+            sourceConfigs,
+            syncResults,
+            listOf(NextcloudAccountKind(this.nextcloudClients), NextcloudShareKind(this.nextcloudClients)),
             index,
             engine,
-            OriginalsStore(File(dirs.cache, "nextcloud")),
+            File(dirs.cache, "sources"),
             { cache.remove(it.id) },
-            log,
-        )
-    private val nextcloudScheduler =
-        NextcloudScheduler(
-            scope,
-            nextcloudSource,
-            nextcloudConfig,
-            JsonStore(File(dirs.state, "nextcloud-status.json"), StoredSyncResult.serializer(), scope, log),
             clock,
             log,
+            migration::sourceRemoved,
         )
 
-    /** The Nextcloud source: settings, login, sync on request. */
-    val nextcloud = NextcloudService(nextcloudConfig, nextcloudSource, nextcloudScheduler, this.nextcloudClients, clock)
+    /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
+    val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock)
     val cache: RenderCache =
         RenderCache(
             File(dirs.cache, "renders"),
             engine,
-            SourceOriginals(localSource, nextcloudSource)::fileOf,
+            SourceOriginals(localSource, sources)::fileOf,
             { RenderSizes.screen(platform.screenWidth, platform.screenHeight, settings.settings.value.orientation) },
             { settings.settings.value.cacheBudgetMb * 1024L * 1024L },
             log,
@@ -194,12 +195,14 @@ class FrameCore(
         clients.load()
         signer.load()
         index.load()
-        nextcloudConfig.load()
+        syncResults.load()
+        // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
+        if (sourceConfigs.load() == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()
         scope.launch { settings.settings.collect(transitions::onSettings) }
-        nextcloudScheduler.start()
+        sources.start()
         _ready.value = true
 
         scope.launch { scanLoop() }
@@ -261,7 +264,7 @@ class FrameCore(
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         lanAddressCache = null
-        nextcloudScheduler.networkChanged()
+        sources.networkChanged()
         if (!settings.localOnly.value) server.restart()
     }
 
@@ -273,7 +276,8 @@ class FrameCore(
         settings.flush()
         clients.flush()
         index.flush()
-        nextcloudConfig.flush()
+        sourceConfigs.flush()
+        syncResults.flush()
         scope.cancel()
     }
 
@@ -282,7 +286,7 @@ class FrameCore(
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
         router.libraryRoutes(library, settings, signer, transitions)
-        router.nextcloudRoutes(nextcloud)
+        router.sourcesRoutes(sources, nextcloud)
         router.diagnosticsRoutes(log)
     }
 
