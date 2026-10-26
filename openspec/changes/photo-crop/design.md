@@ -9,7 +9,7 @@ Today the core renders an uncropped display size that covers the screen (`Render
 **Goals:**
 - One pure function in `:core` decides what part of a photo the frame shows, for the display, the cache key and the API alike.
 - Sharp details up to the largest zoom without decoding a 48 MP original at full size on a frame.
-- The threshold of `auto` can be changed by editing one constant after the device test.
+- The threshold of `auto` can be changed by editing one constant.
 
 **Non-Goals:**
 - Any change to thumbnails: the grid keeps showing whole photos.
@@ -25,7 +25,7 @@ For a photo of W×H pixels (after EXIF rotation) and a screen S_w×S_h, the cove
 
 ### 2. Fill modes as presets of the same function
 
-Without a section, the fill mode chooses the zoom with the focus point at the center: `fill` is `z = 1`, `fit` is `z = z_min`, and `auto` is `z = min(1, z_min / (1 − T))` with `T = 0.25` as `Presentation.AUTO_MAX_CROP` in `:core`. Because `z_min` is exactly the share of the long direction that `fill` keeps, `auto` keeps at least `1 − T` of it. `T` stays a constant, not a setting: the user wants to test it and adjust it once (task 6), not offer it as an option.
+Without a section, the fill mode chooses the zoom with the focus point at the center: `fill` is `z = 1`, `fit` is `z = z_min`, and `auto` is `z = min(1, z_min / (1 − T))` with `T = 0.25` as `Presentation.AUTO_MAX_CROP` in `:core`. Because `z_min` is exactly the share of the long direction that `fill` keeps, `auto` keeps at least `1 − T` of it. `T` stays a constant, not a setting: it can be adjusted once if it does not fit, not offered as an option. A device test of it with the user's judgement is out of scope.
 
 ### 3. `Presentation` as the single source
 
@@ -73,7 +73,7 @@ Written in `api/openapi.yaml` first.
 
 - [Switching the fill mode or the orientation renders every display size again] → as with the orientation today: `peekAnyDisplay` shows the older size until the new one is ready, and prefetch renders ahead by priority.
 - [`BitmapRegionDecoder` misbehaves on old Android versions with some JPEG files, for example progressive ones] → any exception or `null` falls back to the sampled full decode; a device test zooms into a progressive JPEG on the Lenovo.
-- [25 % does not fit what the user likes] → one constant, changed after the device test with the user's judgement (task 6.2).
+- [25 % does not fit what the user likes] → one constant (`AUTO_MAX_CROP`), with the shared cases and the spec scenarios that name it; not tested on the devices in this change.
 - [The editor's copy of the formula drifts from the core's] → both run the shared table of cases.
 - [A section chosen for landscape looks different in portrait] → accepted: the focus point stays, the zoom is clamped; a section per format is out of scope.
 - [Changing a section re-renders while the frame may be showing that photo] → it takes effect at the next change, the current photo is not replaced.
