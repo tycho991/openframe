@@ -135,3 +135,26 @@ test("Photo over USB appears without reloading", async ({ page }) => {
   await usb("landscape.jpg", "neu.jpg", { scan: false });
   await expect(page.locator(".tile")).toHaveCount(1, { timeout: 30_000 });
 });
+
+test("The list behind the detail view stays still", async ({ page }) => {
+  // On a Pixel 8 a swipe on the open detail view scrolled the photo list underneath.
+  await many(300);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pairInUi(page);
+  await expect(page.locator(".tile").first()).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 1200));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+  const before = await page.evaluate(() => window.scrollY);
+  await page.locator(".tile").nth(20).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const box = (await dialog.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 40);
+  await page.mouse.wheel(0, 800);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.scrollY)).toBe(before);
+  await page.getByRole("button", { name: "Schließen" }).click();
+  await expect(dialog).toBeHidden();
+  await page.mouse.wheel(0, 800);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+});

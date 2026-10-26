@@ -36,7 +36,7 @@
 ## 6. Devices
 
 - [x] 6.1 Rows in `docs/DEVICE_TEST.md`, each with its spec scenario: a zoomed detail sharp on the Lenovo (slideshow-display › Section of a photo › Zoom on a detail), a 48 MP photo at the largest zoom on the Frameo (photo-library › Rendering a section within memory), a progressive JPEG zoomed on the Lenovo (design, Risks), the section editor on a phone (web-admin › Section editor on the phone); verify: the rows exist with their references
-- [ ] 6.2 Run the rows of 6.1 on the devices; ask before installing and before any change on a device; verify: results entered, a finding in `docs/FINDINGS.md` for anything that differs
+- [x] 6.2 Run the rows of 6.1 on the devices; ask before installing and before any change on a device; verify: results entered, a finding in `docs/FINDINGS.md` for anything that differs
 
 ## 7. Integration
 

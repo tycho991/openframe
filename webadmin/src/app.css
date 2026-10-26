@@ -54,6 +54,16 @@ body {
   overflow-x: hidden;
 }
 
+/* While a modal dialog is open the page behind it stays still: a swipe on the photo's detail view scrolled the photo
+   list underneath on a phone, because the dialog had nothing to scroll and handed the gesture on. */
+html:has(dialog[open]) {
+  overflow: hidden;
+}
+
+dialog {
+  overscroll-behavior: contain;
+}
+
 h1,
 h2,
 h3 {
