@@ -8,6 +8,7 @@ import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -65,6 +66,7 @@ class SourceOriginalsTest {
             engine,
             SourceOriginals(local, registry)::fileOf,
             { PixelSize(320, 200) },
+            { FillMode.AUTO },
             { 10L * 1024 * 1024 },
             log,
         )

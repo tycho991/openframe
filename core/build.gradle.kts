@@ -41,6 +41,10 @@ tasks.test {
     val openapi = rootProject.layout.projectDirectory.file("api/openapi.yaml")
     inputs.file(openapi).withPropertyName("openapi")
     systemProperty("openframe.openapi", openapi.asFile.absolutePath)
+    // The cases of `Presentation.of` that the web UI's copy of it runs as well.
+    val presentationCases = rootProject.layout.projectDirectory.file("api/fixtures/presentation-cases.json")
+    inputs.file(presentationCases).withPropertyName("presentationCases")
+    systemProperty("openframe.presentationCases", presentationCases.asFile.absolutePath)
     // Lets tests send their own `Host` header, e.g. for invitation links.
     systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
 }

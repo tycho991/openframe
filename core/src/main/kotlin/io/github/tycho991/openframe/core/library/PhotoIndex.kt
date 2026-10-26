@@ -25,6 +25,8 @@ data class PhotoEntry(
     val hidden: Boolean = false,
     /** The ETag of the file on the server for photos of a remote source, `null` for local photos. */
     val etag: String? = null,
+    /** The photo's own section, `null` if the fill mode applies. Stored only when set. */
+    val crop: Crop? = null,
 ) {
     /** The folder path below the source's folder, `null` for photos directly in it. */
     val album: String? get() = AlbumPaths.parent(path)

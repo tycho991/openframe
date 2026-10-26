@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import java.awt.image.BufferedImage
 import java.io.File
 import java.time.Instant
 import javax.imageio.ImageIO
@@ -56,6 +57,38 @@ class JvmMediaEngineTest {
         val red = (topRight shr 16) and 0xff
         val green = (topRight shr 8) and 0xff
         assertEquals(true, red > 200 && green < 80, "top right red, was ${Integer.toHexString(topRight)}")
+    }
+
+    @Test
+    fun `Rendering a region renders only that part`() {
+        // Four quadrants in distinct colours: red, green / blue, white.
+        val source = File(dir, "quadrants.png")
+        val image = BufferedImage(200, 100, BufferedImage.TYPE_INT_RGB)
+        for (x in 0 until 200) {
+            for (y in 0 until 100) {
+                val color =
+                    when {
+                        x < 100 && y < 50 -> 0xff0000
+                        y < 50 -> 0x00ff00
+                        x < 100 -> 0x0000ff
+                        else -> 0xffffff
+                    }
+                image.setRGB(x, y, color)
+            }
+        }
+        ImageIO.write(image, "png", source)
+        val out = File(dir, "out.jpg")
+        engine.render(source, out, 80, 40, Region(0.0, 0.0, 0.5, 0.5))
+        val img = ImageIO.read(out)
+        assertEquals(80 to 40, img.width to img.height)
+        for ((x, y) in listOf(2 to 2, 77 to 2, 2 to 37, 77 to 37, 40 to 20)) {
+            val rgb = img.getRGB(x, y)
+            val red = (rgb shr 16) and 0xff
+            val green = (rgb shr 8) and 0xff
+            val blue = rgb and 0xff
+            assertEquals(true, red > 200 && green < 60 && blue < 60, "red at $x,$y, was ${Integer.toHexString(rgb)}")
+        }
+        assertEquals(listOf(Region(0.0, 0.0, 0.5, 0.5)), engine.regions)
     }
 
     @Test

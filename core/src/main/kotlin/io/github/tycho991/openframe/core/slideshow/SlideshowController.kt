@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
@@ -110,6 +111,9 @@ class SlideshowController(
         data class Rest(
             val resting: Boolean,
         ) : Command
+
+        /** Fill mode or orientation changed: every display size is a new one. */
+        data object Presentation : Command
     }
 
     private val playlist = Playlist(random)
@@ -139,6 +143,13 @@ class SlideshowController(
         scope.launch {
             combine(visible, settings.map { it.order }.distinctUntilChanged()) { photos, order -> Command.Library(photos, order) }
                 .collect { commands.send(it) }
+        }
+        scope.launch {
+            settings
+                .map { it.fillMode to it.orientation }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { commands.send(Command.Presentation) }
         }
         scope.launch {
             for (command in commands) {
@@ -216,6 +227,10 @@ class SlideshowController(
                     show(+1)
                 }
             }
+
+            is Command.Presentation -> {
+                if (!isResting && _state.value is SlideState.Showing) prefetchUpcoming()
+            }
         }
     }
 
@@ -238,6 +253,11 @@ class SlideshowController(
             // Deleted: move on immediately. The order already points to the next photo.
             removed && current != null && !exists(current.id) -> {
                 show(+1)
+            }
+
+            // A new section changes the display size of that photo: render it before the next change.
+            else -> {
+                prefetchUpcoming()
             }
         }
     }
@@ -317,6 +337,10 @@ class SlideshowController(
         seq++
         _state.value = SlideState.Showing(entry, file, step, seq)
         armTimer()
+        prefetchUpcoming()
+    }
+
+    private fun prefetchUpcoming() {
         val upcoming = playlist.upcoming(PREFETCH_AHEAD)
         _nextUp.value = upcoming.firstNotNullOfOrNull { e -> images.ready(e)?.let { e to it } }
         images.prefetch(upcoming.take(NEXT_AHEAD), RenderPriority.NEXT)

@@ -130,6 +130,7 @@ class LocalPhotoSource(
             modifiedMs = mtime,
             version = (previous?.version ?: 0) + 1,
             hidden = previous?.hidden ?: false,
+            crop = Crop.carriedOver(previous, info.width, info.height),
         )
     }
 

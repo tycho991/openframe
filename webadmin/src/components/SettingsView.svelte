@@ -206,7 +206,8 @@
       <div class="field">
         <label for="s-fill">{t("settings.fillMode")}</label>
         <select id="s-fill" bind:value={form.fillMode}>
-          {#each ["fill", "fit"] as v (v)}<option value={v}>{option("settings.fillMode", v)}</option>{/each}
+          {#each ["auto", "fill", "fit"] as v (v)}<option value={v}>{option("settings.fillMode", v)}</option
+            >{/each}
         </select>
       </div>
       <div class="field">

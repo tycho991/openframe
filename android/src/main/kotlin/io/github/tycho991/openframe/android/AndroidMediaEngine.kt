@@ -2,31 +2,41 @@ package io.github.tycho991.openframe.android
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
 import android.media.ExifInterface
+import io.github.tycho991.openframe.core.platform.ExifOrientation
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormat
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
+import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
  * [MediaEngine] with `BitmapFactory`. Decodes in two passes: first only
  * the dimensions, then with `inSampleSize` as small as possible so that even photos
- * with 48 MP get through on devices with little heap. Rotation from the
- * framework class `ExifInterface`, not from AndroidX (minSdk 21).
+ * with 48 MP get through on devices with little heap. A section decodes only its region
+ * with `BitmapRegionDecoder`. Rotation from the framework class `ExifInterface`, not
+ * from AndroidX (minSdk 21).
  */
 class AndroidMediaEngine(
     private val sdkInt: Int = android.os.Build.VERSION.SDK_INT,
+    /** Off in tests that check the pixels of the fallback: Robolectric's region decoder returns empty bitmaps. */
+    private val regionDecoding: Boolean = true,
 ) : MediaEngine {
     override fun probe(file: File): ImageInfo {
         val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "No known image format")
@@ -45,7 +55,7 @@ class AndroidMediaEngine(
         probe.recycle()
         val exif = exif(file)
         val orientation = exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) ?: 1
-        val swap = orientation in 5..8
+        val swap = ExifOrientation.swapsAxes(orientation)
         return ImageInfo(
             format = format,
             width = if (swap) bounds.outHeight else bounds.outWidth,
@@ -59,20 +69,15 @@ class AndroidMediaEngine(
         target: File,
         width: Int,
         height: Int,
+        region: Region,
         quality: Int,
     ) {
-        val bounds = bounds(source)
         val orientation = exif(source)?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) ?: 1
-        val swap = orientation in 5..8
+        val swap = ExifOrientation.swapsAxes(orientation)
         // Target dimensions in the stored, unrotated image.
         val rawW = if (swap) height else width
         val rawH = if (swap) width else height
-        val options =
-            BitmapFactory.Options().apply {
-                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, rawW, rawH)
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-        val decoded = BitmapFactory.decodeFile(source.path, options) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
+        val decoded = decodeStored(source, ExifOrientation.toStored(orientation, region), rawW, rawH)
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         try {
             val matrix = orientationMatrix(orientation, decoded.width, decoded.height)
@@ -98,6 +103,66 @@ class AndroidMediaEngine(
         }
     }
 
+    /**
+     * [region] of the stored, unrotated image, sampled down as far as it stays at least [reqW]×[reqH]. Only the region
+     * is decoded, so a detail of a 48 MP photo needs about the memory of the screen. Formats or devices without region
+     * decoding (GIF, a failing decoder) get a sampled full decode and a crop instead.
+     */
+    internal fun decodeStored(
+        file: File,
+        region: Region,
+        reqW: Int,
+        reqH: Int,
+    ): Bitmap {
+        val bounds = bounds(file)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw ImageException(SkipReason.CORRUPT, "Not decodable")
+        val rect = pixels(region, bounds.outWidth, bounds.outHeight)
+        if (!region.isFull && regionDecoding) {
+            decodeRegion(file, rect, sampleSize(rect.width(), rect.height(), reqW, reqH))?.let { return it }
+        }
+        // The whole image at a sample size that keeps the region at least as large as requested.
+        val fullW = ceil(reqW / region.width).toInt()
+        val fullH = ceil(reqH / region.height).toInt()
+        val options =
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, fullW, fullH)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        val decoded = BitmapFactory.decodeFile(file.path, options) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
+        if (region.isFull) return decoded
+        val part = pixels(region, decoded.width, decoded.height)
+        return Bitmap.createBitmap(decoded, part.left, part.top, part.width(), part.height()).also { if (it !== decoded) decoded.recycle() }
+    }
+
+    /** `null` if the format or the device cannot decode a region, for example GIF. */
+    @Suppress("DEPRECATION")
+    private fun decodeRegion(
+        file: File,
+        rect: Rect,
+        sample: Int,
+    ): Bitmap? {
+        val decoder =
+            try {
+                // newInstance(String) without the flag exists only from API 31.
+                BitmapRegionDecoder.newInstance(file.path, false)
+            } catch (e: IOException) {
+                return null
+            } ?: return null
+        return try {
+            decoder.decodeRegion(
+                rect,
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                },
+            )
+        } catch (e: RuntimeException) {
+            null
+        } finally {
+            decoder.recycle()
+        }
+    }
+
     private fun bounds(file: File): BitmapFactory.Options =
         BitmapFactory.Options().apply {
             inJustDecodeBounds = true
@@ -112,6 +177,19 @@ class AndroidMediaEngine(
     companion object {
         private const val HEIF_MIN_SDK = 28
         private const val PROBE_EDGE = 64
+
+        /** [region] in whole pixels of an image of [width]×[height], rounded outward and at least one pixel. */
+        fun pixels(
+            region: Region,
+            width: Int,
+            height: Int,
+        ): Rect {
+            val left = floor(region.x * width).toInt().coerceIn(0, width - 1)
+            val top = floor(region.y * height).toInt().coerceIn(0, height - 1)
+            val right = ceil((region.x + region.width) * width).toInt().coerceIn(left + 1, width)
+            val bottom = ceil((region.y + region.height) * height).toInt().coerceIn(top + 1, height)
+            return Rect(left, top, right, bottom)
+        }
 
         /** Largest power of two with which the image still stays at least [reqW]×[reqH] in size. */
         fun sampleSize(

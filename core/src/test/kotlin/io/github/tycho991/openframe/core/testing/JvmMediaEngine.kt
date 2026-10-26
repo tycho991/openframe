@@ -8,17 +8,20 @@ import io.github.tycho991.openframe.core.platform.ImageFormat
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
+import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
 import java.awt.RenderingHints
 import java.awt.geom.AffineTransform
 import java.awt.image.BufferedImage
 import java.io.File
 import java.time.ZoneOffset
+import java.util.Collections
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicInteger
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
+import kotlin.math.roundToInt
 
 /**
  * [MediaEngine] on the JVM with ImageIO (WebP through TwelveMonkeys) and
@@ -29,6 +32,9 @@ class JvmMediaEngine(
 ) : MediaEngine {
     val probes = AtomicInteger()
     val renders = AtomicInteger()
+
+    /** The region of every render, in order. */
+    val regions: MutableList<Region> = Collections.synchronizedList(mutableListOf())
 
     override fun probe(file: File): ImageInfo {
         probes.incrementAndGet()
@@ -50,14 +56,25 @@ class JvmMediaEngine(
         target: File,
         width: Int,
         height: Int,
+        region: Region,
         quality: Int,
     ) {
         renders.incrementAndGet()
+        regions += region
         val rotated = rotate(decode(source), orientation(source))
+        val x = (region.x * rotated.width).roundToInt().coerceIn(0, rotated.width - 1)
+        val y = (region.y * rotated.height).roundToInt().coerceIn(0, rotated.height - 1)
+        val part =
+            rotated.getSubimage(
+                x,
+                y,
+                (region.width * rotated.width).roundToInt().coerceIn(1, rotated.width - x),
+                (region.height * rotated.height).roundToInt().coerceIn(1, rotated.height - y),
+            )
         val out = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
         out.createGraphics().apply {
             setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-            drawImage(rotated, 0, 0, width, height, null)
+            drawImage(part, 0, 0, width, height, null)
             dispose()
         }
         val writer = ImageIO.getImageWritersByFormatName("jpeg").next()

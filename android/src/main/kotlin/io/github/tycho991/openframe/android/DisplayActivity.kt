@@ -313,7 +313,6 @@ class DisplayActivity : Activity() {
             } else {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             }
-        renderer.fillMode = s.fillMode
         clock.apply(s.clock, locale(s.language))
         updateHint()
         updateEmpty()

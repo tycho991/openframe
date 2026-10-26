@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.api
 
+import io.github.tycho991.openframe.core.ValidationException
 import io.github.tycho991.openframe.core.auth.ImageSigner
 import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.HttpException
@@ -7,15 +8,23 @@ import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.library.AlbumPaths
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
+import io.github.tycho991.openframe.core.library.Presentation
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 import java.time.Instant
 import java.util.Base64
 
@@ -23,6 +32,16 @@ import java.util.Base64
 data class ImageUrlsDto(
     val thumb: String,
     val display: String,
+    val full: String,
+)
+
+@Serializable
+data class PresentationDto(
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+    val zoom: Double,
 )
 
 @Serializable
@@ -38,6 +57,8 @@ data class PhotoDto(
     val takenAt: String,
     val fileSize: Long,
     val version: Int,
+    val crop: Crop?,
+    val presentation: PresentationDto,
     val urls: ImageUrlsDto,
 )
 
@@ -46,11 +67,6 @@ data class PhotoPageDto(
     val items: List<PhotoDto>,
     val total: Int,
     val nextCursor: String?,
-)
-
-@Serializable
-data class PhotoPatchDto(
-    val hidden: Boolean,
 )
 
 @Serializable
@@ -154,28 +170,37 @@ fun Router.libraryRoutes(
 ) {
     val index = library.index
 
-    fun urls(entry: PhotoEntry): ImageUrlsDto {
+    // The display URL carries the key of the shown window, so it changes with section, fill mode and format.
+    fun urls(
+        entry: PhotoEntry,
+        presentation: Presentation = library.cache.presentation(entry),
+    ): ImageUrlsDto {
         val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id)}"
-        return ImageUrlsDto("$base&size=thumb", "$base&size=display")
+        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${presentation.key}", "$base&size=full")
     }
 
     fun dto(
         entry: PhotoEntry,
         lib: Library,
-    ) = PhotoDto(
-        id = entry.id,
-        source = entry.source,
-        path = entry.path,
-        album = entry.album,
-        hidden = entry.hidden,
-        visible = lib.isVisible(entry),
-        width = entry.width,
-        height = entry.height,
-        takenAt = Instant.ofEpochMilli(entry.takenAtMs).toString(),
-        fileSize = entry.fileSize,
-        version = entry.version,
-        urls = urls(entry),
-    )
+    ): PhotoDto {
+        val p = library.cache.presentation(entry)
+        return PhotoDto(
+            id = entry.id,
+            source = entry.source,
+            path = entry.path,
+            album = entry.album,
+            hidden = entry.hidden,
+            visible = lib.isVisible(entry),
+            width = entry.width,
+            height = entry.height,
+            takenAt = Instant.ofEpochMilli(entry.takenAtMs).toString(),
+            fileSize = entry.fileSize,
+            version = entry.version,
+            crop = entry.crop,
+            presentation = PresentationDto(p.x, p.y, p.width, p.height, p.zoom),
+            urls = urls(entry, p),
+        )
+    }
 
     fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("No such photo")
 
@@ -261,8 +286,8 @@ fun Router.libraryRoutes(
     }
 
     patch("/api/v1/photos/{photoId}") { req ->
-        val body = req.bodyAs(PhotoPatchDto.serializer())
-        val entry = library.setHidden(req.pathParam("photoId"), body.hidden)
+        val change = photoPatch(req.bodyAs(JsonObject.serializer()))
+        val entry = library.update(req.pathParam("photoId"), change)
         HttpResponse.json(PhotoDto.serializer(), dto(entry, index.library.value))
     }
 
@@ -275,13 +300,14 @@ fun Router.libraryRoutes(
         val entry = entryOrThrow(req.pathParam("photoId"))
         val size =
             RenderSize.entries.firstOrNull { it.apiName == req.queryParam("size") }
-                ?: throw HttpException.badRequest("size is thumb or display")
-        val target = library.cache.targetSize(entry, size)
-        val etag = "\"${entry.id}-${entry.version}-${target.width}x${target.height}\""
+                ?: throw HttpException.badRequest("size is thumb, display or full")
+        val target = library.cache.target(entry, size)
+        // The file name holds image version, size and, for the display size, the key of the window.
+        val etag = "\"${target.name.removeSuffix(".jpg")}\""
+        // Immutable only for the URL of what is current: an older display URL would otherwise keep its old part.
+        val current = req.queryParam("v") == entry.version.toString() && req.queryParam("p") == target.key
         val cacheControl =
-            if (req.queryParam("v") ==
-                entry.version.toString()
-            ) {
+            if (current) {
                 "private, max-age=31536000, immutable"
             } else {
                 "private, no-cache"
@@ -330,6 +356,62 @@ fun Router.libraryRoutes(
 }
 
 private val BATCH_ACTIONS = setOf("hide", "show", "delete")
+
+/**
+ * The change of a `PhotoPatch`: `hidden` and `crop` are both optional, at least one is given, and `crop: null` removes
+ * the section. Every field is checked before anything changes, so an invalid one rejects the whole patch.
+ */
+private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
+    if (body.isEmpty()) throw HttpException.badRequest("hidden or crop is required")
+    val errors = LinkedHashMap<String, String>()
+    var hidden: Boolean? = null
+    var crop: Crop? = null
+    for ((key, value) in body) {
+        when (key) {
+            "hidden" -> {
+                hidden = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+                if (hidden == null) errors[key] = "Expected true or false"
+            }
+
+            "crop" -> {
+                crop = cropOf(value, errors)
+            }
+
+            else -> {
+                errors[key] = "Unknown field"
+            }
+        }
+    }
+    if (errors.isNotEmpty()) throw ValidationException(errors)
+    val setsCrop = "crop" in body
+    return { entry ->
+        var next = entry
+        hidden?.let { next = next.copy(hidden = it) }
+        if (setsCrop) next = next.copy(crop = crop)
+        next
+    }
+}
+
+/** `null` for `crop: null` or an invalid section, whose errors go to [errors]. */
+private fun cropOf(
+    value: JsonElement,
+    errors: MutableMap<String, String>,
+): Crop? {
+    if (value is JsonNull) return null
+    val obj = value as? JsonObject ?: return null.also { errors["crop"] = "Expected an object with x, y and zoom, or null" }
+    for (key in obj.keys - CROP_FIELDS) errors["crop.$key"] = "Unknown field"
+    val numbers =
+        CROP_FIELDS.associateWith { name ->
+            (obj[name] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull.also {
+                if (it == null) errors["crop.$name"] = if (name in obj) "Expected a number" else "Required"
+            }
+        }
+    val crop = Crop(numbers["x"] ?: return null, numbers["y"] ?: return null, numbers["zoom"] ?: return null)
+    errors += crop.errors()
+    return crop
+}
+
+private val CROP_FIELDS = listOf("x", "y", "zoom")
 
 private fun HttpRequest.booleanParam(name: String): Boolean? =
     when (queryParam(name)) {

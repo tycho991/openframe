@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.sources
 
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.ScanResult
@@ -124,6 +125,23 @@ class RemoteSourceTest {
         assertTrue(second.hidden)
         assertEquals(first.version + 1, second.version)
         assertEquals("e2", second.etag)
+    }
+
+    @Test
+    fun `A section is kept for a file of the same aspect ratio and dropped for another`() {
+        // Spec `photo-library`, "Section when the file changes", for a photo of a remote source.
+        remote.put("a.jpg", jpg(), "e1")
+        sync()
+        val crop = Crop(0.2, 0.8, 2.0)
+        index.edit { it.put(photos().getValue("a.jpg").copy(crop = crop)) }
+        remote.put("a.jpg", jpg(), "e2")
+        sync()
+        assertEquals(2, photos().getValue("a.jpg").version)
+        assertEquals(crop, photos().getValue("a.jpg").crop, "Edited photo of the same size")
+        remote.put("a.jpg", Fixtures.file("rotated6.jpg").readBytes(), "e3")
+        sync()
+        assertEquals(3, photos().getValue("a.jpg").version)
+        assertNull(photos().getValue("a.jpg").crop, "Photo cropped elsewhere")
     }
 
     @Test

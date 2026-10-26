@@ -1,6 +1,8 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.Region
+import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -26,8 +28,10 @@ class RenderCacheTest {
     private val photos get() = File(dir, "photos")
     private var budget = 10L * 1024 * 1024
     private var screen = PixelSize(320, 200)
+    private var fillMode = FillMode.FILL
 
-    private fun cache() = RenderCache(File(dir, "cache"), engine, { File(photos, it.path) }, { screen }, { budget }, AppLog(TestClock()))
+    private fun cache() =
+        RenderCache(File(dir, "cache"), engine, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
 
     private fun entry(
         name: String,
@@ -41,23 +45,79 @@ class RenderCacheTest {
     }
 
     @Test
-    fun `Screen-covering display size`() {
-        val landscape = RenderSizes.screen(1920, 1200, Orientation.LANDSCAPE)
-        assertEquals(PixelSize(1920, 1200), landscape)
+    fun `Screen, thumbnail and full size`() {
+        assertEquals(PixelSize(1920, 1200), RenderSizes.screen(1920, 1200, Orientation.LANDSCAPE))
         assertEquals(PixelSize(1200, 1920), RenderSizes.screen(1920, 1200, Orientation.PORTRAIT))
         assertEquals(PixelSize(1200, 1920), RenderSizes.screen(1200, 1920, Orientation.PORTRAIT))
-        // Scenario "Portrait photo on a landscape frame".
-        assertEquals(PixelSize(1920, 2560), RenderSizes.display(3000, 4000, landscape))
-        assertEquals(PixelSize(1920, 1280), RenderSizes.display(6000, 4000, landscape))
-        // Panorama 8:1 at the upper limit: at most 2.5 times the screen's pixel count.
-        val pano = RenderSizes.display(16000, 2000, landscape)
-        assertTrue(pano.width.toLong() * pano.height <= (2.5 * 1920 * 1200).toLong() + pano.width + pano.height)
-        assertEquals(8.0, pano.width.toDouble() / pano.height, 0.01)
-        // Smaller than the screen: do not scale up.
-        assertEquals(PixelSize(800, 600), RenderSizes.display(800, 600, landscape))
         assertEquals(PixelSize(400, 300), RenderSizes.thumb(4000, 3000))
         assertEquals(PixelSize(300, 400), RenderSizes.thumb(3000, 4000))
         assertEquals(PixelSize(200, 100), RenderSizes.thumb(200, 100))
+        assertEquals(PixelSize(2048, 1536), RenderSizes.full(4000, 3000))
+        assertEquals(PixelSize(1536, 2048), RenderSizes.full(6000, 8000))
+        // Never larger than the original.
+        assertEquals(PixelSize(800, 600), RenderSizes.full(800, 600))
+    }
+
+    @Test
+    fun `Portrait photo on a landscape frame`() {
+        screen = PixelSize(1920, 1200)
+        fillMode = FillMode.FILL
+        val target = cache().target(PhotoEntry("p", "local", "p.jpg", 3000, 4000, 0, 1, 1, 1), RenderSize.DISPLAY)
+        assertEquals(PixelSize(1920, 1200), target.size)
+        // The middle 3000×1875 pixels.
+        assertRegion(Region(0.0, 1062.5 / 4000, 1.0, 1875.0 / 4000), target.region)
+    }
+
+    @Test
+    fun `Portrait photo with borders`() {
+        screen = PixelSize(1920, 1200)
+        fillMode = FillMode.AUTO
+        val target = cache().target(PhotoEntry("p", "local", "p.jpg", 3000, 4000, 0, 1, 1, 1), RenderSize.DISPLAY)
+        // The borders are not part of the image: 1200×1200 of the middle 3000×3000 pixels.
+        assertEquals(PixelSize(1200, 1200), target.size)
+        assertRegion(Region(0.0, 0.125, 1.0, 0.75), target.region)
+    }
+
+    @Test
+    fun `A new section or fill mode gives a new display file, the older one stays available until then`() =
+        runBlocking {
+            val c = cache()
+            val e = entry("a.jpg")
+            val first = c.get(e, RenderSize.DISPLAY)
+            val withCrop = e.copy(crop = Crop(0.0, 0.0, 2.0))
+            assertNull(c.peek(withCrop, RenderSize.DISPLAY), "new section, not rendered yet")
+            assertEquals(first, c.peekAnyDisplay(withCrop))
+            val cropped = c.get(withCrop, RenderSize.DISPLAY)
+            assertTrue(cropped != first)
+            // 400×300 on 320×200 at zoom 2 would be 0.4 of the width, but one original pixel per screen pixel limits it to 1.25.
+            assertRegion(Region(0.0, 0.0, 0.8, 2.0 / 3), engine.regions.last())
+            fillMode = FillMode.FIT
+            assertNull(c.peek(e, RenderSize.DISPLAY), "new fill mode, not rendered yet")
+            c.get(e, RenderSize.DISPLAY)
+            assertEquals(Region.FULL, engine.regions.last())
+            assertEquals(3, engine.renders.get())
+        }
+
+    @Test
+    fun `Full size is uncropped and never taken for the display`() =
+        runBlocking {
+            val c = cache()
+            val e = entry("a.jpg").copy(crop = Crop(0.0, 0.0, 2.0))
+            val full = ImageIO.read(c.get(e, RenderSize.FULL))
+            assertEquals(400 to 300, full.width to full.height)
+            assertEquals(Region.FULL, engine.regions.last())
+            c.get(e, RenderSize.THUMB)
+            assertNull(c.peekAnyDisplay(e), "neither the thumbnail nor the full size is a display size")
+        }
+
+    private fun assertRegion(
+        expected: Region,
+        actual: Region,
+    ) {
+        assertEquals(expected.x, actual.x, 1e-9, "x")
+        assertEquals(expected.y, actual.y, 1e-9, "y")
+        assertEquals(expected.width, actual.width, 1e-9, "width")
+        assertEquals(expected.height, actual.height, 1e-9, "height")
     }
 
     @Test
@@ -72,11 +132,12 @@ class RenderCacheTest {
     @Test
     fun `Display size respects EXIF and screen`() =
         runBlocking {
-            // rotated6: stored 400×300, displayed 300×400.
+            // rotated6: stored 400×300, displayed 300×400; in `fill` the middle 300×180 of it at 200×120.
             val e = entry("r.jpg", "rotated6.jpg", 300, 400)
             screen = PixelSize(200, 120)
             val img = ImageIO.read(cache().get(e, RenderSize.DISPLAY))
-            assertEquals(200 to 267, img.width to img.height)
+            assertEquals(200 to 120, img.width to img.height)
+            assertRegion(Region(0.0, 0.275, 1.0, 0.45), engine.regions.single())
         }
 
     @Test

@@ -27,10 +27,22 @@ class PhotoLibrary(
     fun setHidden(
         id: String,
         hidden: Boolean,
+    ): PhotoEntry = update(id) { it.copy(hidden = hidden) }
+
+    /** Sets or, with `null`, removes the photo's section. Allowed for every source: nothing is written to it. */
+    fun setCrop(
+        id: String,
+        crop: Crop?,
+    ): PhotoEntry = update(id) { it.copy(crop = crop) }
+
+    /** Changes the photo's state in one step, so a patch of several fields is one change of the library. */
+    fun update(
+        id: String,
+        change: (PhotoEntry) -> PhotoEntry,
     ): PhotoEntry =
         index.edit { edit ->
             val entry = edit.get(id) ?: throw HttpException.notFound("No such photo")
-            entry.copy(hidden = hidden).also(edit::put)
+            change(entry).also(edit::put)
         }
 
     fun setAlbumHidden(

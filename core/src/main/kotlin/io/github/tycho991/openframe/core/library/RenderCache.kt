@@ -2,6 +2,8 @@ package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.MediaEngine
+import io.github.tycho991.openframe.core.platform.Region
+import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Orientation
 import kotlinx.coroutines.CompletableDeferred
 import java.io.File
@@ -9,13 +11,17 @@ import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 enum class RenderSize(
     val apiName: String,
 ) {
     THUMB("thumb"),
+
+    /** The part of the photo the frame shows, see [Presentation]. */
     DISPLAY("display"),
+
+    /** The uncropped photo for the section editor. */
+    FULL("full"),
 }
 
 /** Who is waiting for an image. Higher priority is rendered first. */
@@ -29,7 +35,7 @@ data class PixelSize(
 /** Target sizes of the rendered images, testable as pure functions. */
 object RenderSizes {
     const val THUMB_EDGE = 400
-    const val MAX_PIXEL_FACTOR = 2.5
+    const val FULL_EDGE = 2048
 
     /** Screen in the configured orientation, from the device's natural resolution. */
     fun screen(
@@ -48,21 +54,11 @@ object RenderSizes {
         height: Int,
     ): PixelSize = scaled(width, height, minOf(1.0, THUMB_EDGE.toDouble() / max(width, height)))
 
-    /**
-     * Display size: the smallest size that fully covers the screen,
-     * at most 2.5 times its pixel count and never larger than the original.
-     */
-    fun display(
+    /** Full size: the uncropped photo, longest edge 2048 px, never larger than the original. */
+    fun full(
         width: Int,
         height: Int,
-        screen: PixelSize,
-    ): PixelSize {
-        var scale = max(screen.width.toDouble() / width, screen.height.toDouble() / height)
-        val maxPixels = MAX_PIXEL_FACTOR * screen.width * screen.height
-        val pixels = width * scale * height * scale
-        if (pixels > maxPixels) scale *= sqrt(maxPixels / pixels)
-        return scaled(width, height, minOf(1.0, scale))
-    }
+    ): PixelSize = scaled(width, height, minOf(1.0, FULL_EDGE.toDouble() / max(width, height)))
 
     private fun scaled(
         width: Int,
@@ -70,6 +66,18 @@ object RenderSizes {
         scale: Double,
     ) = PixelSize((width * scale).roundToInt().coerceAtLeast(1), (height * scale).roundToInt().coerceAtLeast(1))
 }
+
+/**
+ * What one size of a photo is rendered as: [size] in pixels, the [region] of the EXIF-rotated photo
+ * it shows, and the file [name], which changes with every change of size, region or image version.
+ */
+class RenderTarget(
+    val size: PixelSize,
+    val region: Region,
+    val name: String,
+    /** [Presentation.key] of a display size, `null` for the uncropped sizes. */
+    val key: String? = null,
+)
 
 /**
  * Cache of the rendered image sizes. Rendering happens on exactly one worker thread
@@ -82,17 +90,19 @@ class RenderCache(
     private val engine: MediaEngine,
     private val originalOf: (PhotoEntry) -> File,
     private val screen: () -> PixelSize,
+    private val fillMode: () -> FillMode,
     private val budgetBytes: () -> Long,
     private val log: AppLog,
 ) {
     private class Job(
         val priority: RenderPriority,
         val seq: Long,
-        val key: String,
         val entry: PhotoEntry,
-        val size: PixelSize,
+        val target: RenderTarget,
         val result: CompletableDeferred<File>,
-    )
+    ) {
+        val key: String get() = target.name
+    }
 
     private val queue =
         PriorityBlockingQueue<Job>(16, compareByDescending<Job> { it.priority }.thenBy { it.seq })
@@ -125,14 +135,42 @@ class RenderCache(
         worker.start()
     }
 
-    fun targetSize(
+    /** What the frame shows of [entry] with the current screen and fill mode. */
+    fun presentation(entry: PhotoEntry): Presentation = Presentation.of(entry.width, entry.height, screen(), entry.crop, fillMode())
+
+    /**
+     * Thumbnail and full size are uncropped and named `id-v{version}-{w}x{h}.jpg`. The display size is the
+     * window of [presentation], with the window's key in its name, so a new section, fill mode or format gives a new file.
+     */
+    fun target(
         entry: PhotoEntry,
         size: RenderSize,
-    ): PixelSize =
-        when (size) {
-            RenderSize.THUMB -> RenderSizes.thumb(entry.width, entry.height)
-            RenderSize.DISPLAY -> RenderSizes.display(entry.width, entry.height, screen())
+    ): RenderTarget {
+        val prefix = "${entry.id}-v${entry.version}-"
+        return when (size) {
+            RenderSize.THUMB, RenderSize.FULL -> {
+                val pixels =
+                    if (size ==
+                        RenderSize.THUMB
+                    ) {
+                        RenderSizes.thumb(entry.width, entry.height)
+                    } else {
+                        RenderSizes.full(entry.width, entry.height)
+                    }
+                RenderTarget(pixels, Region.FULL, "$prefix${pixels.width}x${pixels.height}.jpg")
+            }
+
+            RenderSize.DISPLAY -> {
+                val p = presentation(entry)
+                RenderTarget(
+                    p.output,
+                    Region(p.x, p.y, p.width, p.height),
+                    "$prefix${p.output.width}x${p.output.height}$DISPLAY_MARK${p.key}.jpg",
+                    p.key,
+                )
+            }
         }
+    }
 
     /** The rendered file, rendered now if needed. Throws if rendering fails. */
     suspend fun get(
@@ -140,29 +178,34 @@ class RenderCache(
         size: RenderSize,
         priority: RenderPriority = RenderPriority.DEMAND,
     ): File {
-        peek(entry, size)?.let { return it }
-        return enqueue(entry, targetSize(entry, size), priority).await()
+        val target = target(entry, size)
+        peek(target)?.let { return it }
+        return enqueue(entry, target, priority).await()
     }
 
     /** The rendered file if it already exists, without rendering. */
     fun peek(
         entry: PhotoEntry,
         size: RenderSize,
-    ): File? {
-        val file = File(dir, fileName(entry, targetSize(entry, size)))
+    ): File? = peek(target(entry, size))
+
+    private fun peek(target: RenderTarget): File? {
+        val file = File(dir, target.name)
         if (!file.exists()) return null
         touch(file.name)
         return file
     }
 
-    /** Any finished display size of this image version, for example still the one from the old format. */
+    /**
+     * Any finished display size of this image version, for example still the one of the old format or
+     * section while the new one renders. Never the thumbnail or the full size.
+     */
     fun peekAnyDisplay(entry: PhotoEntry): File? {
         val prefix = "${entry.id}-v${entry.version}-"
-        val thumb = fileName(entry, targetSize(entry, RenderSize.THUMB))
         val name =
             synchronized(lastUse) {
                 lastUse.entries
-                    .filter { it.key.startsWith(prefix) && it.key != thumb }
+                    .filter { it.key.startsWith(prefix) && it.key.indexOf(DISPLAY_MARK, prefix.length) >= 0 }
                     .maxByOrNull { it.value }
                     ?.key
             }
@@ -176,8 +219,8 @@ class RenderCache(
         priority: RenderPriority = RenderPriority.PREFETCH,
     ) {
         for (entry in entries) {
-            val size = targetSize(entry, RenderSize.DISPLAY)
-            if (!File(dir, fileName(entry, size)).exists()) enqueue(entry, size, priority)
+            val target = target(entry, RenderSize.DISPLAY)
+            if (!File(dir, target.name).exists()) enqueue(entry, target, priority)
         }
     }
 
@@ -205,15 +248,14 @@ class RenderCache(
 
     private fun enqueue(
         entry: PhotoEntry,
-        size: PixelSize,
+        target: RenderTarget,
         priority: RenderPriority,
     ): CompletableDeferred<File> {
-        val key = fileName(entry, size)
         val deferred =
             synchronized(inFlight) {
-                inFlight.getOrPut(key) { CompletableDeferred() }
+                inFlight.getOrPut(target.name) { CompletableDeferred() }
             }
-        queue.add(Job(priority, seq.incrementAndGet(), key, entry, size, deferred))
+        queue.add(Job(priority, seq.incrementAndGet(), entry, target, deferred))
         return deferred
     }
 
@@ -258,7 +300,7 @@ class RenderCache(
         target: File,
     ) {
         val tmp = File(dir, ".${job.key}.tmp")
-        engine.render(originalOf(job.entry), tmp, job.size.width, job.size.height)
+        engine.render(originalOf(job.entry), tmp, job.target.size.width, job.target.size.height, job.target.region)
         if (!tmp.renameTo(target)) throw IllegalStateException("Renaming to ${target.name} failed")
         // Older image versions of this photo are no longer needed.
         touch(target.name)
@@ -278,13 +320,11 @@ class RenderCache(
         }
     }
 
-    private fun fileName(
-        entry: PhotoEntry,
-        size: PixelSize,
-    ) = "${entry.id}-v${entry.version}-${size.width}x${size.height}.jpg"
-
     private companion object {
         const val TAG = "render"
+
+        /** Separates size and window key in the name of a display size. */
+        const val DISPLAY_MARK = "-p"
         const val WORKER_STOP_TIMEOUT_MS = 10_000L
     }
 }

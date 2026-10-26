@@ -5,6 +5,11 @@ export type Info = S["Info"];
 export type Settings = S["Settings"];
 export type SettingsPatch = S["SettingsPatch"];
 export type Photo = S["Photo"];
+export type PhotoPatch = S["PhotoPatch"];
+export type Crop = S["Crop"];
+export type Presentation = S["Presentation"];
+export type FillMode = S["FillMode"];
+export type Orientation = S["Orientation"];
 export type PhotoPage = S["PhotoPage"];
 export type Album = S["Album"];
 export type Client = S["Client"];
@@ -133,6 +138,8 @@ export function createApi(options: ApiOptions) {
     settings: () => call<Settings>("GET", "/settings"),
     patchSettings: (patch: SettingsPatch) => call<Settings>("PATCH", "/settings", patch),
     photos: (q: PhotoQuery = {}) => call<PhotoPage>("GET", "/photos" + query({ ...q })),
+    /** Hides or shows a photo, or sets its section (`crop: null` removes it). */
+    patchPhoto: (id: string, patch: PhotoPatch) => call<Photo>("PATCH", `/photos/${id}`, patch),
     setPhotoHidden: (id: string, hidden: boolean) => call<Photo>("PATCH", `/photos/${id}`, { hidden }),
     deletePhoto: (id: string) => call<void>("DELETE", `/photos/${id}`),
     batch: (action: "hide" | "show" | "delete", ids: string[]) =>

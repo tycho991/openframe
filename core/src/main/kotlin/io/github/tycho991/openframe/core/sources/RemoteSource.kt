@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.sources
 
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoSource
@@ -221,6 +222,7 @@ class RemoteSource(
                     height = info.height,
                     takenAtMs =
                         info.takenAt?.toEpochMilli() ?: file.modifiedMs,
+                    crop = Crop.carriedOver(previous, info.width, info.height),
                 ),
             )
         }

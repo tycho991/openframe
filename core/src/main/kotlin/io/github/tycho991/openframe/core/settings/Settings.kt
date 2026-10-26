@@ -26,6 +26,10 @@ enum class Transition {
 
 @Serializable
 enum class FillMode {
+    /** Crops at most [io.github.tycho991.openframe.core.library.Presentation.AUTO_MAX_CROP], the rest becomes borders. */
+    @SerialName("auto")
+    AUTO,
+
     @SerialName("fill")
     FILL,
 
@@ -122,7 +126,7 @@ data class Settings(
     val order: Order = Order.SHUFFLE,
     val transition: Transition = Transition.FADE,
     val transitionDurationMs: Int = 1500,
-    val fillMode: FillMode = FillMode.FILL,
+    val fillMode: FillMode = FillMode.AUTO,
     val orientation: Orientation = Orientation.LANDSCAPE,
     val clock: ClockSettings = ClockSettings(),
     val language: FrameLanguage = FrameLanguage.AUTO,

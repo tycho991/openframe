@@ -159,6 +159,7 @@ class FrameCore(
             engine,
             SourceOriginals(localSource, sources)::fileOf,
             { RenderSizes.screen(platform.screenWidth, platform.screenHeight, settings.settings.value.orientation) },
+            { settings.settings.value.fillMode },
             { settings.settings.value.cacheBudgetMb * 1024L * 1024L },
             log,
         )
