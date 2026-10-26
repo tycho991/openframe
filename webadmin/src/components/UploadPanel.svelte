@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { albumOptions } from "../lib/albums";
   import { ApiError, type Album } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
   import { errorMessage } from "../lib/i18n/errors";
@@ -23,13 +24,18 @@
   let items = $state<Item[]>([]);
   let albumChoice = $state("");
   let newAlbum = $state("");
+  let newAlbumParent = $state("");
   let running = $state(false);
   let dialog: HTMLDialogElement;
   let input: HTMLInputElement;
   let dragging = $state(false);
 
   const NEW = "__new__";
-  const album = $derived(albumChoice === NEW ? newAlbum.trim() || null : albumChoice || null);
+  const choices = $derived(albumOptions(albums));
+  const newAlbumPath = $derived(
+    newAlbum.trim() ? (newAlbumParent ? `${newAlbumParent}/${newAlbum.trim()}` : newAlbum.trim()) : null,
+  );
+  const album = $derived(albumChoice === NEW ? newAlbumPath : albumChoice || null);
   const finished = $derived(
     items.length > 0 && items.every((i) => i.status === "done" || i.status === "error"),
   );
@@ -125,11 +131,20 @@
     <label for="upload-album">{t("upload.album")}</label>
     <select id="upload-album" bind:value={albumChoice} disabled={running}>
       <option value="">{t("upload.noAlbum")}</option>
-      {#each albums as a (a.name)}<option value={a.name}>{a.name}</option>{/each}
+      {#each choices as a (a.value)}<option value={a.value}>{a.label}</option>{/each}
       <option value={NEW}>{t("upload.newAlbum")}</option>
     </select>
   </div>
   {#if albumChoice === NEW}
+    {#if choices.length > 0}
+      <div class="field">
+        <label for="upload-new-album-parent">{t("upload.parentAlbum")}</label>
+        <select id="upload-new-album-parent" bind:value={newAlbumParent} disabled={running}>
+          <option value="">{t("upload.noParent")}</option>
+          {#each choices as a (a.value)}<option value={a.value}>{a.label}</option>{/each}
+        </select>
+      </div>
+    {/if}
     <div class="field">
       <label for="upload-new-album">{t("upload.newAlbumName")}</label>
       <input id="upload-new-album" type="text" maxlength="64" bind:value={newAlbum} disabled={running} />

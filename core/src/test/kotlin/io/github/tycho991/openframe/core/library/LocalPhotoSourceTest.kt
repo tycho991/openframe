@@ -172,12 +172,27 @@ class LocalPhotoSourceTest {
     @Test
     fun `Assign album`() {
         Fixtures.copy("landscape.jpg", File(photos, "holiday/2025/beach.jpg"))
+        Fixtures.copy("landscape.jpg", File(photos, "holiday/2025/may/sea.jpg"))
+        Fixtures.copy("landscape.jpg", File(photos, "holiday/top.jpg"))
         Fixtures.copy("landscape.jpg", File(photos, "loose.jpg"))
         scan()
         val albums =
             index.library.value.photos.values
                 .associate { it.path to it.album }
-        assertEquals(mapOf("holiday/2025/beach.jpg" to "holiday", "loose.jpg" to null), albums)
+        assertEquals(
+            mapOf(
+                "holiday/2025/beach.jpg" to "holiday/2025",
+                "holiday/2025/may/sea.jpg" to "holiday/2025/may",
+                "holiday/top.jpg" to "holiday",
+                "loose.jpg" to null,
+            ),
+            albums,
+        )
+        assertEquals(
+            listOf("holiday", "holiday/2025", "holiday/2025/may"),
+            index.library.value.albums.keys
+                .toList(),
+        )
     }
 
     @Test

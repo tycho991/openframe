@@ -205,8 +205,12 @@ paths:
       parameters:
         - name: album
           in: query
-          description: Only photos of this album.
+          description: Only photos of this album (a folder path) and, unless `subalbums` is `false`, of its sub-albums.
           schema: { type: string }
+        - name: subalbums
+          in: query
+          description: With `false`, `album` matches only the photos that lie directly in the album.
+          schema: { type: boolean, default: true }
         - name: visible
           in: query
           description: Only visible (`true`) or only hidden (`false`) photos.
@@ -239,7 +243,9 @@ paths:
       description: |
         Streamed to disk. If the request contains a file without a supported
         format, nothing is stored (415). If less than 100 MB would remain free
-        after the upload, nothing is stored (507).
+        after the upload, nothing is stored (507). An album path longer than
+        255 characters after sanitizing is refused with 400 and the error code
+        `invalid_album`, naming the field `album`.
       requestBody:
         required: true
         content:
@@ -249,7 +255,10 @@ paths:
               properties:
                 album:
                   type: string
-                  description: Album, that is, a folder directly below the photo folder. Is sanitized.
+                  description: |
+                    Album path below the photo folder, levels separated by `/` (`family/2025`).
+                    Each level is sanitized; empty levels, `.` and `..` are dropped. At most
+                    255 characters after sanitizing. Missing folders are created.
                 file:
                   type: array
                   items: { type: string, format: binary }
@@ -392,17 +401,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AlbumList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-
-  /albums/{albumName}:
-    parameters:
-      - name: albumName
-        in: path
-        required: true
-        schema: { type: string }
     patch:
       tags: [albums]
       operationId: patchAlbum
-      summary: Hide or unhide an album as a whole.
+      summary: Hide or unhide an album with its whole branch.
+      description: |
+        Removes the settings of all sub-albums of `name`, so the whole branch
+        follows it. An album set to the state of its parent keeps no setting of
+        its own. Answers with the whole list, because sub-albums change too.
       requestBody:
         required: true
         content:
@@ -410,10 +416,10 @@ paths:
             schema: { $ref: "#/components/schemas/AlbumPatch" }
       responses:
         "200":
-          description: The album after the change.
+          description: All albums after the change.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Album" }
+              schema: { $ref: "#/components/schemas/AlbumList" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -1100,9 +1106,9 @@ components:
           pattern: "^[a-z][a-z0-9]*$"
           description: "Where the photo comes from: `local` or the ID of a remote source. Photos of a remote source are read only: they cannot be deleted, only hidden."
         path: { type: string, description: "Path relative to the folder of its source." }
-        album: { type: [string, "null"] }
+        album: { type: [string, "null"], description: "Folder path of the photo below the folder of its source, `null` directly in it." }
         hidden: { type: boolean, description: "The photo itself is hidden." }
-        visible: { type: boolean, description: "Neither photo nor album is hidden." }
+        visible: { type: boolean, description: "Neither the photo nor its album is hidden, by the album's own setting or by inheritance." }
         width: { type: integer, description: "Width after EXIF rotation." }
         height: { type: integer, description: "Height after EXIF rotation." }
         takenAt: { type: string, format: date-time, description: "Capture date from EXIF, falling back to the file date." }
@@ -1187,13 +1193,14 @@ components:
     Album:
       type: object
       additionalProperties: false
-      required: [name, count, hidden, cover]
+      required: [name, count, hidden, overridesParent, cover]
       properties:
-        name: { type: string }
-        count: { type: integer }
-        hidden: { type: boolean }
+        name: { type: string, description: "Folder path of the album (`holiday/2024`). The list is sorted by path." }
+        count: { type: integer, description: "Photos of the album and all its sub-albums." }
+        hidden: { type: boolean, description: "Effective state: by the album's own setting or inherited from its parent." }
+        overridesParent: { type: boolean, description: "A sub-album whose state differs from its parent's." }
         cover:
-          description: Cover image, the newest photo of the album.
+          description: Cover image, the newest photo of the album and its sub-albums.
           oneOf:
             - $ref: "#/components/schemas/ImageUrls"
             - type: "null"
@@ -1210,8 +1217,9 @@ components:
     AlbumPatch:
       type: object
       additionalProperties: false
-      required: [hidden]
+      required: [name, hidden]
       properties:
+        name: { type: string, description: "Folder path of the album." }
         hidden: { type: boolean }
 
     State:

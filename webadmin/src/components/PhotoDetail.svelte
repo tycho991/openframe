@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { displayPath } from "../lib/albums";
   import type { Photo } from "../lib/api/client";
   import { i18n, t } from "../lib/i18n/i18n.svelte";
 
@@ -29,7 +30,7 @@
       <h2>{photo.path.split("/").at(-1)}</h2>
       <dl>
         <dt>{t("photos.detailAlbum")}</dt>
-        <dd>{photo.album ?? t("photos.detailNoAlbum")}</dd>
+        <dd>{photo.album ? displayPath(photo.album) : t("photos.detailNoAlbum")}</dd>
         <dt>{t("photos.detailTaken")}</dt>
         <dd>{taken}</dd>
         <dt>{t("photos.detailSize")}</dt>
