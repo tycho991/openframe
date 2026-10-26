@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.ceil
-import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /**
  * [MediaEngine] with `BitmapFactory`. Decodes in two passes: first only
@@ -178,17 +178,21 @@ class AndroidMediaEngine(
         private const val HEIF_MIN_SDK = 28
         private const val PROBE_EDGE = 64
 
-        /** [region] in whole pixels of an image of [width]×[height], rounded outward and at least one pixel. */
+        /**
+         * [region] in whole pixels of an image of [width]×[height]: the corner rounded to the nearest pixel and the size
+         * rounded on its own, at least one pixel. Rounding both edges outward would make a window of 1920 pixels at a
+         * fractional position 1921 wide, and scaling it by that hair to 1920 blurs every fine detail at the largest zoom.
+         */
         fun pixels(
             region: Region,
             width: Int,
             height: Int,
         ): Rect {
-            val left = floor(region.x * width).toInt().coerceIn(0, width - 1)
-            val top = floor(region.y * height).toInt().coerceIn(0, height - 1)
-            val right = ceil((region.x + region.width) * width).toInt().coerceIn(left + 1, width)
-            val bottom = ceil((region.y + region.height) * height).toInt().coerceIn(top + 1, height)
-            return Rect(left, top, right, bottom)
+            val left = (region.x * width).roundToInt().coerceIn(0, width - 1)
+            val top = (region.y * height).roundToInt().coerceIn(0, height - 1)
+            val w = (region.width * width).roundToInt().coerceIn(1, width - left)
+            val h = (region.height * height).roundToInt().coerceIn(1, height - top)
+            return Rect(left, top, left + w, top + h)
         }
 
         /** Largest power of two with which the image still stays at least [reqW]×[reqH] in size. */

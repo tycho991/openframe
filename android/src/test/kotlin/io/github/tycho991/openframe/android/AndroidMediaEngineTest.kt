@@ -161,8 +161,17 @@ class AndroidMediaEngineTest {
     fun regionInPixels() {
         assertEquals(Rect(0, 0, 400, 300), AndroidMediaEngine.pixels(Region.FULL, 400, 300))
         assertEquals(Rect(100, 75, 300, 225), AndroidMediaEngine.pixels(Region(0.25, 0.25, 0.5, 0.5), 400, 300))
-        // Rounded outward and at least one pixel.
-        assertEquals(Rect(33, 0, 67, 1), AndroidMediaEngine.pixels(Region(1.0 / 12, 0.0, 1.0 / 12, 0.0001), 400, 3))
+        // Corner and size rounded each on its own, at least one pixel.
+        assertEquals(Rect(33, 0, 66, 1), AndroidMediaEngine.pixels(Region(1.0 / 12, 0.0, 1.0 / 12, 0.0001), 400, 3))
+        // A section at the largest zoom shows original pixels 1:1: 6000×4000 on 1920×1200 is a window of exactly
+        // 1920×1200 pixels, whether its corner comes out of the doubles as 0.5399… (Lenovo, 26 Oct 2026) or lies
+        // between two pixels.
+        for ((x, corner) in listOf(0.7 to 3240, 0.7001 to 3241)) {
+            val p = Presentation.of(6000, 4000, PixelSize(1920, 1200), Crop(x, 0.6, 4.0), FillMode.FILL)
+            val rect = AndroidMediaEngine.pixels(Region(p.x, p.y, p.width, p.height), 6000, 4000)
+            assertEquals(1920 to 1200, rect.width() to rect.height())
+            assertEquals(corner, rect.left)
+        }
     }
 
     @Test
