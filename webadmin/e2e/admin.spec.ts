@@ -53,6 +53,22 @@ test("Show a sub-album of a hidden album", async ({ page }) => {
   expect(await visiblePaths(page)).toEqual(["holiday/2024/b.jpg", "holiday/2024/may/c.jpg"]);
 });
 
+test("A switch that fails shows the album's state again", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Alben" }).click();
+  await page.route("**/api/v1/albums", (route) =>
+    route.request().method() === "PATCH"
+      ? route.fulfill({ status: 503, contentType: "application/json", body: "{}" })
+      : route.fallback(),
+  );
+  const toggle = albumRow(page, "holiday").getByRole("switch");
+  await toggle.click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(toggle).toBeChecked();
+  expect(await visiblePaths(page)).toEqual(["holiday/a.jpg"]);
+});
+
 test("Switching a parent removes exceptions", async ({ page }) => {
   await usb("landscape.jpg", "holiday/a.jpg");
   await usb("landscape.jpg", "holiday/2024/b.jpg");

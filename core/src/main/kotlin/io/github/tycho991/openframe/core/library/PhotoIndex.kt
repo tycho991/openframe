@@ -61,11 +61,14 @@ object AlbumPaths {
     /** `a/b/c` → `a`, `a/b`, `a/b/c`. */
     fun withAncestors(album: String): List<String> = album.indices.filter { album[it] == '/' }.map { album.substring(0, it) } + album
 
-    /** Whether [album] is [branch] or one of its sub-albums. */
+    /** Whether [album] is [branch] or one of its sub-albums. Called per photo, so it builds no strings. */
     fun inBranch(
         album: String?,
         branch: String,
-    ): Boolean = album != null && (album == branch || album.startsWith("$branch/"))
+    ): Boolean =
+        album != null &&
+            album.startsWith(branch) &&
+            (album.length == branch.length || album[branch.length] == '/')
 
     /** The album's own setting from [states], otherwise its parent's; a top-level album is visible. */
     fun isHidden(
@@ -80,8 +83,40 @@ object AlbumPaths {
         return false
     }
 
-    /** Tree order: a sub-album right after its parent, before a sibling such as `a b` after `a`. Case-insensitive. */
-    val ORDER: Comparator<String> = compareBy<String> { it.lowercase().replace('/', '\u0000') }.thenBy { it }
+    /**
+     * [paths] in tree order: level by level, each case-insensitive and then exact, so a sub-album
+     * comes right after its parent, before a sibling such as `a b` after `a` or `a` after `A`.
+     * Each path is split once, since a library can have thousands of albums.
+     */
+    fun sorted(paths: Collection<String>): List<String> {
+        class Key(
+            val path: String,
+        ) {
+            val levels = path.split('/')
+            val lower = levels.map { it.lowercase() }
+        }
+        return paths
+            .map(::Key)
+            .sortedWith { a, b ->
+                for (i in 0 until minOf(a.levels.size, b.levels.size)) {
+                    val c = a.lower[i].compareTo(b.lower[i]).takeIf { it != 0 } ?: a.levels[i].compareTo(b.levels[i])
+                    if (c != 0) return@sortedWith c
+                }
+                a.levels.size - b.levels.size
+            }.map { it.path }
+    }
+
+    /** [states] without the entries that equal what the album would inherit anyway. */
+    fun normalized(states: Map<String, Boolean>): Map<String, Boolean> {
+        val kept = sortedMapOf<String, Boolean>()
+        // Parents come before their children in tree order, so the inherited state is final when a child is looked at.
+        for (path in sorted(states.keys)) {
+            val hidden = states.getValue(path)
+            val inherited = parent(path)?.let { isHidden(kept, it) } ?: false
+            if (hidden != inherited) kept[path] = hidden
+        }
+        return kept
+    }
 }
 
 @Serializable
@@ -122,7 +157,7 @@ class Library(
     }
 
     /**
-     * Every album that holds a photo in its branch, in [AlbumPaths.ORDER], with count, cover and
+     * Every album that holds a photo in its branch, in the tree order of [AlbumPaths.sorted], with count, cover and
      * effective state. One pass over the photos per state, so [isVisible] is a map lookup.
      */
     val albums: Map<String, Album> by lazy {
@@ -136,7 +171,7 @@ class Library(
                 if (current == null || DATE_ORDER.compare(photo, current) > 0) newest[path] = photo
             }
         }
-        counts.keys.sortedWith(AlbumPaths.ORDER).associateWith { path ->
+        AlbumPaths.sorted(counts.keys).associateWith { path ->
             Album(
                 name = path,
                 count = counts.getValue(path),
@@ -204,7 +239,7 @@ class LibraryEdit internal constructor(
         album: String,
         hidden: Boolean,
     ) {
-        albumStates.keys.removeAll { it.startsWith("$album/") }
+        albumStates.keys.removeAll { it != album && AlbumPaths.inBranch(it, album) }
         val inherited = AlbumPaths.parent(album)?.let { AlbumPaths.isHidden(albumStates, it) } ?: false
         if (hidden == inherited) albumStates -= album else albumStates[album] = hidden
     }
@@ -226,8 +261,9 @@ class PhotoIndexStore(
         _library.value =
             Library(
                 stored.photos.associateBy { it.id },
-                // The previous format knew only hidden top-level albums; their sub-albums inherit that.
-                stored.albumStates ?: stored.hiddenAlbums.associateWith { true },
+                // The previous format knew only hidden albums, which their sub-albums inherit. An older build
+                // can have added a parent to paths this build wrote there, so redundant entries are dropped.
+                AlbumPaths.normalized(stored.albumStates ?: stored.hiddenAlbums.associateWith { true }),
                 stored.skipped,
                 stored.libraryVersion,
             )

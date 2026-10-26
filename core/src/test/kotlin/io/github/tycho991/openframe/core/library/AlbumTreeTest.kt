@@ -153,6 +153,12 @@ class AlbumTreeTest {
         assertEquals(listOf("a", "a/x", "a b", "B"), library().albums.keys.toList())
     }
 
+    @Test
+    fun `Tree order with names that differ only in case`() {
+        putAll("a/1.jpg", "A/x/2.jpg", "A/3.jpg")
+        assertEquals(listOf("A", "A/x", "a"), library().albums.keys.toList())
+    }
+
     /** Spec `photo-library`: Photo list through the API; the same 50 ms as `PhotoListPerformanceTest`. */
     @Test
     fun `Visible photos of 10000 photos in 4 levels in time`() {
@@ -163,7 +169,8 @@ class AlbumTreeTest {
                 e.id to e
             }
         val states = mapOf("level1" to true, "level1/sub2" to false, "level1/sub2/deeper3/deepest4" to true, "level3/sub1" to true)
-        repeat(5) { Library(photos, states, emptyList(), it.toLong()).visible }
+        // Warmed up like the 20 requests of PhotoListPerformanceTest: the JIT needs about 15 rounds here.
+        repeat(20) { Library(photos, states, emptyList(), it.toLong()).visible }
         val times =
             (0 until 9).map {
                 val fresh = Library(photos, states, emptyList(), it.toLong())

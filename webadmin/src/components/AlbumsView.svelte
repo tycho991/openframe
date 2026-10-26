@@ -45,13 +45,16 @@
   // One switch at a time: a switch changes the albums below it, so the next one must see the answer.
   let busy = $state(false);
 
-  async function toggle(album: Album) {
+  async function toggle(album: Album, input: HTMLInputElement) {
     busy = true;
     try {
       // Switching resets the sub-albums, so the whole list comes back.
       albums = await api.setAlbumHidden(album.name, !album.hidden);
+      error = null;
     } catch (e) {
       error = errorText(e);
+      // Nothing changed on the frame, so the switch must show the album's state again.
+      input.checked = !album.hidden;
     } finally {
       busy = false;
     }
@@ -101,7 +104,7 @@
               role="switch"
               checked={!album.hidden}
               disabled={busy}
-              onchange={() => toggle(album)}
+              onchange={(e) => toggle(album, e.currentTarget)}
             />
             <span>{t("albums.visibleLabel")}</span>
           </label>

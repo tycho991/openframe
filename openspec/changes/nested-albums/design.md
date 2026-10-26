@@ -37,7 +37,7 @@ The album is computed in one place, `PhotoEntry.album` (the part of `path` befor
 
 ### 4. Migration and rollback
 
-Loading a `StoredIndex` without `albumStates` turns every name in `hiddenAlbums` into `name → true`. Old names are top-level paths, so the invariant holds, and every photo in a deeper folder inherits what its old album had (spec "Album states kept across the update"). Saving keeps writing `hiddenAlbums` as the set of paths stored as hidden; an older build ignores `albumStates` (`ignoreUnknownKeys`) and still hides the top-level albums, while exceptions below them are lost there. Settings of albums whose folders are gone are kept, as hidden names are today, so an album that is emptied and filled again keeps its state.
+Loading a `StoredIndex` without `albumStates` turns every name in `hiddenAlbums` into `name → true`. Old names are top-level paths, so the invariant holds, and every photo in a deeper folder inherits what its old album had (spec "Album states kept across the update"). Saving keeps writing `hiddenAlbums` as the set of paths stored as hidden; an older build ignores `albumStates` (`ignoreUnknownKeys`) and still hides the top-level albums, while exceptions below them are lost there. Because an older build can add a parent to those paths and save without `albumStates`, the states are normalized at every load: an entry equal to what the album inherits is dropped, so the invariant of decision 2 holds again. Settings of albums whose folders are gone are kept, as hidden names are today, so an album that is emptied and filled again keeps its state.
 
 *Alternative:* drop `hiddenAlbums`. Rejected: going back one build would show every hidden album.
 

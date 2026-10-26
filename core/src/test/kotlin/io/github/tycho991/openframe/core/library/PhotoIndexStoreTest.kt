@@ -138,6 +138,23 @@ class PhotoIndexStoreTest {
             assertEquals(setOf("holiday", "other"), older.hiddenAlbums)
         }
 
+    @Test
+    fun `An index saved again by an older build keeps no redundant exceptions`() {
+        // Written by this build with `a/b` hidden, then `a` hidden by an older build, which drops albumStates.
+        val photo = entry("a/b/x.jpg")
+        File(dir, "index.json").writeText(
+            """
+            {"photos":[{"id":"${photo.id}","source":"local","path":"a/b/x.jpg","width":4,"height":3,
+            "takenAtMs":0,"fileSize":10,"modifiedMs":1,"version":1,"hidden":false}],
+            "hiddenAlbums":["a/b","a"],"skipped":[],"libraryVersion":3}
+            """.trimIndent(),
+        )
+        val library = store().library.value
+        assertEquals(mapOf("a" to true), library.albumStates)
+        assertFalse(library.albums.getValue("a/b").overridesParent)
+        assertFalse(library.isVisible(library.photos.values.single()))
+    }
+
     /** The stored index of the build before nested albums, as far as album states go. */
     @Serializable
     private data class PreviousStoredIndex(

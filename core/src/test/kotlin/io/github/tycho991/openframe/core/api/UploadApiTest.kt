@@ -87,14 +87,18 @@ class UploadApiTest {
         assertEquals(201, frame.upload("../../x", "..\\..\\win.jpg" to jpeg).statusCode())
         assertEquals(201, frame.upload("a/../../x", "c.jpg" to jpeg).statusCode())
         assertEquals(201, frame.upload("/./ .hidden//b/", "d.jpg" to jpeg).statusCode())
-        assertEquals(listOf("a/x/c.jpg", "evil.jpg", "hidden/b/d.jpg", "x/win.jpg"), files())
+        // Dots and spaces in turn: one pass of trimming would leave `..` behind.
+        assertEquals(201, frame.upload(".. ../.. ..", ".. ..jpg" to jpeg).statusCode())
+        assertEquals(listOf("a/x/c.jpg", "evil.jpg", "hidden/b/d.jpg", "jpg.jpg", "x/win.jpg"), files())
         assertFalse(File(dir, "evil.jpg").exists())
         assertFalse(File(dir, "x").exists())
         val outside =
             dir
                 .walkTopDown()
-                .filter { it.isFile && !it.startsWith(frame.photos) && it.name in setOf("evil.jpg", "win.jpg", "c.jpg", "d.jpg") }
-                .toList()
+                .filter {
+                    it.isFile && !it.startsWith(frame.photos) &&
+                        it.name in setOf("evil.jpg", "win.jpg", "c.jpg", "d.jpg", "jpg.jpg", "..jpg")
+                }.toList()
         assertEquals(emptyList<File>(), outside, "no file outside the photo folder")
     }
 
