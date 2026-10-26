@@ -56,7 +56,8 @@ class SlideRenderer(
     private fun target() = Target(front.width, front.height)
 
     init {
-        // The borders are the black behind the views; a background of their own would make them overlap themselves.
+        // The black borders are part of the bitmaps (BitmapFit), so a fade blends them too; a background of the views
+        // instead would make them overlap themselves and need a layer for `alpha`.
         for (view in listOf(front, back)) view.scaleType = ImageView.ScaleType.FIT_CENTER
         // A new size, for example after switching the frame's orientation, needs bitmaps scaled for it.
         val onResize =
