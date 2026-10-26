@@ -20,11 +20,10 @@ class PhotoListPerformanceTest {
     @AfterEach
     fun tearDown() = frame.close()
 
-    @Test
-    fun `10000 entries under 50 ms per page`() {
+    private fun putPhotos(pathOf: (Int) -> String) {
         frame.core.library.index.edit { edit ->
             for (i in 0 until 10_000) {
-                val path = "album${i % 20}/foto$i.jpg"
+                val path = pathOf(i)
                 edit.put(
                     PhotoEntry(
                         PhotoEntry.idFor("local", path),
@@ -41,7 +40,10 @@ class PhotoListPerformanceTest {
                 )
             }
         }
-        val queries = listOf("", "?album=album3", "?visible=false&sort=name_asc", "?sort=date_asc&limit=200")
+    }
+
+    /** Five pages of each query after warming up: median under 50 ms, none over 200 ms. */
+    private fun assertPagesFast(queries: List<String>) {
         repeat(5) { queries.forEach { frame.get("/api/v1/photos$it") } }
 
         val times = mutableListOf<Long>()
@@ -59,5 +61,31 @@ class PhotoListPerformanceTest {
         val median = times.sorted()[times.size / 2]
         assertTrue(median < 50, "Median $median ms, all: $times")
         assertTrue(times.max() < 200, "Outliers: $times")
+    }
+
+    @Test
+    fun `10000 entries under 50 ms per page`() {
+        putPhotos { i -> "album${i % 20}/foto$i.jpg" }
+        assertPagesFast(listOf("", "?album=album3", "?visible=false&sort=name_asc", "?sort=date_asc&limit=200"))
+    }
+
+    /** `nested-albums`: visibility and the album filter in four levels, with exceptions, in the same time. */
+    @Test
+    fun `10000 entries in four album levels under 50 ms per page`() {
+        putPhotos { i -> "level${i % 5}/sub${i % 7}/deeper${i % 11}/deepest${i % 13}/foto$i.jpg" }
+        frame.core.library.index.edit {
+            it.setAlbumHidden("level1", true)
+            it.setAlbumHidden("level1/sub2", false)
+            it.setAlbumHidden("level1/sub2/deeper3", true)
+        }
+        assertPagesFast(
+            listOf(
+                "?visible=true",
+                "?visible=false&sort=name_asc",
+                "?album=level1",
+                "?album=level1/sub2&visible=true",
+                "?album=level2/sub1&subalbums=false",
+            ),
+        )
     }
 }

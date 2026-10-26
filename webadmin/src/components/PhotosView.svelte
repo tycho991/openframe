@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
+  import { albumOptions } from "../lib/albums";
   import type { Album, Photo, PhotoSort, SkippedFile } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
@@ -12,6 +13,7 @@
   import VirtualGrid from "./VirtualGrid.svelte";
 
   let album = $state("");
+  let onlyThisAlbum = $state(false);
   let visibility = $state<"all" | "visible" | "hidden">("all");
   let sort = $state<PhotoSort>("date_desc");
 
@@ -20,6 +22,7 @@
   let total = $state(0);
   let hasMore = $state(true);
   let albums = $state<Album[]>([]);
+  const albumChoices = $derived(albumOptions(albums));
   let skipped = $state<SkippedFile[]>([]);
   let error = $state<string | null>(null);
 
@@ -43,6 +46,7 @@
   function query() {
     return {
       album: album || undefined,
+      subalbums: album && onlyThisAlbum ? false : undefined,
       visible: visibility === "all" ? undefined : visibility === "visible",
       sort,
     };
@@ -155,9 +159,15 @@
       <span class="sr-only">{t("photos.filterAlbum")}</span>
       <select bind:value={album} aria-label={t("photos.filterAlbum")}>
         <option value="">{t("photos.allAlbums")}</option>
-        {#each albums as a (a.name)}<option value={a.name}>{a.name}</option>{/each}
+        {#each albumChoices as a (a.value)}<option value={a.value}>{a.label}</option>{/each}
       </select>
     </label>
+    {#if album}
+      <label class="check">
+        <input type="checkbox" bind:checked={onlyThisAlbum} />
+        <span>{t("photos.onlyThisAlbum")}</span>
+      </label>
+    {/if}
     <label>
       <span class="sr-only">{t("photos.filterVisibility")}</span>
       <select bind:value={visibility} aria-label={t("photos.filterVisibility")}>
@@ -276,6 +286,14 @@
   .toolbar label {
     flex: 1 1 140px;
     max-width: 220px;
+  }
+  .toolbar label.check {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-height: 44px;
+    cursor: pointer;
   }
   .spacer {
     flex: 1 1 0;

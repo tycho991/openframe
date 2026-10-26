@@ -43,6 +43,8 @@ export interface TokenStore {
 
 export interface PhotoQuery {
   album?: string;
+  /** With `false`, only the photos directly in `album`, not those of its sub-albums. */
+  subalbums?: boolean;
   visible?: boolean;
   sort?: PhotoSort;
   cursor?: string | null;
@@ -136,8 +138,9 @@ export function createApi(options: ApiOptions) {
       call<BatchResult>("POST", "/photos:batch", { action, ids }),
     skippedFiles: () => call<S["SkippedFileList"]>("GET", "/skipped-files").then((r) => r.items),
     albums: () => call<S["AlbumList"]>("GET", "/albums").then((r) => r.albums),
+    /** Switches an album with its whole branch; answers with all albums, since sub-albums change too. */
     setAlbumHidden: (name: string, hidden: boolean) =>
-      call<Album>("PATCH", `/albums/${encodeURIComponent(name)}`, { hidden }),
+      call<S["AlbumList"]>("PATCH", "/albums", { name, hidden }).then((r) => r.albums),
     state: () => call<State>("GET", "/state"),
     sources: () => call<S["SourceList"]>("GET", "/sources").then((r) => r.sources),
     addShare: (share: Omit<ShareRequest, "kind">) =>

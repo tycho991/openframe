@@ -37,7 +37,8 @@ class PhotoLibrary(
         album: String,
         hidden: Boolean,
     ) = index.edit { edit ->
-        if (edit.photos.values.none { it.album == album }) throw HttpException.notFound("No such album")
+        // Inside edit the state does not change, and its album list is computed once per state anyway.
+        if (album !in index.library.value.albums) throw HttpException.notFound("No such album")
         edit.setAlbumHidden(album, hidden)
     }
 
@@ -180,24 +181,42 @@ class PhotoLibrary(
         /** File name without path and without characters that lead outside the target folder or upset file systems. */
         fun sanitizeName(raw: String): String {
             val base = raw.substringAfterLast('/').substringAfterLast('\\')
-            val cleaned =
-                base
-                    .filter { it >= ' ' && it !in FORBIDDEN }
-                    .trim()
-                    .trimStart('.')
-                    .trim()
-            return cleaned.take(120).ifEmpty { "upload" }
+            return cleanLevel(base).take(120).ifEmpty { "upload" }
         }
 
-        /** Album name as exactly one folder level directly below the photo folder, `null` for no album. */
-        fun sanitizeAlbum(raw: String): String? =
+        /**
+         * One folder level or file name without forbidden characters and without leading dots, so it
+         * is neither hidden nor `.` or `..`. Dots and spaces are trimmed together: `.. ..` is empty.
+         */
+        private fun cleanLevel(raw: String): String =
             raw
                 .filter { it >= ' ' && it !in FORBIDDEN }
-                .trim()
-                .trimStart('.')
-                .trim()
-                .take(64)
-                .ifEmpty { null }
+                .trimStart { it == '.' || it.isWhitespace() }
+                .trimEnd()
+
+        const val MAX_ALBUM_PATH = 255
+
+        /**
+         * Album path below the photo folder, `null` for no album. Each level is sanitized on its own,
+         * so empty levels, `.` and `..` disappear; more than [MAX_ALBUM_PATH] characters is 400.
+         */
+        fun sanitizeAlbum(raw: String): String? {
+            val path =
+                raw
+                    .split('/')
+                    .map { cleanLevel(it).take(64).trimEnd() }
+                    .filter { it.isNotEmpty() }
+                    .joinToString("/")
+            if (path.length > MAX_ALBUM_PATH) {
+                throw HttpException(
+                    400,
+                    "invalid_album",
+                    "The album path is too long",
+                    mapOf("album" to "At most $MAX_ALBUM_PATH characters"),
+                )
+            }
+            return path.ifEmpty { null }
+        }
 
         fun uniqueFile(
             dir: File,

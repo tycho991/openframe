@@ -66,17 +66,26 @@ class LibraryApiTest {
         put("holiday/1.jpg")
         put("family/2.jpg")
         frame.scan()
-        val res = frame.send("PATCH", "/api/v1/albums/holiday", """{"hidden":true}""")
+        val res = patchAlbum("holiday", true)
         assertEquals(200, res.statusCode())
-        assertTrue(ApiJson.decodeFromString(AlbumDto.serializer(), res.body()).hidden)
+        assertTrue(albumsOf(res).getValue("holiday").hidden)
         put("holiday/new.jpg")
         frame.scan()
         val holiday = page("?album=holiday").items
         assertEquals(2, holiday.size)
         assertTrue(holiday.none { it.visible }, "the new photo is hidden as well")
         assertTrue(holiday.none { it.hidden }, "hidden through the album, not individually")
-        assertEquals(404, frame.send("PATCH", "/api/v1/albums/doesnotexist", """{"hidden":true}""").statusCode())
     }
+
+    private fun patchAlbum(
+        name: String,
+        hidden: Boolean,
+    ) = frame.send("PATCH", "/api/v1/albums", """{"name":"$name","hidden":$hidden}""")
+
+    private fun albumsOf(res: io.github.tycho991.openframe.core.testing.Res) =
+        ApiJson.decodeFromString(AlbumListDto.serializer(), res.body()).albums.associateBy { it.name }
+
+    private fun albums() = albumsOf(frame.get("/api/v1/albums"))
 
     @Test
     fun `Albums with count and cover image`() {
@@ -94,6 +103,103 @@ class LibraryApiTest {
                 .cover!!
                 .thumb
                 .contains(id("holiday/1.jpg")),
+        )
+    }
+
+    @Test
+    fun `Album list with sub-albums, counted and covered by branch`() {
+        put("holiday/2023/a.jpg", "rotated6.jpg")
+        put("holiday/2024/may/b.jpg")
+        put("family/c.jpg")
+        frame.scan()
+        val res = frame.get("/api/v1/albums")
+        assertEquals(
+            listOf("family", "holiday", "holiday/2023", "holiday/2024", "holiday/2024/may"),
+            ApiJson.decodeFromString(AlbumListDto.serializer(), res.body()).albums.map { it.name },
+        )
+        val holiday = albumsOf(res).getValue("holiday")
+        assertEquals(2, holiday.count)
+        assertTrue(holiday.cover!!.thumb.contains(id("holiday/2024/may/b.jpg")), "newest photo of the branch")
+        assertTrue(albumsOf(res).values.none { it.hidden || it.overridesParent })
+    }
+
+    @Test
+    fun `Switching a parent with an exception below resets it`() {
+        put("holiday/h.jpg")
+        put("holiday/2024/a.jpg")
+        frame.scan()
+        patchAlbum("holiday", true)
+        val exception = albumsOf(patchAlbum("holiday/2024", false))
+        assertFalse(exception.getValue("holiday/2024").hidden)
+        assertTrue(exception.getValue("holiday/2024").overridesParent)
+        assertTrue(page().items.single { it.path == "holiday/2024/a.jpg" }.visible, "shown inside a hidden album")
+        assertFalse(page().items.single { it.path == "holiday/h.jpg" }.visible)
+        patchAlbum("holiday", false)
+        val after = albumsOf(patchAlbum("holiday", true))
+        assertTrue(after.getValue("holiday/2024").hidden)
+        assertFalse(after.getValue("holiday/2024").overridesParent, "the answer carries the reset sub-album")
+        assertEquals(after, albums())
+    }
+
+    @Test
+    fun `Switching a sub-album back to its parent's state`() {
+        put("holiday/2024/a.jpg")
+        frame.scan()
+        patchAlbum("holiday", true)
+        patchAlbum("holiday/2024", false)
+        val back = albumsOf(patchAlbum("holiday/2024", true)).getValue("holiday/2024")
+        assertTrue(back.hidden)
+        assertFalse(back.overridesParent)
+    }
+
+    @Test
+    fun `Unknown album`() {
+        put("holiday/2024/a.jpg")
+        frame.scan()
+        assertEquals(404, patchAlbum("doesnotexist", true).statusCode())
+        assertEquals(404, patchAlbum("holiday/2025", true).statusCode())
+        assertEquals(404, patchAlbum("holi", true).statusCode(), "a prefix of a name is not an album")
+        assertEquals(200, patchAlbum("holiday", true).statusCode(), "an album without photos of its own")
+        assertEquals(400, frame.send("PATCH", "/api/v1/albums", """{"hidden":true}""").statusCode())
+    }
+
+    @Test
+    fun `Filter by an album with and without its sub-albums`() {
+        put("holiday/a.jpg")
+        put("holiday/2024/b.jpg")
+        put("holiday/2024/may/c.jpg")
+        put("holidays/d.jpg")
+        frame.scan()
+        assertEquals(
+            setOf("holiday/a.jpg", "holiday/2024/b.jpg", "holiday/2024/may/c.jpg"),
+            page("?album=holiday").items.map { it.path }.toSet(),
+        )
+        assertEquals(listOf("holiday/a.jpg"), page("?album=holiday&subalbums=false").items.map { it.path })
+        assertEquals(setOf("holiday/2024/b.jpg", "holiday/2024/may/c.jpg"), page("?album=holiday/2024").items.map { it.path }.toSet())
+        assertEquals("holiday/2024/may", page("?album=holiday/2024/may").items.single().album)
+        assertEquals(400, frame.get("/api/v1/photos?album=holiday&subalbums=maybe").statusCode())
+    }
+
+    @Test
+    fun `A photo in a shown sub-album of a hidden album is visible`() {
+        put("holiday/a.jpg")
+        put("holiday/2024/b.jpg")
+        frame.scan()
+        patchAlbum("holiday", true)
+        patchAlbum("holiday/2024", false)
+        assertEquals(listOf("holiday/2024/b.jpg"), page("?visible=true").items.map { it.path })
+        assertEquals(listOf("holiday/a.jpg"), page("?visible=false").items.map { it.path })
+        val deadline = System.currentTimeMillis() + 5000
+        while (frame.core.visiblePhotos.value
+                .map { it.path } != listOf("holiday/2024/b.jpg") && System.currentTimeMillis() < deadline
+        ) {
+            Thread.sleep(20)
+        }
+        assertEquals(
+            listOf("holiday/2024/b.jpg"),
+            frame.core.visiblePhotos.value
+                .map { it.path },
+            "the slideshow follows",
         )
     }
 

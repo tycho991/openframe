@@ -3,8 +3,10 @@ package io.github.tycho991.openframe.core.api
 import io.github.tycho991.openframe.core.auth.ImageSigner
 import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.HttpException
+import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.library.AlbumPaths
 import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
@@ -87,6 +89,7 @@ data class AlbumDto(
     val name: String,
     val count: Int,
     val hidden: Boolean,
+    val overridesParent: Boolean,
     val cover: ImageUrlsDto?,
 )
 
@@ -97,6 +100,7 @@ data class AlbumListDto(
 
 @Serializable
 data class AlbumPatchDto(
+    val name: String,
     val hidden: Boolean,
 )
 
@@ -188,16 +192,15 @@ fun Router.libraryRoutes(
                     ?: throw HttpException.badRequest("limit 1 to 500")
             }
                 ?: 100
-        val visible =
-            when (req.queryParam("visible")) {
-                null -> null
-                "true" -> true
-                "false" -> false
-                else -> throw HttpException.badRequest("visible is true or false")
-            }
+        val visible = req.booleanParam("visible")
         val album = req.queryParam("album")
+        val subalbums = req.booleanParam("subalbums") ?: true
         val lib = index.library.value
-        val filtered = sort.list(lib).filter { (album == null || it.album == album) && (visible == null || lib.isVisible(it) == visible) }
+        val filtered =
+            sort.list(lib).filter {
+                val inAlbum = album == null || (if (subalbums) AlbumPaths.inBranch(it.album, album) else it.album == album)
+                inAlbum && (visible == null || lib.isVisible(it) == visible)
+            }
         val start =
             req.queryParam("cursor")?.let { raw ->
                 val c =
@@ -304,28 +307,21 @@ fun Router.libraryRoutes(
         HttpResponse.json(SkippedFileListDto.serializer(), SkippedFileListDto(items))
     }
 
-    get("/api/v1/albums") {
-        val lib = index.library.value
+    fun albumList(): HttpResponse {
         val albums =
-            lib.photos.values
-                .filter { it.album != null }
-                .groupBy { it.album!! }
-                .map { (name, photos) ->
-                    AlbumDto(name, photos.size, name in lib.hiddenAlbums, urls(photos.maxWith(Library.DATE_ORDER)))
-                }.sortedBy { it.name.lowercase() }
-        HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
+            index.library.value.albums.values
+                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, urls(it.newest)) }
+        return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
     }
 
-    patch("/api/v1/albums/{albumName}") { req ->
-        val name = req.pathParam("albumName")
+    get("/api/v1/albums") { albumList() }
+
+    // The album is in the body because its path contains `/`, and the answer is the whole
+    // list because switching an album resets its sub-albums.
+    patch("/api/v1/albums") { req ->
         val body = req.bodyAs(AlbumPatchDto.serializer())
-        library.setAlbumHidden(name, body.hidden)
-        val lib = index.library.value
-        val photos = lib.photos.values.filter { it.album == name }
-        HttpResponse.json(
-            AlbumDto.serializer(),
-            AlbumDto(name, photos.size, name in lib.hiddenAlbums, photos.maxWithOrNull(Library.DATE_ORDER)?.let(::urls)),
-        )
+        library.setAlbumHidden(body.name, body.hidden)
+        albumList()
     }
 
     get("/api/v1/state") {
@@ -334,3 +330,11 @@ fun Router.libraryRoutes(
 }
 
 private val BATCH_ACTIONS = setOf("hide", "show", "delete")
+
+private fun HttpRequest.booleanParam(name: String): Boolean? =
+    when (queryParam(name)) {
+        null -> null
+        "true" -> true
+        "false" -> false
+        else -> throw HttpException.badRequest("$name is true or false")
+    }
