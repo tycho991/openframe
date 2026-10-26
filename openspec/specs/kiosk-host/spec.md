@@ -35,11 +35,15 @@ The slideshow SHALL run in immersive fullscreen without status and navigation ba
 - **THEN** the app hides them again after a few seconds
 
 ### Requirement: Keep the display awake
-While the slideshow is running, the device SHALL NOT go into standby or turn the display off.
+While the slideshow is running, the device SHALL NOT go into standby or turn the display off, except when the display schedule, the manual switch or the end of a waking period calls for the display to be off (see `display-schedule`).
 
 #### Scenario: Hours without touch
-- **WHEN** nobody touches the device for 12 hours
+- **WHEN** nobody touches the device for 12 hours and the display schedule is off
 - **THEN** the display is still on and the slideshow is running
+
+#### Scenario: Off by the schedule
+- **WHEN** the display schedule calls for the display to be off
+- **THEN** the display goes off, and the device does not turn it on again by itself before the schedule's next on time
 
 ### Requirement: Server independent of the display
 The server SHALL run in a foreground service so that it stays reachable while the display is in the background or restarting. The display SHALL load only once the core in the service is ready, that is, settings and library are loaded. It SHALL NOT depend on the HTTP server or on the network.
