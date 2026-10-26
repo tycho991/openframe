@@ -40,6 +40,26 @@ test("Set the schedule", async ({ page }) => {
   expect(["schedule", "wake"]).toContain(display.cause);
 });
 
+test("A schedule that is on can be switched off without device administration", async ({ page }) => {
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Einstellungen" }).click();
+  await page.getByLabel("Display nachts ausschalten").check();
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByRole("status")).toHaveText("Gespeichert");
+  await displayAdmin(false);
+  await page.reload();
+  const schedule = page.getByLabel("Display nachts ausschalten");
+  await expect(schedule).toBeChecked();
+  await expect(schedule).toBeEnabled();
+  await schedule.uncheck();
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByRole("status")).toHaveText("Gespeichert");
+  const settings = await apiAsBrowser<{ displaySchedule: Schedule }>(page, "/settings");
+  expect(settings.displaySchedule.enabled).toBe(false);
+  // Switching it on again needs device administration.
+  await expect(schedule).toBeDisabled();
+});
+
 test("Invalid time at the field", async ({ page }) => {
   await pairInUi(page);
   await page.getByRole("link", { name: "Einstellungen" }).click();

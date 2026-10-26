@@ -9,8 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 
 /** Stored form: values as JSON so that new settings get their default. */
@@ -63,7 +61,9 @@ class SettingsRepository(
     fun patch(patch: JsonObject): Settings {
         val result = SettingsPatch.apply(_settings.value, patch)
         val errors = result.errors.toMutableMap()
-        if (switchesScheduleOn(patch) && !scheduleAllowed()) {
+        // Only switching on is checked: a client that repeats `enabled: true` of a stored schedule switches nothing.
+        val switchesScheduleOn = result.settings.displaySchedule.enabled && !_settings.value.displaySchedule.enabled
+        if (switchesScheduleOn && !scheduleAllowed()) {
             errors[SCHEDULE_ENABLED] = "Device administration is not active: activate it in the device menu on the frame"
         }
         if (errors.isNotEmpty()) throw ValidationException(errors)
@@ -87,11 +87,6 @@ class SettingsRepository(
     private fun persist() {
         val values = ApiJson.encodeToJsonElement(Settings.serializer(), _settings.value).jsonObject
         store.save(StoredSettings(values, _localOnly.value, _version.value))
-    }
-
-    private fun switchesScheduleOn(patch: JsonObject): Boolean {
-        val enabled = (patch["displaySchedule"] as? JsonObject)?.get("enabled") as? JsonPrimitive
-        return enabled != null && !enabled.isString && enabled.booleanOrNull == true
     }
 
     private companion object {

@@ -42,14 +42,14 @@ class DisplayScheduleTest {
     fun `Friday night`() {
         val s = defaults.copy(weekdays = DisplayWindow("07:00", "01:00"))
         assertEquals(period(true, "2026-10-23T07:00", "2026-10-24T01:00"), DisplaySchedule.periodAt(at("2026-10-24T00:30"), s))
-        assertEquals(instant("2026-10-24T01:00"), DisplaySchedule.nextChange(at("2026-10-24T00:30"), s))
+        assertEquals(instant("2026-10-24T01:00"), DisplaySchedule.periodAt(at("2026-10-24T00:30"), s).end)
         assertEquals(period(false, "2026-10-24T01:00", "2026-10-24T08:00"), DisplaySchedule.periodAt(at("2026-10-24T01:00"), s))
     }
 
     @Test
     fun `Weekend morning`() {
         assertEquals(period(false, "2026-10-23T22:00", "2026-10-24T08:00"), DisplaySchedule.periodAt(at("2026-10-24T07:30"), defaults))
-        assertEquals(instant("2026-10-24T08:00"), DisplaySchedule.nextChange(at("2026-10-24T07:30"), defaults))
+        assertEquals(instant("2026-10-24T08:00"), DisplaySchedule.periodAt(at("2026-10-24T07:30"), defaults).end)
     }
 
     @Test
@@ -85,7 +85,7 @@ class DisplayScheduleTest {
     fun `Whole days everywhere never switch`() {
         val s = defaults.copy(weekdays = DisplayWindow("07:00", "07:00"), weekend = DisplayWindow("10:00", "10:00"))
         assertEquals(Period(true, null, null), DisplaySchedule.periodAt(at("2026-10-21T03:00"), s))
-        assertEquals(null, DisplaySchedule.nextChange(at("2026-10-21T03:00"), s))
+        assertEquals(null, DisplaySchedule.periodAt(at("2026-10-21T03:00"), s).end)
     }
 
     @Test

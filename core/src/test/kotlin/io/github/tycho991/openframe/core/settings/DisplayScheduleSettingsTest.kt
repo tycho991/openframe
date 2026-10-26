@@ -150,5 +150,11 @@ class DisplayScheduleSettingsTest {
             assertTrue(restarted.settings.value.displaySchedule.enabled)
             restarted.patch(json("""{"intervalSeconds":60,"displaySchedule":{"weekend":{"off":"23:30"}}}"""))
             assertTrue(restarted.settings.value.displaySchedule.enabled)
+            // A client that sends all its settings repeats `enabled: true`; that switches nothing on.
+            restarted.patch(json("""{"name":"Hall","displaySchedule":{"enabled":true,"wakeMinutes":7}}"""))
+            assertEquals("Hall", restarted.settings.value.name)
+            assertEquals(7, restarted.settings.value.displaySchedule.wakeMinutes)
+            restarted.patch(json("""{"displaySchedule":{"enabled":false}}"""))
+            assertEquals(setOf("displaySchedule.enabled"), rejected(restarted, """{"displaySchedule":{"enabled":true}}"""))
         }
 }

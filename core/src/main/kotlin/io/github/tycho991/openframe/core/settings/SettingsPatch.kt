@@ -177,12 +177,15 @@ object SettingsPatch {
         return null
     }
 
+    /** A JSON `true` or `false`; a string such as `"true"` is not one. */
+    fun strictBoolean(value: JsonElement?): Boolean? = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+
     private fun bool(
         value: JsonElement,
         key: String,
         errors: MutableMap<String, String>,
     ): Boolean? {
-        val b = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+        val b = strictBoolean(value)
         if (b == null) errors[key] = "Expected true or false"
         return b
     }

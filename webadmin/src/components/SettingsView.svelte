@@ -269,7 +269,7 @@
         <input
           type="checkbox"
           bind:checked={form.displaySchedule.enabled}
-          disabled={!display?.available}
+          disabled={!display?.available && !form.displaySchedule.enabled}
           aria-invalid={!!errors["displaySchedule.enabled"]}
         />
         <span>{t("settings.displaySchedule")}</span>

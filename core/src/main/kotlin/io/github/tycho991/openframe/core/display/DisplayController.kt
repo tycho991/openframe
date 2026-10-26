@@ -4,8 +4,10 @@ import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.settings.Settings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +17,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import java.time.Instant
 
 /** The display as `GET /display` reports it. */
@@ -120,37 +123,61 @@ class DisplayController(
         return reply.await()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun loop() {
         wasAvailable = power.available
-        grace()
-        evaluate()
-        while (scope.isActive) {
-            val event = withTimeoutOrNull(TICK_MS) { events.receive() }
-            when (event) {
-                null, Event.Availability -> {}
-
-                is Event.Screen -> {
-                    screenChanged(event.on)
-                }
-
-                Event.Touch -> {
-                    if (wakeUntil != null) wakeUntil = clock.monotonicMillis() + wakeMillis()
-                }
-
-                Event.ScheduleChanged -> {
-                    grace()
-                }
-
-                is Event.Manual -> {
-                    manual(event.on)
-                }
-            }
-            val available = power.available
-            if (available && !wasAvailable) grace()
-            wasAvailable = available
+        guarded {
+            grace()
             evaluate()
+        }
+        while (scope.isActive) {
+            // `select` takes an event or times out, never both: a timeout around `receive` could drop an event
+            // already taken from the channel, and a manual switch would then never be answered.
+            val event =
+                select<Event?> {
+                    events.onReceive { it }
+                    onTimeout(TICK_MS) { null }
+                }
+            guarded { handle(event) }
             if (event is Event.Manual) event.reply.complete(_state.value)
         }
+    }
+
+    /** One failing step, e.g. a switch the firmware refuses, is logged; the loop goes on and tries again next time. */
+    private inline fun guarded(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.e(TAG, "Display step failed", e)
+        }
+    }
+
+    private fun handle(event: Event?) {
+        when (event) {
+            null, Event.Availability -> {}
+
+            is Event.Screen -> {
+                screenChanged(event.on)
+            }
+
+            Event.Touch -> {
+                if (wakeUntil != null) wakeUntil = clock.monotonicMillis() + wakeMillis()
+            }
+
+            Event.ScheduleChanged -> {
+                grace()
+            }
+
+            is Event.Manual -> {
+                manual(event.on)
+            }
+        }
+        val available = power.available
+        if (available && !wasAvailable) grace()
+        wasAvailable = available
+        evaluate()
     }
 
     private fun decide(): Decision =
@@ -204,12 +231,16 @@ class DisplayController(
         if (override != null && d.cause != DisplayCause.MANUAL) override = null
         if (d.period?.on != false || !available) wakeUntil = null
         if (!available) override = null
-        if (d.on != applied) apply(d)
+        // The state is published before switching, so that it is current even when the switch throws.
         _state.value = DisplayState(available, power.screenOn, d.cause, d.nextChange)
+        if (d.on != applied) {
+            apply(d)
+            _state.value = DisplayState(available, power.screenOn, d.cause, d.nextChange)
+        }
     }
 
+    /** Switches to [d]; it counts as applied only when the switch did not throw, so a failed one is tried again. */
     private fun apply(d: Decision) {
-        applied = d.on
         when (d.on) {
             true -> {
                 offByFrame = false
@@ -236,6 +267,7 @@ class DisplayController(
                 offByFrame = false
             }
         }
+        applied = d.on
     }
 
     private fun wakeMillis(): Long = schedule.wakeMinutes * 60_000L

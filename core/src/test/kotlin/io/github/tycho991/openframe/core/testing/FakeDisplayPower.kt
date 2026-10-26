@@ -22,8 +22,19 @@ class FakeDisplayPower(
 
     private var listener: DisplayPower.Listener? = null
 
+    /** Thrown by the next switch, as a firmware that refuses the wake lock or the lock call would. */
+    var failNextSwitch: RuntimeException? = null
+
+    private fun failIfAsked() {
+        failNextSwitch?.let {
+            failNextSwitch = null
+            throw it
+        }
+    }
+
     override fun turnOff(): Boolean {
         calls += "off"
+        failIfAsked()
         if (!available) return false
         screen(false)
         return true
@@ -31,6 +42,7 @@ class FakeDisplayPower(
 
     override fun turnOn() {
         calls += "on"
+        failIfAsked()
         screen(true)
     }
 

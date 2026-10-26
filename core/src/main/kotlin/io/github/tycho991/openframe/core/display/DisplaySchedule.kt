@@ -53,12 +53,6 @@ object DisplaySchedule {
         return Period(false, previousEnd, null)
     }
 
-    /** The next time the schedule switches after [at], `null` if it never does. */
-    fun nextChange(
-        at: ZonedDateTime,
-        settings: DisplayScheduleSettings,
-    ): Instant? = periodAt(at, settings).end
-
     fun windowOf(
         date: LocalDate,
         settings: DisplayScheduleSettings,

@@ -565,6 +565,7 @@ class DisplayActivity : Activity() {
     private fun showImmersive(builder: AlertDialog.Builder) {
         val dialog = builder.create()
         val window = dialog.window
+        window?.let { w -> w.callback = reportingTouches(w.callback) { core?.display?.userActivity() } }
         window?.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         dialog.show()
         window?.decorView?.systemUiVisibility = IMMERSIVE_FLAGS

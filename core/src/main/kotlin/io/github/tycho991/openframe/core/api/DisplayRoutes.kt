@@ -5,10 +5,9 @@ import io.github.tycho991.openframe.core.display.DisplayState
 import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.settings.SettingsPatch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 
 @Serializable
 data class DisplayStateDto(
@@ -29,7 +28,7 @@ fun Router.displayRoutes(display: DisplayController) {
         val body = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
         val fields = LinkedHashMap<String, String>()
         body.keys.filter { it != "on" }.forEach { fields[it] = "Unknown field" }
-        val on = (body["on"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+        val on = SettingsPatch.strictBoolean(body["on"])
         if (on == null) fields["on"] = "Expected true or false"
         if (on == null || fields.isNotEmpty()) throw HttpException.badRequest("Invalid display switch", fields)
         if (!display.available) {

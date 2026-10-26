@@ -430,4 +430,26 @@ class DisplayControllerTest {
         assertTrue(s.on)
         assertEquals(emptyList<String>(), power.calls)
     }
+
+    // Robustness
+
+    @Test
+    fun `A switch that throws is retried and the controller keeps running`() {
+        start()
+        until("2026-10-21T21:59")
+        power.failNextSwitch = IllegalStateException("lock refused")
+        minutes(1)
+        assertTrue(power.screenOn, "the failed switch did nothing")
+        minutes(1)
+        assertFalse(power.screenOn, "tried again at the next evaluation")
+        assertEquals(listOf("off", "off"), power.calls)
+        // The loop is alive: a manual switch is answered.
+        assertTrue(manual(true).on)
+        power.failNextSwitch = IllegalStateException("lock refused")
+        val s = manual(false)
+        assertEquals(DisplayCause.MANUAL, s.cause, "answered although the switch failed")
+        assertTrue(s.on)
+        minutes(1)
+        assertFalse(power.screenOn, "tried again at the next evaluation")
+    }
 }
