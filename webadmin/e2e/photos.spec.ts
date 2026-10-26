@@ -144,10 +144,12 @@ test("The list behind the detail view stays still", async ({ page }) => {
   await expect(page.locator(".tile").first()).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 1200));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
-  const before = await page.evaluate(() => window.scrollY);
   await page.locator(".tile").nth(20).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
+  // Measured with the dialog open: the click itself may scroll the tile into view first.
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(0);
   const box = (await dialog.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 40);
   await page.mouse.wheel(0, 800);
