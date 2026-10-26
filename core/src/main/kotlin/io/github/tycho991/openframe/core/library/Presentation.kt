@@ -58,9 +58,14 @@ data class Presentation(
     val zoom: Double,
     val output: PixelSize,
 ) {
-    /** The window rounded to 1/10,000 per coordinate, for the file name and the display URL. */
+    /**
+     * The output size and the window rounded to 1/10,000 per coordinate, for the file name and the display URL. The size
+     * is part of it because the same window (the whole photo in `fit`) gives another file on another screen or orientation.
+     */
     val key: String
-        get() = listOf(x, y, width, height).joinToString("_") { (it * KEY_UNITS).roundToInt().toString() }
+        get() =
+            "${output.width}x${output.height}_" +
+                listOf(x, y, width, height).joinToString("_") { (it * KEY_UNITS).roundToInt().toString() }
 
     companion object {
         /** `auto` crops at most this share of the photo in the direction in which it does not fit the screen. */

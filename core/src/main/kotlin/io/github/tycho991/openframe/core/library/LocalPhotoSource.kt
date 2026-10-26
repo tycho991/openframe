@@ -68,8 +68,9 @@ class LocalPhotoSource(
                     val file = files.getValue(path)
                     result
                         .onSuccess {
-                            if (edit.get(it.id) == null) added++ else updated++
-                            edit.put(it)
+                            val current = edit.get(it.id)
+                            if (current == null) added++ else updated++
+                            edit.put(it.withStateOf(current))
                         }.onFailure { e ->
                             val reason = (e as? ImageException)?.reason ?: io.github.tycho991.openframe.core.platform.SkipReason.CORRUPT
                             if (e !is ImageException) log.w(TAG, "Error reading $path", e)
@@ -105,8 +106,7 @@ class LocalPhotoSource(
     ): PhotoEntry {
         val path = relativePath(file)
         val entry = read(path, file, previous = index.library.value.photos[PhotoEntry.idFor(id, path)], info)
-        index.edit { it.put(entry) }
-        return entry
+        return index.edit { edit -> entry.withStateOf(edit.get(entry.id)).also(edit::put) }
     }
 
     fun fileOf(entry: PhotoEntry): File = File(root, entry.path)
@@ -128,9 +128,8 @@ class LocalPhotoSource(
             takenAtMs = info.takenAt?.toEpochMilli() ?: mtime,
             fileSize = file.length(),
             modifiedMs = mtime,
+            // Hidden state and section are taken over when the entry is applied (PhotoEntry.withStateOf).
             version = (previous?.version ?: 0) + 1,
-            hidden = previous?.hidden ?: false,
-            crop = Crop.carriedOver(previous, info.width, info.height),
         )
     }
 

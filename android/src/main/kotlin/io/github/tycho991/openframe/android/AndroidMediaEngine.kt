@@ -120,12 +120,9 @@ class AndroidMediaEngine(
         if (!region.isFull && regionDecoding) {
             decodeRegion(file, rect, sampleSize(rect.width(), rect.height(), reqW, reqH))?.let { return it }
         }
-        // The whole image at a sample size that keeps the region at least as large as requested.
-        val fullW = ceil(reqW / region.width).toInt()
-        val fullH = ceil(reqH / region.height).toInt()
         val options =
             BitmapFactory.Options().apply {
-                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, fullW, fullH)
+                inSampleSize = fallbackSampleSize(bounds.outWidth, bounds.outHeight, region, reqW, reqH)
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
         val decoded = BitmapFactory.decodeFile(file.path, options) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
@@ -194,6 +191,26 @@ class AndroidMediaEngine(
             val h = (region.height * height).roundToInt().coerceIn(1, height - top)
             return Rect(left, top, left + w, top + h)
         }
+
+        /**
+         * Sample size of the fallback that decodes the whole image of [width]×[height] for [region]: as small as keeps
+         * the region at least [reqW]×[reqH], but never more than [MAX_FALLBACK_PIXELS] for the whole image. A detail at
+         * zoom 4 of a 48 MP photo would otherwise be a full-size decode of 192 MB; the fallback is blurred instead.
+         */
+        fun fallbackSampleSize(
+            width: Int,
+            height: Int,
+            region: Region,
+            reqW: Int,
+            reqH: Int,
+        ): Int {
+            var sample = sampleSize(width, height, ceil(reqW / region.width).toInt(), ceil(reqH / region.height).toInt())
+            while ((width / sample).toLong() * (height / sample) > MAX_FALLBACK_PIXELS) sample *= 2
+            return sample
+        }
+
+        /** 32 MB as ARGB_8888, the size of a 4K screen. */
+        const val MAX_FALLBACK_PIXELS = 8_000_000L
 
         /** Largest power of two with which the image still stays at least [reqW]×[reqH] in size. */
         fun sampleSize(

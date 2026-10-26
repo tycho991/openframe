@@ -229,7 +229,10 @@ class SlideshowController(
             }
 
             is Command.Presentation -> {
-                if (!isResting && _state.value is SlideState.Showing) prefetchUpcoming()
+                if (!isResting && _state.value is SlideState.Showing) {
+                    prefetchUpcoming()
+                    showCurrentAgain()
+                }
             }
         }
     }
@@ -338,6 +341,24 @@ class SlideshowController(
         _state.value = SlideState.Showing(entry, file, step, seq)
         armTimer()
         prefetchUpcoming()
+    }
+
+    /**
+     * The photo on screen in the new fill mode or orientation, at once and also while paused: its old display size would
+     * otherwise stay, after turning the frame a landscape window letterboxed in portrait, until the next change.
+     */
+    private suspend fun showCurrentAgain() {
+        val shown = _state.value as? SlideState.Showing ?: return
+        val file =
+            try {
+                images.render(shown.photo)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.w(TAG, "Photo not rendered for the new presentation: ${shown.photo.path}")
+                return
+            }
+        if (file != shown.file && _state.value === shown) emit(shown.photo, file, 0)
     }
 
     private fun prefetchUpcoming() {

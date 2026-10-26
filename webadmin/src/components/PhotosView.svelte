@@ -94,6 +94,8 @@
   let seenSettings = -1;
   $effect(() => {
     const v = session.settingsVersion;
+    // -1 until the first poll of the versions, which comes at once: loading then would be the same request twice.
+    if (v === -1) return;
     const changed = seenSettings !== -1 && v !== seenSettings;
     seenSettings = v;
     void guard(async () => {

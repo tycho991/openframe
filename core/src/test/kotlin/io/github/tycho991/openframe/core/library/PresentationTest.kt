@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.library
 
+import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.settings.FillMode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -94,7 +95,13 @@ class PresentationTest {
     fun `The key changes with the window and is stable for the same one`() {
         val fill = Presentation.of(3000, 4000, landscape, null, FillMode.FILL)
         val auto = Presentation.of(3000, 4000, landscape, null, FillMode.AUTO)
-        assertEquals("0_2656_10000_4688", fill.key)
+        assertEquals("1920x1200_0_2656_10000_4688", fill.key)
+        // The whole photo in `fit` is the same window in both orientations, but another file.
+        val landscapeFit = Presentation.of(3000, 4000, landscape, null, FillMode.FIT)
+        val portraitFit = Presentation.of(3000, 4000, PixelSize(1200, 1920), null, FillMode.FIT)
+        assertEquals(Region(0.0, 0.0, 1.0, 1.0), Region(landscapeFit.x, landscapeFit.y, landscapeFit.width, landscapeFit.height))
+        assertEquals(Region(0.0, 0.0, 1.0, 1.0), Region(portraitFit.x, portraitFit.y, portraitFit.width, portraitFit.height))
+        assertTrue(landscapeFit.key != portraitFit.key)
         assertEquals(fill.key, Presentation.of(3000, 4000, landscape, null, FillMode.FILL).key)
         assertTrue(fill.key != auto.key)
     }

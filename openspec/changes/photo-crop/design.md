@@ -45,7 +45,7 @@ Without a section, the fill mode chooses the zoom with the focus point at the ce
 
 ### 6. Cache key and URL carry the window
 
-The display file is named `id-v{version}-{w}x{h}-{key}.jpg`, where `key` is the window rounded to 1/10,000 per coordinate. A new section, fill mode or orientation thus gives a new file and, through a parameter `p` with this key in the signed display URL and in the ETag, a new URL (spec "Section in the photo list"). Display files of other windows fall out by LRU, as those of the other orientation do today, so `peekAnyDisplay` can still show an older one while the new one renders. `peekAnyDisplay` must skip the full size as it skips the thumbnail. The full size (`size=full`) is named like the thumbnail with its own size and is uncropped.
+The display file is named `id-v{version}-p{key}.jpg`, where `key` is the output size and the window rounded to 1/10,000 per coordinate; the size is part of it because the same window (the whole photo in `fit`) gives another file in the other orientation. A new section, fill mode or orientation thus gives a new file and, through a parameter `p` with this key in the signed display URL and in the ETag, a new URL (spec "Section in the photo list"). Display files of other windows fall out by LRU, as those of the other orientation do today, so `peekAnyDisplay` can still show an older one while the new one renders. `peekAnyDisplay` must skip the full size as it skips the thumbnail. The full size (`size=full`) is named like the thumbnail with its own size and is uncropped.
 
 ### 7. Stored section and its fate on a new version
 

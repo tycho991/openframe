@@ -230,6 +230,30 @@ class LocalPhotoSourceTest {
     private lateinit var racingSource: LocalPhotoSource
 
     @Test
+    fun `A section and hidden state saved while the scan reads the changed file are kept`() {
+        val file = Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        scan()
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        Fixtures.copy("landscape.jpg", file)
+        file.setLastModified(file.lastModified() + 5000)
+        // The user saves a section and hides the photo while the scan probes its new version.
+        val racing =
+            object : MediaEngine by engine {
+                override fun probe(file: File): ImageInfo {
+                    index.edit { it.put(it.get(id)!!.copy(crop = Crop(0.2, 0.3, 1.5), hidden = true)) }
+                    return engine.probe(file)
+                }
+            }
+        runBlocking { LocalPhotoSource(photos, racing, index, log).scan() }
+        val photo =
+            index.library.value.photos
+                .getValue(id)
+        assertEquals(2, photo.version)
+        assertEquals(Crop(0.2, 0.3, 1.5), photo.crop)
+        assertTrue(photo.hidden)
+    }
+
+    @Test
     fun `Assign album`() {
         Fixtures.copy("landscape.jpg", File(photos, "holiday/2025/beach.jpg"))
         Fixtures.copy("landscape.jpg", File(photos, "holiday/2025/may/sea.jpg"))

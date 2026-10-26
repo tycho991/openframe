@@ -104,10 +104,16 @@ class RenderCache(
         val key: String get() = target.name
     }
 
+    /** A file waiting to be rendered, with the highest priority it was asked for. */
+    private class Pending(
+        val result: CompletableDeferred<File>,
+        var priority: RenderPriority,
+    )
+
     private val queue =
         PriorityBlockingQueue<Job>(16, compareByDescending<Job> { it.priority }.thenBy { it.seq })
     private val seq = AtomicLong()
-    private val inFlight = HashMap<String, CompletableDeferred<File>>()
+    private val inFlight = HashMap<String, Pending>()
 
     /** Name → last use, for LRU eviction. */
     private val lastUse = LinkedHashMap<String, Long>()
@@ -139,8 +145,8 @@ class RenderCache(
     fun presentation(entry: PhotoEntry): Presentation = Presentation.of(entry.width, entry.height, screen(), entry.crop, fillMode())
 
     /**
-     * Thumbnail and full size are uncropped and named `id-v{version}-{w}x{h}.jpg`. The display size is the
-     * window of [presentation], with the window's key in its name, so a new section, fill mode or format gives a new file.
+     * Thumbnail and full size are uncropped and named `id-v{version}-{w}x{h}.jpg`. The display size is the window of
+     * [presentation], named `id-v{version}-p{key}.jpg`, so a new section, fill mode or format gives a new file.
      */
     fun target(
         entry: PhotoEntry,
@@ -165,7 +171,7 @@ class RenderCache(
                 RenderTarget(
                     p.output,
                     Region(p.x, p.y, p.width, p.height),
-                    "$prefix${p.output.width}x${p.output.height}$DISPLAY_MARK${p.key}.jpg",
+                    "$prefix$DISPLAY_MARK${p.key}.jpg",
                     p.key,
                 )
             }
@@ -177,8 +183,14 @@ class RenderCache(
         entry: PhotoEntry,
         size: RenderSize,
         priority: RenderPriority = RenderPriority.DEMAND,
+    ): File = get(entry, target(entry, size), priority)
+
+    /** The file of [target], worked out before, so a caller's headers and the body belong to the same window. */
+    suspend fun get(
+        entry: PhotoEntry,
+        target: RenderTarget,
+        priority: RenderPriority = RenderPriority.DEMAND,
     ): File {
-        val target = target(entry, size)
         peek(target)?.let { return it }
         return enqueue(entry, target, priority).await()
     }
@@ -205,7 +217,7 @@ class RenderCache(
         val name =
             synchronized(lastUse) {
                 lastUse.entries
-                    .filter { it.key.startsWith(prefix) && it.key.indexOf(DISPLAY_MARK, prefix.length) >= 0 }
+                    .filter { it.key.startsWith(prefix + DISPLAY_MARK) }
                     .maxByOrNull { it.value }
                     ?.key
             }
@@ -251,13 +263,23 @@ class RenderCache(
         target: RenderTarget,
         priority: RenderPriority,
     ): CompletableDeferred<File> {
-        val deferred =
+        // A file already waiting is queued again only when it is asked for more urgently: the slideshow asks for the
+        // photos ahead after every change of the library, which would otherwise pile up jobs for the same files.
+        val (deferred, add) =
             synchronized(inFlight) {
-                inFlight.getOrPut(target.name) { CompletableDeferred() }
+                val pending = inFlight[target.name]
+                when {
+                    pending == null -> Pending(CompletableDeferred(), priority).also { inFlight[target.name] = it }.result to true
+                    priority > pending.priority -> pending.also { it.priority = priority }.result to true
+                    else -> pending.result to false
+                }
             }
-        queue.add(Job(priority, seq.incrementAndGet(), entry, target, deferred))
+        if (add) queue.add(Job(priority, seq.incrementAndGet(), entry, target, deferred))
         return deferred
     }
+
+    /** Jobs waiting for the worker, for tests. */
+    internal val queued: Int get() = queue.size
 
     /** Stops the worker. Waiting jobs fail, running ones are rendered to the end. */
     fun close() {
@@ -323,8 +345,8 @@ class RenderCache(
     private companion object {
         const val TAG = "render"
 
-        /** Separates size and window key in the name of a display size. */
-        const val DISPLAY_MARK = "-p"
+        /** Starts the key in the name of a display size; thumbnail and full size start with a digit there. */
+        const val DISPLAY_MARK = "p"
         const val WORKER_STOP_TIMEOUT_MS = 10_000L
     }
 }

@@ -175,6 +175,23 @@ class AndroidMediaEngineTest {
     }
 
     @Test
+    fun theFallbackNeverDecodesAWholeLargePhotoAtFullSize() {
+        // A detail at zoom 4 of 8000×6000 on 1920×1200 would need the whole photo at full size (48 MP): 4 instead.
+        val p = Presentation.of(8000, 6000, PixelSize(1920, 1200), Crop(0.5, 0.5, 4.0), FillMode.FILL)
+        val region = Region(p.x, p.y, p.width, p.height)
+        assertEquals(4, AndroidMediaEngine.fallbackSampleSize(8000, 6000, region, 1920, 1200))
+        // Within the limit the region keeps its size: a 1600×1200 photo shown whole needs no sampling.
+        assertEquals(1, AndroidMediaEngine.fallbackSampleSize(1600, 1200, Region.FULL, 1600, 1200))
+        // The whole 48 MP photo for 1920×1200 is sampled as before: 2000×1500.
+        assertEquals(4, AndroidMediaEngine.fallbackSampleSize(8000, 6000, Region.FULL, 1920, 1200))
+        val pixels = AndroidMediaEngine(sdkInt = 28, regionDecoding = false)
+        val file = File(tmp.root, "big.jpg")
+        ImageIO.write(BufferedImage(8000, 6000, BufferedImage.TYPE_BYTE_GRAY), "jpg", file)
+        val part = pixels.decodeStored(file, region, 1920, 1200)
+        assertTrue("${part.width}×${part.height}", part.width <= 2000 / 4 + 1 && part.height <= 1250 / 4 + 1)
+    }
+
+    @Test
     fun inSampleSizeInTwoPasses() {
         assertEquals(1, AndroidMediaEngine.sampleSize(400, 300, 400, 300))
         assertEquals(4, AndroidMediaEngine.sampleSize(8000, 6000, 1920, 1200))

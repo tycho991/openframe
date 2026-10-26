@@ -33,6 +33,14 @@ data class PhotoEntry(
 
     val name: String get() = path.substringAfterLast('/')
 
+    /**
+     * This new version of the file with the photo's own state taken from [current], the entry in the index when the
+     * new version is applied: the hidden state, and the section if the aspect ratio stayed. Taken there and not from
+     * the entry before the probe or download, so a change saved meanwhile (`PATCH /photos`) is not lost.
+     */
+    fun withStateOf(current: PhotoEntry?): PhotoEntry =
+        if (current == null) this else copy(hidden = current.hidden, crop = Crop.carriedOver(current, width, height))
+
     companion object {
         /** Stable ID from source and relative path. */
         fun idFor(

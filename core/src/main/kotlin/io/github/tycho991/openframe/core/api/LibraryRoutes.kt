@@ -316,7 +316,7 @@ fun Router.libraryRoutes(
         if (req.header("if-none-match") == etag) return@get HttpResponse.Empty(304, headers)
         val file =
             try {
-                library.cache.get(entry, size)
+                library.cache.get(entry, target)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

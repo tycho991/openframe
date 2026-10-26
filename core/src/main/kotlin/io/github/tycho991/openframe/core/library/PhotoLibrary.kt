@@ -29,13 +29,10 @@ class PhotoLibrary(
         hidden: Boolean,
     ): PhotoEntry = update(id) { it.copy(hidden = hidden) }
 
-    /** Sets or, with `null`, removes the photo's section. Allowed for every source: nothing is written to it. */
-    fun setCrop(
-        id: String,
-        crop: Crop?,
-    ): PhotoEntry = update(id) { it.copy(crop = crop) }
-
-    /** Changes the photo's state in one step, so a patch of several fields is one change of the library. */
+    /**
+     * Changes the photo's state in one step, so a patch of several fields (hidden state, section) is one change of the
+     * library. Allowed for every source: nothing is written to it.
+     */
     fun update(
         id: String,
         change: (PhotoEntry) -> PhotoEntry,

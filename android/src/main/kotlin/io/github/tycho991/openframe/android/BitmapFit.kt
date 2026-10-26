@@ -38,7 +38,14 @@ object BitmapFit {
         val h = (src.height * scale).roundToInt().coerceAtLeast(1)
         val (boxW, boxH) = paddedSize(w, h, viewW, viewH)
         if (scale >= 1f && boxW == w && boxH == h) return src
-        val out = Bitmap.createBitmap(boxW, boxH, Bitmap.Config.ARGB_8888)
+        val out =
+            try {
+                Bitmap.createBitmap(boxW, boxH, Bitmap.Config.ARGB_8888)
+            } catch (e: OutOfMemoryError) {
+                // Without the black pixels the photo is still right, only its borders do not fade (FINDINGS.md 57);
+                // a decode that failed here would skip the photo as undecodable.
+                return if (scale >= 1f) src else Bitmap.createScaledBitmap(src, w, h, true).also { if (it !== src) src.recycle() }
+            }
         out.eraseColor(Color.BLACK)
         val left = (boxW - w) / 2f
         val top = (boxH - h) / 2f

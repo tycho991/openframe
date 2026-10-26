@@ -110,6 +110,42 @@ class RenderCacheTest {
             assertNull(c.peekAnyDisplay(e), "neither the thumbnail nor the full size is a display size")
         }
 
+    @Test
+    fun `A file asked for again while it waits is queued once`() {
+        // The worker is held on the first render, so the others wait in the queue.
+        val release = java.util.concurrent.CountDownLatch(1)
+        val holding =
+            object : io.github.tycho991.openframe.core.platform.MediaEngine by engine {
+                override fun render(
+                    source: File,
+                    target: File,
+                    width: Int,
+                    height: Int,
+                    region: Region,
+                    quality: Int,
+                ) {
+                    release.await()
+                    engine.render(source, target, width, height, region, quality)
+                }
+            }
+        val c =
+            RenderCache(File(dir, "cache"), holding, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
+        try {
+            val entries = (1..4).map { entry("q$it.jpg") }
+            c.prefetch(entries.take(1))
+            // Wait until the worker holds the first job.
+            val deadline = System.currentTimeMillis() + 5000
+            while (c.queued > 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+            repeat(20) { c.prefetch(entries.drop(1)) }
+            assertEquals(3, c.queued, "each waiting file once")
+            c.prefetch(entries.drop(1), RenderPriority.NEXT)
+            assertEquals(6, c.queued, "again once each when asked for more urgently")
+        } finally {
+            release.countDown()
+            c.close()
+        }
+    }
+
     private fun assertRegion(
         expected: Region,
         actual: Region,

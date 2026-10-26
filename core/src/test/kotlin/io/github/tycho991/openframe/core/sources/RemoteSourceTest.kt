@@ -6,6 +6,8 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.ScanResult
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.ImageInfo
+import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.store.StoreJson
@@ -125,6 +127,27 @@ class RemoteSourceTest {
         assertTrue(second.hidden)
         assertEquals(first.version + 1, second.version)
         assertEquals("e2", second.etag)
+    }
+
+    @Test
+    fun `A section and hidden state saved while the sync downloads the new version are kept`() {
+        remote.put("a.jpg", jpg(), "e1")
+        sync()
+        val id = photos().getValue("a.jpg").id
+        remote.put("a.jpg", jpg(), "e2")
+        // The user saves a section and hides the photo while the new version is being checked.
+        val racing =
+            object : MediaEngine by engine {
+                override fun probe(file: File): ImageInfo {
+                    index.edit { it.put(it.get(id)!!.copy(crop = Crop(0.2, 0.8, 2.0), hidden = true)) }
+                    return engine.probe(file)
+                }
+            }
+        runBlocking { RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, racing, originals, {}, log).scan() }
+        val photo = photos().getValue("a.jpg")
+        assertEquals(2, photo.version)
+        assertEquals(Crop(0.2, 0.8, 2.0), photo.crop)
+        assertTrue(photo.hidden)
     }
 
     @Test
