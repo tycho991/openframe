@@ -125,6 +125,66 @@ class LocalPhotoSourceTest {
     }
 
     @Test
+    fun `Section when the file changes`() {
+        val file = Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        scan()
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        val crop = Crop(0.3, 0.4, 1.5)
+        index.edit { it.put(it.get(id)!!.copy(crop = crop)) }
+        val photo = {
+            index.library.value.photos
+                .getValue(id)
+        }
+
+        // Scenario "Edited photo of the same size".
+        Fixtures.copy("landscape.jpg", file)
+        file.setLastModified(photo().modifiedMs + 5000)
+        scan()
+        assertEquals(2, photo().version)
+        assertEquals(crop, photo().crop, "The section is kept")
+
+        // Scenario "Photo cropped elsewhere": 400×300 becomes 300×400.
+        Fixtures.copy("rotated6.jpg", file)
+        file.setLastModified(photo().modifiedMs + 5000)
+        scan()
+        assertEquals(3, photo().version)
+        assertNull(photo().crop, "Another aspect ratio drops the section")
+    }
+
+    @Test
+    fun `Aspect ratio within one percent keeps the section`() {
+        val previous = PhotoEntry("p", "local", "p.jpg", 4000, 3000, 0, 1, 1, 1, crop = Crop(0.5, 0.5, 2.0))
+        assertEquals(previous.crop, Crop.carriedOver(previous, 4000, 3000))
+        assertEquals(previous.crop, Crop.carriedOver(previous, 2000, 1500), "Scaled down, same aspect ratio")
+        assertEquals(previous.crop, Crop.carriedOver(previous, 4000, 3025), "0.8 % off")
+        assertNull(Crop.carriedOver(previous, 4000, 3040), "1.3 % off")
+        assertNull(Crop.carriedOver(previous, 3000, 3000))
+        assertNull(Crop.carriedOver(previous.copy(crop = null), 4000, 3000))
+        assertNull(Crop.carriedOver(null, 4000, 3000))
+    }
+
+    @Test
+    fun `An index without sections loads with none, and one is stored only when set`() =
+        runBlocking {
+            Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+            Fixtures.copy("landscape.jpg", File(photos, "b.jpg"))
+            scan()
+            index.flush()
+            assertTrue(!File(dir, "index.json").readText().contains("crop"))
+            val id = PhotoEntry.idFor("local", "a.jpg")
+            index.edit { it.put(it.get(id)!!.copy(crop = Crop(0.1, 0.2, 3.0))) }
+            index.flush()
+            val restarted =
+                PhotoIndexStore(
+                    JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log),
+                ).also { it.load() }
+            val photos = restarted.library.value.photos
+            assertEquals(Crop(0.1, 0.2, 3.0), photos.getValue(id).crop)
+            assertNull(photos.getValue(PhotoEntry.idFor("local", "b.jpg")).crop)
+            assertEquals(1, Regex("\"crop\"").findAll(File(dir, "index.json").readText()).count())
+        }
+
+    @Test
     fun `File removed`() {
         val a = Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
         val heic = Fixtures.copy("photo.heic", File(photos, "b.heic"))
@@ -168,6 +228,30 @@ class LocalPhotoSourceTest {
     }
 
     private lateinit var racingSource: LocalPhotoSource
+
+    @Test
+    fun `A section and hidden state saved while the scan reads the changed file are kept`() {
+        val file = Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        scan()
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        Fixtures.copy("landscape.jpg", file)
+        file.setLastModified(file.lastModified() + 5000)
+        // The user saves a section and hides the photo while the scan probes its new version.
+        val racing =
+            object : MediaEngine by engine {
+                override fun probe(file: File): ImageInfo {
+                    index.edit { it.put(it.get(id)!!.copy(crop = Crop(0.2, 0.3, 1.5), hidden = true)) }
+                    return engine.probe(file)
+                }
+            }
+        runBlocking { LocalPhotoSource(photos, racing, index, log).scan() }
+        val photo =
+            index.library.value.photos
+                .getValue(id)
+        assertEquals(2, photo.version)
+        assertEquals(Crop(0.2, 0.3, 1.5), photo.crop)
+        assertTrue(photo.hidden)
+    }
 
     @Test
     fun `Assign album`() {

@@ -7,7 +7,6 @@ import android.os.Looper
 import android.view.View
 import android.widget.ImageView
 import io.github.tycho991.openframe.core.library.PhotoEntry
-import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Transition
 import java.io.File
 import java.util.concurrent.Executors
@@ -15,7 +14,10 @@ import java.util.concurrent.Executors
 /**
  * Shows photos with two stacked `ImageView`s. Decoding happens on a
  * thread of its own, only the pre-rendered display size, without further
- * scaling. There are at most two bitmaps: the current and the next.
+ * scaling. The display size already is the part of the photo the frame shows,
+ * so every photo is shown with `FIT_CENTER` on black, which gives its borders;
+ * the fill mode and the section change only the rendered files.
+ * There are at most two bitmaps: the current and the next.
  * Transitions run through `ViewPropertyAnimator`. Deliberately without `withLayer()`: an `ImageView` without a
  * background does not overlap itself, so `alpha` and `translationX` need no
  * hardware layer. The layer cost about every fifth vsync on the Frameo (measured: 22 % missed
@@ -31,7 +33,7 @@ class SlideRenderer(
         val photo: PhotoEntry,
         val file: File,
         val bitmap: Bitmap,
-        /** What the bitmap was trimmed for. */
+        /** What the bitmap was scaled for. */
         val target: Target,
     )
 
@@ -45,17 +47,19 @@ class SlideRenderer(
     private var pendingOld: Decoded? = null
     private var lastNext: Pair<PhotoEntry, File>? = null
 
-    /** What the views show at the moment: bitmaps are trimmed to it, see [BitmapFit]. */
+    /** The size of the views at the moment: bitmaps are scaled down to it, see [BitmapFit]. */
     private data class Target(
         val width: Int,
         val height: Int,
-        val fill: Boolean,
     )
 
-    private fun target() = Target(front.width, front.height, fillMode == FillMode.FILL)
+    private fun target() = Target(front.width, front.height)
 
     init {
-        // A new size, for example after switching the frame's orientation, needs bitmaps trimmed for it.
+        // The black borders are part of the bitmaps (BitmapFit), so a fade blends them too; a background of the views
+        // instead would make them overlap themselves and need a layer for `alpha`.
+        for (view in listOf(front, back)) view.scaleType = ImageView.ScaleType.FIT_CENTER
+        // A new size, for example after switching the frame's orientation, needs bitmaps scaled for it.
         val onResize =
             View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
                 if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) main.post { refit() }
@@ -63,16 +67,6 @@ class SlideRenderer(
         front.addOnLayoutChangeListener(onResize)
         back.addOnLayoutChangeListener(onResize)
     }
-
-    var fillMode: FillMode = FillMode.FILL
-        set(value) {
-            val changed = field != value
-            field = value
-            front.scaleType = scaleType()
-            back.scaleType = scaleType()
-            // The bitmaps were trimmed for the old mode.
-            if (changed) refit()
-        }
 
     /** Shows [photo] with the transition [transition]. [step] +1 comes from the right, -1 from the left. */
     fun show(
@@ -139,7 +133,7 @@ class SlideRenderer(
     }
 
     /**
-     * The fill mode changed: the shown photo and the one decoded ahead are decoded again for the new mode.
+     * The views changed their size: the shown photo and the one decoded ahead are decoded again for it.
      * A running transition is waited for.
      */
     private fun refit() {
@@ -200,7 +194,6 @@ class SlideRenderer(
             back.animate().cancel()
             done(pendingOld)
         }
-        back.scaleType = scaleType()
         back.setImageBitmap(next.bitmap)
         back.translationX = 0f
         back.alpha = 1f
@@ -280,9 +273,7 @@ class SlideRenderer(
         if (old != null && old !== current) old.bitmap.recycle()
     }
 
-    private fun scaleType() = if (fillMode == FillMode.FILL) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
-
-    /** The photo from [file], trimmed for [target]. `null` if it cannot be decoded. */
+    /** The photo from [file], scaled down for [target]. `null` if it cannot be decoded. */
     private fun decode(
         file: File,
         target: Target,
@@ -290,7 +281,7 @@ class SlideRenderer(
         try {
             BitmapFactory
                 .decodeFile(file.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })
-                ?.let { BitmapFit.forView(it, target.width, target.height, target.fill) }
+                ?.let { BitmapFit.forView(it, target.width, target.height) }
         } catch (e: OutOfMemoryError) {
             null
         }

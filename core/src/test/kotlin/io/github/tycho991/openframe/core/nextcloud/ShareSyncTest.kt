@@ -1,8 +1,10 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.api.PhotoDto
 import io.github.tycho991.openframe.core.api.PhotoPageDto
 import io.github.tycho991.openframe.core.api.SourceDto
 import io.github.tycho991.openframe.core.http.ApiJson
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestFrame
 import org.junit.jupiter.api.AfterEach
@@ -67,6 +69,21 @@ class ShareSyncTest {
     private fun syncAndWait() {
         assertEquals(202, frame.send("POST", "/api/v1/sources/$id/sync").statusCode())
         waitForResult()
+    }
+
+    @Test
+    fun `A section on a photo of a share writes nothing to the source`() {
+        // Spec `photo-library`, "Section of a photo" › "Photo of a share".
+        val photo =
+            ApiJson
+                .decodeFromString(PhotoPageDto.serializer(), frame.get("/api/v1/photos").body())
+                .items
+                .first()
+        val before = synchronized(nextcloud.requests) { nextcloud.requests.toList() }
+        val res = frame.send("PATCH", "/api/v1/photos/${photo.id}", """{"crop":{"x":0.5,"y":0.2,"zoom":1.5}}""")
+        assertEquals(200, res.statusCode(), res.body())
+        assertEquals(Crop(0.5, 0.2, 1.5), ApiJson.decodeFromString(PhotoDto.serializer(), res.body()).crop)
+        assertEquals(before, synchronized(nextcloud.requests) { nextcloud.requests.toList() }, "no request reached the server")
     }
 
     @Test

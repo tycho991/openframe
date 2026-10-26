@@ -5,6 +5,7 @@ package io.github.tycho991.openframe.core.slideshow
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.RenderPriority
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Order
 import io.github.tycho991.openframe.core.settings.Settings
 import io.github.tycho991.openframe.core.testing.TestClock
@@ -33,7 +34,10 @@ class SlideshowControllerTest {
         val pending = mutableMapOf<String, CompletableDeferred<File>>()
         val demanded = mutableListOf<String>()
 
-        override fun ready(entry: PhotoEntry): File? = if (entry.id in readyIds) File(entry.path) else null
+        /** Part of the file names, so a new presentation gives new files. */
+        var variant = ""
+
+        override fun ready(entry: PhotoEntry): File? = if (entry.id in readyIds) File(entry.path + variant) else null
 
         override suspend fun render(entry: PhotoEntry): File {
             demanded += entry.id
@@ -120,6 +124,31 @@ class SlideshowControllerTest {
             advanceTimeBy(30_001)
             runCurrent()
             assertEquals(photos[1], s.shown())
+        }
+
+    @Test
+    fun `A new fill mode shows the current photo again at once, also while paused`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.togglePause()
+            runCurrent()
+            val before = s.controller.state.value as SlideState.Showing
+            s.images.variant = "-fit"
+            s.settings.value = s.settings.value.copy(fillMode = FillMode.FIT)
+            runCurrent()
+            assertTrue(photos[0].id in s.images.demanded, "the photo on screen is rendered for the new fill mode")
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File(photos[0].path + "-fit"))
+            runCurrent()
+            val after = s.controller.state.value as SlideState.Showing
+            assertEquals(photos[0], after.photo)
+            assertEquals(File(photos[0].path + "-fit"), after.file)
+            assertTrue(after.seq > before.seq)
+            assertTrue(s.controller.paused.value, "still paused")
+            advanceTimeBy(10 * 60_000L)
+            runCurrent()
+            assertEquals(photos[0], s.shown())
         }
 
     @Test

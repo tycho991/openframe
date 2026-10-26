@@ -11,7 +11,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Spec `slideshow-display`: Smooth display on weak hardware (bitmaps no bigger than the screen needs). */
+/**
+ * Spec `slideshow-display`: Smooth display on weak hardware (bitmaps no bigger than the screen needs), Fill mode (black
+ * borders), Transitions (a crossfade blends the borders too).
+ */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [28])
@@ -19,53 +22,66 @@ class BitmapFitTest {
     private fun bitmap(
         w: Int,
         h: Int,
-    ) = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        color: Int = Color.BLUE,
+    ) = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
 
     @Test
-    fun `Portrait on a landscape screen is cut to the visible window in fill mode`() {
-        val src = bitmap(1920, 2556)
-        // Marks: red in the vertical middle, blue near the top (outside the window).
-        src.setPixel(960, 1278, Color.RED)
-        src.setPixel(960, 100, Color.BLUE)
-        val result = BitmapFit.forView(src, 1920, 1200, fill = true)
-        assertEquals(1920, result.width)
-        assertEquals(1200, result.height)
-        assertEquals(Color.RED, result.getPixel(960, 1278 - (2556 - 1200) / 2))
+    fun `A display size of the screen's size is left alone`() {
+        val src = bitmap(1920, 1200)
+        assertSame(src, BitmapFit.forView(src, 1920, 1200))
+    }
+
+    @Test
+    fun `A display size with borders gets them as opaque black pixels`() {
+        // A portrait photo in `auto` on a landscape screen: 1200×1200, borders of 360 on each side.
+        val src = bitmap(1200, 1200)
+        val result = BitmapFit.forView(src, 1920, 1200)
+        assertEquals(1920 to 1200, result.width to result.height)
+        assertEquals(Color.BLACK, result.getPixel(100, 600))
+        assertEquals(Color.BLACK, result.getPixel(1819, 600))
+        assertEquals(Color.BLUE, result.getPixel(960, 600))
+        assertEquals(Color.BLUE, result.getPixel(361, 0))
         assertTrue(src.isRecycled)
     }
 
     @Test
-    fun `A landscape photo with a taller aspect ratio is cut at top and bottom`() {
-        val result = BitmapFit.forView(bitmap(1920, 1440), 1920, 1200, fill = true)
+    fun `A panorama gets borders at the top and bottom`() {
+        val result = BitmapFit.forView(bitmap(1920, 853), 1920, 1200)
         assertEquals(1920 to 1200, result.width to result.height)
+        assertEquals(Color.BLACK, result.getPixel(960, 50))
+        assertEquals(Color.BLUE, result.getPixel(960, 600))
     }
 
     @Test
-    fun `A bitmap smaller than the view is only trimmed to the visible window`() {
-        val src = bitmap(1152, 864)
-        // Fit shows all of it, so nothing is trimmed.
-        assertSame(src, BitmapFit.forView(src, 1920, 1200, fill = false))
-        // Fill shows a 1152×720 window of it, scaled up by the GPU.
-        val result = BitmapFit.forView(src, 1920, 1200, fill = true)
-        assertEquals(1152 to 720, result.width to result.height)
+    fun `A bitmap smaller than the view is not enlarged, only padded to its aspect ratio`() {
+        val src = bitmap(800, 500)
+        // 800×500 has the aspect ratio of 1920×1200 already.
+        assertSame(src, BitmapFit.forView(src, 1920, 1200))
+        val result = BitmapFit.forView(bitmap(600, 600), 1920, 1200)
+        assertEquals(960 to 600, result.width to result.height)
     }
 
     @Test
-    fun `Portrait in fit mode is scaled down to the screen`() {
-        val result = BitmapFit.forView(bitmap(1920, 2556), 1920, 1200, fill = false)
-        assertEquals(1200, result.height)
-        assertTrue(result.width in 900..902)
+    fun `A bitmap of the other orientation is scaled down to the view`() {
+        // Rendered for landscape, shown on portrait until the new size is rendered: 1200×750, padded to 1200×1920.
+        val src = bitmap(1920, 1200)
+        val result = BitmapFit.forView(src, 1200, 1920)
+        assertEquals(1200 to 1920, result.width to result.height)
+        assertEquals(Color.BLACK, result.getPixel(600, 100))
+        assertEquals(Color.BLUE, result.getPixel(600, 960))
+        assertTrue(src.isRecycled)
     }
 
     @Test
-    fun `The aspect ratio of the window matches the view`() {
-        val result = BitmapFit.forView(bitmap(2047, 1200), 1920, 1200, fill = true)
-        assertEquals(1920 to 1200, result.width to result.height)
+    fun `A side within a pixel of the aspect ratio is left alone`() {
+        assertEquals(1920 to 1199, BitmapFit.paddedSize(1920, 1199, 1920, 1200))
+        assertEquals(1200 to 1200, BitmapFit.paddedSize(1200, 1200, 1200, 1199))
+        assertEquals(1920 to 1200, BitmapFit.paddedSize(1200, 1200, 1920, 1200))
     }
 
     @Test
     fun `Unknown view size leaves the bitmap alone`() {
         val src = bitmap(1920, 2556)
-        assertSame(src, BitmapFit.forView(src, 0, 0, fill = true))
+        assertSame(src, BitmapFit.forView(src, 0, 0))
     }
 }

@@ -27,10 +27,19 @@ class PhotoLibrary(
     fun setHidden(
         id: String,
         hidden: Boolean,
+    ): PhotoEntry = update(id) { it.copy(hidden = hidden) }
+
+    /**
+     * Changes the photo's state in one step, so a patch of several fields (hidden state, section) is one change of the
+     * library. Allowed for every source: nothing is written to it.
+     */
+    fun update(
+        id: String,
+        change: (PhotoEntry) -> PhotoEntry,
     ): PhotoEntry =
         index.edit { edit ->
             val entry = edit.get(id) ?: throw HttpException.notFound("No such photo")
-            entry.copy(hidden = hidden).also(edit::put)
+            change(entry).also(edit::put)
         }
 
     fun setAlbumHidden(

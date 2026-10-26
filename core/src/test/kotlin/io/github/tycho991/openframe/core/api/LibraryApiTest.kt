@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.api
 
 import io.github.tycho991.openframe.core.http.ApiJson
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestFrame
@@ -230,6 +231,151 @@ class LibraryApiTest {
         }
     }
 
+    private fun patch(
+        id: String,
+        body: String,
+    ) = frame.send("PATCH", "/api/v1/photos/$id", body)
+
+    private fun photoOf(res: io.github.tycho991.openframe.core.testing.Res) = ApiJson.decodeFromString(PhotoDto.serializer(), res.body())
+
+    private fun errorFields(res: io.github.tycho991.openframe.core.testing.Res) =
+        Json
+            .parseToJsonElement(res.body())
+            .jsonObject["error"]!!
+            .jsonObject["fields"]
+            ?.jsonObject
+            ?.keys
+            .orEmpty()
+
+    @Test
+    fun `Set a section`() {
+        put("a.jpg")
+        frame.scan()
+        val res = patch(id("a.jpg"), """{"crop":{"x":0.5,"y":0.2,"zoom":1.5}}""")
+        assertEquals(200, res.statusCode(), res.body())
+        val dto = photoOf(res)
+        assertEquals(Crop(0.5, 0.2, 1.5), dto.crop)
+        assertEquals(
+            Crop(0.5, 0.2, 1.5),
+            frame.core.library.index.library.value.photos[id("a.jpg")]!!
+                .crop,
+        )
+        // 400×300 on 1024×600 cannot be zoomed beyond 1: the window is the one of `fill`, moved to the top.
+        assertEquals(1.0, dto.presentation.zoom, 1e-9)
+        assertEquals(0.0, dto.presentation.y, 1e-9)
+        assertFalse(dto.hidden, "a patch of only the section leaves the hidden state")
+    }
+
+    @Test
+    fun `Invalid focus point rejects the whole patch`() {
+        put("a.jpg")
+        frame.scan()
+        patch(id("a.jpg"), """{"crop":{"x":0.5,"y":0.2,"zoom":1}}""")
+        val res = patch(id("a.jpg"), """{"hidden":true,"crop":{"x":1.2,"y":0.5,"zoom":1}}""")
+        assertEquals(400, res.statusCode())
+        assertEquals(setOf("crop.x"), errorFields(res))
+        val photo = page().items.single()
+        assertEquals(Crop(0.5, 0.2, 1.0), photo.crop, "the previous section stays")
+        assertFalse(photo.hidden, "and the hidden state as well")
+        for ((body, field) in listOf(
+            """{"crop":{"x":0.5,"y":-0.1,"zoom":1}}""" to "crop.y",
+            """{"crop":{"x":0.5,"y":0.5,"zoom":0}}""" to "crop.zoom",
+            """{"crop":{"x":0.5,"y":0.5,"zoom":4.5}}""" to "crop.zoom",
+            """{"crop":{"x":0.5,"zoom":1}}""" to "crop.y",
+            """{"crop":{"x":"0.5","y":0.5,"zoom":1}}""" to "crop.x",
+            """{"crop":{"x":0.5,"y":0.5,"zoom":1,"w":1}}""" to "crop.w",
+            """{"crop":true}""" to "crop",
+            """{"hidden":"yes"}""" to "hidden",
+            """{"rotation":90}""" to "rotation",
+        )) {
+            val r = patch(id("a.jpg"), body)
+            assertEquals(400, r.statusCode(), body)
+            assertEquals(setOf(field), errorFields(r), body)
+        }
+        assertEquals(400, patch(id("a.jpg"), "{}").statusCode(), "an empty patch")
+        assertEquals(200, patch(id("a.jpg"), """{"crop":{"x":0,"y":1,"zoom":4}}""").statusCode(), "the limits are valid")
+    }
+
+    @Test
+    fun `Remove a section and patch only hidden as before`() {
+        put("a.jpg")
+        frame.scan()
+        frame.send("PATCH", "/api/v1/settings", """{"fillMode":"fit"}""")
+        patch(id("a.jpg"), """{"crop":{"x":0,"y":0,"zoom":1}}""")
+        val hidden = photoOf(patch(id("a.jpg"), """{"hidden":true}"""))
+        assertTrue(hidden.hidden)
+        assertEquals(Crop(0.0, 0.0, 1.0), hidden.crop, "hiding keeps the section")
+        val removed = photoOf(patch(id("a.jpg"), """{"crop":null}"""))
+        assertNull(removed.crop)
+        assertTrue(removed.hidden)
+        // The fill mode applies again: `fit` shows the whole photo.
+        assertEquals(PresentationDto(0.0, 0.0, 1.0, 1.0, removed.presentation.zoom), removed.presentation)
+    }
+
+    @Test
+    fun `Photo without a section`() {
+        put("a.jpg")
+        frame.scan()
+        frame.send("PATCH", "/api/v1/settings", """{"fillMode":"fill"}""")
+        val photo = page().items.single()
+        assertNull(photo.crop)
+        // 400×300 on 1024×600 in `fill`: the whole width and the middle 0.78125 of the height.
+        assertEquals(1.0, photo.presentation.zoom, 1e-9)
+        assertEquals(1.0, photo.presentation.width, 1e-9)
+        assertEquals(0.78125, photo.presentation.height, 1e-9)
+        assertEquals(0.109375, photo.presentation.y, 1e-9)
+    }
+
+    @Test
+    fun `New section, new image`() {
+        put("a.jpg")
+        frame.scan()
+        val before = page().items.single()
+        val first = frame.http.requestBytes("GET", before.urls.display)
+        assertEquals(200, first.statusCode())
+        assertTrue(first.header("cache-control")!!.contains("immutable"))
+        patch(id("a.jpg"), """{"crop":{"x":0.5,"y":0.5,"zoom":0.5}}""")
+        val after = page().items.single()
+        assertNotEquals(before.urls.display, after.urls.display)
+        val second = frame.http.requestBytes("GET", after.urls.display)
+        assertTrue(second.header("cache-control")!!.contains("immutable"))
+        assertNotEquals(first.header("etag"), second.header("etag"))
+        val img = ImageIO.read(second.bytes().inputStream())
+        // Zoomed out to the whole photo: 400×300 without borders in the image.
+        assertEquals(400 to 300, img.width to img.height)
+        // The old URL now gets the new part and must not be cached for long.
+        val old = frame.http.requestBytes("GET", before.urls.display)
+        assertEquals(second.header("etag"), old.header("etag"))
+        assertFalse(old.header("cache-control")!!.contains("immutable"))
+    }
+
+    @Test
+    fun `Full size is the uncropped photo`() {
+        put("a.jpg")
+        frame.scan()
+        patch(id("a.jpg"), """{"crop":{"x":0,"y":0,"zoom":1}}""")
+        val res =
+            frame.http.requestBytes(
+                "GET",
+                page()
+                    .items
+                    .single()
+                    .urls.full,
+            )
+        assertEquals(200, res.statusCode())
+        val img = ImageIO.read(res.bytes().inputStream())
+        assertEquals(400 to 300, img.width to img.height)
+        assertTrue(res.header("cache-control")!!.contains("immutable"))
+    }
+
+    @Test
+    fun `A section on a photo of a remote source`() {
+        val id = putRemote()
+        val res = patch(id, """{"crop":{"x":0.25,"y":0.75,"zoom":2}}""")
+        assertEquals(200, res.statusCode(), res.body())
+        assertEquals(Crop(0.25, 0.75, 2.0), photoOf(res).crop)
+    }
+
     /** A photo as the Nextcloud source would have put it into the index: no file in the photo folder. */
     private fun putRemote(path: String = "holiday/r.jpg"): String {
         val entry = PhotoEntry(PhotoEntry.idFor("nextcloud", path), "nextcloud", path, 400, 300, 0, 1, 1, 1, etag = "e1")
@@ -381,8 +527,9 @@ class LibraryApiTest {
                     .urls.display,
             )
         val img = ImageIO.read(res.bytes().inputStream())
-        // 400×300 on 1024×600 would cover only when scaled up, so it stays at the original size.
-        assertEquals(400 to 300, img.width to img.height)
+        // 400×300 on 1024×600 in `auto` crops less than a quarter, so it shows the middle 400×234 as `fill` does,
+        // which would cover the screen only when scaled up, so it stays at the original's pixels.
+        assertEquals(400 to 234, img.width to img.height)
     }
 
     @Test

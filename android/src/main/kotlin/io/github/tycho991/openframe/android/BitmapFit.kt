@@ -1,55 +1,80 @@
 package io.github.tycho991.openframe.android
 
 import android.graphics.Bitmap
-import kotlin.math.max
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Trims a decoded photo to what the screen can show of it.
+ * Prepares a decoded photo for a view that shows it with `FIT_CENTER`: scaled down to what the screen can show, and
+ * padded with black to the view's aspect ratio.
  *
- * The pre-rendered display size covers the screen, so a portrait photo on a landscape screen is far
- * taller than the screen. During a transition two photos are drawn at once, and the GPU texture
- * cache of the Lenovo Yoga Tablet 2 (24 MiB at 1920×1200) holds a 1920×2556 portrait (18.7 MB) and a
- * 1920×1440 landscape (10.5 MB) only one at a time: the textures are evicted and uploaded again every
- * frame, up to 100 ms per frame. A bitmap that is no bigger than the screen needs avoids that.
+ * The core renders the display size at most at screen size, as the part of the photo the frame shows. A bitmap can
+ * still be larger than the view, for example after switching the frame's orientation until the new size is rendered.
+ * During a transition two photos are drawn at once, and the GPU texture cache of the Lenovo Yoga Tablet 2 (24 MiB at
+ * 1920×1200) holds two oversized bitmaps only one at a time: the textures are evicted and uploaded again every frame,
+ * up to 100 ms per frame. A bitmap that is no bigger than the screen needs avoids that.
+ *
+ * The black borders are part of the bitmap, not transparent space around it: a crossfade then blends the borders of
+ * the incoming photo over the outgoing one like the rest of it, instead of leaving the old photo in them until the
+ * transition ends (`FINDINGS.md` 57). The views keep having no background, so `alpha` needs no hardware layer.
  */
 object BitmapFit {
     /**
-     * [src] reduced for a view of [viewW]×[viewH], which shows it with `CENTER_CROP` ([fill]) or
-     * `FIT_CENTER`. The view looks the same afterwards. Returns [src] if there is nothing to trim,
-     * otherwise a new bitmap, and recycles [src].
+     * [src] scaled down for a view of [viewW]×[viewH] and padded with black to its aspect ratio, centred. The view
+     * looks the same afterwards. Returns [src] if there is nothing to do, otherwise a new bitmap, and recycles [src].
      */
     fun forView(
         src: Bitmap,
         viewW: Int,
         viewH: Int,
-        fill: Boolean,
     ): Bitmap {
         if (viewW <= 0 || viewH <= 0) return src
-        val w = src.width
-        val h = src.height
-        val trimmed =
-            if (fill) {
-                // CENTER_CROP shows a centred window of the view's aspect ratio.
-                val scale = max(viewW.toFloat() / w, viewH.toFloat() / h)
-                val windowW = min(w, (viewW / scale).roundToInt()).coerceAtLeast(1)
-                val windowH = min(h, (viewH / scale).roundToInt()).coerceAtLeast(1)
-                if (windowW >= w && windowH >= h) src else Bitmap.createBitmap(src, (w - windowW) / 2, (h - windowH) / 2, windowW, windowH)
-            } else {
-                val scale = min(viewW.toFloat() / w, viewH.toFloat() / h)
-                if (scale >= 1f) {
-                    src
-                } else {
-                    Bitmap.createScaledBitmap(
-                        src,
-                        (w * scale).roundToInt().coerceAtLeast(1),
-                        (h * scale).roundToInt().coerceAtLeast(1),
-                        true,
-                    )
-                }
+        val scale = min(1f, min(viewW.toFloat() / src.width, viewH.toFloat() / src.height))
+        val w = (src.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (src.height * scale).roundToInt().coerceAtLeast(1)
+        val (boxW, boxH) = paddedSize(w, h, viewW, viewH)
+        if (scale >= 1f && boxW == w && boxH == h) return src
+        val out =
+            try {
+                Bitmap.createBitmap(boxW, boxH, Bitmap.Config.ARGB_8888)
+            } catch (e: OutOfMemoryError) {
+                // Without the black pixels the photo is still right, only its borders do not fade (FINDINGS.md 57);
+                // a decode that failed here would skip the photo as undecodable.
+                return if (scale >= 1f) src else Bitmap.createScaledBitmap(src, w, h, true).also { if (it !== src) src.recycle() }
             }
-        if (trimmed !== src) src.recycle()
-        return trimmed
+        out.eraseColor(Color.BLACK)
+        val left = (boxW - w) / 2f
+        val top = (boxH - h) / 2f
+        Canvas(out).drawBitmap(
+            src,
+            null,
+            RectF(left, top, left + w, top + h),
+            Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG),
+        )
+        src.recycle()
+        return out
+    }
+
+    /**
+     * The smallest size of the view's aspect ratio around [w]×[h]. A side within one pixel of the exact ratio is left
+     * alone: `FIT_CENTER` fills the view with it anyway, and a one-pixel band would only cost a copy.
+     */
+    fun paddedSize(
+        w: Int,
+        h: Int,
+        viewW: Int,
+        viewH: Int,
+    ): Pair<Int, Int> {
+        val wantW = (h.toDouble() * viewW / viewH).roundToInt()
+        val wantH = (w.toDouble() * viewH / viewW).roundToInt()
+        return when {
+            wantW > w + 1 -> wantW to h
+            wantH > h + 1 -> w to wantH
+            else -> w to h
+        }
     }
 }

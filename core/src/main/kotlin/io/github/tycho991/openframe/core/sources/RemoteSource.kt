@@ -116,10 +116,12 @@ class RemoteSource(
             for ((path, result) in results) {
                 result
                     .onSuccess {
+                        val current = edit.get(it.id)
+                        val entry = it.withStateOf(current)
                         // An original that came back for an unchanged photo: the entry is the same, nothing to apply or count.
-                        if (it == edit.get(it.id)) return@onSuccess
-                        if (edit.get(it.id) == null) added++ else updated++
-                        edit.put(it)
+                        if (entry == current) return@onSuccess
+                        if (current == null) added++ else updated++
+                        edit.put(entry)
                     }.onFailure { e ->
                         // A file that vanished after the listing is not a bad file; the next sync sees it gone.
                         if (e is SourceException) return@onFailure
@@ -189,8 +191,8 @@ class RemoteSource(
                 takenAtMs = file.modifiedMs,
                 fileSize = file.size,
                 modifiedMs = file.modifiedMs,
+                // Hidden state and section are taken over when the entry is applied (PhotoEntry.withStateOf).
                 version = (previous?.version ?: 0) + 1,
-                hidden = previous?.hidden ?: false,
                 etag = file.etag,
             )
         // The same ETag as before: only the original is gone from the cache, the photo is the one in the index.

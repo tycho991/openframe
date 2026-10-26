@@ -25,11 +25,21 @@ data class PhotoEntry(
     val hidden: Boolean = false,
     /** The ETag of the file on the server for photos of a remote source, `null` for local photos. */
     val etag: String? = null,
+    /** The photo's own section, `null` if the fill mode applies. Stored only when set. */
+    val crop: Crop? = null,
 ) {
     /** The folder path below the source's folder, `null` for photos directly in it. */
     val album: String? get() = AlbumPaths.parent(path)
 
     val name: String get() = path.substringAfterLast('/')
+
+    /**
+     * This new version of the file with the photo's own state taken from [current], the entry in the index when the
+     * new version is applied: the hidden state, and the section if the aspect ratio stayed. Taken there and not from
+     * the entry before the probe or download, so a change saved meanwhile (`PATCH /photos`) is not lost.
+     */
+    fun withStateOf(current: PhotoEntry?): PhotoEntry =
+        if (current == null) this else copy(hidden = current.hidden, crop = Crop.carriedOver(current, width, height))
 
     companion object {
         /** Stable ID from source and relative path. */

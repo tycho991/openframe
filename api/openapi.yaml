@@ -304,7 +304,10 @@ paths:
     patch:
       tags: [photos]
       operationId: patchPhoto
-      summary: Hide or unhide one photo.
+      summary: Hide or unhide one photo, or set or remove its section.
+      description: >-
+        Allowed for photos of every source; nothing is written to a remote source. An invalid value rejects the whole
+        patch with 400 and names its field (`crop.x`, `crop.y`, `crop.zoom`).
       requestBody:
         required: true
         content:
@@ -349,11 +352,16 @@ paths:
         - name: size
           in: query
           required: true
-          schema: { type: string, enum: [thumb, display] }
+          schema: { type: string, enum: [thumb, display, full] }
+          description: "`display`: the part of the photo the frame shows (`presentation`); `full`: the uncropped photo, longest edge at most 2048 px."
         - name: v
           in: query
           description: Image version, for caches only.
           schema: { type: integer }
+        - name: p
+          in: query
+          description: Key of the part the display size shows, for caches only. Part of the display URL in the photo list.
+          schema: { type: string }
         - name: If-None-Match
           in: header
           schema: { type: string }
@@ -959,7 +967,10 @@ components:
 
     Order: { type: string, enum: [shuffle, chronological] }
     Transition: { type: string, enum: [fade, slide, none] }
-    FillMode: { type: string, enum: [fill, fit] }
+    FillMode:
+      type: string
+      enum: [auto, fill, fit]
+      description: "`auto` crops at most a quarter in the direction in which the photo does not fit and shows the rest with black borders."
     Orientation: { type: string, enum: [landscape, portrait] }
     ClockPosition: { type: string, enum: [top-left, top-right, bottom-left, bottom-right] }
     ClockFormat: { type: string, enum: ["24h", "12h"] }
@@ -1090,15 +1101,42 @@ components:
     ImageUrls:
       type: object
       additionalProperties: false
-      required: [thumb, display]
+      required: [thumb, display, full]
       properties:
         thumb: { type: string, description: "Signed URL of the thumbnail." }
-        display: { type: string, description: "Signed URL of the display size." }
+        display: { type: string, description: "Signed URL of the display size. It changes whenever the part it shows changes." }
+        full: { type: string, description: "Signed URL of the uncropped photo, longest edge at most 2048 px." }
+
+    Crop:
+      type: object
+      additionalProperties: false
+      required: [x, y, zoom]
+      description: >-
+        Section of a photo: a focus point as fractions of width and height after EXIF rotation, and a zoom. Zoom 1
+        fills the screen, below 1 shows more of the photo with black borders, above 1 a detail.
+      properties:
+        x: { type: number, minimum: 0, maximum: 1 }
+        y: { type: number, minimum: 0, maximum: 1 }
+        zoom: { type: number, exclusiveMinimum: 0, maximum: 4 }
+
+    Presentation:
+      type: object
+      additionalProperties: false
+      required: [x, y, width, height, zoom]
+      description: >-
+        The part of the photo the frame shows with the current settings and screen: its top left corner, width and
+        height as fractions of the photo, and the zoom it is shown with, clamped to what the screen allows.
+      properties:
+        x: { type: number, minimum: 0, maximum: 1 }
+        y: { type: number, minimum: 0, maximum: 1 }
+        width: { type: number, exclusiveMinimum: 0, maximum: 1 }
+        height: { type: number, exclusiveMinimum: 0, maximum: 1 }
+        zoom: { type: number, exclusiveMinimum: 0 }
 
     Photo:
       type: object
       additionalProperties: false
-      required: [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, urls]
+      required: [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, crop, presentation, urls]
       properties:
         id: { type: string }
         source:
@@ -1114,6 +1152,14 @@ components:
         takenAt: { type: string, format: date-time, description: "Capture date from EXIF, falling back to the file date." }
         fileSize: { type: integer }
         version: { type: integer, description: "Image version, increases with every change of the file." }
+        crop:
+          description: The photo's own section, `null` if the fill mode applies to it.
+          oneOf:
+            - $ref: "#/components/schemas/Crop"
+            - type: "null"
+        presentation:
+          $ref: "#/components/schemas/Presentation"
+          description: Depends on the settings and the screen as well; a client reloads photos when the settings version changes.
         urls: { $ref: "#/components/schemas/ImageUrls" }
 
     PhotoPage:
@@ -1130,9 +1176,14 @@ components:
     PhotoPatch:
       type: object
       additionalProperties: false
-      required: [hidden]
+      minProperties: 1
       properties:
         hidden: { type: boolean }
+        crop:
+          description: The section, or `null` to remove it so that the fill mode applies again.
+          oneOf:
+            - $ref: "#/components/schemas/Crop"
+            - type: "null"
 
     UploadResult:
       type: object

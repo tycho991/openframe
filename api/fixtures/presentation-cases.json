@@ -1,0 +1,554 @@
+{
+  "description": "Shared cases of Presentation.of (core) and presentation.ts (web UI): photo size after EXIF rotation, screen in the configured orientation, section or null, fill mode -> the shown window (top left corner and size as fractions of the photo), the zoom it is shown with and the size of the rendered display image. Compared within 1/10,000. See openspec change photo-crop, design decisions 1 to 3.",
+  "autoMaxCrop": 0.25,
+  "cases": [
+    {
+      "scenario": "slideshow-display › Fill mode › Portrait with fill; photo-library › Rendered image sizes › Portrait photo on a landscape frame",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.265625,
+        "width": 1.0,
+        "height": 0.46875,
+        "zoom": 1.0,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Fill mode › Portrait with fit",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "fit",
+      "expected": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 1.0,
+        "height": 1.0,
+        "zoom": 0.46875,
+        "output": {
+          "width": 900,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Automatic presentation › Portrait photo on a landscape frame; slideshow-display › Fill mode › Portrait with auto; photo-library › Rendered image sizes › Portrait photo with borders",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "auto",
+      "expected": {
+        "x": 0.0,
+        "y": 0.125,
+        "width": 1.0,
+        "height": 0.75,
+        "zoom": 0.625,
+        "output": {
+          "width": 1200,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Automatic presentation › Landscape photo close to the screen's format",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "auto",
+      "expected": {
+        "x": 0.0,
+        "y": 0.083333,
+        "width": 1.0,
+        "height": 0.833333,
+        "zoom": 1.0,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Automatic presentation › Panorama",
+      "photo": {
+        "width": 6000,
+        "height": 2000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "auto",
+      "expected": {
+        "x": 0.125,
+        "y": 0.0,
+        "width": 0.75,
+        "height": 1.0,
+        "zoom": 0.711111,
+        "output": {
+          "width": 1920,
+          "height": 853
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Automatic presentation (portrait photo on a portrait frame fills it)",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1200,
+        "height": 1920
+      },
+      "crop": null,
+      "fillMode": "auto",
+      "expected": {
+        "x": 0.083333,
+        "y": 0.0,
+        "width": 0.833333,
+        "height": 1.0,
+        "zoom": 1.0,
+        "output": {
+          "width": 1200,
+          "height": 1920
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Automatic presentation (panorama on a portrait frame)",
+      "photo": {
+        "width": 6000,
+        "height": 2000
+      },
+      "screen": {
+        "width": 1200,
+        "height": 1920
+      },
+      "crop": null,
+      "fillMode": "auto",
+      "expected": {
+        "x": 0.125,
+        "y": 0.0,
+        "width": 0.75,
+        "height": 1.0,
+        "zoom": 0.277778,
+        "output": {
+          "width": 1200,
+          "height": 533
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Section in the photo list › Photo without a section",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.083333,
+        "width": 1.0,
+        "height": 0.833333,
+        "zoom": 1.0,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section of a photo › Head instead of the middle",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.2,
+        "zoom": 1
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 1.0,
+        "height": 0.46875,
+        "zoom": 1,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section of a photo › Zoom on a detail",
+      "photo": {
+        "width": 4800,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.7,
+        "y": 0.6,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.45,
+        "y": 0.35,
+        "width": 0.5,
+        "height": 0.5,
+        "zoom": 2,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section of a photo › Zoomed out",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.5,
+        "zoom": 0.3
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 1.0,
+        "height": 1.0,
+        "zoom": 0.46875,
+        "output": {
+          "width": 900,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section at the edge of the photo › Focus point in the corner",
+      "photo": {
+        "width": 4800,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.5,
+        "height": 0.5,
+        "zoom": 2,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section at the edge of the photo (focus point in the bottom right corner)",
+      "photo": {
+        "width": 4800,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 1,
+        "y": 1,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.5,
+        "y": 0.5,
+        "width": 0.5,
+        "height": 0.5,
+        "zoom": 2,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section at the edge of the photo › Borders and focus point",
+      "photo": {
+        "width": 3000,
+        "height": 4000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.1,
+        "y": 0.5,
+        "zoom": 0.6
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.109375,
+        "width": 1.0,
+        "height": 0.78125,
+        "zoom": 0.6,
+        "output": {
+          "width": 1152,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section across screen formats › Switch to portrait (landscape)",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.3,
+        "y": 0.5,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.05,
+        "y": 0.291667,
+        "width": 0.5,
+        "height": 0.416667,
+        "zoom": 2,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section across screen formats › Switch to portrait (portrait)",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1200,
+        "height": 1920
+      },
+      "crop": {
+        "x": 0.3,
+        "y": 0.5,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.15,
+        "y": 0.18,
+        "width": 0.3,
+        "height": 0.64,
+        "zoom": 1.5625,
+        "output": {
+          "width": 1200,
+          "height": 1920
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Largest zoom › Photo of 12 megapixels",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.5,
+        "zoom": 3
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.26,
+        "y": 0.3,
+        "width": 0.48,
+        "height": 0.4,
+        "zoom": 2.083333,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Largest zoom › Photo of 48 megapixels",
+      "photo": {
+        "width": 8000,
+        "height": 6000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.5,
+        "zoom": 4
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.375,
+        "y": 0.395833,
+        "width": 0.25,
+        "height": 0.208333,
+        "zoom": 4,
+        "output": {
+          "width": 1920,
+          "height": 1200
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Largest zoom (a photo smaller than the screen allows zoom 1)",
+      "photo": {
+        "width": 800,
+        "height": 600
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.5,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.083333,
+        "width": 1.0,
+        "height": 0.833333,
+        "zoom": 1.0,
+        "output": {
+          "width": 800,
+          "height": 500
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Rendered image sizes (a photo smaller than the screen is never enlarged) with fill",
+      "photo": {
+        "width": 800,
+        "height": 600
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.0,
+        "y": 0.083333,
+        "width": 1.0,
+        "height": 0.833333,
+        "zoom": 1.0,
+        "output": {
+          "width": 800,
+          "height": 500
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Rendered image sizes (a photo smaller than the screen is never enlarged) with fit",
+      "photo": {
+        "width": 800,
+        "height": 600
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": null,
+      "fillMode": "fit",
+      "expected": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 1.0,
+        "height": 1.0,
+        "zoom": 0.833333,
+        "output": {
+          "width": 800,
+          "height": 600
+        }
+      }
+    }
+  ]
+}

@@ -37,10 +37,31 @@ class SettingsRepositoryTest {
         assertEquals(30, settings.intervalSeconds)
         assertEquals(Order.SHUFFLE, settings.order)
         assertEquals(Transition.FADE, settings.transition)
-        assertEquals(FillMode.FILL, settings.fillMode)
+        // Scenario "Default fill mode" › "New frame".
+        assertEquals(FillMode.AUTO, settings.fillMode)
         assertEquals(Orientation.LANDSCAPE, settings.orientation)
         assertEquals(FrameLanguage.AUTO, settings.language)
         assertEquals(1000, settings.cacheBudgetMb)
+    }
+
+    @Test
+    fun `Update of a frame in fill`() {
+        // Stored by the version before `auto`, which writes every value.
+        file.writeText(
+            """{"values":{"name":"Hallway","intervalSeconds":30,"order":"shuffle","transition":"fade",""" +
+                """"transitionDurationMs":1500,"fillMode":"fill","orientation":"landscape"},"version":3}""",
+        )
+        assertEquals(FillMode.FILL, repo().settings.value.fillMode)
+    }
+
+    @Test
+    fun `Fill mode auto is accepted, an unknown one names the field`() {
+        val r = repo()
+        r.patch(json("""{"fillMode":"fit"}"""))
+        assertEquals(FillMode.AUTO, r.patch(json("""{"fillMode":"auto"}""")).fillMode)
+        val e = assertThrows<ValidationException> { r.patch(json("""{"fillMode":"cover"}""")) }
+        assertEquals(setOf("fillMode"), e.fields.keys)
+        assertEquals(FillMode.AUTO, r.settings.value.fillMode)
     }
 
     @Test

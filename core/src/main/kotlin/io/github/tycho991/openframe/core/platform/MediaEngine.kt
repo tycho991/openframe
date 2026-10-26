@@ -51,14 +51,15 @@ interface MediaEngine {
     fun probe(file: File): ImageInfo
 
     /**
-     * Renders [source] EXIF-rotated to exactly [width]×[height] pixels as JPEG
-     * with quality [quality] to [target]. The caller determines the aspect ratio.
+     * Renders [region] of [source], EXIF-rotated and in rotated coordinates, to exactly [width]×[height]
+     * pixels as JPEG with quality [quality] to [target]. The caller determines the aspect ratio.
      */
     fun render(
         source: File,
         target: File,
         width: Int,
         height: Int,
+        region: Region = Region.FULL,
         quality: Int = JPEG_QUALITY,
     )
 

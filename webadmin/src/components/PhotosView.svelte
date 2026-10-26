@@ -1,7 +1,7 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
   import { albumOptions } from "../lib/albums";
-  import type { Album, Photo, PhotoSort, SkippedFile } from "../lib/api/client";
+  import type { Album, Crop, Photo, PhotoSort, Settings, SkippedFile } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
   import { PhotoPages } from "../lib/photos";
@@ -67,15 +67,43 @@
     void guard(() => pages.setQuery(q));
   });
 
+  /** The open photo as the reloaded pages have it. */
+  function refreshDetail() {
+    const open = detail;
+    if (open) detail = pages.items.find((p) => p.id === open.id) ?? open;
+  }
+
   // Library changed elsewhere (USB, second browser): reload loaded pages, albums and skipped files.
   let seenVersion = -1;
   $effect(() => {
     const v = session.libraryVersion;
-    if (seenVersion !== -1 && v !== seenVersion) void guard(() => pages.reload());
+    if (seenVersion !== -1 && v !== seenVersion)
+      void guard(async () => {
+        await pages.reload();
+        refreshDetail();
+      });
     seenVersion = v;
     void guard(async () => {
       albums = await api.albums();
       skipped = await api.skippedFiles();
+    });
+  });
+
+  // The part of a photo the frame shows depends on the settings too (fill mode, orientation).
+  let settings = $state<Settings | null>(null);
+  let seenSettings = -1;
+  $effect(() => {
+    const v = session.settingsVersion;
+    // -1 until the first poll of the versions, which comes at once: loading then would be the same request twice.
+    if (v === -1) return;
+    const changed = seenSettings !== -1 && v !== seenSettings;
+    seenSettings = v;
+    void guard(async () => {
+      settings = await api.settings();
+      if (changed) {
+        await pages.reload();
+        refreshDetail();
+      }
     });
   });
 
@@ -129,6 +157,13 @@
       pages.replace(updated);
       detail = updated;
     });
+  }
+
+  /** Saves a section, or with `null` removes it. Errors are thrown to the editor, which stays open. */
+  async function saveCrop(photo: Photo, crop: Crop | null) {
+    const updated = await api.patchPhoto(photo.id, { crop });
+    pages.replace(updated);
+    detail = updated;
   }
 
   function onDrop(event: DragEvent) {
@@ -234,9 +269,11 @@
 {#if detail}
   <PhotoDetail
     photo={detail}
+    {settings}
     onclose={() => (detail = null)}
     ontogglehidden={toggleHidden}
     ondelete={(p) => askDelete([p.id], true)}
+    onsavecrop={saveCrop}
   />
 {/if}
 

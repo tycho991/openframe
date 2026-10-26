@@ -1,17 +1,24 @@
 <script lang="ts">
   import { displayPath } from "../lib/albums";
-  import type { Photo } from "../lib/api/client";
-  import { i18n, t } from "../lib/i18n/i18n.svelte";
+  import type { Crop, Photo, Settings } from "../lib/api/client";
+  import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
+  import { screenFor, shownArea } from "../lib/presentation";
+  import { session } from "../lib/session.svelte";
+  import SectionEditor from "./SectionEditor.svelte";
 
   interface Props {
     photo: Photo;
+    /** For the frame's orientation and fill mode; `null` until loaded. */
+    settings: Settings | null;
     onclose: () => void;
     ontogglehidden: (photo: Photo) => void;
     ondelete: (photo: Photo) => void;
+    onsavecrop: (photo: Photo, crop: Crop | null) => Promise<void>;
   }
 
-  let { photo, onclose, ontogglehidden, ondelete }: Props = $props();
+  let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop }: Props = $props();
   let dialog: HTMLDialogElement;
+  let editing = $state(false);
 
   $effect(() => {
     dialog.showModal();
@@ -21,11 +28,34 @@
     new Date(photo.takenAt).toLocaleString(i18n.lang, { dateStyle: "long", timeStyle: "short" }),
   );
   const megabytes = $derived((photo.fileSize / 1024 / 1024).toFixed(1));
+  /** The frame's screen in its orientation: the photo is shown as the frame shows it, borders included. */
+  const screen = $derived(
+    session.info && settings ? screenFor(session.info.screen, settings.orientation) : null,
+  );
+  const area = $derived(screen ? shownArea(photo, screen, photo.presentation) : null);
 </script>
 
 <dialog bind:this={dialog} oncancel={onclose} aria-label={photo.path}>
   <div class="layout">
-    <img src={photo.urls.display} alt={photo.path} />
+    {#if screen && area}
+      <div
+        class="frame"
+        style:aspect-ratio="{screen.width} / {screen.height}"
+        style:max-width="calc(70dvh * {screen.width} / {screen.height})"
+      >
+        <img
+          class="shown"
+          src={photo.urls.display}
+          alt={photo.path}
+          style:left="{((1 - area.width) / 2) * 100}%"
+          style:top="{((1 - area.height) / 2) * 100}%"
+          style:width="{area.width * 100}%"
+          style:height="{area.height * 100}%"
+        />
+      </div>
+    {:else}
+      <img class="plain" src={photo.urls.display} alt={photo.path} />
+    {/if}
     <div class="meta">
       <h2>{photo.path.split("/").at(-1)}</h2>
       <dl>
@@ -37,8 +67,19 @@
         <dd>{photo.width} × {photo.height}</dd>
         <dt>{t("photos.detailFile")}</dt>
         <dd>{megabytes} MB</dd>
+        <dt>{t("section.label")}</dt>
+        <dd>
+          {photo.crop
+            ? t("section.own")
+            : t("section.automaticFrom", {
+                mode: t(`settings.fillMode.${settings?.fillMode ?? "auto"}` as Key),
+              })}
+        </dd>
       </dl>
       <div class="actions">
+        <button type="button" disabled={!screen || !settings} onclick={() => (editing = true)}
+          >{t("section.choose")}</button
+        >
         <button type="button" onclick={() => ontogglehidden(photo)}
           >{photo.hidden ? t("photos.show") : t("photos.hide")}</button
         >
@@ -52,6 +93,19 @@
     </div>
   </div>
 </dialog>
+
+{#if editing && screen && settings}
+  <SectionEditor
+    {photo}
+    {screen}
+    fillMode={settings.fillMode}
+    oncancel={() => (editing = false)}
+    onsave={async (crop) => {
+      await onsavecrop(photo, crop);
+      editing = false;
+    }}
+  />
+{/if}
 
 <style>
   dialog {
@@ -70,12 +124,26 @@
     display: grid;
     grid-template-columns: 1fr;
   }
-  img {
+  .frame {
+    position: relative;
+    width: 100%;
+    margin: 0 auto;
+    background: #000;
+    overflow: hidden;
+  }
+  .shown {
+    position: absolute;
+    display: block;
+  }
+  .plain {
     width: 100%;
     max-height: 70dvh;
     object-fit: contain;
     background: #000;
     display: block;
+  }
+  .layout > :first-child {
+    align-self: center;
   }
   .meta {
     padding: 16px;
@@ -107,7 +175,7 @@
     .layout {
       grid-template-columns: 1fr 300px;
     }
-    img {
+    .plain {
       max-height: calc(100dvh - 32px);
     }
   }
