@@ -78,6 +78,19 @@ class RemoteSourceTest {
         assertTrue(beach.width > 0 && beach.height > 0)
     }
 
+    /** Spec `remote-sources`: Sync of a folder › Nested subfolders as sub-albums. */
+    @Test
+    fun `Nested subfolders as sub-albums`() {
+        remote.put("holiday/2024/may/beach.jpg", jpg(), "e1")
+        sync()
+        assertEquals("holiday/2024/may", photos().getValue("holiday/2024/may/beach.jpg").album)
+        assertEquals(
+            listOf("holiday", "holiday/2024", "holiday/2024/may"),
+            index.library.value.albums.keys
+                .toList(),
+        )
+    }
+
     @Test
     fun `Videos and other files are ignored`() {
         remote.put("clip.mp4", ByteArray(100))

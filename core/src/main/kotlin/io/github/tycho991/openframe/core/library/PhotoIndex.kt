@@ -26,8 +26,8 @@ data class PhotoEntry(
     /** The ETag of the file on the server for photos of a remote source, `null` for local photos. */
     val etag: String? = null,
 ) {
-    /** The first folder below the photo folder, `null` for photos directly in it. */
-    val album: String? get() = path.substringBefore('/', "").ifEmpty { null }
+    /** The folder path below the source's folder, `null` for photos directly in it. */
+    val album: String? get() = AlbumPaths.parent(path)
 
     val name: String get() = path.substringAfterLast('/')
 
@@ -53,23 +53,99 @@ data class SkippedFile(
     val modifiedMs: Long,
 )
 
+/** Album paths: folder paths below a source's folder, levels separated by `/`. */
+object AlbumPaths {
+    /** The path without its last level, `null` at the top level. */
+    fun parent(path: String): String? = path.substringBeforeLast('/', "").ifEmpty { null }
+
+    /** `a/b/c` → `a`, `a/b`, `a/b/c`. */
+    fun withAncestors(album: String): List<String> = album.indices.filter { album[it] == '/' }.map { album.substring(0, it) } + album
+
+    /** Whether [album] is [branch] or one of its sub-albums. */
+    fun inBranch(
+        album: String?,
+        branch: String,
+    ): Boolean = album != null && (album == branch || album.startsWith("$branch/"))
+
+    /** The album's own setting from [states], otherwise its parent's; a top-level album is visible. */
+    fun isHidden(
+        states: Map<String, Boolean>,
+        album: String,
+    ): Boolean {
+        var path: String? = album
+        while (path != null) {
+            states[path]?.let { return it }
+            path = parent(path)
+        }
+        return false
+    }
+
+    /** Tree order: a sub-album right after its parent, before a sibling such as `a b` after `a`. Case-insensitive. */
+    val ORDER: Comparator<String> = compareBy<String> { it.lowercase().replace('/', '\u0000') }.thenBy { it }
+}
+
 @Serializable
 data class StoredIndex(
     val photos: List<PhotoEntry> = emptyList(),
+    /** The paths stored as hidden in [albumStates], kept so that an older build still hides them. */
     val hiddenAlbums: Set<String> = emptySet(),
+    /** Album path → hidden, only where it differs from what the album inherits. `null` in an index of the previous format. */
+    val albumStates: Map<String, Boolean>? = null,
     val skipped: List<SkippedFile> = emptyList(),
     val libraryVersion: Long = 0,
+)
+
+/** An album with the photos of its whole branch. */
+class Album(
+    val name: String,
+    val count: Int,
+    /** The newest photo of the branch, the cover image. */
+    val newest: PhotoEntry,
+    /** Effective state, by its own setting or inherited. */
+    val hidden: Boolean,
+    /** A sub-album with a setting of its own, which differs from its parent's state by the invariant of [LibraryEdit.setAlbumHidden]. */
+    val overridesParent: Boolean,
 )
 
 /** Immutable state of the library. */
 class Library(
     val photos: Map<String, PhotoEntry>,
-    val hiddenAlbums: Set<String>,
+    /** Album path → hidden, only where it differs from what the album inherits. */
+    val albumStates: Map<String, Boolean>,
     val skipped: List<SkippedFile>,
     /** Changes with every change to the index, also across restarts. */
     val version: Long,
 ) {
-    fun isVisible(photo: PhotoEntry) = !photo.hidden && photo.album !in hiddenAlbums
+    fun isVisible(photo: PhotoEntry): Boolean {
+        val album = photo.album ?: return !photo.hidden
+        return !photo.hidden && !(albums[album]?.hidden ?: AlbumPaths.isHidden(albumStates, album))
+    }
+
+    /**
+     * Every album that holds a photo in its branch, in [AlbumPaths.ORDER], with count, cover and
+     * effective state. One pass over the photos per state, so [isVisible] is a map lookup.
+     */
+    val albums: Map<String, Album> by lazy {
+        val counts = HashMap<String, Int>()
+        val newest = HashMap<String, PhotoEntry>()
+        for (photo in photos.values) {
+            val album = photo.album ?: continue
+            for (path in AlbumPaths.withAncestors(album)) {
+                counts[path] = (counts[path] ?: 0) + 1
+                val current = newest[path]
+                if (current == null || DATE_ORDER.compare(photo, current) > 0) newest[path] = photo
+            }
+        }
+        counts.keys.sortedWith(AlbumPaths.ORDER).associateWith { path ->
+            Album(
+                name = path,
+                count = counts.getValue(path),
+                newest = newest.getValue(path),
+                hidden = AlbumPaths.isHidden(albumStates, path),
+                overridesParent = path in albumStates && AlbumPaths.parent(path) != null,
+            )
+        }
+    }
 
     /** All photos by capture date ascending, by path on a tie. Computed once per state. */
     val byDate: List<PhotoEntry> by lazy { photos.values.sortedWith(DATE_ORDER) }
@@ -81,7 +157,7 @@ class Library(
     val visible: List<PhotoEntry> by lazy { byDate.filter(::isVisible) }
 
     companion object {
-        val EMPTY = Library(emptyMap(), emptySet(), emptyList(), 0)
+        val EMPTY = Library(emptyMap(), emptyMap(), emptyList(), 0)
         val DATE_ORDER: Comparator<PhotoEntry> = compareBy<PhotoEntry> { it.takenAtMs }.thenBy { it.path }.thenBy { it.id }
         val NAME_ORDER: Comparator<PhotoEntry> = compareBy<PhotoEntry> { it.path.lowercase() }.thenBy { it.path }.thenBy { it.id }
     }
@@ -92,7 +168,7 @@ class LibraryEdit internal constructor(
     from: Library,
 ) {
     internal val photos = from.photos.toMutableMap()
-    internal val hiddenAlbums = from.hiddenAlbums.toMutableSet()
+    internal val albumStates = from.albumStates.toMutableMap()
     internal val skipped = from.skipped.associateBy { it.source to it.path }.toMutableMap()
 
     fun get(id: String): PhotoEntry? = photos[id]
@@ -120,11 +196,17 @@ class LibraryEdit internal constructor(
 
     fun entries(source: String): List<PhotoEntry> = photos.values.filter { it.source == source }
 
+    /**
+     * Makes [hidden] the state of the album's whole branch: the settings of all its sub-albums are
+     * removed, and the album keeps a setting of its own only if it differs from what it inherits.
+     */
     fun setAlbumHidden(
         album: String,
         hidden: Boolean,
     ) {
-        if (hidden) hiddenAlbums += album else hiddenAlbums -= album
+        albumStates.keys.removeAll { it.startsWith("$album/") }
+        val inherited = AlbumPaths.parent(album)?.let { AlbumPaths.isHidden(albumStates, it) } ?: false
+        if (hidden == inherited) albumStates -= album else albumStates[album] = hidden
     }
 }
 
@@ -144,7 +226,8 @@ class PhotoIndexStore(
         _library.value =
             Library(
                 stored.photos.associateBy { it.id },
-                stored.hiddenAlbums,
+                // The previous format knew only hidden top-level albums; their sub-albums inherit that.
+                stored.albumStates ?: stored.hiddenAlbums.associateWith { true },
                 stored.skipped,
                 stored.libraryVersion,
             )
@@ -157,11 +240,19 @@ class PhotoIndexStore(
         val edit = LibraryEdit(current)
         val result = block(edit)
         val skipped = edit.skipped.values.sortedWith(compareBy({ it.source }, { it.path }))
-        val changed = edit.photos != current.photos || edit.hiddenAlbums != current.hiddenAlbums || skipped != current.skipped
+        val changed = edit.photos != current.photos || edit.albumStates != current.albumStates || skipped != current.skipped
         if (changed) {
-            val next = Library(edit.photos.toMap(), edit.hiddenAlbums.toSet(), skipped, current.version + 1)
+            val next = Library(edit.photos.toMap(), edit.albumStates.toSortedMap(), skipped, current.version + 1)
             _library.value = next
-            store.save(StoredIndex(next.photos.values.sortedBy { it.path }, next.hiddenAlbums, next.skipped, next.version))
+            store.save(
+                StoredIndex(
+                    photos = next.photos.values.sortedBy { it.path },
+                    hiddenAlbums = next.albumStates.filterValues { it }.keys,
+                    albumStates = next.albumStates,
+                    skipped = next.skipped,
+                    libraryVersion = next.version,
+                ),
+            )
         }
         return result
     }

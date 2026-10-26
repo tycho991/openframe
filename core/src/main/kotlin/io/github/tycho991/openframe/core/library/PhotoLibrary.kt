@@ -37,7 +37,7 @@ class PhotoLibrary(
         album: String,
         hidden: Boolean,
     ) = index.edit { edit ->
-        if (edit.photos.values.none { it.album == album }) throw HttpException.notFound("No such album")
+        if (edit.photos.values.none { AlbumPaths.inBranch(it.album, album) }) throw HttpException.notFound("No such album")
         edit.setAlbumHidden(album, hidden)
     }
 
@@ -189,15 +189,35 @@ class PhotoLibrary(
             return cleaned.take(120).ifEmpty { "upload" }
         }
 
-        /** Album name as exactly one folder level directly below the photo folder, `null` for no album. */
-        fun sanitizeAlbum(raw: String): String? =
-            raw
-                .filter { it >= ' ' && it !in FORBIDDEN }
-                .trim()
-                .trimStart('.')
-                .trim()
-                .take(64)
-                .ifEmpty { null }
+        const val MAX_ALBUM_PATH = 255
+
+        /**
+         * Album path below the photo folder, `null` for no album. Each level is sanitized on its own,
+         * so empty levels, `.` and `..` disappear; more than [MAX_ALBUM_PATH] characters is 400.
+         */
+        fun sanitizeAlbum(raw: String): String? {
+            val path =
+                raw
+                    .split('/')
+                    .map { level ->
+                        level
+                            .filter { it >= ' ' && it !in FORBIDDEN }
+                            .trim()
+                            .trimStart('.')
+                            .trim()
+                            .take(64)
+                    }.filter { it.isNotEmpty() }
+                    .joinToString("/")
+            if (path.length > MAX_ALBUM_PATH) {
+                throw HttpException(
+                    400,
+                    "invalid_album",
+                    "The album path is too long",
+                    mapOf("album" to "At most $MAX_ALBUM_PATH characters"),
+                )
+            }
+            return path.ifEmpty { null }
+        }
 
         fun uniqueFile(
             dir: File,

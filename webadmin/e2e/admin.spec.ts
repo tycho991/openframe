@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { apiAsBrowser, pairInUi, pairOtherDevice, reset, slowDisplay, usb } from "./helpers";
 
 test.beforeEach(async () => {
@@ -17,6 +17,59 @@ test("Hide album", async ({ page }) => {
   expect(albums.albums.find((a) => a.name === "holiday")?.hidden).toBe(true);
   const photos = await apiAsBrowser<{ items: { visible: boolean }[] }>(page, "/photos?album=holiday");
   expect(photos.items.every((p) => !p.visible)).toBe(true);
+});
+
+/** A row of the albums page by its title, the last level of the album's path. */
+function albumRow(page: Page, title: string): Locator {
+  return page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+}
+
+async function visiblePaths(page: Page): Promise<string[]> {
+  const res = await apiAsBrowser<{ items: { path: string }[] }>(page, "/photos?visible=true&sort=name_asc");
+  return res.items.map((p) => p.path);
+}
+
+test("Show a sub-album of a hidden album", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "holiday/2024/b.jpg");
+  await usb("landscape.jpg", "holiday/2024/may/c.jpg");
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Alben" }).click();
+  await expect(albumRow(page, "holiday").getByText("3 Fotos")).toBeVisible();
+  // The second level is shown, deeper ones only after opening.
+  await expect(albumRow(page, "2024")).toBeVisible();
+  await expect(albumRow(page, "may")).toHaveCount(0);
+  await page.getByRole("button", { name: "Unteralben von holiday/2024 aufklappen" }).click();
+  await expect(albumRow(page, "may")).toBeVisible();
+
+  await albumRow(page, "holiday").getByRole("switch").uncheck();
+  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
+  await expect(albumRow(page, "may").getByRole("switch")).not.toBeChecked();
+  await albumRow(page, "2024").getByRole("switch").check();
+  await expect(albumRow(page, "2024").getByText("Ausnahme")).toBeVisible();
+  await expect(albumRow(page, "may").getByRole("switch")).toBeChecked();
+  await expect(albumRow(page, "may").getByText("Ausnahme")).toHaveCount(0);
+  await expect(albumRow(page, "holiday").getByRole("switch")).not.toBeChecked();
+  expect(await visiblePaths(page)).toEqual(["holiday/2024/b.jpg", "holiday/2024/may/c.jpg"]);
+});
+
+test("Switching a parent removes exceptions", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "holiday/2024/b.jpg");
+  await pairInUi(page);
+  await page.getByRole("link", { name: "Alben" }).click();
+  await albumRow(page, "holiday").getByRole("switch").uncheck();
+  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
+  await albumRow(page, "2024").getByRole("switch").check();
+  await expect(albumRow(page, "2024").getByText("Ausnahme")).toBeVisible();
+
+  await albumRow(page, "holiday").getByRole("switch").check();
+  await expect(albumRow(page, "2024").getByText("Ausnahme")).toHaveCount(0);
+  await expect(albumRow(page, "2024").getByRole("switch")).toBeChecked();
+  await albumRow(page, "holiday").getByRole("switch").uncheck();
+  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
+  await expect(albumRow(page, "2024").getByText("Ausnahme")).toHaveCount(0);
+  expect(await visiblePaths(page)).toEqual([]);
 });
 
 test("Error at the field", async ({ page }) => {

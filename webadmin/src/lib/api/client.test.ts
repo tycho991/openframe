@@ -102,5 +102,20 @@ describe("API client", () => {
     expect((fetch.mock.calls[0] as unknown as [string])[0]).toBe(
       "/api/v1/photos?album=holiday+%26+co&visible=false&limit=50",
     );
+    await api.photos({ album: "holiday/2024", subalbums: false });
+    expect((fetch.mock.calls[1] as unknown as [string])[0]).toBe(
+      "/api/v1/photos?album=holiday%2F2024&subalbums=false",
+    );
+  });
+
+  it("switches an album by its path in the body and returns the whole list", async () => {
+    const albums = [{ name: "holiday/2024", count: 1, hidden: false, overridesParent: true, cover: null }];
+    const fetch = vi.fn(async () => respond(200, { albums }));
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    expect(await api.setAlbumHidden("holiday/2024", false)).toEqual(albums);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/albums");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ name: "holiday/2024", hidden: false });
   });
 });

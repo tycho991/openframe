@@ -87,6 +87,48 @@ test("Partial failure on upload", async ({ page }) => {
   expect(res.total).toBe(4);
 });
 
+test("Filter by a parent album, and by the album only", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "holiday/2024/b.jpg");
+  await usb("landscape.jpg", "other/c.jpg");
+  await pairInUi(page);
+  await expect(page.locator(".tile")).toHaveCount(3);
+  const filter = page.getByRole("combobox", { name: "Album", exact: true });
+  await expect(filter.getByRole("option", { name: "holiday / 2024" })).toHaveCount(1);
+  await filter.selectOption("holiday");
+  await expect(page.locator(".count")).toHaveText("2 Fotos");
+  await expect(page.locator(".tile")).toHaveCount(2);
+
+  await page.getByLabel("Nur dieses Album").check();
+  await expect(page.locator(".count")).toHaveText("1 Foto");
+  await page.locator(".tile").first().click();
+  await expect(page.getByRole("dialog").getByText("a.jpg")).toBeVisible();
+  await page.getByRole("button", { name: "Schließen" }).click();
+
+  await filter.selectOption("holiday/2024");
+  await expect(page.locator(".count")).toHaveText("1 Foto");
+  await page.locator(".tile").first().click();
+  await expect(page.getByRole("dialog").getByText("holiday / 2024")).toBeVisible();
+});
+
+test("New sub-album", async ({ page }) => {
+  await usb("landscape.jpg", "family/a.jpg");
+  await pairInUi(page);
+  await page.getByRole("button", { name: "Hochladen", exact: true }).click();
+  await page.getByTestId("upload-input").setInputFiles(path.join(FIXTURES, "rotated6.jpg"));
+  await page.getByLabel("Album").last().selectOption("__new__");
+  await page.getByLabel("Innerhalb von").selectOption("family");
+  await page.getByLabel("Name des neuen Albums").fill("2025");
+  await page.getByRole("button", { name: "Hochladen starten" }).click();
+  await expect(page.getByText("1 hochgeladen, 0 fehlgeschlagen")).toBeVisible();
+  await page.getByRole("button", { name: "Fertig" }).click();
+  const res = await apiAsBrowser<{ items: { album: string | null }[] }>(
+    page,
+    "/photos?album=family/2025&subalbums=false",
+  );
+  expect(res.items.map((p) => p.album)).toEqual(["family/2025"]);
+});
+
 test("Photo over USB appears without reloading", async ({ page }) => {
   await pairInUi(page);
   await expect(page.getByText("Noch keine Fotos")).toBeVisible();

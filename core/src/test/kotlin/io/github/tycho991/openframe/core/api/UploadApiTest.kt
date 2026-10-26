@@ -6,6 +6,9 @@ import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestFrame
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -71,13 +74,41 @@ class UploadApiTest {
     }
 
     @Test
+    fun `Upload into a sub-album`() {
+        val res = frame.upload("family/2025", "a.jpg" to jpeg)
+        assertEquals(201, res.statusCode())
+        assertEquals("family/2025", result(res).photos.single().album)
+        assertEquals(listOf("family/2025/a.jpg"), files())
+    }
+
+    @Test
     fun `Path traversal`() {
         assertEquals(201, frame.upload(null, "../../evil.jpg" to jpeg).statusCode())
         assertEquals(201, frame.upload("../../x", "..\\..\\win.jpg" to jpeg).statusCode())
-        assertEquals(201, frame.upload("a/b", "c.jpg" to jpeg).statusCode())
-        assertEquals(listOf("ab/c.jpg", "evil.jpg", "x/win.jpg"), files())
+        assertEquals(201, frame.upload("a/../../x", "c.jpg" to jpeg).statusCode())
+        assertEquals(201, frame.upload("/./ .hidden//b/", "d.jpg" to jpeg).statusCode())
+        assertEquals(listOf("a/x/c.jpg", "evil.jpg", "hidden/b/d.jpg", "x/win.jpg"), files())
         assertFalse(File(dir, "evil.jpg").exists())
         assertFalse(File(dir, "x").exists())
+        val outside =
+            dir
+                .walkTopDown()
+                .filter { it.isFile && !it.startsWith(frame.photos) && it.name in setOf("evil.jpg", "win.jpg", "c.jpg", "d.jpg") }
+                .toList()
+        assertEquals(emptyList<File>(), outside, "no file outside the photo folder")
+    }
+
+    @Test
+    fun `Album path too long`() {
+        val tooLong = (1..3).joinToString("/") { "a".repeat(64) } + "/" + "b".repeat(61)
+        assertEquals(256, tooLong.length)
+        val res = frame.upload(tooLong, "a.jpg" to jpeg)
+        assertEquals(400, res.statusCode())
+        val error = Json.parseToJsonElement(res.body()).jsonObject["error"]!!.jsonObject
+        assertEquals("invalid_album", error["code"]!!.jsonPrimitive.content)
+        assertEquals(setOf("album"), error["fields"]!!.jsonObject.keys)
+        assertEquals(emptyList<String>(), files(), "stores nothing")
+        assertEquals(201, frame.upload(tooLong.dropLast(1), "a.jpg" to jpeg).statusCode(), "255 characters are allowed")
     }
 
     @Test

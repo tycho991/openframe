@@ -3,10 +3,17 @@ package io.github.tycho991.openframe.core.library
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
+import io.github.tycho991.openframe.core.store.StoreJson
 import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -39,7 +46,7 @@ class PhotoIndexStoreTest {
             s.flush()
             val reloaded = store().library.value
             assertEquals(s.library.value.photos, reloaded.photos)
-            assertEquals(setOf("family"), reloaded.hiddenAlbums)
+            assertEquals(mapOf("family" to true), reloaded.albumStates)
             assertEquals(listOf("x.heic"), reloaded.skipped.map { it.path })
             assertEquals(s.library.value.version, reloaded.version)
         }
@@ -77,8 +84,6 @@ class PhotoIndexStoreTest {
             s.library.value.visible
                 .map { it.path },
         )
-        assertEquals("holiday", entry("holiday/2025/beach.jpg").album)
-        assertEquals(null, entry("4.jpg").album)
     }
 
     @Test
@@ -87,4 +92,55 @@ class PhotoIndexStoreTest {
         assertNotEquals(PhotoEntry.idFor("local", "holiday/1.jpg"), PhotoEntry.idFor("local", "holiday/2.jpg"))
         assertEquals(true, PhotoEntry.idFor("local", "a.jpg").matches(Regex("local-[0-9a-f]{40}")))
     }
+
+    /** An index as the build before nested albums stored it: no `albumStates`, `holiday` hidden. */
+    private fun writePreviousFormat() {
+        val photo = entry("holiday/2024/beach.jpg")
+        File(dir, "index.json").writeText(
+            """
+            {"photos":[{"id":"${photo.id}","source":"local","path":"holiday/2024/beach.jpg","width":4,"height":3,
+            "takenAtMs":0,"fileSize":10,"modifiedMs":1,"version":1,"hidden":false}],
+            "hiddenAlbums":["holiday"],"skipped":[],"libraryVersion":7}
+            """.trimIndent(),
+        )
+    }
+
+    /** Spec `photo-library`: Album states kept across the update › Hidden album with a deeper folder. */
+    @Test
+    fun `Hidden album of the previous format stays hidden for a deeper folder`() {
+        writePreviousFormat()
+        val library = store().library.value
+        val photo = library.photos.values.single()
+        assertEquals("holiday/2024", photo.album)
+        assertFalse(library.isVisible(photo), "stays invisible to the slideshow")
+        assertEquals(emptyList<PhotoEntry>(), library.visible)
+        assertFalse("holiday/2024" in library.albumStates, "no setting of its own")
+        assertFalse(library.albums.getValue("holiday/2024").overridesParent)
+        assertEquals(mapOf("holiday" to true), library.albumStates)
+    }
+
+    @Test
+    fun `The saved index still lists the hidden albums for an older build`() =
+        runBlocking {
+            writePreviousFormat()
+            val s = store()
+            s.edit { it.put(entry("other/x.jpg")) }
+            s.edit { it.setAlbumHidden("other", true) }
+            s.flush()
+            val saved = Json.parseToJsonElement(File(dir, "index.json").readText()).jsonObject
+            assertEquals(
+                setOf("holiday", "other"),
+                saved["hiddenAlbums"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet(),
+            )
+            assertEquals(setOf("holiday", "other"), saved["albumStates"]!!.jsonObject.keys)
+            // An older build reads only hiddenAlbums and ignores the rest.
+            val older = StoreJson.decodeFromString(PreviousStoredIndex.serializer(), File(dir, "index.json").readText())
+            assertEquals(setOf("holiday", "other"), older.hiddenAlbums)
+        }
+
+    /** The stored index of the build before nested albums, as far as album states go. */
+    @Serializable
+    private data class PreviousStoredIndex(
+        val hiddenAlbums: Set<String> = emptySet(),
+    )
 }

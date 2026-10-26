@@ -25,6 +25,7 @@ export const errorKeys: Record<string, Key> = {
   method_not_allowed: "error.method_not_allowed",
   network: "error.network",
   read_only_source: "error.read_only_source",
+  invalid_album: "error.invalid_album",
   nextcloud_unreachable: "error.nextcloud_unreachable",
   source_no_folder: "error.source_no_folder",
   too_many_sources: "error.too_many_sources",
