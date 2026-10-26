@@ -22,6 +22,11 @@ avdmanager create avd -n of37 -k "system-images;android-37.0;google_apis;x86_64"
   launcher). Disable the launcher right after the first boot:
   `adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher`. The app is then the only HOME app.
 
+- **API 21 freezes while its display is off.** Its kernel has no `/sys/power/wake_lock`, so wake locks do not keep
+  the guest running; `adb` hangs until a key event from the console wakes it:
+  `adb -s emulator-5554 emu event send EV_KEY:KEY_POWER:1 EV_KEY:KEY_POWER:0`. Android 5 also has no
+  `dpm set-active-admin`; activate device administration through the frame's device menu there.
+
 Start headless, for example:
 
 ```bash

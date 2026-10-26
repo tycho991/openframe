@@ -118,4 +118,16 @@ describe("API client", () => {
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual({ name: "holiday/2024", hidden: false });
   });
+
+  it("switches the display with PUT", async () => {
+    const fetch = vi.fn(async () =>
+      respond(200, { available: true, on: false, cause: "manual", nextChange: null }),
+    );
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    expect((await api.setDisplay(false)).cause).toBe("manual");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/display",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ on: false }) }),
+    );
+  });
 });

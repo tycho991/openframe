@@ -79,7 +79,32 @@ bar, so links do not reach it: pair it with the code ("Show code on frame").
 
 On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
-with "local only", "Revoke all pairings" and info.
+with "local only", the display schedule, "Revoke all pairings" and info.
+
+## Display off at night
+
+The frame can switch its display off and on by a schedule, with one window for weekdays and one for the weekend, set
+in the admin interface under "Settings". The display is really off, as after the power button, with the backlight
+off. The power button wakes it at night; it goes off again a few minutes after the last touch. "Turn display off" in
+the settings switches it until the next switching time.
+
+For this openframe has to be a **device administrator**. It asks for nothing but locking the screen, which is what
+switching the display off is to Android. Activate it once on the frame: press a corner for three seconds, choose
+"Display schedule: not allowed" and confirm the system's dialog with "Activate". From Android 6 on it also works
+over `adb`:
+
+```bash
+adb shell dpm set-active-admin io.github.tycho991.openframe/.android.DisplayAdminReceiver
+```
+
+Android 5 (the Lenovo) knows no such command; use the device menu there.
+
+- **Before uninstalling**, deactivate it: "Display schedule: allowed" in the device menu, or in the Android settings
+  under Security › Device admin apps. Android does not uninstall an active device administrator, and `adb` cannot
+  deactivate it. Deactivating switches the display on and keeps the schedule in the settings, where it applies again
+  once device administration is back.
+- **No screen lock.** Like starting as the home screen, this assumes that no PIN, pattern or password is set up;
+  otherwise the lock screen would appear in the morning instead of the slideshow.
 
 ## Photos from other sources
 

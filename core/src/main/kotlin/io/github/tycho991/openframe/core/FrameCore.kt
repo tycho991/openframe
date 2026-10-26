@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core
 
 import io.github.tycho991.openframe.core.api.diagnosticsRoutes
+import io.github.tycho991.openframe.core.api.displayRoutes
 import io.github.tycho991.openframe.core.api.infoRoutes
 import io.github.tycho991.openframe.core.api.libraryRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
@@ -13,6 +14,7 @@ import io.github.tycho991.openframe.core.auth.PairingAdmin
 import io.github.tycho991.openframe.core.auth.PairingManager
 import io.github.tycho991.openframe.core.auth.StoredClients
 import io.github.tycho991.openframe.core.auth.StoredSecret
+import io.github.tycho991.openframe.core.display.DisplayController
 import io.github.tycho991.openframe.core.http.FrameServer
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.Router
@@ -36,6 +38,7 @@ import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
+import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
@@ -95,6 +98,8 @@ class FrameCore(
     private val scanInterval: Duration = Duration.ofSeconds(15),
     /** Where the Nextcloud sources get their connections from; the real ones unless a test hands in fakes. */
     nextcloudClients: NextcloudClients? = null,
+    /** Switching the display off and on; a device without it never switches the display (spec `display-schedule`). */
+    displayPower: DisplayPower = DisplayPower.None,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -104,7 +109,14 @@ class FrameCore(
     val log = AppLog(clock, RotatingFileLog(File(dirs.state, "logs")), sinks = logSinks)
 
     val settings =
-        SettingsRepository(JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log), platform.model, log)
+        SettingsRepository(
+            JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log),
+            platform.model,
+            log,
+        ) { displayPower.available }
+
+    /** The display schedule, the manual switch and waking. The display reports screen events and touches here. */
+    val display = DisplayController(scope, displayPower, settings.settings, clock, log)
 
     val transitions =
         TransitionGovernor(JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log), log)
@@ -201,6 +213,14 @@ class FrameCore(
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()
+        display.start()
+        // It follows the real screen, so the slideshow also rests while the display is off by the power button.
+        scope.launch {
+            display.state
+                .map { !it.on }
+                .distinctUntilChanged()
+                .collect(slideshow::setResting)
+        }
         scope.launch { settings.settings.collect(transitions::onSettings) }
         sources.start()
         _ready.value = true
@@ -287,6 +307,7 @@ class FrameCore(
         router.settingsRoutes(settings)
         router.libraryRoutes(library, settings, signer, transitions)
         router.sourcesRoutes(sources, nextcloud)
+        router.displayRoutes(display)
         router.diagnosticsRoutes(log)
     }
 

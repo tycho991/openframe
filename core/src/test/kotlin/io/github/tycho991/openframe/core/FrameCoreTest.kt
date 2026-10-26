@@ -5,18 +5,21 @@ import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.slideshow.SlideState
+import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestFrame
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.time.Instant
 
 /** Interplay of library, cache and slideshow in the real core. */
 class FrameCoreTest {
@@ -95,6 +98,25 @@ class FrameCoreTest {
     fun `Empty state without photos`() {
         TestFrame(dir).use { frame ->
             waitFor { frame.core.slideshow.state.value == SlideState.Empty }
+        }
+    }
+
+    @Test
+    fun `The slideshow rests while the schedule has the display off`() {
+        // Wednesday afternoon, then the clock moves to the night.
+        val clock = TestClock(Instant.parse("2026-10-21T15:00:00Z"))
+        val power = FakeDisplayPower()
+        TestFrame(dir, clock = clock, displayPower = power).use { frame ->
+            assertEquals(200, frame.send("PATCH", "/api/v1/settings", """{"displaySchedule":{"enabled":true}}""").statusCode())
+            assertFalse(frame.core.slideshow.resting.value)
+            clock.instant = Instant.parse("2026-10-21T23:00:00Z")
+            // Any event makes the controller look at the clock, not only its tick.
+            frame.core.display.userActivity()
+            waitFor { !power.screenOn }
+            assertEquals(listOf("off"), power.calls)
+            waitFor { frame.core.slideshow.resting.value }
+            power.powerButton()
+            waitFor { !frame.core.slideshow.resting.value }
         }
     }
 

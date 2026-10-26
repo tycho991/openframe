@@ -21,6 +21,9 @@ import java.io.File
  * [FrameService], the display gets it through its binder.
  */
 class FrameApp : Application() {
+    /** Switching the display; the [FrameService] reports screen events to it, device administration its changes. */
+    val displayPower: AndroidDisplayPower by lazy { AndroidDisplayPower(this) }
+
     val core: FrameCore by lazy {
         val dirs =
             FrameDirs(
@@ -35,6 +38,7 @@ class FrameApp : Application() {
             assets = ApkAssets(this),
             notifier = AndroidMediaStoreNotifier(this),
             logSinks = listOf(LogcatSink),
+            displayPower = displayPower,
         )
     }
 

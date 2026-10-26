@@ -74,6 +74,10 @@ object SettingsPatch {
                     int(value, key, Settings.CACHE_BUDGET_MB, errors)?.let { s = s.copy(cacheBudgetMb = it) }
                 }
 
+                "displaySchedule" -> {
+                    s = s.copy(displaySchedule = applyDisplaySchedule(s.displaySchedule, value, errors))
+                }
+
                 else -> {
                     errors[key] = "Unknown field"
                 }
@@ -105,6 +109,64 @@ object SettingsPatch {
         return c
     }
 
+    private fun applyDisplaySchedule(
+        base: DisplayScheduleSettings,
+        value: JsonElement,
+        errors: MutableMap<String, String>,
+    ): DisplayScheduleSettings {
+        if (value !is JsonObject) {
+            errors["displaySchedule"] = "Expected an object"
+            return base
+        }
+        var d = base
+        for ((key, v) in value) {
+            val path = "displaySchedule.$key"
+            when (key) {
+                "enabled" -> bool(v, path, errors)?.let { d = d.copy(enabled = it) }
+                "weekdays" -> d = d.copy(weekdays = applyWindow(d.weekdays, v, path, errors))
+                "weekend" -> d = d.copy(weekend = applyWindow(d.weekend, v, path, errors))
+                "wakeMinutes" -> int(v, path, DisplayScheduleSettings.WAKE_MINUTES, errors)?.let { d = d.copy(wakeMinutes = it) }
+                else -> errors[path] = "Unknown field"
+            }
+        }
+        return d
+    }
+
+    private fun applyWindow(
+        base: DisplayWindow,
+        value: JsonElement,
+        path: String,
+        errors: MutableMap<String, String>,
+    ): DisplayWindow {
+        if (value !is JsonObject) {
+            errors[path] = "Expected an object"
+            return base
+        }
+        var w = base
+        for ((key, v) in value) {
+            val p = "$path.$key"
+            when (key) {
+                "on" -> time(v, p, errors)?.let { w = w.copy(on = it) }
+                "off" -> time(v, p, errors)?.let { w = w.copy(off = it) }
+                else -> errors[p] = "Unknown field"
+            }
+        }
+        return w
+    }
+
+    private fun time(
+        value: JsonElement,
+        key: String,
+        errors: MutableMap<String, String>,
+    ): String? {
+        val t = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (t == null || !DisplayWindow.TIME.matches(t)) {
+            errors[key] = "Expected a time HH:MM from 00:00 to 23:59"
+            return null
+        }
+        return t
+    }
+
     private fun string(
         value: JsonElement,
         key: String,
@@ -115,12 +177,15 @@ object SettingsPatch {
         return null
     }
 
+    /** A JSON `true` or `false`; a string such as `"true"` is not one. */
+    fun strictBoolean(value: JsonElement?): Boolean? = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+
     private fun bool(
         value: JsonElement,
         key: String,
         errors: MutableMap<String, String>,
     ): Boolean? {
-        val b = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+        val b = strictBoolean(value)
         if (b == null) errors[key] = "Expected true or false"
         return b
     }

@@ -11,6 +11,7 @@ import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.sources.FakeRemoteFolder
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -31,6 +32,9 @@ object TestServerMain {
 
     /** The Nextcloud the frame talks to, with its shares: in memory, steered through the control port. */
     private var nextcloud = FakeClients()
+
+    /** The display, with device administration active; steered through the control port. */
+    private var displayPower = FakeDisplayPower()
     private lateinit var dataDir: File
     private var port = 0
     private lateinit var dist: File
@@ -40,6 +44,8 @@ object TestServerMain {
         @Volatile var offset: Duration = Duration.ZERO
 
         override fun now(): Instant = Instant.now() + offset
+
+        override fun monotonicMillis(): Long = java.lang.System.nanoTime() / 1_000_000 + offset.toMillis()
     }
 
     @JvmStatic
@@ -61,6 +67,7 @@ object TestServerMain {
             }
         val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"))
         nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
+        displayPower = FakeDisplayPower()
         core =
             FrameCore(
                 dirs,
@@ -72,6 +79,7 @@ object TestServerMain {
                 port = port,
                 scanInterval = Duration.ofSeconds(2),
                 nextcloudClients = nextcloud,
+                displayPower = displayPower,
             )
         runBlocking { core.start() }
     }
@@ -200,6 +208,18 @@ object TestServerMain {
                                     null
                                 }
                             ok("fail ${q["on"]}")
+                        }
+
+                        // Device administration activated (`on=1`) or deactivated (`on=0`) on the frame.
+                        "/display/admin" -> {
+                            displayPower.setAvailable(q["on"] == "1")
+                            ok("admin ${q["on"]}")
+                        }
+
+                        // Someone presses the frame's power button.
+                        "/display/power" -> {
+                            displayPower.powerButton()
+                            ok(if (displayPower.screenOn) "on" else "off")
                         }
 
                         // The display measured that its GPU is too slow to fade: the frame changes photos instantly.

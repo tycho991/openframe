@@ -61,6 +61,12 @@ export const nextcloudFail = (on: boolean, { share = "" } = {}) =>
 /** The frame's display found its GPU too slow to fade, so it changes photos instantly from now on. */
 export const slowDisplay = () => control("/transitions/slow");
 
+/** Device administration activated or deactivated on the frame. The test server starts with it active. */
+export const displayAdmin = (on: boolean) => control(`/display/admin?on=${on ? 1 : 0}`);
+
+/** Someone presses the frame's power button. */
+export const powerButton = () => control("/display/power");
+
 /** Pairs another client directly through the API and returns its token. */
 export async function pairOtherDevice(baseURL: string, name: string): Promise<string> {
   const code = await frameCode();
@@ -82,11 +88,24 @@ export async function pairInUi(page: Page): Promise<void> {
   await expect(page.getByRole("navigation")).toBeVisible();
 }
 
-/** Call the API with the browser's token. */
-export async function apiAsBrowser<T>(page: Page, pathAndQuery: string): Promise<T> {
-  return page.evaluate(async (p) => {
-    const token = localStorage.getItem("openframe.token");
-    const res = await fetch("/api/v1" + p, { headers: { Authorization: `Bearer ${token}` } });
-    return res.json();
-  }, pathAndQuery) as Promise<T>;
+/** Call the API with the browser's token; with [body] as a mutating request. */
+export async function apiAsBrowser<T>(
+  page: Page,
+  pathAndQuery: string,
+  { method = "GET", body }: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  return page.evaluate(
+    async ({ p, method, body }) => {
+      const token = localStorage.getItem("openframe.token");
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+      const res = await fetch("/api/v1" + p, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return res.json();
+    },
+    { p: pathAndQuery, method, body },
+  ) as Promise<T>;
 }

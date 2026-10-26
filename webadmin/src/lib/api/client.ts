@@ -21,6 +21,7 @@ export type SourceStatus = S["SourceStatus"];
 export type ShareRequest = S["ShareRequest"];
 export type SourceLogin = S["SourceLogin"];
 export type SourceLoginState = S["SourceLoginState"];
+export type DisplayState = S["DisplayState"];
 export type PhotoSort = "date_desc" | "date_asc" | "name_asc" | "name_desc";
 
 /** Error response of the API with code and optional errors per field. */
@@ -152,6 +153,9 @@ export function createApi(options: ApiOptions) {
     startSourceLogin: (serverUrl: string) => call<SourceLogin>("POST", "/sources/login", { serverUrl }),
     pollSourceLogin: (flowId: string) =>
       call<SourceLoginState>("GET", `/sources/login/${encodeURIComponent(flowId)}`),
+    display: () => call<DisplayState>("GET", "/display"),
+    /** Switches the display now, until the schedule's next switching time. 409 while not available. */
+    setDisplay: (on: boolean) => call<DisplayState>("PUT", "/display", { on }),
 
     /** Uploads a file, with progress from 0 to 1. Through XHR, because fetch knows no upload progress. */
     upload(file: File, album: string | null, onProgress: (fraction: number) => void): Promise<UploadResult> {

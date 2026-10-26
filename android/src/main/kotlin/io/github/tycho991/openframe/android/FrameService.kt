@@ -42,12 +42,14 @@ class FrameService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var debugReceiver: BroadcastReceiver? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
         startInForeground()
         acquireLocks()
         watchNetwork()
+        watchScreen()
         registerDebugCommands()
     }
 
@@ -66,6 +68,7 @@ class FrameService : Service() {
     override fun onDestroy() {
         networkCallback?.let { (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) }
         debugReceiver?.let(::unregisterReceiver)
+        screenReceiver?.let(::unregisterReceiver)
         wakeLock?.takeIf { it.isHeld }?.release()
         wifiLock?.takeIf { it.isHeld }?.release()
         // The core belongs to the process and keeps running. START_STICKY brings the service back.
@@ -133,6 +136,39 @@ class FrameService : Service() {
             }
         connectivity.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
         networkCallback = callback
+    }
+
+    /**
+     * Passes the display going on and off to the core, whoever switched it. These broadcasts can only be received by
+     * a receiver registered at runtime, not by one in the manifest.
+     */
+    private fun watchScreen() {
+        val power = (application as FrameApp).displayPower
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context,
+                    intent: Intent,
+                ) {
+                    when (intent.action) {
+                        Intent.ACTION_SCREEN_ON -> power.screenChanged(true)
+                        Intent.ACTION_SCREEN_OFF -> power.screenChanged(false)
+                    }
+                }
+            }
+        val filter =
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            }
+        // System broadcasts reach a receiver that is not exported. The flag does not exist before API 33.
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @SuppressLint("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(receiver, filter)
+        }
+        screenReceiver = receiver
     }
 
     /**

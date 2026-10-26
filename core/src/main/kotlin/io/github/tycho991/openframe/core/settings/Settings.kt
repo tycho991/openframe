@@ -86,6 +86,30 @@ data class ClockSettings(
     val format: ClockFormat = ClockFormat.H24,
 )
 
+/** On and off time of a day's window, each as `HH:MM` in the device's local time. */
+@Serializable
+data class DisplayWindow(
+    val on: String,
+    val off: String,
+) {
+    companion object {
+        val TIME = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
+    }
+}
+
+/** The display schedule (spec `display-schedule`), apart from the arithmetic in `display.DisplaySchedule`. */
+@Serializable
+data class DisplayScheduleSettings(
+    val enabled: Boolean = false,
+    val weekdays: DisplayWindow = DisplayWindow("07:00", "22:00"),
+    val weekend: DisplayWindow = DisplayWindow("08:00", "23:00"),
+    val wakeMinutes: Int = 5,
+) {
+    companion object {
+        val WAKE_MINUTES = 1..120
+    }
+}
+
 /**
  * The frame's settings as the API delivers them. The default values are
  * documented in spec `frame-settings`. The "local only" mode is not part
@@ -103,6 +127,7 @@ data class Settings(
     val clock: ClockSettings = ClockSettings(),
     val language: FrameLanguage = FrameLanguage.AUTO,
     val cacheBudgetMb: Int = 1000,
+    val displaySchedule: DisplayScheduleSettings = DisplayScheduleSettings(),
 ) {
     companion object {
         const val NAME_MAX_LENGTH = 64

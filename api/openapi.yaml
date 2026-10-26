@@ -34,6 +34,8 @@ tags:
     description: Log of the frame.
   - name: sources
     description: Remote sources of photos (a Nextcloud account or share link), read only.
+  - name: display
+    description: State of the display and the manual switch.
 
 paths:
   /info:
@@ -436,6 +438,42 @@ paths:
               schema: { $ref: "#/components/schemas/State" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /display:
+    get:
+      tags: [display]
+      operationId: getDisplay
+      summary: Whether the display is on, why, and when it changes next by itself.
+      responses:
+        "200":
+          description: The display state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisplayState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [display]
+      operationId: setDisplay
+      summary: Switch the display on or off now.
+      description: >-
+        The choice holds until the schedule's next switching time. Without an active schedule, off holds until a
+        client switches the display on or someone wakes the frame. It does not survive a restart of the app. Refused
+        with 409 and `display_unavailable` while openframe is not a device administrator.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DisplaySwitch" }
+      responses:
+        "200":
+          description: The display state after switching.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisplayState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /sources:
     get:
       tags: [sources]
@@ -656,7 +694,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`) or a share that already is a source (`source_exists`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`) or switching the display while openframe is not a device administrator (`display_unavailable`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -937,11 +975,69 @@ components:
         sizePercent: { type: integer, minimum: 50, maximum: 300 }
         format: { $ref: "#/components/schemas/ClockFormat" }
 
+    DisplayTime:
+      type: string
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      description: "Local time of the device as `HH:MM`, 00:00 to 23:59."
+
+    DisplayWindow:
+      type: object
+      additionalProperties: false
+      required: ["on", "off"]
+      description: >-
+        The display is on from `on` to `off`. An `off` before `on` ends the period on the next day; equal times keep
+        the display on for the whole day.
+      properties:
+        "on": { $ref: "#/components/schemas/DisplayTime" }
+        "off": { $ref: "#/components/schemas/DisplayTime" }
+
+    DisplaySchedule:
+      type: object
+      additionalProperties: false
+      required: [enabled, weekdays, weekend, wakeMinutes]
+      properties:
+        enabled:
+          type: boolean
+          description: "Can be switched on only while openframe is a device administrator (`GET /display`, `available`)."
+        weekdays: { $ref: "#/components/schemas/DisplayWindow", description: "Monday to Friday." }
+        weekend: { $ref: "#/components/schemas/DisplayWindow", description: "Saturday and Sunday." }
+        wakeMinutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: "After waking during an off period, the display goes off again this many minutes after the last touch."
+
+    DisplayState:
+      type: object
+      additionalProperties: false
+      required: [available, "on", cause, nextChange]
+      properties:
+        available: { type: boolean, description: "openframe is a device administrator and can switch the display." }
+        "on": { type: boolean, description: "The display is on, as the system reports it." }
+        cause:
+          type: string
+          enum: [schedule, manual, wake, none]
+          description: >-
+            Why the display is in this state: `schedule`, the manual switch (`manual`), woken during an off period
+            (`wake`), or `none` when the frame decides nothing (no active schedule or not available).
+        nextChange:
+          type: [string, "null"]
+          format: date-time
+          description: "When the display changes next by itself; `null` if it does not."
+
+    DisplaySwitch:
+      type: object
+      additionalProperties: false
+      required: ["on"]
+      properties:
+        "on": { type: boolean }
+
     Settings:
       type: object
       additionalProperties: false
       required:
-        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, language, cacheBudgetMb]
+        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, language,
+         cacheBudgetMb, displaySchedule]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         intervalSeconds: { type: integer, minimum: 5, maximum: 86400 }
@@ -953,10 +1049,11 @@ components:
         clock: { $ref: "#/components/schemas/Clock" }
         language: { $ref: "#/components/schemas/FrameLanguage" }
         cacheBudgetMb: { type: integer, minimum: 100, maximum: 10000 }
+        displaySchedule: { $ref: "#/components/schemas/DisplaySchedule" }
 
     SettingsPatch:
       type: object
-      description: Like `Settings`, all fields optional, `clock` also partially.
+      description: Like `Settings`, all fields optional, `clock` and `displaySchedule` also partially.
       properties:
         name: { type: string }
         intervalSeconds: { type: integer }
@@ -974,6 +1071,21 @@ components:
             format: { type: string }
         language: { type: string }
         cacheBudgetMb: { type: integer }
+        displaySchedule:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            weekdays:
+              type: object
+              properties:
+                "on": { type: string }
+                "off": { type: string }
+            weekend:
+              type: object
+              properties:
+                "on": { type: string }
+                "off": { type: string }
+            wakeMinutes: { type: integer }
 
     ImageUrls:
       type: object

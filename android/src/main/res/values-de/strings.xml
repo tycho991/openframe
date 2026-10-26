@@ -21,6 +21,12 @@
     <string name="menu_reset">Alle Kopplungen aufheben</string>
     <string name="menu_info">Info</string>
     <string name="menu_close">Schließen</string>
+    <string name="menu_admin_on">Display-Zeitplan: erlaubt</string>
+    <string name="menu_admin_off">Display-Zeitplan: nicht erlaubt</string>
+    <string name="admin_description">Schaltet das Display nachts aus, wie die Ein/Aus-Taste. openframe nutzt keine andere Berechtigung der Geräteverwaltung.</string>
+    <string name="admin_explanation">openframe braucht das, um das Display nach Zeitplan auszuschalten, wie die Ein/Aus-Taste. Sonst kann es damit nichts tun. Schalte es im Rahmen-Menü ab, bevor du openframe deinstallierst.</string>
+    <string name="confirm_admin_off">Display-Zeitplan nicht mehr erlauben? Das Display bleibt dann an, bis du ihn wieder erlaubst. Danach lässt sich openframe deinstallieren.</string>
+    <string name="confirm_admin_off_yes">Nicht mehr erlauben</string>
     <string name="confirm_reset">Alle Kopplungen aufheben? Jeder Browser muss sich danach mit einem neuen Code koppeln.</string>
     <string name="confirm_reset_yes">Alle aufheben</string>
     <string name="cancel">Abbrechen</string>
