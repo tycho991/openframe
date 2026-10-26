@@ -4,6 +4,8 @@ import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
 import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.Clock
+import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
@@ -18,6 +20,8 @@ class TestFrame(
     val platform: FakePlatform = FakePlatform(),
     scanInterval: Duration = Duration.ofMillis(200),
     nextcloudClients: NextcloudClients? = null,
+    clock: Clock = Clock.System,
+    displayPower: DisplayPower = DisplayPower.None,
 ) : AutoCloseable {
     val dirs = FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"))
     val notified = CopyOnWriteArrayList<File>()
@@ -31,9 +35,11 @@ class TestFrame(
             MediaStoreNotifier {
                 notified += it
             },
+            clock = clock,
             port = 0,
             scanInterval = scanInterval,
             nextcloudClients = nextcloudClients,
+            displayPower = displayPower,
         ).also {
             runBlocking { it.start() }
         }

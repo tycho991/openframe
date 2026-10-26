@@ -103,4 +103,16 @@ describe("API client", () => {
       "/api/v1/photos?album=holiday+%26+co&visible=false&limit=50",
     );
   });
+
+  it("switches the display with PUT", async () => {
+    const fetch = vi.fn(async () =>
+      respond(200, { available: true, on: false, cause: "manual", nextChange: null }),
+    );
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    expect((await api.setDisplay(false)).cause).toBe("manual");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/display",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ on: false }) }),
+    );
+  });
 });

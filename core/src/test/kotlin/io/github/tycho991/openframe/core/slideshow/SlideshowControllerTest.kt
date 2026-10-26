@@ -242,6 +242,95 @@ class SlideshowControllerTest {
             assertEquals(photos[3], s.shown())
         }
 
+    // Spec `display-schedule` › Slideshow rests while the display is off.
+
+    @Test
+    fun `Morning`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            advanceTimeBy(9 * 3600_000L)
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "no change through the night")
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "a new photo at once")
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[2], s.shown(), "the interval starts over")
+        }
+
+    @Test
+    fun `Paused before the night`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setPaused(true)
+            s.controller.setResting(true)
+            runCurrent()
+            advanceTimeBy(9 * 3600_000L)
+            s.controller.setResting(false)
+            runCurrent()
+            advanceTimeBy(10 * 60_000L)
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "the same photo")
+            assertTrue(s.controller.paused.value, "still paused")
+        }
+
+    @Test
+    fun `Nothing is rendered ahead while resting`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            s.images.prefetched.clear()
+            // Swipes, ticks, a broken file and a changed library do not render anything for the display.
+            s.controller.next()
+            s.controller.reportUndecodable(photos[0])
+            s.controller.setPaused(true)
+            s.controller.setPaused(false)
+            s.visible.value = photos + photo(6)
+            runCurrent()
+            advanceTimeBy(3600_000L)
+            runCurrent()
+            assertEquals(emptyList<Pair<String, RenderPriority>>(), s.images.prefetched)
+            assertEquals(emptyList<String>(), s.images.demanded)
+            assertEquals(photos[0], s.shown())
+        }
+
+    @Test
+    fun `A deleted current photo is replaced only when resting ends`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setPaused(true)
+            s.controller.setResting(true)
+            runCurrent()
+            s.library -= photos[0].id
+            s.visible.value = photos - photos[0]
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "not while the display is off")
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "replaced, although paused")
+        }
+
+    @Test
+    fun `All photos gone while resting`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            s.library.clear()
+            s.visible.value = emptyList()
+            runCurrent()
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(SlideState.Empty, s.controller.state.value)
+        }
+
     @Test
     fun `Empty state and new photo`() =
         runTest {

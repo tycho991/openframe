@@ -34,4 +34,5 @@ export const errorKeys: Record<string, Key> = {
   share_not_readable: "error.share_not_readable",
   share_password_required: "error.share_password_required",
   share_password_wrong: "error.share_password_wrong",
+  display_unavailable: "error.display_unavailable",
 };

@@ -206,6 +206,8 @@ class DisplayActivity : Activity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // Touches keep a woken display on at night; the core throttles them.
+        core?.display?.userActivity()
         // A 3-second press in a corner opens the device menu.
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -482,9 +484,12 @@ class DisplayActivity : Activity() {
         if (menuOpen) return
         menuOpen = true
         val localOnly = c.settings.localOnly.value
+        val power = (application as FrameApp).displayPower
+        val admin = power.available
         val items =
             arrayOf(
                 text(if (localOnly) R.string.menu_local_only_on else R.string.menu_local_only_off),
+                text(if (admin) R.string.menu_admin_on else R.string.menu_admin_off),
                 text(R.string.menu_reset),
                 text(R.string.menu_info),
             )
@@ -495,8 +500,9 @@ class DisplayActivity : Activity() {
                 .setItems(items) { _, which ->
                     when (which) {
                         0 -> c.setLocalOnly(!localOnly).also { updateHint() }
-                        1 -> confirmReset(c)
-                        2 -> showInfo(c)
+                        1 -> if (admin) confirmAdminOff(power) else startActivity(power.activationIntent(text(R.string.admin_explanation)))
+                        2 -> confirmReset(c)
+                        3 -> showInfo(c)
                     }
                 }.setNegativeButton(text(R.string.menu_close), null)
                 .setOnDismissListener {
@@ -515,6 +521,18 @@ class DisplayActivity : Activity() {
                     c.resetAllPairings()
                     setHintVisible(true, autoHide = false)
                 }.setNegativeButton(text(R.string.cancel), null)
+                .setOnDismissListener { enterImmersive() },
+        )
+    }
+
+    /** Ends device administration after asking: the display schedule stops, and openframe can be uninstalled. */
+    private fun confirmAdminOff(power: AndroidDisplayPower) {
+        showImmersive(
+            AlertDialog
+                .Builder(this, R.style.Theme_OpenFrame_Dialog)
+                .setMessage(text(R.string.confirm_admin_off))
+                .setPositiveButton(text(R.string.confirm_admin_off_yes)) { _, _ -> power.deactivate() }
+                .setNegativeButton(text(R.string.cancel), null)
                 .setOnDismissListener { enterImmersive() },
         )
     }

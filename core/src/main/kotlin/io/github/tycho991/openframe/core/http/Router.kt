@@ -89,6 +89,12 @@ class Router {
         handler: Handler,
     ) = add(Method.POST, pattern, access, handler)
 
+    fun put(
+        pattern: String,
+        access: Access = Access.TOKEN,
+        handler: Handler,
+    ) = add(Method.PUT, pattern, access, handler)
+
     fun patch(
         pattern: String,
         access: Access = Access.TOKEN,

@@ -22,6 +22,12 @@
     <string name="menu_reset">Unpair all devices</string>
     <string name="menu_info">Info</string>
     <string name="menu_close">Close</string>
+    <string name="menu_admin_on">Display schedule: allowed</string>
+    <string name="menu_admin_off">Display schedule: not allowed</string>
+    <string name="admin_description">Switches the display off at night, as the power button does. openframe uses no other permission of device administration.</string>
+    <string name="admin_explanation">openframe needs this to switch the display off by the schedule, as the power button does. It can do nothing else with it. Deactivate it in the frame menu before uninstalling openframe.</string>
+    <string name="confirm_admin_off">Stop allowing the display schedule? The display stays on until you allow it again. openframe can then be uninstalled.</string>
+    <string name="confirm_admin_off_yes">Stop allowing</string>
     <string name="confirm_reset">Unpair all devices? Every browser has to pair again with a new code.</string>
     <string name="confirm_reset_yes">Unpair all</string>
     <string name="cancel">Cancel</string>

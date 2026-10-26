@@ -106,17 +106,26 @@ class SlideshowController(
         data class Undecodable(
             val id: String,
         ) : Command
+
+        data class Rest(
+            val resting: Boolean,
+        ) : Command
     }
 
     private val playlist = Playlist(random)
     private val commands = Channel<Command>(Channel.UNLIMITED)
     private val _state = MutableStateFlow<SlideState>(SlideState.Loading)
     private val _paused = MutableStateFlow(false)
+    private val _resting = MutableStateFlow(false)
     private var timer: Job? = null
     private var seq = 0L
 
     val state: StateFlow<SlideState> = _state.asStateFlow()
     val paused: StateFlow<Boolean> = _paused.asStateFlow()
+
+    /** The display is off: no photo changes and nothing is rendered for it. Apart from the user's pause. */
+    val resting: StateFlow<Boolean> = _resting.asStateFlow()
+    private val isResting get() = _resting.value
 
     private val _nextUp = MutableStateFlow<Pair<PhotoEntry, File>?>(null)
 
@@ -167,6 +176,14 @@ class SlideshowController(
         commands.trySend(Command.Undecodable(photo.id))
     }
 
+    /**
+     * Rests while the display is off (spec `display-schedule`): the photo stays and nothing is rendered ahead. When
+     * the display comes on, the next photo appears at once, unless the user paused the slideshow.
+     */
+    fun setResting(resting: Boolean) {
+        commands.trySend(Command.Rest(resting))
+    }
+
     private suspend fun handle(command: Command) {
         when (command) {
             is Command.Library -> {
@@ -174,11 +191,17 @@ class SlideshowController(
             }
 
             is Command.Step -> {
-                show(command.step)
+                if (!isResting) show(command.step)
             }
 
             is Command.Tick -> {
-                if (command.seq == seq && !_paused.value) show(+1)
+                if (command.seq == seq && !_paused.value && !isResting) show(+1)
+            }
+
+            is Command.Rest -> {
+                if (command.resting == isResting) return
+                _resting.value = command.resting
+                if (isResting) timer?.cancel() else wake()
             }
 
             is Command.Pause -> {
@@ -188,7 +211,7 @@ class SlideshowController(
 
             is Command.Undecodable -> {
                 val current = (_state.value as? SlideState.Showing)?.photo
-                if (current?.id == command.id) {
+                if (current?.id == command.id && !isResting) {
                     log.e(TAG, "Photo not decodable, skipped: ${current.path}")
                     show(+1)
                 }
@@ -199,6 +222,8 @@ class SlideshowController(
     private suspend fun onLibrary(command: Command.Library) {
         val current = (_state.value as? SlideState.Showing)?.photo
         val removed = playlist.update(command.photos, command.order)
+        // The order follows the library at once; what the display shows waits until it comes on.
+        if (isResting) return
         when {
             command.photos.isEmpty() -> {
                 timer?.cancel()
@@ -212,6 +237,25 @@ class SlideshowController(
 
             // Deleted: move on immediately. The order already points to the next photo.
             removed && current != null && !exists(current.id) -> {
+                show(+1)
+            }
+        }
+    }
+
+    /** The display came on: the next photo at once, or, while paused, the paused photo unless it was deleted. */
+    private suspend fun wake() {
+        val current = (_state.value as? SlideState.Showing)?.photo
+        when {
+            playlist.size == 0 -> {
+                _nextUp.value = null
+                _state.value = SlideState.Empty
+            }
+
+            current == null -> {
+                show(0)
+            }
+
+            !_paused.value || !exists(current.id) -> {
                 show(+1)
             }
         }
@@ -281,7 +325,7 @@ class SlideshowController(
 
     private fun armTimer() {
         timer?.cancel()
-        if (_paused.value) return
+        if (_paused.value || isResting) return
         val mySeq = seq
         val interval = settings.value.intervalSeconds * 1000L
         timer =

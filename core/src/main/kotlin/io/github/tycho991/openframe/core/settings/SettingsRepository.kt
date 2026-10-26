@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 
 /** Stored form: values as JSON so that new settings get their default. */
@@ -22,11 +24,15 @@ data class StoredSettings(
 /**
  * Holds the frame's settings. Changes are validated completely and only
  * then applied, immediately visible as [settings] and stored in batches.
+ *
+ * [scheduleAllowed] tells whether the display schedule may be switched on (device administration is active). Only a
+ * change that switches it on is checked; a stored schedule that is on stays on when it turns false.
  */
 class SettingsRepository(
     private val store: JsonStore<StoredSettings>,
     model: String,
     private val log: AppLog,
+    private val scheduleAllowed: () -> Boolean = { true },
 ) {
     private val defaults = Settings.defaults(model)
     private val _settings = MutableStateFlow(defaults)
@@ -56,7 +62,11 @@ class SettingsRepository(
     @Synchronized
     fun patch(patch: JsonObject): Settings {
         val result = SettingsPatch.apply(_settings.value, patch)
-        if (result.errors.isNotEmpty()) throw ValidationException(result.errors)
+        val errors = result.errors.toMutableMap()
+        if (switchesScheduleOn(patch) && !scheduleAllowed()) {
+            errors[SCHEDULE_ENABLED] = "Device administration is not active: activate it in the device menu on the frame"
+        }
+        if (errors.isNotEmpty()) throw ValidationException(errors)
         if (result.settings != _settings.value) {
             _settings.value = result.settings
             _version.value += 1
@@ -79,7 +89,13 @@ class SettingsRepository(
         store.save(StoredSettings(values, _localOnly.value, _version.value))
     }
 
+    private fun switchesScheduleOn(patch: JsonObject): Boolean {
+        val enabled = (patch["displaySchedule"] as? JsonObject)?.get("enabled") as? JsonPrimitive
+        return enabled != null && !enabled.isString && enabled.booleanOrNull == true
+    }
+
     private companion object {
         const val TAG = "settings"
+        const val SCHEDULE_ENABLED = "displaySchedule.enabled"
     }
 }

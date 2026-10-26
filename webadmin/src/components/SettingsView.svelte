@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { ApiError, type Settings } from "../lib/api/client";
-  import { t, type Key } from "../lib/i18n/i18n.svelte";
+  import { ApiError, type DisplayState, type Settings } from "../lib/api/client";
+  import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
   import { api, refreshState, session } from "../lib/session.svelte";
 
@@ -9,6 +9,8 @@
   let errors = $state<Record<string, string>>({});
   let status = $state<"idle" | "saving" | "saved">("idle");
   let error = $state<string | null>(null);
+  let display = $state<DisplayState | null>(null);
+  let switching = $state(false);
 
   const dirty = $derived(form !== null && saved !== null && JSON.stringify(form) !== JSON.stringify(saved));
 
@@ -17,7 +19,63 @@
     transitionDurationMs: [0, 5000],
     "clock.sizePercent": [50, 300],
     cacheBudgetMb: [100, 10000],
+    "displaySchedule.wakeMinutes": [1, 120],
   };
+
+  const scheduleTimes = [
+    ["weekdays", "on"],
+    ["weekdays", "off"],
+    ["weekend", "on"],
+    ["weekend", "off"],
+  ] as const;
+
+  /** How often the display state is read while the settings are open, so that changes on the frame show up. */
+  const DISPLAY_POLL_MS = 30_000;
+
+  async function loadDisplay() {
+    try {
+      display = await api.display();
+    } catch {
+      // Frame briefly unreachable: the next poll tries again.
+    }
+  }
+
+  $effect(() => {
+    void loadDisplay();
+    const timer = setInterval(() => void loadDisplay(), DISPLAY_POLL_MS);
+    return () => clearInterval(timer);
+  });
+
+  async function switchDisplay() {
+    if (!display) return;
+    switching = true;
+    error = null;
+    try {
+      display = await api.setDisplay(!display.on);
+    } catch (e) {
+      error = errorText(e);
+      void loadDisplay();
+    } finally {
+      switching = false;
+    }
+  }
+
+  const displayText = $derived.by(() => {
+    if (!display) return "";
+    const key = {
+      schedule: display.on ? "display.onSchedule" : "display.offSchedule",
+      manual: display.on ? "display.onManual" : "display.offManual",
+      wake: "display.onWake",
+      none: display.on ? "display.on" : "display.off",
+    }[display.cause] as Key;
+    if (!display.nextChange) return t(key);
+    const time = new Date(display.nextChange).toLocaleString(i18n.lang, {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return t("display.until", { state: t(key), time });
+  });
 
   async function load() {
     try {
@@ -35,18 +93,16 @@
     if (!dirty) void load();
   });
 
-  /** Only the changed fields, `clock` also partially. */
-  function patch(from: Settings, to: Settings) {
+  /** Only the changed fields, `clock` and `displaySchedule` also partially. */
+  function patch(from: object, to: object): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const key of Object.keys(to) as (keyof Settings)[]) {
-      if (key === "clock") {
-        const clock: Record<string, unknown> = {};
-        for (const k of Object.keys(to.clock) as (keyof Settings["clock"])[]) {
-          if (to.clock[k] !== from.clock[k]) clock[k] = to.clock[k];
-        }
-        if (Object.keys(clock).length > 0) out.clock = clock;
-      } else if (to[key] !== from[key]) {
-        out[key] = to[key];
+    const before = from as Record<string, unknown>;
+    for (const [key, value] of Object.entries(to)) {
+      if (value !== null && typeof value === "object") {
+        const inner = patch(before[key] as object, value as object);
+        if (Object.keys(inner).length > 0) out[key] = inner;
+      } else if (value !== before[key]) {
+        out[key] = value;
       }
     }
     return out;
@@ -54,6 +110,7 @@
 
   function fieldError(key: string): string | undefined {
     if (!errors[key]) return undefined;
+    if (key === "displaySchedule.enabled") return t("display.notAvailable");
     const range = ranges[key];
     return range ? t("settings.range", { min: range[0], max: range[1] }) : t("settings.invalid");
   }
@@ -69,6 +126,7 @@
       saved = s;
       form = structuredClone(s);
       void refreshState();
+      void loadDisplay();
       status = "saved";
       setTimeout(() => {
         if (status === "saved") status = "idle";
@@ -197,6 +255,63 @@
     </fieldset>
 
     <fieldset class="card">
+      <legend>{t("settings.section.display")}</legend>
+      {#if display}
+        <div class="display-state">
+          <span aria-live="polite">{displayText}</span>
+          <button type="button" onclick={switchDisplay} disabled={!display.available || switching}
+            >{display.on ? t("display.turnOff") : t("display.turnOn")}</button
+          >
+        </div>
+        {#if !display.available}<p class="hint">{t("display.notAvailable")}</p>{/if}
+      {/if}
+      <label class="check">
+        <input
+          type="checkbox"
+          bind:checked={form.displaySchedule.enabled}
+          disabled={!display?.available}
+          aria-invalid={!!errors["displaySchedule.enabled"]}
+        />
+        <span>{t("settings.displaySchedule")}</span>
+      </label>
+      {#if fieldError("displaySchedule.enabled")}<span class="error" role="alert"
+          >{fieldError("displaySchedule.enabled")}</span
+        >{/if}
+      <div class="times">
+        {#each scheduleTimes as [day, edge] (day + edge)}
+          {@const path = `displaySchedule.${day}.${edge}`}
+          <div class="field">
+            <label for="s-{day}-{edge}">{option("settings.display", day + "." + edge)}</label>
+            <input
+              id="s-{day}-{edge}"
+              type="time"
+              required
+              bind:value={form.displaySchedule[day][edge]}
+              aria-invalid={!!errors[path]}
+            />
+            {#if fieldError(path)}<span class="error" role="alert">{fieldError(path)}</span>{/if}
+          </div>
+        {/each}
+      </div>
+      <span class="hint">{t("settings.displayTimesHint")}</span>
+      <div class="field">
+        <label for="s-wake">{t("settings.wakeMinutes")}</label>
+        <input
+          id="s-wake"
+          type="number"
+          inputmode="numeric"
+          bind:value={form.displaySchedule.wakeMinutes}
+          aria-invalid={!!errors["displaySchedule.wakeMinutes"]}
+          aria-describedby="s-wake-hint"
+        />
+        <span class="hint" id="s-wake-hint">{t("settings.wakeMinutesHint")}</span>
+        {#if fieldError("displaySchedule.wakeMinutes")}<span class="error" role="alert"
+            >{fieldError("displaySchedule.wakeMinutes")}</span
+          >{/if}
+      </div>
+    </fieldset>
+
+    <fieldset class="card">
       <legend>{t("settings.section.frame")}</legend>
       <div class="field">
         <label for="s-name">{t("settings.name")}</label>
@@ -280,5 +395,18 @@
   .hint {
     margin: 0;
     font-size: 0.85rem;
+  }
+  .display-state {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+  }
+  .times {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
   }
 </style>
