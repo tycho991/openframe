@@ -191,9 +191,10 @@ class RemoteSource(
                 takenAtMs = file.modifiedMs,
                 fileSize = file.size,
                 modifiedMs = file.modifiedMs,
-                // Hidden state and section are taken over when the entry is applied (PhotoEntry.withStateOf).
+                // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf).
                 version = (previous?.version ?: 0) + 1,
                 etag = file.etag,
+                metadataVersion = PhotoEntry.METADATA_VERSION,
             )
         // The same ETag as before: only the original is gone from the cache, the photo is the one in the index.
         val unchanged = previous != null && previous.etag == file.etag
@@ -216,13 +217,19 @@ class RemoteSource(
                     return Result.failure(e)
                 }
             originals.commit(draft)
-            if (unchanged) return Result.success(previous!!)
+            if (unchanged) {
+                // A photo from before the GPS position was read gets it with this download (spec "Metadata of photos
+                // already in the index"); otherwise the entry stays as it is.
+                if (previous!!.metadataVersion >= PhotoEntry.METADATA_VERSION) return Result.success(previous)
+                return Result.success(previous.copy(gps = info.gps, metadataVersion = PhotoEntry.METADATA_VERSION))
+            }
             return Result.success(
                 draft.copy(
                     width = info.width,
                     height = info.height,
                     takenAtMs =
                         info.takenAt?.toEpochMilli() ?: file.modifiedMs,
+                    gps = info.gps,
                 ),
             )
         }

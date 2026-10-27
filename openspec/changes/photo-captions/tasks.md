@@ -27,7 +27,7 @@
 
 ## 3. Place lookup in `:core`
 
-- [ ] 3.1 `PlaceIndex` in `core/.../places/`, per design decision 2:
+- [x] 3.1 `PlaceIndex` in `core/.../places/`, per design decision 2:
   - Lazy load from the class path into flat arrays.
   - Search of the cells within 50 km with the equirectangular distance.
   - Name packs by language with the dataset ID check (a mismatched pack is ignored and logged).
@@ -38,7 +38,7 @@
   - A test that a pack with a wrong dataset ID gives base names.
   - A test that 10,000 lookups take under one second on the JVM.
   - `./gradlew :core:check` passes, including Animal Sniffer.
-- [ ] 3.2 `PlatformInfo.systemLocale`, and `FrameLanguage.locale(platform)` moved to `:core` (design decision 3).
+- [x] 3.2 `PlatformInfo.systemLocale`, and `FrameLanguage.locale(platform)` moved to `:core` (design decision 3).
   - A place name is the pack name or the base name, then `getDisplayCountry`; if the platform returns the code itself, the place stands alone.
   - Implemented in the JVM fake, and in `:android` from `Resources.getSystem().configuration`.
   - `DisplayActivity.locale` uses the shared function.
@@ -47,12 +47,12 @@
 
 ## 4. GPS position and the backfill
 
-- [ ] 4.1 Extend `scripts/generate-test-fixtures.py` with JPEGs that carry a GPS position (Siena), the position 0/0, and no GPS. Regenerate `core/src/test/resources/fixtures`. Verify: metadata-extractor reads the expected positions from the new fixtures in a test.
-- [ ] 4.2 `ImageInfo.gps` filled by `probe`, plus a new `MediaEngine.readMetadata` without a probe decode (design decision 5). Implemented in the JVM fake (`GpsDirectory`) and in `AndroidMediaEngine` (`ExifInterface.getLatLong`). The validity rule lives in `:core`. Verify:
+- [x] 4.1 Extend `scripts/generate-test-fixtures.py` with JPEGs that carry a GPS position (Siena), the position 0/0, and no GPS. Regenerate `core/src/test/resources/fixtures`. Verify: metadata-extractor reads the expected positions from the new fixtures in a test.
+- [x] 4.2 `ImageInfo.gps` filled by `probe`, plus a new `MediaEngine.readMetadata` without a probe decode (design decision 5). Implemented in the JVM fake (`GpsDirectory`) and in `AndroidMediaEngine` (`ExifInterface.getLatLong`). The validity rule lives in `:core`. Verify:
   - JVM fake tests on the fixtures of 4.1, including "Valid GPS position" › "Position zero".
   - Robolectric tests in `AndroidMediaEngineTest` for a photo with and without GPS.
   - The fake's open counter shows that `readMetadata` does no decode.
-- [ ] 4.3 `PhotoEntry` with `gps` and `metadataVersion`. Entries created by this build get the current version. Implemented in `LocalPhotoSource` (scan and upload) and in `RemoteSource.fetch`, including the unchanged-ETag path that takes the position over when the version is old (design decision 4). Verify:
+- [x] 4.3 `PhotoEntry` with `gps` and `metadataVersion`. Entries created by this build get the current version. Implemented in `LocalPhotoSource` (scan and upload) and in `RemoteSource.fetch`, including the unchanged-ETag path that takes the position over when the version is old (design decision 4). Verify:
   - Tests for "Metadata" › "Photo with GPS position" and "Photo without GPS position".
   - A test that an index without the new fields loads with version 0.
   - A `RemoteSourceTest` for "Remote photo without its original".

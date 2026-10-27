@@ -83,6 +83,7 @@ class LocalPhotoSourceTest {
         val result = scan()
         assertEquals(ScanResult(0, 0, 0, 0), result)
         assertEquals(probes, engine.probes.get(), "No image file opened, not even the skipped one")
+        assertEquals(0, engine.metadataReads.get(), "Not even for its metadata")
         assertTrue(before === index.library.value, "Index unchanged")
     }
 
@@ -101,6 +102,47 @@ class LocalPhotoSourceTest {
                 .getValue(PhotoEntry.idFor("local", "n.jpg"))
         assertEquals(noExif.lastModified(), n.takenAtMs, "without an EXIF date the file date applies")
         assertEquals(noExif.length(), n.fileSize)
+    }
+
+    @Test
+    fun `Metadata - photo with GPS position`() {
+        Fixtures.copy("gps-siena.jpg", File(photos, "tuscany/siena.jpg"))
+        scan()
+        val entry =
+            index.library.value.photos
+                .getValue(PhotoEntry.idFor("local", "tuscany/siena.jpg"))
+        assertEquals(43.3188, entry.gps!!.lat, 1e-6)
+        assertEquals(11.3308, entry.gps!!.lon, 1e-6)
+        assertEquals(PhotoEntry.METADATA_VERSION, entry.metadataVersion)
+    }
+
+    @Test
+    fun `Metadata - photo without GPS position`() {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        Fixtures.copy("gps-zero.jpg", File(photos, "zero.jpg"))
+        scan()
+        for (path in listOf("a.jpg", "zero.jpg")) {
+            val entry =
+                index.library.value.photos
+                    .getValue(PhotoEntry.idFor("local", path))
+            assertNull(entry.gps, path)
+            assertEquals(PhotoEntry.METADATA_VERSION, entry.metadataVersion, "$path counts as read")
+        }
+        val probes = engine.probes.get()
+        scan()
+        assertEquals(probes, engine.probes.get(), "A later rescan does not open the file again")
+        assertEquals(0, engine.metadataReads.get())
+    }
+
+    @Test
+    fun `An upload keeps the position of its check`() {
+        val file = Fixtures.copy("gps-siena.jpg", File(photos, "upload.jpg"))
+        val info = engine.probe(file)
+        val probes = engine.probes.get()
+        val entry = source.add(file, info)
+        assertEquals(info.gps, entry.gps)
+        assertEquals(PhotoEntry.METADATA_VERSION, entry.metadataVersion)
+        assertEquals(probes, engine.probes.get())
     }
 
     @Test

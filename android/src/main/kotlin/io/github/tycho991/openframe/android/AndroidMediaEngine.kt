@@ -9,10 +9,12 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.media.ExifInterface
 import io.github.tycho991.openframe.core.platform.ExifOrientation
+import io.github.tycho991.openframe.core.platform.GeoPoint
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormat
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
+import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
@@ -61,8 +63,11 @@ class AndroidMediaEngine(
             width = if (swap) bounds.outHeight else bounds.outWidth,
             height = if (swap) bounds.outWidth else bounds.outHeight,
             takenAt = exif?.let(::takenAt),
+            gps = exif?.let(::gps),
         )
     }
+
+    override fun readMetadata(file: File): ImageMetadata = exif(file)?.let { ImageMetadata(gps = gps(it)) } ?: ImageMetadata.NONE
 
     override fun render(
         source: File,
@@ -167,6 +172,12 @@ class AndroidMediaEngine(
         }
 
     private fun exif(file: File): ExifInterface? = runCatching { ExifInterface(file.path) }.getOrNull()
+
+    private fun gps(exif: ExifInterface): GeoPoint? {
+        val latLong = FloatArray(2)
+        if (!exif.getLatLong(latLong)) return null
+        return GeoPoint.fromExif(latLong[0].toDouble(), latLong[1].toDouble())
+    }
 
     private fun takenAt(exif: ExifInterface): java.time.Instant? =
         parseExifDate(exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(ExifInterface.TAG_DATETIME))

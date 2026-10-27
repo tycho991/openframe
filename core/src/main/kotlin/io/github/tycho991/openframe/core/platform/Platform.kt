@@ -4,6 +4,7 @@ import java.io.File
 import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 
 /** Time source, replaced by a controllable clock in tests. */
 interface Clock {
@@ -31,6 +32,9 @@ interface PlatformInfo {
     /** Resolution in the device's natural orientation, without system bars. */
     val screenWidth: Int
     val screenHeight: Int
+
+    /** The language of the system, read afresh on each call; the frame's language `auto` follows it. */
+    val systemLocale: Locale
 
     /**
      * IPv4 addresses that a browser on the local network can reach, best first (see [lanAddresses]). The hint on

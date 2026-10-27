@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.android
 
 import android.content.Context
+import android.content.res.Resources
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -20,6 +21,7 @@ import java.io.InputStream
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.util.Locale
 
 /** Device data from the system. */
 class AndroidPlatformInfo(
@@ -35,6 +37,10 @@ class AndroidPlatformInfo(
 
     override val screenWidth: Int get() = natural.first
     override val screenHeight: Int get() = natural.second
+
+    // The system's configuration, not the activity's, which carries the frame's chosen language.
+    @Suppress("DEPRECATION")
+    override val systemLocale: Locale get() = Resources.getSystem().configuration.locale
 
     override fun ipAddresses(): List<String> = lanAddresses(addressCandidates())
 

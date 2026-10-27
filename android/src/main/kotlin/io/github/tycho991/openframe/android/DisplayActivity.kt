@@ -576,24 +576,8 @@ class DisplayActivity : Activity() {
         window.decorView.systemUiVisibility = IMMERSIVE_FLAGS
     }
 
-    /** Language on the frame: `auto` follows the system, otherwise the chosen one applies, without restart. */
-    private fun locale(language: FrameLanguage): Locale =
-        when (language) {
-            FrameLanguage.AUTO -> {
-                Resources.getSystem().configuration.let {
-                    @Suppress("DEPRECATION")
-                    it.locale
-                }
-            }
-
-            FrameLanguage.DE -> {
-                Locale.GERMAN
-            }
-
-            FrameLanguage.EN -> {
-                Locale.ENGLISH
-            }
-        }
+    /** Language on the frame, the same as for the core's place names; it changes without restart. */
+    private fun locale(language: FrameLanguage): Locale = language.locale((application as FrameApp).core.platform)
 
     private fun localizedResources(language: FrameLanguage): Resources {
         val config = Configuration(resources.configuration)

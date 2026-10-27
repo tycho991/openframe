@@ -1,7 +1,9 @@
 package io.github.tycho991.openframe.core.settings
 
+import io.github.tycho991.openframe.core.platform.PlatformInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 @Serializable
 enum class Order {
@@ -80,6 +82,18 @@ enum class FrameLanguage {
 
     @SerialName("en")
     EN,
+    ;
+
+    /**
+     * The locale of the frame's texts, its clock's date and its place names: `auto` follows the system, otherwise the
+     * chosen language applies.
+     */
+    fun locale(platform: PlatformInfo): Locale =
+        when (this) {
+            AUTO -> platform.systemLocale
+            DE -> Locale.GERMAN
+            EN -> Locale.ENGLISH
+        }
 }
 
 @Serializable

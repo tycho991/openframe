@@ -1,5 +1,7 @@
 package io.github.tycho991.openframe.core.platform
 
+import com.drew.imaging.ImageMetadataReader
+import com.drew.metadata.exif.GpsDirectory
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -89,6 +91,73 @@ class JvmMediaEngineTest {
             assertEquals(true, red > 200 && green < 60 && blue < 60, "red at $x,$y, was ${Integer.toHexString(rgb)}")
         }
         assertEquals(listOf(Region(0.0, 0.0, 0.5, 0.5)), engine.regions)
+    }
+
+    @Test
+    fun `The GPS fixtures carry their positions`() {
+        // Read with metadata-extractor directly, apart from the engine and its validity rule.
+        fun raw(name: String) =
+            ImageMetadataReader
+                .readMetadata(Fixtures.file(name))
+                .getFirstDirectoryOfType(GpsDirectory::class.java)
+                ?.geoLocation
+                ?.let { it.latitude to it.longitude }
+        assertPosition(43.3188, 11.3308, raw("gps-siena.jpg"))
+        assertPosition(-22.9068, -43.1729, raw("gps-rio.jpg"))
+        assertPosition(0.0, 0.0, raw("gps-zero.jpg"))
+        assertNull(raw("landscape.jpg"))
+    }
+
+    @Test
+    fun `Photo with GPS position`() {
+        val siena = engine.probe(Fixtures.file("gps-siena.jpg")).gps
+        assertPosition(43.3188, 11.3308, siena?.let { it.lat to it.lon })
+        val rio = engine.readMetadata(Fixtures.file("gps-rio.jpg")).gps
+        assertPosition(-22.9068, -43.1729, rio?.let { it.lat to it.lon })
+    }
+
+    @Test
+    fun `Photo without GPS position`() {
+        assertNull(engine.probe(Fixtures.file("landscape.jpg")).gps)
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(Fixtures.file("landscape.jpg")))
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(Fixtures.file("image.png")))
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(Fixtures.file("broken.jpg")))
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(File(dir, "gone.jpg")))
+    }
+
+    @Test
+    fun `Valid GPS position - position zero`() {
+        assertNull(engine.probe(Fixtures.file("gps-zero.jpg")).gps)
+        assertNull(engine.readMetadata(Fixtures.file("gps-zero.jpg")).gps)
+    }
+
+    @Test
+    fun `The validity rule`() {
+        assertEquals(GeoPoint(90.0, -180.0), GeoPoint.fromExif(90.0, -180.0))
+        assertEquals(GeoPoint(0.0, 11.0), GeoPoint.fromExif(0.0, 11.0))
+        assertNull(GeoPoint.fromExif(0.0, 0.0))
+        assertNull(GeoPoint.fromExif(90.5, 10.0))
+        assertNull(GeoPoint.fromExif(10.0, -180.01))
+        assertNull(GeoPoint.fromExif(Double.NaN, 10.0))
+    }
+
+    @Test
+    fun `Reading the metadata decodes nothing`() {
+        engine.readMetadata(Fixtures.file("gps-siena.jpg"))
+        assertEquals(1, engine.metadataReads.get())
+        assertEquals(0, engine.decodes.get())
+        assertEquals(0, engine.probes.get())
+        engine.probe(Fixtures.file("gps-siena.jpg"))
+        assertEquals(1, engine.decodes.get())
+    }
+
+    private fun assertPosition(
+        lat: Double,
+        lon: Double,
+        actual: Pair<Double, Double>?,
+    ) {
+        assertEquals(lat, actual!!.first, 1e-6)
+        assertEquals(lon, actual.second, 1e-6)
     }
 
     @Test

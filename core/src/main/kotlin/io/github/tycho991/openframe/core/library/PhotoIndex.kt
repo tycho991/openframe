@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.library
 
+import io.github.tycho991.openframe.core.platform.GeoPoint
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,15 @@ data class PhotoEntry(
     val etag: String? = null,
     /** The photo's own section, `null` if the fill mode applies. Stored only when set. */
     val crop: Crop? = null,
+    /** The photo's comment, normalized ([Comments.normalize]); `null` without one. */
+    val comment: String? = null,
+    /** The valid GPS position from EXIF, `null` without one or before [metadataVersion] says it was read. */
+    val gps: GeoPoint? = null,
+    /**
+     * Which metadata has been read from the file: [METADATA_VERSION] for every entry this build creates or reads; 0 in
+     * an index of a build that did not read the GPS position, which [MetadataBackfill] then reads once.
+     */
+    val metadataVersion: Int = 0,
 ) {
     /** The folder path below the source's folder, `null` for photos directly in it. */
     val album: String? get() = AlbumPaths.parent(path)
@@ -35,13 +45,20 @@ data class PhotoEntry(
 
     /**
      * This new version of the file with the photo's own state taken from [current], the entry in the index when the
-     * new version is applied: the hidden state, and the section if the aspect ratio stayed. Taken there and not from
-     * the entry before the probe or download, so a change saved meanwhile (`PATCH /photos`) is not lost.
+     * new version is applied: the hidden state, the comment, and the section if the aspect ratio stayed. Taken there
+     * and not from the entry before the probe or download, so a change saved meanwhile (`PATCH /photos`) is not lost.
      */
     fun withStateOf(current: PhotoEntry?): PhotoEntry =
-        if (current == null) this else copy(hidden = current.hidden, crop = Crop.carriedOver(current, width, height))
+        if (current == null) {
+            this
+        } else {
+            copy(hidden = current.hidden, comment = current.comment, crop = Crop.carriedOver(current, width, height))
+        }
 
     companion object {
+        /** The current [metadataVersion]: 1 means the GPS position has been read. */
+        const val METADATA_VERSION = 1
+
         /** Stable ID from source and relative path. */
         fun idFor(
             source: String,
