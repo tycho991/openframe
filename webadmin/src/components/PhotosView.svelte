@@ -335,11 +335,7 @@
   }
   .toolbar label.check {
     flex: 0 0 auto;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    min-height: 44px;
-    cursor: pointer;
+    font-weight: normal;
   }
   .spacer {
     flex: 1 1 0;

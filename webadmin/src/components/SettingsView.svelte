@@ -418,16 +418,9 @@
     font-weight: 700;
     padding: 0 4px;
   }
-  .check {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-weight: 600;
-  }
-  .check input {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--accent);
+  /* A link in running text: taller hit area without changing the line (spec web-admin, "Touch targets"). */
+  .hint a {
+    padding-block: 14px;
   }
   .actions {
     position: sticky;

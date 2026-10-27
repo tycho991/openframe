@@ -237,17 +237,6 @@
     gap: 14px;
     margin-top: 10px;
   }
-  .check {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-weight: 600;
-  }
-  .check input {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--accent);
-  }
   .actions {
     display: flex;
     gap: 12px;

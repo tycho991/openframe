@@ -252,7 +252,7 @@
   }
   button {
     min-width: 44px;
-    min-height: 44px;
+    min-height: var(--target);
   }
   .zoom button:not(:last-child) {
     display: grid;

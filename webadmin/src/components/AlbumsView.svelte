@@ -184,7 +184,7 @@
     gap: 8px;
     align-items: center;
     cursor: pointer;
-    min-height: 44px;
+    min-height: var(--target);
   }
   .switch input {
     width: 20px;
