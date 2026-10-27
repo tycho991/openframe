@@ -215,4 +215,13 @@
                 android:layout_height="wrap_content" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- Above everything during a dark wake, when the display is on only to get the network back. -->
+    <View
+        android:id="@+id/dark"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
 </FrameLayout>

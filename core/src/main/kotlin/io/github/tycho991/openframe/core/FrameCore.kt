@@ -43,6 +43,7 @@ import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
+import io.github.tycho991.openframe.core.platform.NetworkLink
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
@@ -106,6 +107,8 @@ class FrameCore(
     nextcloudClients: NextcloudClients? = null,
     /** Switching the display off and on; a device without it never switches the display (spec `display-schedule`). */
     displayPower: DisplayPower = DisplayPower.None,
+    /** The network, which the frame asks to come back while the display is off; a device without it is always connected. */
+    networkLink: NetworkLink = NetworkLink.None,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -122,7 +125,7 @@ class FrameCore(
         ) { displayPower.available }
 
     /** The display schedule, the manual switch and waking. The display reports screen events and touches here. */
-    val display = DisplayController(scope, displayPower, settings.settings, clock, log)
+    val display = DisplayController(scope, displayPower, settings.settings, clock, log, networkLink)
 
     val transitions =
         TransitionGovernor(JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log), log)
