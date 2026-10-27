@@ -47,6 +47,9 @@ import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
 import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
+import io.github.tycho991.openframe.core.slideshow.CaptionText
+import io.github.tycho991.openframe.core.slideshow.ShownCaption
+import io.github.tycho991.openframe.core.slideshow.SlideState
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import io.github.tycho991.openframe.core.slideshow.StoredTransitionGovernor
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
@@ -67,6 +70,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -202,6 +206,21 @@ class FrameCore(
             scope,
             log,
         )
+
+    /**
+     * The caption of the photo on screen, `null` while none is shown. It follows the photo's current entry, the
+     * settings and the language, so an edited comment or a switched-on place shows without a photo change.
+     */
+    val caption: StateFlow<ShownCaption?> =
+        combine(slideshow.state, index.library, settings.settings) { state, library, s ->
+            val showing = state as? SlideState.Showing ?: return@combine null
+            val entry = library.photos[showing.photo.id] ?: showing.photo
+            // The place data loads only for a caption that shows a place.
+            val place =
+                if (s.caption.place) entry.gps?.let { places.placeName(it.lat, it.lon, s.language.locale(platform)) } else null
+            ShownCaption(showing.seq, CaptionText.of(entry, s.caption, place))
+        }.distinctUntilChanged()
+            .stateIn(scope, SharingStarted.Eagerly, null)
 
     val router = Router()
     private val pipeline = HttpPipeline(router, AccessControl(clients, signer), log, StaticAssets(assets)::handle)

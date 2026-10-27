@@ -79,7 +79,7 @@
 - [x] 6.1 `Corner` in place of `ClockPosition`, and `CaptionSettings` in `Settings` with the defaults and the patch fields `caption.albumTitle`, `caption.place`, `caption.position` (design decision 9). Verify:
   - Tests for every scenario of "Caption settings", including a stored `settings.json` from before the change and the 400 naming `caption.position`.
   - A test that a stored clock position loads unchanged.
-- [ ] 6.2 `CaptionText.of` and `FrameCore.caption` as a `StateFlow` combining slide state, the current entry, settings and language (design decision 7). Verify:
+- [x] 6.2 `CaptionText.of` and `FrameCore.caption` as a `StateFlow` combining slide state, the current entry, settings and language (design decision 7). Verify:
   - Unit tests for every scenario of "Caption over the photo" and "Album title in the caption", with album paths from `nested-albums`.
   - A `TestFrame` test that an edited comment of the photo on screen, a switched-on place and a changed language reach `caption` without a new `seq` ("Caption changes without a photo change").
 

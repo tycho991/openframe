@@ -53,6 +53,60 @@ class FrameCoreTest {
         }
     }
 
+    /** Spec `slideshow-display`: Caption changes without a photo change. */
+    @Test
+    fun `Comment, place and language reach the caption without a photo change`() {
+        Fixtures.copy("gps-siena.jpg", File(File(dir, "photos"), "holiday/2024/Tuscany/siena.jpg"))
+        TestFrame(dir).use { frame ->
+            waitFor { frame.core.slideshow.state.value is SlideState.Showing }
+            val shown = frame.core.slideshow.state.value as SlideState.Showing
+            waitFor {
+                frame.core.caption.value
+                    ?.seq == shown.seq
+            }
+            assertNull(
+                frame.core.caption.value!!
+                    .text,
+                "nothing to show yet",
+            )
+
+            // Scenario "Comment edited while the photo is shown".
+            frame.send("PATCH", "/api/v1/photos/${shown.photo.id}", """{"comment":"Grandma's 80th birthday"}""")
+            waitFor {
+                frame.core.caption.value
+                    ?.text
+                    ?.line == "Grandma's 80th birthday"
+            }
+            // Scenario "Place switched on".
+            frame.send("PATCH", "/api/v1/settings", """{"caption":{"place":true,"albumTitle":true},"language":"en"}""")
+            waitFor {
+                frame.core.caption.value
+                    ?.text
+                    ?.place == "Siena, Italy"
+            }
+            assertEquals(
+                "Tuscany · Grandma's 80th birthday",
+                frame.core.caption.value!!
+                    .text!!
+                    .line,
+            )
+            // A changed language on the frame.
+            frame.send("PATCH", "/api/v1/settings", """{"language":"de"}""")
+            waitFor {
+                frame.core.caption.value
+                    ?.text
+                    ?.place == "Siena, Italien"
+            }
+            assertEquals(
+                shown.seq,
+                frame.core.caption.value!!
+                    .seq,
+                "the same slide",
+            )
+            assertEquals(shown.seq, (frame.core.slideshow.state.value as SlideState.Showing).seq, "the photo did not change")
+        }
+    }
+
     @Test
     fun `The slideshow takes up a new section and a new fill mode at the next change`() {
         val photos = File(dir, "photos")
