@@ -7,6 +7,7 @@ import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.slideshow.SlideState
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
+import io.github.tycho991.openframe.core.testing.FakeNetworkLink
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.time.Duration
 import java.time.Instant
 
 /** Interplay of library, cache and slideshow in the real core. */
@@ -232,6 +234,35 @@ class FrameCoreTest {
             waitFor { frame.core.slideshow.resting.value }
             power.powerButton()
             waitFor { !frame.core.slideshow.resting.value }
+        }
+    }
+
+    @Test
+    fun `The slideshow keeps resting during a dark wake`() {
+        val clock = TestClock(Instant.parse("2026-10-21T15:00:00Z"))
+        val power = FakeDisplayPower()
+        val network = FakeNetworkLink()
+        TestFrame(dir, clock = clock, displayPower = power, networkLink = network).use { frame ->
+            assertEquals(200, frame.send("PATCH", "/api/v1/settings", """{"displaySchedule":{"enabled":true}}""").statusCode())
+            clock.instant = Instant.parse("2026-10-21T23:00:00Z")
+            frame.core.display.userActivity()
+            waitFor { frame.core.slideshow.resting.value }
+            network.drop()
+            waitFor { network.requests == 1 }
+            // Ten minutes later; a touch on the dark display makes the controller look at the time at once.
+            clock.advance(Duration.ofMinutes(10))
+            frame.core.display.userActivity()
+            waitFor { frame.core.display.dark.value }
+            assertTrue(power.screenOn)
+            assertTrue(frame.core.slideshow.resting.value)
+            val display = frame.get("/api/v1/display")
+            assertEquals(200, display.statusCode())
+            assertTrue(display.body().contains("\"on\":false"), display.body())
+            assertTrue(display.body().contains("\"cause\":\"schedule\""), display.body())
+            network.restore()
+            waitFor { !frame.core.display.dark.value && !power.screenOn }
+            assertTrue(frame.core.slideshow.resting.value)
+            assertEquals(listOf("off", "on", "off"), power.calls)
         }
     }
 

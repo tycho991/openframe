@@ -95,6 +95,37 @@ interface DisplayPower {
     }
 }
 
+/**
+ * The frame's network connection and asking the system to get it back (spec `display-schedule`, Asking for the network
+ * while the display is off). In :android this is Wi-Fi.
+ */
+interface NetworkLink {
+    /** The device has a network the admin interface can be reached on. */
+    val connected: Boolean
+
+    /** Asks the system to reconnect to the Wi-Fi and to scan for it, without switching the display on. */
+    fun requestReconnect()
+
+    fun setListener(listener: Listener)
+
+    fun interface Listener {
+        /** The network was lost or is back; [connected] has the new value. */
+        fun connectionChanged()
+    }
+
+    companion object {
+        /** A device whose network the frame does not watch: always connected, nothing to ask for. */
+        val None: NetworkLink =
+            object : NetworkLink {
+                override val connected = true
+
+                override fun requestReconnect() {}
+
+                override fun setListener(listener: Listener) {}
+            }
+    }
+}
+
 /** Reports photo files created or deleted by the app itself to the system so that they become visible over USB. */
 fun interface MediaStoreNotifier {
     fun notifyChanged(file: File)

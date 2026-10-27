@@ -52,6 +52,14 @@ data class Decision(
  * that follows is the same (a manual off by day runs into the night), the end of the period after it.
  */
 object DisplayPolicy {
+    /**
+     * No real clock of a frame running this app shows an earlier time; one that does was not set yet, as on a Frameo
+     * that boots without network into 2021 (spec `display-schedule`, Schedule only with a set clock).
+     */
+    val CLOCK_FLOOR: Instant = Instant.parse("2026-01-01T00:00:00Z")
+
+    fun clockSet(now: Instant): Boolean = !now.isBefore(CLOCK_FLOOR)
+
     fun decide(
         inputs: DisplayInputs,
         now: Instant,
@@ -59,7 +67,13 @@ object DisplayPolicy {
         monotonicMillis: Long,
     ): Decision {
         if (!inputs.available) return Decision(null, DisplayCause.NONE, null, null)
-        val period = if (inputs.schedule.enabled) DisplaySchedule.periodAt(ZonedDateTime.ofInstant(now, zone), inputs.schedule) else null
+        // A clock that is not set yet counts as no schedule; a manual switch still holds.
+        val period =
+            if (inputs.schedule.enabled && clockSet(now)) {
+                DisplaySchedule.periodAt(ZonedDateTime.ofInstant(now, zone), inputs.schedule)
+            } else {
+                null
+            }
         val override = inputs.override
         if (override != null && (period == null || samePeriod(override.period, period))) {
             val next = period?.let { if (override.on == it.on) it.end else endOfNext(it, inputs, zone) }

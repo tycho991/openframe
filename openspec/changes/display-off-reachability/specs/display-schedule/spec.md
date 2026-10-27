@@ -46,3 +46,16 @@ While the device's clock shows a time before 1 January 2026, the frame SHALL tre
 #### Scenario: Clock set by day
 - **WHEN** the clock is set by the network to 10:00 on a weekday with the default windows
 - **THEN** the display stays on and `GET /display` reports it on by the schedule until 22:00
+
+## MODIFIED Requirements
+
+### Requirement: Switching on time
+The frame SHALL switch at a switching time within one minute, also while the display is off and nobody uses the frame. A change of the device's clock or time zone SHALL take effect within one minute, without a restart.
+
+#### Scenario: Night without touch
+- **WHEN** the schedule is active and nobody touches the frame from the evening to the morning
+- **THEN** the display goes off within a minute of the off time and on within a minute of the on time
+
+#### Scenario: Clock corrected after boot
+- **WHEN** the device boots with a clock that is wrong but later than 1 January 2026 and corrects it later
+- **THEN** within a minute of the correction the display follows the schedule for the corrected time

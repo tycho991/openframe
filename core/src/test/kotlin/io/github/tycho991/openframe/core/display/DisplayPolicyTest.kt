@@ -119,6 +119,15 @@ class DisplayPolicyTest {
     }
 
     @Test
+    fun `A clock before the floor decides nothing, by night and by day`() {
+        // Saturday, 15 May 2021: the Frameo's clock after a boot without network.
+        for (now in listOf("2021-05-15T00:00:00Z", "2021-05-15T10:00:00Z", "2025-12-31T23:59:59Z")) {
+            assertEquals(Decision(null, DisplayCause.NONE, null, null), decide(Instant.parse(now)), now)
+        }
+        assertEquals(DisplayCause.SCHEDULE, decide(DisplayPolicy.CLOCK_FLOOR).cause, "the floor itself counts as set")
+    }
+
+    @Test
     fun `Without a schedule the frame decides nothing`() {
         assertEquals(Decision(null, DisplayCause.NONE, null, null), decide(wednesdayNight, schedule = off, wakeUntil = mono + 300_000))
     }

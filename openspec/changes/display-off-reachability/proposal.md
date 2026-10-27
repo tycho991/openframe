@@ -25,7 +25,7 @@ None.
 
 ### Modified Capabilities
 
-- `display-schedule`: three added requirements, "Asking for the network while the display is off", "Dark wake for the network" (with its state in the API and a touch during it) and "Schedule only with a set clock".
+- `display-schedule`: three added requirements, "Asking for the network while the display is off", "Dark wake for the network" (with its state in the API and a touch during it) and "Schedule only with a set clock"; in "Switching on time" the scenario "Clock corrected after boot" is limited to a clock later than the floor, since an unset clock now gets the grace when it is set.
 
 ## Impact
 
