@@ -114,7 +114,8 @@
 
 ## 9. Devices
 
-- [ ] 9.1 Run the rows of 7.3 on the Lenovo, the Frameo and the Galaxy Tab S7. Ask before installing the build, before uploading test photos with GPS data, and before deleting them afterwards. Read-only `adb` commands need no question. Verify: results entered with the date, and a finding in `docs/FINDINGS.md` for anything that differs.
+- [x] 9.1 Run the rows of 7.3 on the Lenovo, the Frameo and the Galaxy Tab S7. Ask before installing the build, before uploading test photos with GPS data, and before deleting them afterwards. Read-only `adb` commands need no question. Verify: results entered with the date, and a finding in `docs/FINDINGS.md` for anything that differs.
+  - Run on the Frameo on 27 Oct 2026 (findings 67 and 68). Accepted by the user with these gaps: the Lenovo was not reachable and the Galaxy Tab S7 is paused, the legibility at arm's length and the fade itself (the Frameo does not fade) stay open in `DEVICE_TEST.md`.
 
 ## 10. Integration
 
