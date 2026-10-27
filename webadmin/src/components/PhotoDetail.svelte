@@ -29,9 +29,11 @@
   let comment = $state("");
   let commentError = $state<string | null>(null);
   let commentStatus = $state<"idle" | "saving" | "saved">("idle");
-  // Another photo opened: its comment. The same photo refreshed by the list keeps what is being typed.
+  // Another photo opened: its comment. The same photo refreshed by the list or by a save keeps what is being typed,
+  // so the effect depends on the ID alone, which a new object of the same photo does not change.
+  const photoId = $derived(photo.id);
   $effect(() => {
-    void photo.id;
+    void photoId;
     untrack(() => {
       comment = photo.comment ?? "";
       commentError = null;
@@ -45,10 +47,11 @@
     event.preventDefault();
     commentStatus = "saving";
     commentError = null;
+    const sent = comment;
     try {
-      const updated = await onsavecomment(photo, commentPatch(comment));
-      // The frame's form of it: trimmed, line breaks as spaces.
-      comment = updated.comment ?? "";
+      const updated = await onsavecomment(photo, commentPatch(sent));
+      // The frame's form of it (trimmed, line breaks as spaces), unless the user went on typing meanwhile.
+      if (comment === sent) comment = updated.comment ?? "";
       commentStatus = "saved";
     } catch (e) {
       commentStatus = "idle";

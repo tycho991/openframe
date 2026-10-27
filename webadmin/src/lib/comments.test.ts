@@ -8,6 +8,14 @@ describe("comment field", () => {
     expect(commentLength(" \n ")).toBe(0);
   });
 
+  it("counts a run of line breaks as one space, as the frame stores it", () => {
+    expect(commentLength("a\n\n\nb")).toBe(3);
+    expect(commentLength("a\r\n\tb")).toBe(3);
+    expect(commentLength("a\u2028b")).toBe(3);
+    expect(commentLength("x".repeat(498) + "\n\n\n")).toBe(498);
+    expect(commentLength("x".repeat(249) + "\n\n\n" + "x".repeat(250))).toBe(500);
+  });
+
   it("removes the comment for an empty field", () => {
     expect(commentPatch("")).toBeNull();
     expect(commentPatch("   ")).toBeNull();

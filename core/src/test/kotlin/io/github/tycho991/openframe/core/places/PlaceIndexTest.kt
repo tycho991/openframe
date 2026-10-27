@@ -89,6 +89,30 @@ class PlaceIndexTest {
     }
 
     @Test
+    fun `Damaged place data gives no place names instead of failing every lookup`() {
+        // A header that fits, then a negative number of places.
+        val negative =
+            ByteArrayOutputStream()
+                .also { out ->
+                    GZIPOutputStream(out).use { gz ->
+                        java.io.DataOutputStream(gz).apply {
+                            writeBytes("OFPB")
+                            writeShort(1)
+                            writeLong(1)
+                            writeInt(-5)
+                            writeShort(0)
+                            repeat(180 * 360 + 1) { writeInt(0) }
+                        }
+                    }
+                }.toByteArray()
+        for (data in listOf(negative, "not gzip".toByteArray())) {
+            val damaged = PlaceIndex(log) { if (it == "base.bin") ByteArrayInputStream(data) else null }
+            assertNull(damaged.placeName(45.4643, 9.1895, Locale.GERMAN))
+            assertNull(damaged.placeName(45.4643, 9.1895, Locale.GERMAN), "the second lookup does not throw either")
+        }
+    }
+
+    @Test
     fun `10,000 lookups take under one second`() {
         places.nearest(0.0, 0.0)
         val random = java.util.Random(7)

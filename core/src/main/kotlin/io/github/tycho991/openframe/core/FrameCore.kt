@@ -175,7 +175,7 @@ class FrameCore(
     /** Place names of photo positions, offline; loads its data on the first lookup. */
     val places = PlaceIndex(log)
 
-    /** Reads the GPS position of photos from before it was read, once, after start, scans and syncs. */
+    /** Reads the GPS position of photos from before it was read, once, after start, scans with changes and syncs. */
     private val backfill: MetadataBackfill = MetadataBackfill(index, engine, SourceOriginals(localSource, sources)::onFrame, log)
 
     lateinit var identity: FrameIdentity
@@ -345,11 +345,10 @@ class FrameCore(
     private suspend fun scanLoop() {
         while (scope.isActive) {
             try {
-                localSource.scan()
+                backfill.scanned(localSource.scan())
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }
-            backfill.request()
             withTimeoutOrNull(scanInterval.toMillis()) { scanSignal.receive() }
         }
     }

@@ -340,8 +340,9 @@ class RemoteSourceTest {
         originals.fileOf(old).delete()
         assertNull(photos().getValue("siena.jpg").gps)
         remote.downloads.clear()
-        // The ETag is unchanged: the photo stays the same, it only takes the position of the download over.
-        sync()
+        // The ETag is unchanged: the photo stays the same, it only takes the position of the download over, which is
+        // not counted as an update of the photo.
+        assertEquals(ScanResult(0, 0, 0, 0), sync())
         assertEquals(listOf("siena.jpg"), remote.downloads)
         val after = photos().getValue("siena.jpg")
         assertEquals(43.3188, after.gps!!.lat, 1e-6)

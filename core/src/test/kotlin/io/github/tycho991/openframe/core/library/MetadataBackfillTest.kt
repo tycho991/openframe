@@ -112,19 +112,52 @@ class MetadataBackfillTest {
         }
 
     @Test
-    fun `A file that cannot be read is not tried again`() {
+    fun `A damaged file is not tried again`() {
         Fixtures.copy("broken.jpg", File(photos, "broken.jpg"))
-        index.edit {
-            it.put(old("broken.jpg"))
-            it.put(old("gone.jpg"))
-        }
+        index.edit { it.put(old("broken.jpg")) }
         val b = backfill()
         b.request()
         assertEquals(PhotoEntry.METADATA_VERSION, entry("broken.jpg").metadataVersion)
-        assertEquals(PhotoEntry.METADATA_VERSION, entry("gone.jpg").metadataVersion)
-        assertNull(entry("gone.jpg").gps)
+        assertNull(entry("broken.jpg").gps)
         b.request()
-        assertEquals(2, engine.metadataReads.get())
+        assertEquals(1, engine.metadataReads.get())
+    }
+
+    @Test
+    fun `A missing file is left for later, not marked as read`() {
+        // Gone for a moment (storage not mounted yet at boot, the file being replaced): it keeps its chance.
+        index.edit { it.put(old("later.jpg")) }
+        val b = backfill()
+        b.request()
+        assertEquals(0, entry("later.jpg").metadataVersion)
+        assertEquals(0, engine.metadataReads.get(), "nothing opened")
+        Fixtures.copy("gps-siena.jpg", File(photos, "later.jpg"))
+        b.request()
+        assertEquals(43.3188, entry("later.jpg").gps!!.lat, 1e-6)
+    }
+
+    @Test
+    fun `Only a scan that changed something starts a run`() {
+        var runs = 0
+        val counting =
+            MetadataBackfill(index, engine, ::fileOf, log, executor = {
+                runs++
+                it.run()
+            })
+        counting.scanned(ScanResult(0, 0, 0, 0))
+        assertEquals(0, runs)
+        counting.scanned(ScanResult(1, 0, 0, 0))
+        counting.scanned(ScanResult(0, 0, 1, 0))
+        assertEquals(2, runs)
+    }
+
+    @Test
+    fun `A request after closing does nothing`() {
+        val b = MetadataBackfill(index, engine, ::fileOf, log)
+        b.close()
+        // A sync that ends after the core stopped asks once more; that must not throw into the sync.
+        b.request()
+        b.request()
     }
 
     @Test

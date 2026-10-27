@@ -18,6 +18,7 @@ class CommentsTest {
         assertEquals("Grandma's birthday", Comments.normalize("Grandma's\nbirthday"))
         assertEquals("Grandma's birthday", Comments.normalize("Grandma's\r\n\tbirthday"), "A run becomes one space")
         assertEquals("a b", Comments.normalize("\u0001a\u0007b\u0000"), "Other control characters too")
+        assertEquals("a b c", Comments.normalize("a\u2028b\u2029c"), "Unicode line and paragraph separators too")
     }
 
     @Test

@@ -96,13 +96,13 @@ class PlaceIndex(
         return synchronized(packs) { packs.getOrPut(language) { loadPack(language, b.datasetId) } }
     }
 
-    private fun loadBase(): Base? {
-        val stream = read("base.bin")
-        if (stream == null) {
-            log.w(TAG, "No place data on the class path")
-            return null
-        }
-        return try {
+    private fun loadBase(): Base? =
+        try {
+            val stream = read("base.bin")
+            if (stream == null) {
+                log.w(TAG, "No place data on the class path")
+                return null
+            }
             stream.use { input ->
                 expect(input, BASE_MAGIC)
                 val datasetId = input.readLong()
@@ -126,8 +126,11 @@ class PlaceIndex(
         } catch (e: IOException) {
             log.e(TAG, "Place data could not be read", e)
             null
+        } catch (e: RuntimeException) {
+            // Data that does not fit its own sizes; without places rather than failing every lookup.
+            log.e(TAG, "Place data is damaged", e)
+            null
         }
-    }
 
     private fun loadPack(
         language: String,
@@ -157,6 +160,9 @@ class PlaceIndex(
             }
         } catch (e: IOException) {
             log.e(TAG, "Name pack $language could not be read", e)
+            null
+        } catch (e: RuntimeException) {
+            log.e(TAG, "Name pack $language is damaged", e)
             null
         }
 

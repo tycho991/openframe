@@ -120,6 +120,11 @@ class RemoteSource(
                         val entry = it.withStateOf(current)
                         // An original that came back for an unchanged photo: the entry is the same, nothing to apply or count.
                         if (entry == current) return@onSuccess
+                        // The same photo with only its position taken over from the download: applied, but not an update.
+                        if (current != null && entry.copy(gps = current.gps, metadataVersion = current.metadataVersion) == current) {
+                            edit.put(entry)
+                            return@onSuccess
+                        }
                         if (current == null) added++ else updated++
                         edit.put(entry)
                     }.onFailure { e ->

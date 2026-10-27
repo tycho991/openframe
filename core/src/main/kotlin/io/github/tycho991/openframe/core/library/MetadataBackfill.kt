@@ -7,6 +7,7 @@ import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -16,9 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * A run reads [batchSize] entries at a time outside the index lock and applies each batch with one edit, so the library
  * version changes once per batch. An entry is written only if its image version is still the one that was read; a file
- * that changed meanwhile keeps the result of its own new read. A file that cannot be read gets the current version
- * without a position, so it is never tried again. A photo whose file is not on the frame ([fileOf] gives `null`, a
- * remote photo without its original) is left for its next download.
+ * that changed meanwhile keeps the result of its own new read. A file that is there but cannot be read (damaged) gets
+ * the current version without a position, so it is never tried again. A photo whose file is not on the frame ([fileOf]
+ * gives `null` or a missing file: a remote photo without its original, a local file that is gone or not mounted yet)
+ * is left as it is: the next download brings the position, and the next scan removes a file that is gone for good.
  */
 class MetadataBackfill(
     private val index: PhotoIndexStore,
@@ -38,14 +40,27 @@ class MetadataBackfill(
      */
     fun request() {
         if (!scheduled.compareAndSet(false, true)) return
-        executor.execute {
-            scheduled.set(false)
-            try {
-                run()
-            } catch (e: Exception) {
-                log.e(TAG, "Reading the metadata of the photos in the index failed", e)
+        try {
+            executor.execute {
+                scheduled.set(false)
+                try {
+                    run()
+                } catch (e: Exception) {
+                    log.e(TAG, "Reading the metadata of the photos in the index failed", e)
+                }
             }
+        } catch (e: RejectedExecutionException) {
+            // Closed: the core is stopping, and a sync that ends after it has nothing left to start.
+            scheduled.set(false)
         }
+    }
+
+    /**
+     * After a scan of the photo folder. Only a scan that changed something can bring a photo to read; every other one
+     * would only go through the photos that wait for their original again, each with a look at the disk.
+     */
+    fun scanned(result: ScanResult) {
+        if (result.added + result.updated + result.removed + result.skipped > 0) request()
     }
 
     /** Stops the thread; a batch that is being read is not applied. */
@@ -64,7 +79,7 @@ class MetadataBackfill(
             if (Thread.currentThread().isInterrupted) return
             val results =
                 batch.mapNotNull { entry ->
-                    val file = fileOf(entry) ?: return@mapNotNull null
+                    val file = fileOf(entry)?.takeIf { it.isFile } ?: return@mapNotNull null
                     val metadata =
                         try {
                             engine.readMetadata(file)

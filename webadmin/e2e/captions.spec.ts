@@ -89,6 +89,25 @@ test.describe("Edit the comment", () => {
     expect(photo.comment).toBe("Vom Server");
   });
 
+  test("Typing on while the comment is saved keeps the new text", async ({ page }) => {
+    await usb("landscape.jpg", "a.jpg");
+    await pairInUi(page);
+    // The frame answers slowly, so the user types on before the answer comes.
+    await page.route("**/api/v1/photos/*", async (route) => {
+      if (route.request().method() === "PATCH") await new Promise((r) => setTimeout(r, 1000));
+      await route.continue();
+    });
+    const detail = await openPhoto(page);
+    const field = detail.getByLabel("Kommentar");
+    await field.fill("Omas Geburtstag");
+    await detail.getByRole("button", { name: "Kommentar speichern" }).click();
+    await field.press("End");
+    await field.pressSequentially(" im Garten");
+    await expect(detail.getByRole("status")).toHaveText("Gespeichert");
+    await expect(field).toHaveValue("Omas Geburtstag im Garten");
+    expect((await photos(page)).items[0].comment).toBe("Omas Geburtstag");
+  });
+
   test("Text too long", async ({ page }) => {
     await usb("landscape.jpg", "a.jpg");
     await pairInUi(page);

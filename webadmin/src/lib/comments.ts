@@ -3,12 +3,16 @@ import type { Location } from "./api/client";
 /** The longest comment the frame stores, in characters (spec `photo-library`, "Comment too long"). */
 export const MAX_COMMENT_LENGTH = 500;
 
+/** Runs of control characters (line breaks included) and Unicode line and paragraph separators. */
+const BREAKS = /[\p{Cc}\u2028\u2029]+/gu;
+
 /**
- * The length of [text] as the frame counts it: code points of the trimmed text, so an emoji is one character. The
- * frame also turns line breaks into spaces, which does not change the count; it decides, this is for the counter.
+ * The length of [text] as the frame counts it (`Comments.normalize` in `:core`): trimmed, every run of control
+ * characters made one space, trimmed again, then counted in code points, so an emoji is one character. The frame
+ * decides; this is for the counter.
  */
 export function commentLength(text: string): number {
-  return [...text.trim()].length;
+  return [...text.trim().replace(BREAKS, " ").trim()].length;
 }
 
 /** What is sent for the text of the comment field: `null` removes the comment. */

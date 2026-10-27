@@ -12,7 +12,7 @@ object Comments {
 
     /**
      * [text] as it is stored: surrounding whitespace removed, then every run of control characters (line breaks
-     * included) replaced by one space; `null` for `null` or an empty result. Trimming comes first, so the length is
+     * and the Unicode line and paragraph separators included) replaced by one space; `null` for `null` or an empty result. Trimming comes first, so the length is
      * that of the trimmed text. More than [MAX_CODE_POINTS] throws a [ValidationException] for the field `comment`.
      */
     fun normalize(text: String?): String? {
@@ -21,7 +21,7 @@ object Comments {
         val out = StringBuilder(trimmed.length)
         var inControl = false
         for (c in trimmed) {
-            if (Character.isISOControl(c)) {
+            if (isBreak(c)) {
                 if (!inControl) out.append(' ')
                 inControl = true
             } else {
@@ -36,4 +36,7 @@ object Comments {
         }
         return normalized.ifEmpty { null }
     }
+
+    /** A control character (line breaks included) or a Unicode line or paragraph separator, which also break lines. */
+    private fun isBreak(c: Char) = Character.isISOControl(c) || c == '\u2028' || c == '\u2029'
 }
