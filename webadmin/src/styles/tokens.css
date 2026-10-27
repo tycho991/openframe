@@ -61,9 +61,13 @@
   --text-title: 18px;
   --text-headline: 22px;
 
-  /* Touch target and the measure of forms. */
+  /* Touch target, the measure of forms and the shell's bars. */
   --target: 44px;
   --form-width: 720px;
+  --bar-height: 64px;
+  --rail-width: 88px;
+  --side-nav-width: 240px;
+  --detail-width: 420px;
 
   /* Motion: at most 250 ms, none with reduced motion (see below). */
   --motion-short: 150ms;

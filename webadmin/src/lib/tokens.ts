@@ -28,7 +28,8 @@ export function tokenColor(tokens: Map<string, string>, name: string, theme: The
   if (value === undefined) throw new Error(`no token --${name}`);
   const pair = /^light-dark\(\s*(#[0-9a-f]+)\s*,\s*(#[0-9a-f]+)\s*\)$/i.exec(value);
   const color = pair ? (theme === "light" ? pair[1] : pair[2]) : value;
-  if (!color || !/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)) throw new Error(`--${name} is not a colour: ${value}`);
+  if (!color || !/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(color))
+    throw new Error(`--${name} is not a colour: ${value}`);
   return color.toLowerCase();
 }
 

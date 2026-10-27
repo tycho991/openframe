@@ -31,7 +31,9 @@ const webPairs: [string, string, number][] = [
     ["bg", "surface", "surface-2"].map((bg): [string, string, number] => [fg, bg, 4.5]),
   ),
   ["on-accent", "accent", 4.5],
-  ...["outline", "focus"].flatMap((fg) => ["bg", "surface"].map((bg): [string, string, number] => [fg, bg, 3])),
+  ...["outline", "focus"].flatMap((fg) =>
+    ["bg", "surface"].map((bg): [string, string, number] => [fg, bg, 3]),
+  ),
 ];
 
 describe("Design tokens", () => {
@@ -52,9 +54,12 @@ describe("Design tokens", () => {
     expect(contrast(parseHex("#767676"), parseHex("#ffffff"))).toBeCloseTo(4.54, 2);
   });
 
-  it.each<Theme>(["light", "dark"])("text, outlines and focus reach their contrast in the %s theme", (theme) => {
-    expect(failures(webPairs, theme)).toEqual([]);
-  });
+  it.each<Theme>(["light", "dark"])(
+    "text, outlines and focus reach their contrast in the %s theme",
+    (theme) => {
+      expect(failures(webPairs, theme)).toEqual([]);
+    },
+  );
 
   it("texts on the frame reach 4.5:1 over the panel on a white photo and on the black background", () => {
     const frame = frameColors();
