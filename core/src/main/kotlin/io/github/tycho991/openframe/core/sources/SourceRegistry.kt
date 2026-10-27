@@ -35,6 +35,8 @@ class SourceRegistry(
     /** Called after a source was removed, for files that an older version kept for it. */
     private val onSourceRemoved: (StoredSource) -> Unit = {},
     private val freeBytes: (File) -> Long = { it.usableSpace },
+    /** After each sync of a source, also one that failed: what arrived before the failure stays. */
+    private val onSynced: () -> Unit = {},
 ) {
     private class Running(
         val source: RemoteSource,
@@ -183,7 +185,7 @@ class SourceRegistry(
                 onPhotoRemoved,
                 log,
             )
-        val scheduler = SourceScheduler(scope, source, { configs.get(id) }, results, syncLock, clock, log)
+        val scheduler = SourceScheduler(scope, source, { configs.get(id) }, results, syncLock, clock, log, onSynced)
         val started = Running(source, scheduler)
         running[id] = started
         scheduler.start()

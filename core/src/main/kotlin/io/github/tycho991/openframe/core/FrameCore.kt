@@ -21,6 +21,7 @@ import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.StaticAssets
 import io.github.tycho991.openframe.core.identity.FrameIdentity
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
+import io.github.tycho991.openframe.core.library.MetadataBackfill
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
@@ -149,6 +150,7 @@ class FrameCore(
             clock,
             log,
             migration::sourceRemoved,
+            onSynced = { backfill.request() },
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
@@ -164,6 +166,9 @@ class FrameCore(
             log,
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
+
+    /** Reads the GPS position of photos from before it was read, once, after start, scans and syncs. */
+    private val backfill: MetadataBackfill = MetadataBackfill(index, engine, SourceOriginals(localSource, sources)::onFrame, log)
 
     lateinit var identity: FrameIdentity
         private set
@@ -225,6 +230,7 @@ class FrameCore(
         scope.launch { settings.settings.collect(transitions::onSettings) }
         sources.start()
         _ready.value = true
+        backfill.request()
 
         scope.launch { scanLoop() }
         scope.launch {
@@ -294,6 +300,7 @@ class FrameCore(
         server.stop()
         scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
         cache.close()
+        backfill.close()
         settings.flush()
         clients.flush()
         index.flush()
@@ -319,6 +326,7 @@ class FrameCore(
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }
+            backfill.request()
             withTimeoutOrNull(scanInterval.toMillis()) { scanSignal.receive() }
         }
     }

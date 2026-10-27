@@ -57,7 +57,7 @@
   - A test that an index without the new fields loads with version 0.
   - A `RemoteSourceTest` for "Remote photo without its original".
   - "Rescan without changes" still opens no file.
-- [ ] 4.4 `MetadataBackfill` per design decision 6: its own thread at minimum priority, started when the library is ready and after each scan and sync, batches of 50 with one `index.edit` each, a write only if `version` is unchanged, and an unreadable file marked as read. Verify:
+- [x] 4.4 `MetadataBackfill` per design decision 6: its own thread at minimum priority, started when the library is ready and after each scan and sync, batches of 50 with one `index.edit` each, a write only if `version` is unchanged, and an unreadable file marked as read. Verify:
   - Tests for "Metadata of photos already in the index" › "Update with local photos" (no render call), "Remote photo without its original" and "Photo without GPS data after the update" (no second read after a restart).
   - A test that a file replaced during a batch keeps its own new result.
   - A test that the library version changes once per batch.
