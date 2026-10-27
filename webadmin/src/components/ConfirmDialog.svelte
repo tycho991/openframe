@@ -11,8 +11,13 @@
   let { message, confirmLabel, onconfirm, oncancel }: Props = $props();
   let dialog: HTMLDialogElement;
 
+  // Back to the control that opened the question once it is answered (spec web-admin, "Keyboard operation").
   $effect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.showModal();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
   });
 </script>
 

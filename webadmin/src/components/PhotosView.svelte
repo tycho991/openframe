@@ -33,6 +33,14 @@
     [...selected].every((id) => (items.find((p) => p.id === id)?.source ?? "local") === "local"),
   );
   let detail = $state<Photo | null>(null);
+  let grid = $state<VirtualGrid>();
+
+  /** Back to the grid at the tile of the photo that was open. */
+  function closeDetail() {
+    const id = detail?.id;
+    detail = null;
+    if (id) void grid?.focusPhoto(id);
+  }
   let confirm = $state<{ message: string; action: () => Promise<void> } | null>(null);
   let uploadFiles = $state<File[] | null>(null);
   let dragging = $state(false);
@@ -247,6 +255,7 @@
     <p class="empty">{t("photos.empty")}</p>
   {:else}
     <VirtualGrid
+      bind:this={grid}
       {items}
       {hasMore}
       {selecting}
@@ -278,7 +287,7 @@
   <PhotoDetail
     photo={detail}
     {settings}
-    onclose={() => (detail = null)}
+    onclose={closeDetail}
     ontogglehidden={toggleHidden}
     ondelete={(p) => askDelete([p.id], true)}
     onsavecrop={saveCrop}

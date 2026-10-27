@@ -6,6 +6,7 @@ import {
   nextcloudPut,
   nextcloudShare,
   pairInUi,
+  photoDetail,
   reset,
   usb,
 } from "./helpers";
@@ -34,7 +35,7 @@ function foreignRequests(page: Page, baseURL: string): string[] {
 
 async function openPhoto(page: Page, index = 0) {
   await page.locator(".tile").nth(index).click();
-  const detail = page.getByRole("dialog");
+  const detail = photoDetail(page);
   await expect(detail).toBeVisible();
   return detail;
 }

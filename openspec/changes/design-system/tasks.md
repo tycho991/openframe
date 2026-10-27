@@ -9,7 +9,7 @@
 
 - [x] 2.1 `webadmin/src/styles/tokens.css` per design decision 1: colour roles with `light-dark()` (with `outline` and `divider` replacing `border`), spacing, radii, type scale, `--target`, motion durations and easing, `@font-face` for Inter with the fallback stack, `color-scheme` on `:root` and narrowed by `data-theme`; `app.css` imports it and keeps only base element styles using the tokens; verify: `npm run lint` and `npm run typecheck` pass, and `npm run build` emits the font under `dist/assets/` with a hash
 - [x] 2.2 `src/lib/tokens.ts` that parses `tokens.css` (custom properties and `light-dark()` pairs) and `tokens.test.ts` with the contrast pairs of design decision 11 in both themes; verify: `npm test` passes, and lowering `--muted` in the dark theme to `#6b6862` for a trial run makes the test fail with the pair and its ratio (then reverted)
-- [ ] 2.3 Reduced motion: the `prefers-reduced-motion: reduce` block that sets the motion tokens to `0ms`; verify: covered by the Playwright test in 6.4
+- [x] 2.3 Reduced motion: the `prefers-reduced-motion: reduce` block that sets the motion tokens to `0ms`; verify: covered by the Playwright test in 6.4
 
 ## 3. The frame on the tokens
 
@@ -33,10 +33,10 @@
 
 ## 6. Photo detail by width
 
-- [ ] 6.1 `PhotoDetail` per design decision 8: a modal `<dialog>` as full-screen layer below 600 px and as sheet from 600 px, an `<aside>` in the shell's detail area from 1200 px; the selected photo stays state of `PhotosView`, and a change of width class switches the form with the same photo; motion only through the motion tokens; verify: `npm run typecheck` passes and the tests in 6.4
-- [ ] 6.2 Focus return: on close the detail asks `VirtualGrid` to scroll the opener's tile into view and focuses it; `ConfirmDialog` returns focus to its opener as well; verify: covered by 6.4
-- [ ] 6.3 The existing photo tests (`photos.spec.ts`) adapted to the detail as panel at 1280 px and as layer at 390 px; verify: `npm run e2e` passes
-- [ ] 6.4 Playwright for the spec scenarios: "Detail as a panel" (second photo shown in the panel, grid visible), "Detail on a phone" (same photos after closing), "Rotate a tablet" (1280 × 800 to 800 × 1280 with an open detail, then closing shows the same place), "Unsaved input" (changed name kept across a width change), "Close the photo detail" (Escape returns focus to the tile), "Reduced motion" (computed transition duration of the detail is `0s`); verify: `npm run e2e` passes in all three browsers
+- [x] 6.1 `PhotoDetail` per design decision 8: a modal `<dialog>` as full-screen layer below 600 px and as sheet from 600 px, an `<aside>` in the shell's detail area from 1200 px; the selected photo stays state of `PhotosView`, and a change of width class switches the form with the same photo; motion only through the motion tokens; verify: `npm run typecheck` passes and the tests in 6.4
+- [x] 6.2 Focus return: on close the detail asks `VirtualGrid` to scroll the opener's tile into view and focuses it; `ConfirmDialog` returns focus to its opener as well; verify: covered by 6.4
+- [x] 6.3 The existing photo tests (`photos.spec.ts`) adapted to the detail as panel at 1280 px and as layer at 390 px; verify: `npm run e2e` passes
+- [x] 6.4 Playwright for the spec scenarios: "Detail as a panel" (second photo shown in the panel, grid visible), "Detail on a phone" (same photos after closing), "Rotate a tablet" (1280 × 800 to 800 × 1280 with an open detail, then closing shows the same place), "Unsaved input" (changed name kept across a width change), "Close the photo detail" (Escape returns focus to the tile), "Reduced motion" (computed transition duration of the detail is `0s`); verify: `npm run e2e` passes in all three browsers
 
 ## 7. Integration and devices
 

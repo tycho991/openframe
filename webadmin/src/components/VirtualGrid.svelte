@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { Photo } from "../lib/api/client";
   import { gridLayout } from "../lib/grid";
   import { t } from "../lib/i18n/i18n.svelte";
@@ -50,6 +51,27 @@
   $effect(() => {
     if (hasMore && layout.nearEnd) onloadmore();
   });
+
+  /** Brings the tile of photo [id] into view if it is not, and focuses it: the element that opened a detail may
+   *  have been recycled for another photo meanwhile (spec web-admin, "Keyboard operation"). */
+  export async function focusPhoto(id: string): Promise<void> {
+    const index = items.findIndex((p) => p.id === id);
+    if (index < 0) return;
+    const tileTop = top + layout.position(index).y;
+    const bars = container.closest("main")?.getBoundingClientRect().top ?? 0;
+    if (
+      tileTop < window.scrollY + Math.max(0, bars) ||
+      tileTop + layout.tile > window.scrollY + window.innerHeight
+    ) {
+      window.scrollTo({
+        top: Math.max(0, tileTop - (window.innerHeight - layout.tile) / 2),
+        behavior: "instant",
+      });
+      scrollY = window.scrollY;
+    }
+    await tick();
+    container.querySelector<HTMLElement>(`[data-photo="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  }
 </script>
 
 <div class="grid" bind:this={container} style:height="{layout.height}px">
@@ -58,6 +80,7 @@
     <button
       type="button"
       class="tile"
+      data-photo={photo.id}
       class:dimmed={!photo.visible}
       class:selected={selected.has(photo.id)}
       style:transform="translate({pos.x}px, {pos.y}px)"

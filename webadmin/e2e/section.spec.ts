@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { apiAsBrowser, pairInUi, reset, usb } from "./helpers";
+import { apiAsBrowser, detailSettled, pairInUi, photoDetail, reset, usb } from "./helpers";
 
 // Spec `web-admin`: Edit photos (detail view as the frame shows the photo), Choose a section, Section editor on the
 // phone. The test server's screen is 1024×600 in `landscape`; `rotated6.jpg` is a portrait photo of 300×400.
@@ -23,7 +23,8 @@ async function openDetail(page: Page) {
   await usb("rotated6.jpg", "hoch.jpg");
   await pairInUi(page);
   await page.locator(".tile").first().click();
-  await expect(page.getByRole("dialog", { name: "hoch.jpg" })).toBeVisible();
+  await expect(photoDetail(page, "hoch.jpg")).toBeVisible();
+  await detailSettled(page);
 }
 
 async function box(locator: Locator) {

@@ -353,5 +353,9 @@
     main {
       padding: var(--space-5) var(--space-6);
     }
+    /* The open photo detail is a panel at the right edge (PhotoDetail); the section makes room for it. */
+    .shell:has(:global(.panel)) main {
+      padding-right: calc(var(--detail-width) + var(--space-5));
+    }
   }
 </style>
