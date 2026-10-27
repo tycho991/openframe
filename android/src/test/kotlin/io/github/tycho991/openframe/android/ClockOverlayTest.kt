@@ -6,6 +6,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.tycho991.openframe.core.settings.ClockSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -21,9 +22,16 @@ import java.util.Locale
 class ClockOverlayTest {
     private val context = RuntimeEnvironment.getApplication()
     private val container = LinearLayout(context).apply { layoutParams = FrameLayout.LayoutParams(100, 100) }
-    private val overlay = ClockOverlay(context, container, TextView(context), TextView(context))
+    private val time = TextView(context)
+    private val overlay = ClockOverlay(context, container, time, TextView(context))
 
     private fun apply(enabled: Boolean) = overlay.apply(ClockSettings(enabled = enabled), Locale.GERMANY)
+
+    @Test
+    fun `The time has tabular figures in Inter Light`() {
+        assertEquals("tnum", time.fontFeatureSettings)
+        assertSame(FrameType.typeface(context.assets, FrameType.Weight.LIGHT), time.typeface)
+    }
 
     @Test
     fun `The clock is shown when it is switched on`() {
