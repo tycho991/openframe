@@ -64,11 +64,11 @@
 
 ## 5. Comment in the library and the API
 
-- [ ] 5.1 `PhotoEntry.comment`, normalized and validated in one function (trim, control-character runs to one space, at most 500 code points; design decision 10). Carried over to a new version in `LocalPhotoSource` and `RemoteSource` like `hidden`. Verify:
+- [x] 5.1 `PhotoEntry.comment`, normalized and validated in one function (trim, control-character runs to one space, at most 500 code points; design decision 10). Carried over to a new version in `LocalPhotoSource` and `RemoteSource` like `hidden`. Verify:
   - Tests for every scenario of "Comment of a photo".
   - Tests for "Comment when the file changes" › "File replaced" (local and remote) and "File moved".
   - A test with a 500-character text of emoji (code points, not UTF-16 units).
-- [ ] 5.2 `PATCH /photos/{photoId}` accepts `comment`. `Photo` has `comment` and `location`, with `place` in the frame's language from `PlaceIndex`. A too long comment rejects the whole patch. Verify:
+- [x] 5.2 `PATCH /photos/{photoId}` accepts `comment`. `Photo` has `comment` and `location`, with `place` in the frame's language from `PlaceIndex`. A too long comment rejects the whole patch. Verify:
   - `TestHttp(..., checkContract = true)` tests for "Comment too long" › "501 characters".
   - The same for "Comment and location in the photo list" › "Photo with comment and position" and "Set only the comment".
   - The same for "Comment on a Nextcloud photo" against `FakeNextcloud` (no write request reaches it).
@@ -76,7 +76,7 @@
 
 ## 6. Caption and settings in `:core`
 
-- [ ] 6.1 `Corner` in place of `ClockPosition`, and `CaptionSettings` in `Settings` with the defaults and the patch fields `caption.albumTitle`, `caption.place`, `caption.position` (design decision 9). Verify:
+- [x] 6.1 `Corner` in place of `ClockPosition`, and `CaptionSettings` in `Settings` with the defaults and the patch fields `caption.albumTitle`, `caption.place`, `caption.position` (design decision 9). Verify:
   - Tests for every scenario of "Caption settings", including a stored `settings.json` from before the change and the 400 naming `caption.position`.
   - A test that a stored clock position loads unchanged.
 - [ ] 6.2 `CaptionText.of` and `FrameCore.caption` as a `StateFlow` combining slide state, the current entry, settings and language (design decision 7). Verify:

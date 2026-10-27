@@ -71,6 +71,23 @@ class SettingsRoutesTest {
         assertEquals(true, repo.settings.value.clock.enabled)
     }
 
+    /** Spec `frame-settings`: Caption settings › Invalid corner, through the API. */
+    @Test
+    fun `Invalid caption corner names its field`() {
+        val res = http.request("PATCH", "/api/v1/settings", """{"caption":{"position":"middle"}}""", auth.header)
+        assertEquals(400, res.statusCode())
+        val fields =
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["fields"]!!
+                .jsonObject
+        assertEquals(setOf("caption.position"), fields.keys)
+        val ok = http.request("PATCH", "/api/v1/settings", """{"caption":{"position":"bottom-right","place":true}}""", auth.header)
+        assertEquals(200, ok.statusCode())
+        assertEquals(true, ApiJson.decodeFromString(Settings.serializer(), ok.body()).caption.place)
+    }
+
     @Test
     fun `Via the API`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"localOnly":false}""", auth.header)

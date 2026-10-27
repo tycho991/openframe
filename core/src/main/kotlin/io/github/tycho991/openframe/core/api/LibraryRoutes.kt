@@ -8,12 +8,15 @@ import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.library.AlbumPaths
+import io.github.tycho991.openframe.core.library.Comments
 import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.Presentation
 import io.github.tycho991.openframe.core.library.RenderSize
+import io.github.tycho991.openframe.core.places.PlaceIndex
+import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
 import kotlinx.coroutines.CancellationException
@@ -60,6 +63,16 @@ data class PhotoDto(
     val crop: Crop?,
     val presentation: PresentationDto,
     val urls: ImageUrlsDto,
+    val comment: String?,
+    val location: LocationDto?,
+)
+
+@Serializable
+data class LocationDto(
+    val lat: Double,
+    val lon: Double,
+    /** "Place, country" in the frame's language, `null` without a place within 50 km. */
+    val place: String?,
 )
 
 @Serializable
@@ -167,6 +180,8 @@ fun Router.libraryRoutes(
     settings: SettingsRepository,
     signer: ImageSigner,
     transitions: TransitionGovernor,
+    places: PlaceIndex,
+    platform: PlatformInfo,
 ) {
     val index = library.index
 
@@ -199,6 +214,20 @@ fun Router.libraryRoutes(
             crop = entry.crop,
             presentation = PresentationDto(p.x, p.y, p.width, p.height, p.zoom),
             urls = urls(entry, p),
+            comment = entry.comment,
+            location =
+                entry.gps?.let {
+                    LocationDto(
+                        it.lat,
+                        it.lon,
+                        places.placeName(
+                            it.lat,
+                            it.lon,
+                            settings.settings.value.language
+                                .locale(platform),
+                        ),
+                    )
+                },
         )
     }
 
@@ -358,19 +387,42 @@ fun Router.libraryRoutes(
 private val BATCH_ACTIONS = setOf("hide", "show", "delete")
 
 /**
- * The change of a `PhotoPatch`: `hidden` and `crop` are both optional, at least one is given, and `crop: null` removes
- * the section. Every field is checked before anything changes, so an invalid one rejects the whole patch.
+ * The change of a `PhotoPatch`: `hidden`, `comment` and `crop` are all optional, at least one is given, and `null`
+ * removes the comment or the section. Every field is checked before anything changes, so an invalid one rejects the
+ * whole patch.
  */
 private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
-    if (body.isEmpty()) throw HttpException.badRequest("hidden or crop is required")
+    if (body.isEmpty()) throw HttpException.badRequest("hidden, comment or crop is required")
     val errors = LinkedHashMap<String, String>()
     var hidden: Boolean? = null
+    var comment: String? = null
     var crop: Crop? = null
     for ((key, value) in body) {
         when (key) {
             "hidden" -> {
                 hidden = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
                 if (hidden == null) errors[key] = "Expected true or false"
+            }
+
+            Comments.FIELD -> {
+                val text = value as? JsonPrimitive
+                when {
+                    value is JsonNull -> {
+                        comment = null
+                    }
+
+                    text == null || !text.isString -> {
+                        errors[key] = "Expected a string or null"
+                    }
+
+                    else -> {
+                        try {
+                            comment = Comments.normalize(text.content)
+                        } catch (e: ValidationException) {
+                            errors += e.fields
+                        }
+                    }
+                }
             }
 
             "crop" -> {
@@ -383,10 +435,12 @@ private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
         }
     }
     if (errors.isNotEmpty()) throw ValidationException(errors)
+    val setsComment = Comments.FIELD in body
     val setsCrop = "crop" in body
     return { entry ->
         var next = entry
         hidden?.let { next = next.copy(hidden = it) }
+        if (setsComment) next = next.copy(comment = comment)
         if (setsCrop) next = next.copy(crop = crop)
         next
     }

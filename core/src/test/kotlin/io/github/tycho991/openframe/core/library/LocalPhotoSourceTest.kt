@@ -150,7 +150,7 @@ class LocalPhotoSourceTest {
         val file = Fixtures.copy("landscape.jpg", File(photos, "holiday/1.jpg"))
         scan()
         val id = PhotoEntry.idFor("local", "holiday/1.jpg")
-        index.edit { it.put(it.get(id)!!.copy(hidden = true)) }
+        index.edit { it.put(it.get(id)!!.copy(hidden = true, comment = "Grandma's 80th birthday")) }
         val before =
             index.library.value.photos
                 .getValue(id)
@@ -163,7 +163,23 @@ class LocalPhotoSourceTest {
         assertEquals(id, after.id)
         assertEquals(before.version + 1, after.version)
         assertEquals(true, after.hidden, "The hidden state is kept")
+        assertEquals("Grandma's 80th birthday", after.comment, "The comment is kept")
         assertEquals(300 to 400, after.width to after.height)
+    }
+
+    /** Spec `photo-library`: Comment when the file changes › File moved. */
+    @Test
+    fun `File moved`() {
+        val file = Fixtures.copy("landscape.jpg", File(photos, "holiday/1.jpg"))
+        scan()
+        val id = PhotoEntry.idFor("local", "holiday/1.jpg")
+        index.edit { it.put(it.get(id)!!.copy(comment = "Grandma's 80th birthday")) }
+        File(photos, "family").mkdirs()
+        file.renameTo(File(photos, "family/1.jpg"))
+        scan()
+        val photos = index.library.value.photos
+        assertNull(photos[id])
+        assertNull(photos.getValue(PhotoEntry.idFor("local", "family/1.jpg")).comment)
     }
 
     @Test

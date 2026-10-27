@@ -119,12 +119,13 @@ class RemoteSourceTest {
         remote.put("a.jpg", jpg(), "e1")
         sync()
         val first = photos().getValue("a.jpg")
-        index.edit { it.put(first.copy(hidden = true)) }
+        index.edit { it.put(first.copy(hidden = true, comment = "Grandma's 80th birthday")) }
         remote.put("a.jpg", Fixtures.file("rotated6.jpg").readBytes(), "e2")
         assertEquals(ScanResult(0, 1, 0, 0), sync())
         val second = photos().getValue("a.jpg")
         assertEquals(first.id, second.id)
         assertTrue(second.hidden)
+        assertEquals("Grandma's 80th birthday", second.comment, "Spec photo-library: Comment when the file changes › File replaced")
         assertEquals(first.version + 1, second.version)
         assertEquals("e2", second.etag)
     }

@@ -87,6 +87,35 @@ class ShareSyncTest {
     }
 
     @Test
+    fun `A comment on a photo of a share writes nothing to the source and survives a sync`() {
+        // Spec `photo-library`, "Comment of a photo" › "Comment on a Nextcloud photo".
+        val photo =
+            ApiJson
+                .decodeFromString(PhotoPageDto.serializer(), frame.get("/api/v1/photos").body())
+                .items
+                .first()
+        val before = synchronized(nextcloud.requests) { nextcloud.requests.toList() }
+        val res = frame.send("PATCH", "/api/v1/photos/${photo.id}", """{"comment":"Grandma's 80th birthday"}""")
+        assertEquals(200, res.statusCode(), res.body())
+        assertEquals("Grandma's 80th birthday", ApiJson.decodeFromString(PhotoDto.serializer(), res.body()).comment)
+        assertEquals(before, synchronized(nextcloud.requests) { nextcloud.requests.toList() }, "no request reached the server")
+        syncAndWait()
+        assertTrue(
+            synchronized(nextcloud.requests) { nextcloud.requests.drop(before.size) }.none {
+                !it.startsWith("PROPFIND") &&
+                    !it.startsWith("GET")
+            },
+            "only reading requests",
+        )
+        val after =
+            ApiJson
+                .decodeFromString(PhotoPageDto.serializer(), frame.get("/api/v1/photos").body())
+                .items
+                .first { it.id == photo.id }
+        assertEquals("Grandma's 80th birthday", after.comment)
+    }
+
+    @Test
     fun `A share withdrawn while the server answers 401 shows as not found and keeps the photos`() {
         nextcloud.shares.remove("AbC123")
         syncAndWait()

@@ -66,6 +66,10 @@ object SettingsPatch {
                     s = s.copy(clock = applyClock(s.clock, value, errors))
                 }
 
+                "caption" -> {
+                    s = s.copy(caption = applyCaption(s.caption, value, errors))
+                }
+
                 "language" -> {
                     enum(value, key, FrameLanguage.serializer(), errors)?.let { s = s.copy(language = it) }
                 }
@@ -100,9 +104,31 @@ object SettingsPatch {
             val path = "clock.$key"
             when (key) {
                 "enabled" -> bool(v, path, errors)?.let { c = c.copy(enabled = it) }
-                "position" -> enum(v, path, ClockPosition.serializer(), errors)?.let { c = c.copy(position = it) }
+                "position" -> enum(v, path, Corner.serializer(), errors)?.let { c = c.copy(position = it) }
                 "sizePercent" -> int(v, path, Settings.CLOCK_SIZE_PERCENT, errors)?.let { c = c.copy(sizePercent = it) }
                 "format" -> enum(v, path, ClockFormat.serializer(), errors)?.let { c = c.copy(format = it) }
+                else -> errors[path] = "Unknown field"
+            }
+        }
+        return c
+    }
+
+    private fun applyCaption(
+        base: CaptionSettings,
+        value: JsonElement,
+        errors: MutableMap<String, String>,
+    ): CaptionSettings {
+        if (value !is JsonObject) {
+            errors["caption"] = "Expected an object"
+            return base
+        }
+        var c = base
+        for ((key, v) in value) {
+            val path = "caption.$key"
+            when (key) {
+                "albumTitle" -> bool(v, path, errors)?.let { c = c.copy(albumTitle = it) }
+                "place" -> bool(v, path, errors)?.let { c = c.copy(place = it) }
+                "position" -> enum(v, path, Corner.serializer(), errors)?.let { c = c.copy(position = it) }
                 else -> errors[path] = "Unknown field"
             }
         }

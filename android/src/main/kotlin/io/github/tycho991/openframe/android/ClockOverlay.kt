@@ -12,8 +12,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.tycho991.openframe.core.settings.ClockFormat
-import io.github.tycho991.openframe.core.settings.ClockPosition
 import io.github.tycho991.openframe.core.settings.ClockSettings
+import io.github.tycho991.openframe.core.settings.Corner
 import java.util.Date
 import java.util.Locale
 
@@ -58,10 +58,10 @@ class ClockOverlay(
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, BASE_DATE_SP * scale)
         val (vertical, horizontal) =
             when (clock.position) {
-                ClockPosition.TOP_LEFT -> Gravity.TOP to Gravity.LEFT
-                ClockPosition.TOP_RIGHT -> Gravity.TOP to Gravity.RIGHT
-                ClockPosition.BOTTOM_LEFT -> Gravity.BOTTOM to Gravity.LEFT
-                ClockPosition.BOTTOM_RIGHT -> Gravity.BOTTOM to Gravity.RIGHT
+                Corner.TOP_LEFT -> Gravity.TOP to Gravity.LEFT
+                Corner.TOP_RIGHT -> Gravity.TOP to Gravity.RIGHT
+                Corner.BOTTOM_LEFT -> Gravity.BOTTOM to Gravity.LEFT
+                Corner.BOTTOM_RIGHT -> Gravity.BOTTOM to Gravity.RIGHT
             }
         (container.layoutParams as FrameLayout.LayoutParams).gravity = vertical or horizontal
         container.gravity = horizontal

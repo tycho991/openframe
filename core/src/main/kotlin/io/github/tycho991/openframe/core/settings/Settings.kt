@@ -48,8 +48,9 @@ enum class Orientation {
     PORTRAIT,
 }
 
+/** A corner of the screen, for the clock and for the caption. */
 @Serializable
-enum class ClockPosition {
+enum class Corner {
     @SerialName("top-left")
     TOP_LEFT,
 
@@ -99,9 +100,20 @@ enum class FrameLanguage {
 @Serializable
 data class ClockSettings(
     val enabled: Boolean = true,
-    val position: ClockPosition = ClockPosition.BOTTOM_RIGHT,
+    val position: Corner = Corner.BOTTOM_RIGHT,
     val sizePercent: Int = 100,
     val format: ClockFormat = ClockFormat.H24,
+)
+
+/**
+ * The caption over the photo (spec `slideshow-display`, "Caption over the photo"): it always shows the comment; the
+ * album title and the place are switched on here. It may share its corner with the clock.
+ */
+@Serializable
+data class CaptionSettings(
+    val albumTitle: Boolean = false,
+    val place: Boolean = false,
+    val position: Corner = Corner.BOTTOM_LEFT,
 )
 
 /** On and off time of a day's window, each as `HH:MM` in the device's local time. */
@@ -143,6 +155,7 @@ data class Settings(
     val fillMode: FillMode = FillMode.AUTO,
     val orientation: Orientation = Orientation.LANDSCAPE,
     val clock: ClockSettings = ClockSettings(),
+    val caption: CaptionSettings = CaptionSettings(),
     val language: FrameLanguage = FrameLanguage.AUTO,
     val cacheBudgetMb: Int = 1000,
     val displaySchedule: DisplayScheduleSettings = DisplayScheduleSettings(),

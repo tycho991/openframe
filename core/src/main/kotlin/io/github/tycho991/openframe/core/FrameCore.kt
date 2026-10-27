@@ -37,6 +37,7 @@ import io.github.tycho991.openframe.core.nextcloud.NextcloudConnector
 import io.github.tycho991.openframe.core.nextcloud.NextcloudMigration
 import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
+import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
@@ -166,6 +167,9 @@ class FrameCore(
             log,
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
+
+    /** Place names of photo positions, offline; loads its data on the first lookup. */
+    val places = PlaceIndex(log)
 
     /** Reads the GPS position of photos from before it was read, once, after start, scans and syncs. */
     private val backfill: MetadataBackfill = MetadataBackfill(index, engine, SourceOriginals(localSource, sources)::onFrame, log)
@@ -313,7 +317,7 @@ class FrameCore(
         router.infoRoutes(identity, settings, platform)
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
-        router.libraryRoutes(library, settings, signer, transitions)
+        router.libraryRoutes(library, settings, signer, transitions, places, platform)
         router.sourcesRoutes(sources, nextcloud)
         router.displayRoutes(display)
         router.diagnosticsRoutes(log)
