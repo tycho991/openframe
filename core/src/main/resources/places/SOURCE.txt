@@ -1,0 +1,9 @@
+Place names: GeoNames (https://www.geonames.org/), licensed under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/).
+
+cities500.txt of 2026-10-27 and alternateNamesV2.txt of 2026-10-27 from
+https://download.geonames.org/export/dump/, converted by scripts/build-places.py into base.bin and
+names-de.bin. Names and positions are taken over unchanged;
+positions are rounded to 1/10,000 degree.
+
+Dataset ID: 3148a47284220003
