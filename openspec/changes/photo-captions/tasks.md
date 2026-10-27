@@ -118,9 +118,9 @@
 
 ## 10. Integration
 
-- [ ] 10.1 Run `./gradlew check`. Verify: green (formatting, tests, API 21 check, Android Lint).
-- [ ] 10.2 Update `README.md` with the caption, the offline place names and the GeoNames attribution. Verify: the README names GeoNames and CC BY 4.0, and says that no place lookup leaves the frame.
-- [ ] 10.3 Run `openspec validate photo-captions`. Verify: exit 0 without warnings.
+- [x] 10.1 Run `./gradlew check`. Verify: green (formatting, tests, API 21 check, Android Lint).
+- [x] 10.2 Update `README.md` with the caption, the offline place names and the GeoNames attribution. Verify: the README names GeoNames and CC BY 4.0, and says that no place lookup leaves the frame.
+- [x] 10.3 Run `openspec validate photo-captions`. Verify: exit 0 without warnings.
 
 ## Workflow follow-up
 

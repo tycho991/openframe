@@ -106,6 +106,31 @@ Android 5 (the Lenovo) knows no such command; use the device menu there.
 - **No screen lock.** Like starting as the home screen, this assumes that no PIN, pattern or password is set up;
   otherwise the lock screen would appear in the morning instead of the slideshow.
 
+## Captions and place names
+
+Every photo can carry a comment of up to 500 characters, written in its detail view in the admin interface. The
+frame shows it as a caption over the photo; under "Settings" › "Caption" it can put the album title (the last level
+of the folder) in front of it and the place in a line below, in a corner of its own. When the caption shares the
+corner with the clock, it stands next to the clock towards the middle. Comments are part of the frame's state, like
+the hidden state: they also work for photos of a remote source, nothing is written to the server or into the file,
+and they stay when the file is replaced at the same path.
+
+The place comes from the GPS position in the photo's EXIF data. The frame names the nearest place within 50 km as
+"place, country", in the frame's language (German names from a German name pack, otherwise the dataset's own names).
+**No place lookup leaves the frame**: the places (the GeoNames dataset `cities500`, about 237,000 places) ship in the
+APK under `core/src/main/resources/places/`, about 2.7 MB. Photos that were on the frame before this version get their
+position once, in the background.
+
+Place names: [GeoNames](https://www.geonames.org/), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the admin interface shows the attribution next to the place
+setting, and `SOURCE.txt` next to the data names the dumps it was built from. The data is regenerated on purpose, not on
+every build:
+
+```bash
+# Dumps from https://download.geonames.org/export/dump/, into a folder outside the repository
+python3 scripts/build-places.py cities500.zip alternateNamesV2.zip core/src/main/resources/places
+```
+
 ## Photos from other sources
 
 Next to the local photo folder the frame can show photos from up to eight remote sources at the same time: the link
