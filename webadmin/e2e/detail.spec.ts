@@ -27,9 +27,17 @@ const focusedPhoto = (page: Page) =>
 
 const tile = (page: Page, index: number) => page.locator(".tile").nth(index);
 
+/** Scrolls the page to [y]; again on every poll, because the grid may still be loading and the page too short. */
 async function scrollGrid(page: Page, y: number) {
-  await page.evaluate((top) => window.scrollTo(0, top), y);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(y - 50);
+  await expect(tile(page, 0)).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate((top) => {
+        window.scrollTo(0, top);
+        return window.scrollY;
+      }, y),
+    )
+    .toBeGreaterThan(y - 50);
 }
 
 test("Detail as a panel", async ({ page }) => {
@@ -78,8 +86,10 @@ test("Rotate a tablet", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await pairInUi(page);
   await scrollGrid(page, 1500);
-  const opener = tile(page, 3);
-  const path = await opener.locator("img").getAttribute("alt");
+  // A tile fully in view, held by its photo: the grid renders other tiles at the same places while it scrolls.
+  await expect.poll(async () => (await visibleTiles(page)).length).toBeGreaterThan(4);
+  const path = (await visibleTiles(page))[3]!;
+  const opener = page.locator(".tile").filter({ has: page.locator(`img[alt="${path}"]`) });
   const id = await opener.getAttribute("data-photo");
   await opener.click();
   await expect(page.getByRole("complementary")).toHaveAccessibleName(path!);
