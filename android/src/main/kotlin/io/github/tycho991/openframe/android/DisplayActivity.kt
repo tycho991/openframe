@@ -45,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -81,7 +82,11 @@ class DisplayActivity : Activity() {
     private lateinit var hintCode: TextView
     private lateinit var hintCodeBox: View
     private lateinit var hintPause: Button
+    private lateinit var dark: View
     private lateinit var gestures: GestureDetector
+
+    /** The window brightness before a dark wake, `null` outside one. */
+    private var brightnessBeforeDark: Float? = null
 
     private var settings: Settings? = null
     private var localized: Resources? = null
@@ -149,6 +154,8 @@ class DisplayActivity : Activity() {
         for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.caption, R.id.clock, R.id.hint)) {
             findViewById<View>(id).translationZ = OVERLAY_Z
         }
+        dark = findViewById(R.id.dark)
+        dark.translationZ = DARK_Z
         gestures = GestureDetector(this, GestureListener())
         arrangeForOrientation()
 
@@ -223,6 +230,8 @@ class DisplayActivity : Activity() {
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         // Touches keep a woken display on at night; the core throttles them.
         core?.display?.userActivity()
+        // A touch on the black display of a dark wake only wakes it, as the power button would.
+        if (dark.visibility == View.VISIBLE) return true
         // A 3-second press in a corner opens the device menu.
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -271,6 +280,7 @@ class DisplayActivity : Activity() {
             launch { core.caption.collect(caption::update) }
             launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
             launch { core.slideshow.paused.collect { updateHint() } }
+            launch { followDark(core.display.dark) }
             launch {
                 core.settings.localOnly.collect {
                     updateHint()
@@ -288,6 +298,25 @@ class DisplayActivity : Activity() {
                         updateEmpty()
                     }
             }
+        }
+    }
+
+    /**
+     * During a dark wake black above everything at the lowest window brightness: the display is on only to get the
+     * network back (spec `display-schedule`, Dark wake for the network). `0f` would mean off on some devices.
+     */
+    internal suspend fun followDark(flow: Flow<Boolean>) {
+        flow.collect { on ->
+            dark.visibility = if (on) View.VISIBLE else View.GONE
+            val attributes = window.attributes
+            if (on) {
+                if (brightnessBeforeDark == null) brightnessBeforeDark = attributes.screenBrightness
+                attributes.screenBrightness = DARK_BRIGHTNESS
+            } else {
+                attributes.screenBrightness = brightnessBeforeDark ?: return@collect
+                brightnessBeforeDark = null
+            }
+            window.attributes = attributes
         }
     }
 
@@ -658,6 +687,8 @@ class DisplayActivity : Activity() {
 
     private companion object {
         const val OVERLAY_Z = 10f
+        const val DARK_Z = 20f
+        const val DARK_BRIGHTNESS = 0.01f
         const val CAPTION_GAP_DP = 8f
         const val HINT_MS = 8_000L
         const val JUDGE_DELAY_MS = 5_000L

@@ -14,9 +14,9 @@
 
 ## 3. Android
 
-- [ ] 3.1 `AndroidNetworkLink` per design decision 1 (`connected` from the `NetworkCallback` of `FrameService`, `requestReconnect()` with `WifiManager.reconnect()` and `startScan()`), permission `CHANGE_WIFI_STATE` in the manifest, passed to `FrameCore` by `FrameApp`; verify: a Robolectric test that `requestReconnect()` reaches the shadow `WifiManager` and that a lost and a regained network reach the listener
-- [ ] 3.2 `DisplayActivity` shows a black view above the slideshow and sets the window brightness to `0.01f` while `dark` is true, and restores both when it clears, per design decision 4; verify: a Robolectric test of the activity with a `dark` flow switched on and off (black view visible, `screenBrightness` 0.01 then back), and `./gradlew :android:lintDebug` without new warnings
-- [ ] 3.3 Run `./gradlew check`; verify: green, including `checkNoAndroidImports`, the API 21 check and Android Lint
+- [x] 3.1 `AndroidNetworkLink` per design decision 1 (`connected` from the `NetworkCallback` of `FrameService`, `requestReconnect()` with `WifiManager.reconnect()` and `startScan()`), permission `CHANGE_WIFI_STATE` in the manifest, passed to `FrameCore` by `FrameApp`; verify: a Robolectric test that `requestReconnect()` reaches the shadow `WifiManager` and that a lost and a regained network reach the listener
+- [x] 3.2 `DisplayActivity` shows a black view above the slideshow and sets the window brightness to `0.01f` while `dark` is true, and restores both when it clears, per design decision 4; verify: a Robolectric test of the activity with a `dark` flow switched on and off (black view visible, `screenBrightness` 0.01 then back), and `./gradlew :android:lintDebug` without new warnings
+- [x] 3.3 Run `./gradlew check`; verify: green, including `checkNoAndroidImports`, the API 21 check and Android Lint
 
 ## 4. Devices
 

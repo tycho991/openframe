@@ -118,20 +118,26 @@ class FrameService : Service() {
         wifiLock = wifi.createWifiLock(mode, "openframe:server").apply { acquire() }
     }
 
-    /** Rebind after a Wi-Fi change so that the server accepts on the new address. */
+    /**
+     * Rebind after a Wi-Fi change so that the server accepts on the new address. The core learns of losses through the
+     * [AndroidNetworkLink], to ask for the network while the display is off.
+     */
     private fun watchNetwork() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val link = (application as FrameApp).networkLink
         val restart = Runnable { if (core.ready.value) core.onNetworkChanged() }
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     core.log.i(TAG, "Network available")
+                    link.available(network)
                     main.removeCallbacks(restart)
                     main.postDelayed(restart, NETWORK_SETTLE_MS)
                 }
 
                 override fun onLost(network: Network) {
                     core.log.i(TAG, "Network lost")
+                    link.lost(network)
                 }
             }
         connectivity.registerNetworkCallback(NetworkRequest.Builder().build(), callback)

@@ -24,6 +24,9 @@ class FrameApp : Application() {
     /** Switching the display; the [FrameService] reports screen events to it, device administration its changes. */
     val displayPower: AndroidDisplayPower by lazy { AndroidDisplayPower(this) }
 
+    /** The network; the [FrameService] reports its network callbacks to it. */
+    val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
+
     val core: FrameCore by lazy {
         val dirs =
             FrameDirs(
@@ -39,6 +42,7 @@ class FrameApp : Application() {
             notifier = AndroidMediaStoreNotifier(this),
             logSinks = listOf(LogcatSink),
             displayPower = displayPower,
+            networkLink = networkLink,
         )
     }
 
