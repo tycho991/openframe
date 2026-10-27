@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.testing
 
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import java.io.File
+import java.util.Locale
 
 class FakePlatform(
     override val screenWidth: Int = 1024,
@@ -11,6 +12,7 @@ class FakePlatform(
     override val appVersion: String = "0.1.0-test",
     var free: Long? = null,
     var ips: List<String> = listOf("192.168.100.215"),
+    override var systemLocale: Locale = Locale.ENGLISH,
 ) : PlatformInfo {
     override fun ipAddresses() = ips
 

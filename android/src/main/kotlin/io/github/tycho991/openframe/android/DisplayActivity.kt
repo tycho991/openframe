@@ -66,6 +66,7 @@ class DisplayActivity : Activity() {
 
     private lateinit var renderer: SlideRenderer
     private lateinit var clock: ClockOverlay
+    private lateinit var caption: CaptionOverlay
     private lateinit var loading: TextView
     private lateinit var emptyState: LinearLayout
     private lateinit var emptyBody: TextView
@@ -115,8 +116,19 @@ class DisplayActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         setContentView(R.layout.activity_display)
-        renderer = SlideRenderer(findViewById(R.id.photo_a), findViewById(R.id.photo_b)) { core?.slideshow?.reportUndecodable(it) }
+        caption = CaptionOverlay(findViewById(R.id.caption), findViewById(R.id.caption_a), findViewById(R.id.caption_b))
+        renderer =
+            SlideRenderer(
+                findViewById(R.id.photo_a),
+                findViewById(R.id.photo_b),
+                { core?.slideshow?.reportUndecodable(it) },
+                caption::swapStarted,
+            )
         clock = ClockOverlay(this, findViewById(R.id.clock), findViewById(R.id.clock_time), findViewById(R.id.clock_date))
+        // The caption stands next to the clock in a shared corner, so it moves with every change of the clock's size.
+        findViewById<View>(R.id.clock).addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) main.post { updateCaptionOffsets() }
+        }
         loading = findViewById(R.id.loading)
         emptyState = findViewById(R.id.empty_state)
         emptyBody = findViewById(R.id.empty_body)
@@ -133,7 +145,9 @@ class DisplayActivity : Activity() {
         hintPause = findViewById(R.id.hint_pause)
         hintPause.setOnClickListener { core?.slideshow?.togglePause() }
         // Overlays are always above the photos, even if the renderer raises the image views.
-        for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.clock, R.id.hint)) findViewById<View>(id).translationZ = OVERLAY_Z
+        for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.caption, R.id.clock, R.id.hint)) {
+            findViewById<View>(id).translationZ = OVERLAY_Z
+        }
         gestures = GestureDetector(this, GestureListener())
         arrangeForOrientation()
 
@@ -253,6 +267,7 @@ class DisplayActivity : Activity() {
             launch { core.transitions.judgementDue.collect { if (it) judgeTransitions(core) } }
             launch { core.settings.settings.collect(::applySettings) }
             launch { core.slideshow.state.collect(::render) }
+            launch { core.caption.collect(caption::update) }
             launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
             launch { core.slideshow.paused.collect { updateHint() } }
             launch {
@@ -314,6 +329,8 @@ class DisplayActivity : Activity() {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             }
         clock.apply(s.clock, locale(s.language))
+        caption.apply(s.caption)
+        updateCaptionOffsets()
         updateHint()
         updateEmpty()
     }
@@ -327,11 +344,12 @@ class DisplayActivity : Activity() {
             is SlideState.Showing -> {
                 // A display that could not keep up with the transitions gets instant changes, the setting stays as it is.
                 val transition = if (core?.transitions?.cut?.value == true) Transition.NONE else s.transition
-                renderer.show(state.photo, state.file, state.step, transition, s.transitionDurationMs.toLong())
+                renderer.show(state.photo, state.file, state.step, state.seq, transition, s.transitionDurationMs.toLong())
             }
 
             SlideState.Empty -> {
                 renderer.clear()
+                caption.clear()
             }
 
             SlideState.Loading -> {
@@ -361,6 +379,7 @@ class DisplayActivity : Activity() {
         // The hint covers the corner of the clock, so the clock steps aside for as long as it is up. This also
         // holds for a hint asked for through `POST /api/v1/pairing/code` (FINDINGS.md, 5: accepted).
         clock.hidden = visible
+        caption.hidden = visible
         hint.visibility = if (visible) View.VISIBLE else View.GONE
         main.removeCallbacks(hideHint)
         if (visible && autoHide) main.postDelayed(hideHint, HINT_MS)
@@ -375,6 +394,14 @@ class DisplayActivity : Activity() {
         }
         updateHint()
         updateEmpty()
+    }
+
+    /** The caption's place next to the clock when the two share a corner ([cornerOffsets]). */
+    private fun updateCaptionOffsets() {
+        val s = settings ?: return
+        val clockView = findViewById<View>(R.id.clock)
+        val gap = (CAPTION_GAP_DP * resources.displayMetrics.density).toInt()
+        caption.setOffsets(cornerOffsets(s.clock.position, s.clock.enabled, clockView.height, s.caption.position, gap))
     }
 
     private fun updateHint() {
@@ -576,24 +603,8 @@ class DisplayActivity : Activity() {
         window.decorView.systemUiVisibility = IMMERSIVE_FLAGS
     }
 
-    /** Language on the frame: `auto` follows the system, otherwise the chosen one applies, without restart. */
-    private fun locale(language: FrameLanguage): Locale =
-        when (language) {
-            FrameLanguage.AUTO -> {
-                Resources.getSystem().configuration.let {
-                    @Suppress("DEPRECATION")
-                    it.locale
-                }
-            }
-
-            FrameLanguage.DE -> {
-                Locale.GERMAN
-            }
-
-            FrameLanguage.EN -> {
-                Locale.ENGLISH
-            }
-        }
+    /** Language on the frame, the same as for the core's place names; it changes without restart. */
+    private fun locale(language: FrameLanguage): Locale = language.locale((application as FrameApp).core.platform)
 
     private fun localizedResources(language: FrameLanguage): Resources {
         val config = Configuration(resources.configuration)
@@ -629,6 +640,7 @@ class DisplayActivity : Activity() {
 
     private companion object {
         const val OVERLAY_Z = 10f
+        const val CAPTION_GAP_DP = 8f
         const val HINT_MS = 8_000L
         const val JUDGE_DELAY_MS = 5_000L
 

@@ -368,6 +368,77 @@ class LibraryApiTest {
         assertTrue(res.header("cache-control")!!.contains("immutable"))
     }
 
+    /** Spec `photo-library`: Comment too long › 501 characters. */
+    @Test
+    fun `A comment of 501 characters rejects the whole patch`() {
+        put("a.jpg")
+        frame.scan()
+        patch(id("a.jpg"), """{"comment":"Grandma's 80th birthday"}""")
+        val res = patch(id("a.jpg"), """{"comment":"${"a".repeat(501)}","hidden":true}""")
+        assertEquals(400, res.statusCode())
+        assertEquals(setOf("comment"), errorFields(res))
+        val photo = page().items.single()
+        assertEquals("Grandma's 80th birthday", photo.comment, "the photo keeps its comment")
+        assertTrue(photo.visible, "and stays visible")
+        // 500 after trimming are fine.
+        assertEquals(200, patch(id("a.jpg"), """{"comment":"  ${"a".repeat(500)}  "}""").statusCode())
+        assertEquals(setOf("comment"), errorFields(patch(id("a.jpg"), """{"comment":5}""")))
+    }
+
+    /** Spec `photo-library`: Comment of a photo, through the API. */
+    @Test
+    fun `Set, normalize and remove a comment`() {
+        put("a.jpg")
+        frame.scan()
+        assertNull(page().items.single().comment)
+        assertEquals("Grandma's 80th birthday", photoOf(patch(id("a.jpg"), """{"comment":"  Grandma's 80th birthday "}""")).comment)
+        assertEquals("Grandma's birthday", photoOf(patch(id("a.jpg"), """{"comment":"Grandma's\nbirthday"}""")).comment)
+        assertNull(photoOf(patch(id("a.jpg"), """{"comment":"   "}""")).comment)
+        patch(id("a.jpg"), """{"comment":"again"}""")
+        assertNull(photoOf(patch(id("a.jpg"), """{"comment":null}""")).comment)
+    }
+
+    /** Spec `photo-library`: Comment and location in the photo list › Set only the comment. */
+    @Test
+    fun `Set only the comment of a hidden photo`() {
+        put("a.jpg")
+        frame.scan()
+        patch(id("a.jpg"), """{"hidden":true}""")
+        val photo = photoOf(patch(id("a.jpg"), """{"comment":"Grandma's 80th birthday"}"""))
+        assertEquals("Grandma's 80th birthday", photo.comment)
+        assertTrue(photo.hidden, "stays hidden")
+    }
+
+    /** Spec `photo-library`: Comment and location in the photo list › Photo with comment and position. */
+    @Test
+    fun `Photo with comment and position`() {
+        put("tuscany/siena.jpg", "gps-siena.jpg")
+        put("a.jpg")
+        frame.scan()
+        patch(id("tuscany/siena.jpg"), """{"comment":"Grandma's 80th birthday"}""")
+        val photos = page().items.associateBy { it.path }
+        val siena = photos.getValue("tuscany/siena.jpg")
+        assertEquals("Grandma's 80th birthday", siena.comment)
+        assertEquals(43.3188, siena.location!!.lat, 1e-6)
+        assertEquals(11.3308, siena.location!!.lon, 1e-6)
+        assertEquals("Siena, Italy", siena.location!!.place, "the frame follows its English system")
+        assertNull(photos.getValue("a.jpg").location, "without a position")
+        assertNull(photos.getValue("a.jpg").comment)
+        // Spec "Language of the place name": in the frame's language, without reading the photo again.
+        val probes = frame.engine.probes.get()
+        frame.send("PATCH", "/api/v1/settings", """{"language":"de"}""")
+        assertEquals(
+            "Siena, Italien",
+            page()
+                .items
+                .first { it.path == "tuscany/siena.jpg" }
+                .location!!
+                .place,
+        )
+        assertEquals(probes, frame.engine.probes.get())
+        assertEquals(0, frame.engine.metadataReads.get())
+    }
+
     @Test
     fun `A section on a photo of a remote source`() {
         val id = putRemote()

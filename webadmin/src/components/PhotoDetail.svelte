@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { displayPath } from "../lib/albums";
-  import type { Crop, Photo, Settings } from "../lib/api/client";
+  import { ApiError, type Crop, type Photo, type Settings } from "../lib/api/client";
+  import { commentLength, commentPatch, coordinates, MAX_COMMENT_LENGTH } from "../lib/comments";
+  import { errorText } from "../lib/i18n/errors";
   import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
   import { screenFor, shownArea } from "../lib/presentation";
   import { session } from "../lib/session.svelte";
@@ -14,11 +17,50 @@
     ontogglehidden: (photo: Photo) => void;
     ondelete: (photo: Photo) => void;
     onsavecrop: (photo: Photo, crop: Crop | null) => Promise<void>;
+    /** Saves the comment, `null` removes it; an error is thrown back to the field. */
+    onsavecomment: (photo: Photo, comment: string | null) => Promise<Photo>;
   }
 
-  let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop }: Props = $props();
+  let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop, onsavecomment }: Props = $props();
   let dialog: HTMLDialogElement;
   let editing = $state(false);
+
+  /** The text in the comment field; it starts from the photo's comment and is kept while the list reloads. */
+  let comment = $state("");
+  let commentError = $state<string | null>(null);
+  let commentStatus = $state<"idle" | "saving" | "saved">("idle");
+  // Another photo opened: its comment. The same photo refreshed by the list or by a save keeps what is being typed,
+  // so the effect depends on the ID alone, which a new object of the same photo does not change.
+  const photoId = $derived(photo.id);
+  $effect(() => {
+    void photoId;
+    untrack(() => {
+      comment = photo.comment ?? "";
+      commentError = null;
+      commentStatus = "idle";
+    });
+  });
+  const commentUsed = $derived(commentLength(comment));
+  const commentChanged = $derived(comment !== (photo.comment ?? ""));
+
+  async function saveComment(event: SubmitEvent) {
+    event.preventDefault();
+    commentStatus = "saving";
+    commentError = null;
+    const sent = comment;
+    try {
+      const updated = await onsavecomment(photo, commentPatch(sent));
+      // The frame's form of it (trimmed, line breaks as spaces), unless the user went on typing meanwhile.
+      if (comment === sent) comment = updated.comment ?? "";
+      commentStatus = "saved";
+    } catch (e) {
+      commentStatus = "idle";
+      commentError =
+        e instanceof ApiError && e.fields["comment"]
+          ? t("photos.commentTooLong", { max: MAX_COMMENT_LENGTH })
+          : errorText(e);
+    }
+  }
 
   $effect(() => {
     dialog.showModal();
@@ -33,6 +75,7 @@
     session.info && settings ? screenFor(session.info.screen, settings.orientation) : null,
   );
   const area = $derived(screen ? shownArea(photo, screen, photo.presentation) : null);
+  const position = $derived(photo.location ? coordinates(photo.location, i18n.lang) : null);
 </script>
 
 <dialog bind:this={dialog} oncancel={onclose} aria-label={photo.path}>
@@ -67,6 +110,12 @@
         <dd>{photo.width} × {photo.height}</dd>
         <dt>{t("photos.detailFile")}</dt>
         <dd>{megabytes} MB</dd>
+        {#if photo.location && position}
+          <dt>{t("photos.detailPlace")}</dt>
+          <dd>{photo.location.place ?? t("photos.noPlace")}</dd>
+          <dt>{t("photos.detailCoordinates")}</dt>
+          <dd>{t("photos.coordinates", position)}</dd>
+        {/if}
         <dt>{t("section.label")}</dt>
         <dd>
           {photo.crop
@@ -76,6 +125,27 @@
               })}
         </dd>
       </dl>
+      <form class="comment" onsubmit={saveComment} novalidate>
+        <label for="p-comment">{t("photos.comment")}</label>
+        <textarea
+          id="p-comment"
+          rows="3"
+          bind:value={comment}
+          oninput={() => (commentStatus = "idle")}
+          aria-invalid={!!commentError}
+          aria-describedby="p-comment-count p-comment-hint"></textarea>
+        <div class="comment-row">
+          <span id="p-comment-count" class="hint" class:over={commentUsed > MAX_COMMENT_LENGTH}
+            >{t("photos.commentCount", { count: commentUsed, max: MAX_COMMENT_LENGTH })}</span
+          >
+          {#if commentStatus === "saved"}<span role="status" class="saved">{t("common.saved")}</span>{/if}
+          <button type="submit" disabled={!commentChanged || commentStatus === "saving"}
+            >{t("photos.commentSave")}</button
+          >
+        </div>
+        <span id="p-comment-hint" class="hint">{t("photos.commentHint")}</span>
+        {#if commentError}<span class="error" role="alert">{commentError}</span>{/if}
+      </form>
       <div class="actions">
         <button type="button" disabled={!screen || !settings} onclick={() => (editing = true)}
           >{t("section.choose")}</button
@@ -170,6 +240,41 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+  }
+  .comment {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 16px;
+  }
+  .comment label {
+    font-weight: 600;
+  }
+  .comment textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font: inherit;
+  }
+  .comment-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .comment-row button {
+    margin-left: auto;
+  }
+  .hint {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .over {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .saved {
+    color: var(--accent);
+    font-weight: 600;
   }
   @media (min-width: 900px) {
     .layout {

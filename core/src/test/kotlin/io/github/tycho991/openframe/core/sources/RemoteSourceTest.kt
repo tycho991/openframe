@@ -119,12 +119,13 @@ class RemoteSourceTest {
         remote.put("a.jpg", jpg(), "e1")
         sync()
         val first = photos().getValue("a.jpg")
-        index.edit { it.put(first.copy(hidden = true)) }
+        index.edit { it.put(first.copy(hidden = true, comment = "Grandma's 80th birthday")) }
         remote.put("a.jpg", Fixtures.file("rotated6.jpg").readBytes(), "e2")
         assertEquals(ScanResult(0, 1, 0, 0), sync())
         val second = photos().getValue("a.jpg")
         assertEquals(first.id, second.id)
         assertTrue(second.hidden)
+        assertEquals("Grandma's 80th birthday", second.comment, "Spec photo-library: Comment when the file changes › File replaced")
         assertEquals(first.version + 1, second.version)
         assertEquals("e2", second.etag)
     }
@@ -313,6 +314,45 @@ class RemoteSourceTest {
         assertEquals(listOf("a.jpg"), remote.downloads)
         assertTrue(originals.has(before))
         assertEquals(before, photos().getValue("a.jpg"))
+        assertEquals(libraryVersion, index.library.value.version)
+    }
+
+    @Test
+    fun `A new photo gets its GPS position`() {
+        remote.put("siena.jpg", jpg("gps-siena.jpg"), "e1")
+        remote.put("plain.jpg", jpg(), "e2")
+        sync()
+        val siena = photos().getValue("siena.jpg")
+        assertEquals(43.3188, siena.gps!!.lat, 1e-6)
+        assertEquals(PhotoEntry.METADATA_VERSION, siena.metadataVersion)
+        assertNull(photos().getValue("plain.jpg").gps)
+        assertEquals(PhotoEntry.METADATA_VERSION, photos().getValue("plain.jpg").metadataVersion)
+    }
+
+    /** Spec `photo-library`: Metadata of photos already in the index › Remote photo without its original. */
+    @Test
+    fun `Remote photo without its original`() {
+        remote.put("siena.jpg", jpg("gps-siena.jpg"), "e1")
+        sync()
+        // As a build before the GPS position left it, and with the original removed from the frame's storage.
+        val old = photos().getValue("siena.jpg").copy(gps = null, metadataVersion = 0)
+        index.edit { it.put(old.copy(hidden = true)) }
+        originals.fileOf(old).delete()
+        assertNull(photos().getValue("siena.jpg").gps)
+        remote.downloads.clear()
+        // The ETag is unchanged: the photo stays the same, it only takes the position of the download over, which is
+        // not counted as an update of the photo.
+        assertEquals(ScanResult(0, 0, 0, 0), sync())
+        assertEquals(listOf("siena.jpg"), remote.downloads)
+        val after = photos().getValue("siena.jpg")
+        assertEquals(43.3188, after.gps!!.lat, 1e-6)
+        assertEquals(PhotoEntry.METADATA_VERSION, after.metadataVersion)
+        assertEquals(old.version, after.version, "Not a new image version: nothing is rendered again")
+        assertTrue(after.hidden)
+        // Read once: the next download of the same ETag leaves the entry alone.
+        val libraryVersion = index.library.value.version
+        originals.fileOf(after).delete()
+        assertEquals(ScanResult(0, 0, 0, 0), sync())
         assertEquals(libraryVersion, index.library.value.version)
     }
 

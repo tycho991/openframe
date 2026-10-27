@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.GeoPoint
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.store.StoreJson
@@ -92,6 +93,39 @@ class PhotoIndexStoreTest {
         assertNotEquals(PhotoEntry.idFor("local", "holiday/1.jpg"), PhotoEntry.idFor("local", "holiday/2.jpg"))
         assertEquals(true, PhotoEntry.idFor("local", "a.jpg").matches(Regex("local-[0-9a-f]{40}")))
     }
+
+    @Test
+    fun `An index from before the GPS position loads with metadata version 0`() {
+        val photo = entry("a.jpg")
+        File(dir, "index.json").writeText(
+            """
+            {"photos":[{"id":"${photo.id}","source":"local","path":"a.jpg","width":4,"height":3,
+            "takenAtMs":0,"fileSize":10,"modifiedMs":1,"version":1,"hidden":false}],"skipped":[],"libraryVersion":3}
+            """.trimIndent(),
+        )
+        val loaded =
+            store()
+                .library.value.photos.values
+                .single()
+        assertEquals(0, loaded.metadataVersion)
+        assertEquals(null, loaded.gps)
+        assertEquals(null, loaded.comment)
+    }
+
+    @Test
+    fun `Comment, position and metadata version survive a restart`() =
+        runBlocking {
+            val s = store()
+            val photo = entry("a.jpg").copy(comment = "Grandma's 80th birthday", gps = GeoPoint(43.3188, 11.3308), metadataVersion = 1)
+            s.edit { it.put(photo) }
+            s.flush()
+            assertEquals(
+                photo,
+                store()
+                    .library.value.photos.values
+                    .single(),
+            )
+        }
 
     /** An index as the build before nested albums stored it: no `albumStates`, `holiday` hidden. */
     private fun writePreviousFormat() {

@@ -304,10 +304,10 @@ paths:
     patch:
       tags: [photos]
       operationId: patchPhoto
-      summary: Hide or unhide one photo, or set or remove its section.
+      summary: Hide or unhide one photo, set or remove its section or its comment.
       description: >-
         Allowed for photos of every source; nothing is written to a remote source. An invalid value rejects the whole
-        patch with 400 and names its field (`crop.x`, `crop.y`, `crop.zoom`).
+        patch with 400 and names its field (`comment`, `crop.x`, `crop.y`, `crop.zoom`).
       requestBody:
         required: true
         content:
@@ -972,7 +972,10 @@ components:
       enum: [auto, fill, fit]
       description: "`auto` crops at most a quarter in the direction in which the photo does not fit and shows the rest with black borders."
     Orientation: { type: string, enum: [landscape, portrait] }
-    ClockPosition: { type: string, enum: [top-left, top-right, bottom-left, bottom-right] }
+    Corner:
+      type: string
+      enum: [top-left, top-right, bottom-left, bottom-right]
+      description: "A corner of the screen, for the clock and for the caption."
     ClockFormat: { type: string, enum: ["24h", "12h"] }
     FrameLanguage: { type: string, enum: [auto, de, en] }
 
@@ -982,9 +985,21 @@ components:
       required: [enabled, position, sizePercent, format]
       properties:
         enabled: { type: boolean }
-        position: { $ref: "#/components/schemas/ClockPosition" }
+        position: { $ref: "#/components/schemas/Corner" }
         sizePercent: { type: integer, minimum: 50, maximum: 300 }
         format: { $ref: "#/components/schemas/ClockFormat" }
+
+    Caption:
+      type: object
+      additionalProperties: false
+      required: [albumTitle, place, position]
+      description: >-
+        The caption over the photo. It always shows the photo's comment; it can put the album title (the last level
+        of the album path) in front of it and the place name in a line below. It may share its corner with the clock.
+      properties:
+        albumTitle: { type: boolean, description: "Put the album title in front of the comment." }
+        place: { type: boolean, description: "Show the place name in a line below." }
+        position: { $ref: "#/components/schemas/Corner" }
 
     DisplayTime:
       type: string
@@ -1047,8 +1062,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, language,
-         cacheBudgetMb, displaySchedule]
+        [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, caption,
+         language, cacheBudgetMb, displaySchedule]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         intervalSeconds: { type: integer, minimum: 5, maximum: 86400 }
@@ -1058,13 +1073,14 @@ components:
         fillMode: { $ref: "#/components/schemas/FillMode" }
         orientation: { $ref: "#/components/schemas/Orientation" }
         clock: { $ref: "#/components/schemas/Clock" }
+        caption: { $ref: "#/components/schemas/Caption" }
         language: { $ref: "#/components/schemas/FrameLanguage" }
         cacheBudgetMb: { type: integer, minimum: 100, maximum: 10000 }
         displaySchedule: { $ref: "#/components/schemas/DisplaySchedule" }
 
     SettingsPatch:
       type: object
-      description: Like `Settings`, all fields optional, `clock` and `displaySchedule` also partially.
+      description: Like `Settings`, all fields optional, `clock`, `caption` and `displaySchedule` also partially.
       properties:
         name: { type: string }
         intervalSeconds: { type: integer }
@@ -1080,6 +1096,12 @@ components:
             position: { type: string }
             sizePercent: { type: integer }
             format: { type: string }
+        caption:
+          type: object
+          properties:
+            albumTitle: { type: boolean }
+            place: { type: boolean }
+            position: { type: string }
         language: { type: string }
         cacheBudgetMb: { type: integer }
         displaySchedule:
@@ -1136,7 +1158,9 @@ components:
     Photo:
       type: object
       additionalProperties: false
-      required: [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, crop, presentation, urls]
+      required:
+        [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, crop, presentation, urls,
+         comment, location]
       properties:
         id: { type: string }
         source:
@@ -1161,6 +1185,25 @@ components:
           $ref: "#/components/schemas/Presentation"
           description: Depends on the settings and the screen as well; a client reloads photos when the settings version changes.
         urls: { $ref: "#/components/schemas/ImageUrls" }
+        comment: { type: [string, "null"], description: "The photo's comment, `null` without one." }
+        location:
+          description: Where the photo was taken, from its EXIF data; `null` without a valid position.
+          oneOf:
+            - $ref: "#/components/schemas/Location"
+            - type: "null"
+
+    Location:
+      type: object
+      additionalProperties: false
+      required: [lat, lon, place]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+        place:
+          type: [string, "null"]
+          description: >-
+            "Place, country" of the nearest place within 50 km, named offline from GeoNames (`cities500`, CC BY 4.0)
+            in the frame's language; `null` if there is none.
 
     PhotoPage:
       type: object
@@ -1179,6 +1222,12 @@ components:
       minProperties: 1
       properties:
         hidden: { type: boolean }
+        comment:
+          type: [string, "null"]
+          description: >-
+            The comment as plain text, or `null` to remove it. Surrounding whitespace is removed and runs of line
+            breaks and other control characters become one space; an empty result removes the comment. More than 500
+            code points after that is rejected with 400 naming `comment`.
         crop:
           description: The section, or `null` to remove it so that the fill mode applies again.
           oneOf:

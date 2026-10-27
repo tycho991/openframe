@@ -28,6 +28,12 @@ export const usb = (fixture: string, to: string, { scan = true } = {}) =>
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
+/** The caption the frame shows over the photo on screen: its line and its place, `""` without one. */
+export async function frameCaption(): Promise<{ line: string; place: string }> {
+  const [line, place] = (await control("/caption")).split("\n");
+  return { line, place };
+}
+
 /** The user approves the login in the Nextcloud tab; with [slowMs] the frame's question after it takes that long. */
 export const nextcloudApprove = (slowMs = 0) => control(`/nextcloud/approve?slow=${slowMs}`);
 

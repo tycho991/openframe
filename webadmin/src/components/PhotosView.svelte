@@ -166,6 +166,14 @@
     detail = updated;
   }
 
+  /** Saves the comment, or with `null` removes it. Errors are thrown to the field, which keeps the text. */
+  async function saveComment(photo: Photo, comment: string | null): Promise<Photo> {
+    const updated = await api.patchPhoto(photo.id, { comment });
+    pages.replace(updated);
+    detail = updated;
+    return updated;
+  }
+
   function onDrop(event: DragEvent) {
     event.preventDefault();
     dragging = false;
@@ -274,6 +282,7 @@
     ontogglehidden={toggleHidden}
     ondelete={(p) => askDelete([p.id], true)}
     onsavecrop={saveCrop}
+    onsavecomment={saveComment}
   />
 {/if}
 

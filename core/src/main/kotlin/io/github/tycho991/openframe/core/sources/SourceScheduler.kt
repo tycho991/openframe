@@ -48,6 +48,8 @@ class SourceScheduler(
     private val syncLock: Mutex,
     private val clock: Clock,
     private val log: AppLog,
+    /** After each sync that ran. */
+    private val onSynced: () -> Unit = {},
 ) {
     private enum class Wake { REQUEST, CONFIG, NETWORK }
 
@@ -158,6 +160,7 @@ class SourceScheduler(
                 StoredSyncResult(clock.millis(), false, "The sync failed unexpectedly (${e.javaClass.simpleName})", 0, 0, 0)
             }
         update(result)
+        onSynced()
     }
 
     private fun update(result: StoredSyncResult) {

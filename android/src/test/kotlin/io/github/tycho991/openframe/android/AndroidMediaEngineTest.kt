@@ -9,6 +9,7 @@ import io.github.tycho991.openframe.core.library.Presentation
 import io.github.tycho991.openframe.core.platform.ExifOrientation
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormat
+import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.settings.FillMode
@@ -69,6 +70,31 @@ class AndroidMediaEngineTest {
         assertEquals(300 to 400, engine.probe(fixture("rotated6.jpg")).let { it.width to it.height })
         assertEquals(300 to 400, engine.probe(fixture("rotated8.jpg")).let { it.width to it.height })
         assertNull(engine.probe(fixture("rotated8.jpg")).takenAt)
+    }
+
+    @Test
+    fun gpsPositionFromExif() {
+        val siena = engine.probe(fixture("gps-siena.jpg")).gps!!
+        assertEquals(43.3188, siena.lat, 1e-4)
+        assertEquals(11.3308, siena.lon, 1e-4)
+        val rio = engine.readMetadata(fixture("gps-rio.jpg")).gps!!
+        assertEquals(-22.9068, rio.lat, 1e-4)
+        assertEquals(-43.1729, rio.lon, 1e-4)
+        assertEquals(siena.lat, engine.readMetadata(fixture("gps-siena.jpg")).gps!!.lat, 0.0)
+        // Rounded to what the float of getLatLong holds (Frameo, 27 Oct 2026: 43.31880187988281 before).
+        assertEquals(43.3188, siena.lat, 0.0)
+        assertEquals(11.3308, siena.lon, 0.0)
+        assertEquals(-43.1729, AndroidMediaEngine.fromFloat(-43.1729f), 0.0)
+    }
+
+    @Test
+    fun noGpsPositionWithoutGpsDataOrAtZero() {
+        assertNull(engine.probe(fixture("landscape.jpg")).gps)
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(fixture("landscape.jpg")))
+        assertNull(engine.probe(fixture("gps-zero.jpg")).gps)
+        assertNull(engine.readMetadata(fixture("gps-zero.jpg")).gps)
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(fixture("image.png")))
+        assertEquals(ImageMetadata.NONE, engine.readMetadata(File(tmp.root, "gone.jpg")))
     }
 
     @Test

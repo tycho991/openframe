@@ -128,8 +128,10 @@ class LocalPhotoSource(
             takenAtMs = info.takenAt?.toEpochMilli() ?: mtime,
             fileSize = file.length(),
             modifiedMs = mtime,
-            // Hidden state and section are taken over when the entry is applied (PhotoEntry.withStateOf).
+            // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf).
             version = (previous?.version ?: 0) + 1,
+            gps = info.gps,
+            metadataVersion = PhotoEntry.METADATA_VERSION,
         )
     }
 

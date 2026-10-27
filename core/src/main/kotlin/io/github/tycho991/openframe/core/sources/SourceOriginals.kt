@@ -14,4 +14,16 @@ class SourceOriginals(
     private val sources: SourceRegistry,
 ) {
     fun fileOf(entry: PhotoEntry): File = if (entry.source == LocalPhotoSource.SOURCE_ID) local.fileOf(entry) else sources.original(entry)
+
+    /** The file of [entry] if it is on the frame, without a download: `null` for a remote photo without its original. */
+    fun onFrame(entry: PhotoEntry): File? =
+        if (entry.source == LocalPhotoSource.SOURCE_ID) {
+            local.fileOf(entry)
+        } else {
+            sources
+                .source(entry.source)
+                ?.originals
+                ?.fileOf(entry)
+                ?.takeIf { it.isFile }
+        }
 }

@@ -161,6 +161,13 @@ object TestServerMain {
                             ok("added $n")
                         }
 
+                        // The caption the frame shows over the photo on screen: its line and its place, each on a line of
+                        // its own (empty without one).
+                        "/caption" -> {
+                            val text = core.caption.value?.text
+                            ok(text?.line.orEmpty() + "\n" + text?.place.orEmpty())
+                        }
+
                         // The user approves the login in the Nextcloud tab; `slow=3000` makes the answer take that many ms.
                         "/nextcloud/approve" -> {
                             (nextcloud.login as FakeLoginFlow).donePollDelayMs = q["slow"]?.toLong() ?: 0L

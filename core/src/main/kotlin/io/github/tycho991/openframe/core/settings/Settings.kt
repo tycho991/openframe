@@ -1,7 +1,9 @@
 package io.github.tycho991.openframe.core.settings
 
+import io.github.tycho991.openframe.core.platform.PlatformInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 @Serializable
 enum class Order {
@@ -46,8 +48,9 @@ enum class Orientation {
     PORTRAIT,
 }
 
+/** A corner of the screen, for the clock and for the caption. */
 @Serializable
-enum class ClockPosition {
+enum class Corner {
     @SerialName("top-left")
     TOP_LEFT,
 
@@ -80,14 +83,37 @@ enum class FrameLanguage {
 
     @SerialName("en")
     EN,
+    ;
+
+    /**
+     * The locale of the frame's texts, its clock's date and its place names: `auto` follows the system, otherwise the
+     * chosen language applies.
+     */
+    fun locale(platform: PlatformInfo): Locale =
+        when (this) {
+            AUTO -> platform.systemLocale
+            DE -> Locale.GERMAN
+            EN -> Locale.ENGLISH
+        }
 }
 
 @Serializable
 data class ClockSettings(
     val enabled: Boolean = true,
-    val position: ClockPosition = ClockPosition.BOTTOM_RIGHT,
+    val position: Corner = Corner.BOTTOM_RIGHT,
     val sizePercent: Int = 100,
     val format: ClockFormat = ClockFormat.H24,
+)
+
+/**
+ * The caption over the photo (spec `slideshow-display`, "Caption over the photo"): it always shows the comment; the
+ * album title and the place are switched on here. It may share its corner with the clock.
+ */
+@Serializable
+data class CaptionSettings(
+    val albumTitle: Boolean = false,
+    val place: Boolean = false,
+    val position: Corner = Corner.BOTTOM_LEFT,
 )
 
 /** On and off time of a day's window, each as `HH:MM` in the device's local time. */
@@ -129,6 +155,7 @@ data class Settings(
     val fillMode: FillMode = FillMode.AUTO,
     val orientation: Orientation = Orientation.LANDSCAPE,
     val clock: ClockSettings = ClockSettings(),
+    val caption: CaptionSettings = CaptionSettings(),
     val language: FrameLanguage = FrameLanguage.AUTO,
     val cacheBudgetMb: Int = 1000,
     val displaySchedule: DisplayScheduleSettings = DisplayScheduleSettings(),

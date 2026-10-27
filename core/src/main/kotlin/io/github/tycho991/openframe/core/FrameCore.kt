@@ -21,6 +21,7 @@ import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.StaticAssets
 import io.github.tycho991.openframe.core.identity.FrameIdentity
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
+import io.github.tycho991.openframe.core.library.MetadataBackfill
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
@@ -36,6 +37,7 @@ import io.github.tycho991.openframe.core.nextcloud.NextcloudConnector
 import io.github.tycho991.openframe.core.nextcloud.NextcloudMigration
 import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
+import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
@@ -45,6 +47,9 @@ import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
 import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
+import io.github.tycho991.openframe.core.slideshow.CaptionText
+import io.github.tycho991.openframe.core.slideshow.ShownCaption
+import io.github.tycho991.openframe.core.slideshow.SlideState
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import io.github.tycho991.openframe.core.slideshow.StoredTransitionGovernor
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
@@ -65,6 +70,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -149,6 +155,7 @@ class FrameCore(
             clock,
             log,
             migration::sourceRemoved,
+            onSynced = { backfill.request() },
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
@@ -164,6 +171,12 @@ class FrameCore(
             log,
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
+
+    /** Place names of photo positions, offline; loads its data on the first lookup. */
+    val places = PlaceIndex(log)
+
+    /** Reads the GPS position of photos from before it was read, once, after start, scans with changes and syncs. */
+    private val backfill: MetadataBackfill = MetadataBackfill(index, engine, SourceOriginals(localSource, sources)::onFrame, log)
 
     lateinit var identity: FrameIdentity
         private set
@@ -193,6 +206,21 @@ class FrameCore(
             scope,
             log,
         )
+
+    /**
+     * The caption of the photo on screen, `null` while none is shown. It follows the photo's current entry, the
+     * settings and the language, so an edited comment or a switched-on place shows without a photo change.
+     */
+    val caption: StateFlow<ShownCaption?> =
+        combine(slideshow.state, index.library, settings.settings) { state, library, s ->
+            val showing = state as? SlideState.Showing ?: return@combine null
+            val entry = library.photos[showing.photo.id] ?: showing.photo
+            // The place data loads only for a caption that shows a place.
+            val place =
+                if (s.caption.place) entry.gps?.let { places.placeName(it.lat, it.lon, s.language.locale(platform)) } else null
+            ShownCaption(showing.seq, CaptionText.of(entry, s.caption, place))
+        }.distinctUntilChanged()
+            .stateIn(scope, SharingStarted.Eagerly, null)
 
     val router = Router()
     private val pipeline = HttpPipeline(router, AccessControl(clients, signer), log, StaticAssets(assets)::handle)
@@ -225,6 +253,7 @@ class FrameCore(
         scope.launch { settings.settings.collect(transitions::onSettings) }
         sources.start()
         _ready.value = true
+        backfill.request()
 
         scope.launch { scanLoop() }
         scope.launch {
@@ -294,6 +323,7 @@ class FrameCore(
         server.stop()
         scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
         cache.close()
+        backfill.close()
         settings.flush()
         clients.flush()
         index.flush()
@@ -306,7 +336,7 @@ class FrameCore(
         router.infoRoutes(identity, settings, platform)
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
-        router.libraryRoutes(library, settings, signer, transitions)
+        router.libraryRoutes(library, settings, signer, transitions, places, platform)
         router.sourcesRoutes(sources, nextcloud)
         router.displayRoutes(display)
         router.diagnosticsRoutes(log)
@@ -315,7 +345,7 @@ class FrameCore(
     private suspend fun scanLoop() {
         while (scope.isActive) {
             try {
-                localSource.scan()
+                backfill.scanned(localSource.scan())
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }

@@ -82,7 +82,10 @@ test("Move the section", async ({ page }) => {
   await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2 + v.height / 3, { steps: 8 });
   await page.mouse.up();
   await expect(viewport(page)).toHaveAttribute("data-y", "0");
-  await page.getByRole("button", { name: "Speichern" }).click();
+  await page
+    .getByRole("dialog", { name: "Ausschnitt wählen" })
+    .getByRole("button", { name: "Speichern" })
+    .click();
   await expect(page.getByRole("dialog", { name: "Ausschnitt wählen" })).toBeHidden();
   const photo = await onlyPhoto(page);
   expect(photo.crop).not.toBeNull();
@@ -106,7 +109,10 @@ test("Zoom out to borders", async ({ page }) => {
   await viewport(page).hover();
   await page.mouse.wheel(0, 500);
   await expect(viewport(page)).toHaveAttribute("data-height", "1");
-  await page.getByRole("button", { name: "Speichern" }).click();
+  await page
+    .getByRole("dialog", { name: "Ausschnitt wählen" })
+    .getByRole("button", { name: "Speichern" })
+    .click();
   await expect(page.getByRole("dialog", { name: "Ausschnitt wählen" })).toBeHidden();
   const photo = await onlyPhoto(page);
   expect(photo.presentation).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
@@ -124,7 +130,10 @@ test("Back to automatic", async ({ page }) => {
   await expect(page.getByText("Von Hand gewählt")).toBeVisible();
   await openEditor(page);
   await page.getByRole("button", { name: "Automatisch" }).click();
-  await page.getByRole("button", { name: "Speichern" }).click();
+  await page
+    .getByRole("dialog", { name: "Ausschnitt wählen" })
+    .getByRole("button", { name: "Speichern" })
+    .click();
   await expect(page.getByRole("dialog", { name: "Ausschnitt wählen" })).toBeHidden();
   expect((await onlyPhoto(page)).crop).toBeNull();
   await expect(page.getByText("Nach Füllmodus: Automatisch")).toBeVisible();

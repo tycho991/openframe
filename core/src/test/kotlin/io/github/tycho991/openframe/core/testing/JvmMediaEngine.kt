@@ -3,10 +3,13 @@ package io.github.tycho991.openframe.core.testing
 import com.drew.imaging.ImageMetadataReader
 import com.drew.metadata.exif.ExifIFD0Directory
 import com.drew.metadata.exif.ExifSubIFDDirectory
+import com.drew.metadata.exif.GpsDirectory
+import io.github.tycho991.openframe.core.platform.GeoPoint
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormat
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
+import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
@@ -25,13 +28,17 @@ import kotlin.math.roundToInt
 
 /**
  * [MediaEngine] on the JVM with ImageIO (WebP through TwelveMonkeys) and
- * metadata-extractor. Counts how often files are opened.
+ * metadata-extractor. Counts how often files are opened and decoded.
  */
 class JvmMediaEngine(
     private val supportsHeic: Boolean = false,
 ) : MediaEngine {
     val probes = AtomicInteger()
     val renders = AtomicInteger()
+    val metadataReads = AtomicInteger()
+
+    /** Every decode of image data, by a probe or a render. */
+    val decodes = AtomicInteger()
 
     /** The region of every render, in order. */
     val regions: MutableList<Region> = Collections.synchronizedList(mutableListOf())
@@ -48,7 +55,13 @@ class JvmMediaEngine(
             width = if (swap) image.height else image.width,
             height = if (swap) image.width else image.height,
             takenAt = takenAt(file),
+            gps = gps(file),
         )
+    }
+
+    override fun readMetadata(file: File): ImageMetadata {
+        metadataReads.incrementAndGet()
+        return ImageMetadata(gps = gps(file))
     }
 
     override fun render(
@@ -93,6 +106,7 @@ class JvmMediaEngine(
 
     private fun decode(file: File): BufferedImage =
         try {
+            decodes.incrementAndGet()
             ImageIO.read(file) ?: throw ImageException(SkipReason.CORRUPT, "Not decodable")
         } catch (e: ImageException) {
             throw e
@@ -116,6 +130,15 @@ class JvmMediaEngine(
                 .getFirstDirectoryOfType(ExifSubIFDDirectory::class.java)
                 ?.getDateOriginal(TimeZone.getTimeZone(ZoneOffset.UTC))
                 ?.toInstant()
+        }.getOrNull()
+
+    private fun gps(file: File): GeoPoint? =
+        runCatching {
+            ImageMetadataReader
+                .readMetadata(file)
+                .getFirstDirectoryOfType(GpsDirectory::class.java)
+                ?.geoLocation
+                ?.let { GeoPoint.fromExif(it.latitude, it.longitude) }
         }.getOrNull()
 
     private fun rotate(

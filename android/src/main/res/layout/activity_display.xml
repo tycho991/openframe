@@ -85,6 +85,25 @@
             android:layout_height="wrap_content" />
     </LinearLayout>
 
+    <!-- Two caption views that cross-fade with the photo (CaptionOverlay); its corner and alignment come from the
+         settings. -->
+    <FrameLayout
+        android:id="@+id/caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:layout_margin="28dp"
+        tools:ignore="RtlHardcoded">
+
+        <include
+            android:id="@+id/caption_a"
+            layout="@layout/caption_lines" />
+
+        <include
+            android:id="@+id/caption_b"
+            layout="@layout/caption_lines" />
+    </FrameLayout>
+
     <LinearLayout
         android:id="@+id/clock"
         android:layout_width="wrap_content"

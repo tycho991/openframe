@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.platform
 
 import io.github.tycho991.openframe.core.readFully
+import kotlinx.serialization.Serializable
 import java.io.File
 import java.time.Instant
 
@@ -14,13 +15,45 @@ enum class ImageFormat(
     HEIF("heic"),
 }
 
-/** Dimensions after EXIF rotation and capture date from EXIF, if present. */
+/** Dimensions after EXIF rotation, and capture date and GPS position from EXIF, if present. */
 data class ImageInfo(
     val format: ImageFormat,
     val width: Int,
     val height: Int,
     val takenAt: Instant?,
+    val gps: GeoPoint? = null,
 )
+
+/** What [MediaEngine.readMetadata] reads from EXIF without decoding the image. */
+data class ImageMetadata(
+    val gps: GeoPoint?,
+) {
+    companion object {
+        val NONE = ImageMetadata(gps = null)
+    }
+}
+
+/** A position in degrees, north and east positive. */
+@Serializable
+data class GeoPoint(
+    val lat: Double,
+    val lon: Double,
+) {
+    companion object {
+        /**
+         * The position of a photo's EXIF data, or `null` if it does not count (spec `photo-library`, "Valid GPS
+         * position"): outside ±90°/±180°, or 0/0, which cameras without a fix write. Every engine goes through this.
+         */
+        fun fromExif(
+            lat: Double,
+            lon: Double,
+        ): GeoPoint? {
+            if (lat.isNaN() || lon.isNaN() || lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
+            if (lat == 0.0 && lon == 0.0) return null
+            return GeoPoint(lat, lon)
+        }
+    }
+}
 
 /** Why a file with an image extension cannot be accepted. */
 enum class SkipReason(
@@ -49,6 +82,12 @@ interface MediaEngine {
      * the file is decodable. Throws [ImageException].
      */
     fun probe(file: File): ImageInfo
+
+    /**
+     * Reads the metadata of [file] from its EXIF data only, without a probe decode, for photos already in the index
+     * (spec "Metadata of photos already in the index"). A file without readable EXIF data gives [ImageMetadata.NONE].
+     */
+    fun readMetadata(file: File): ImageMetadata
 
     /**
      * Renders [region] of [source], EXIF-rotated and in rotated coordinates, to exactly [width]×[height]

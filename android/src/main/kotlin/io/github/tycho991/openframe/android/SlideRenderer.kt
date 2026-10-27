@@ -22,12 +22,16 @@ import java.util.concurrent.Executors
  * background does not overlap itself, so `alpha` and `translationX` need no
  * hardware layer. The layer cost about every fifth vsync on the Frameo (measured: 22 % missed
  * with it, 2 to 4 % without).
+ * Every swap is reported to [onSwap] the moment it starts, so that what belongs to a photo (its caption) changes
+ * with it and not when the state changes, which can come before the photo is decoded.
  */
 class SlideRenderer(
     private var front: ImageView,
     private var back: ImageView,
     /** A photo could not be decoded. */
     private val onUndecodable: (PhotoEntry) -> Unit,
+    /** The swap to the slide `seq` starts: animated over `durationMs`, or at once. */
+    private val onSwap: (seq: Long, animated: Boolean, durationMs: Long) -> Unit = { _, _, _ -> },
 ) {
     private class Decoded(
         val photo: PhotoEntry,
@@ -68,11 +72,15 @@ class SlideRenderer(
         back.addOnLayoutChangeListener(onResize)
     }
 
-    /** Shows [photo] with the transition [transition]. [step] +1 comes from the right, -1 from the left. */
+    /**
+     * Shows [photo], the slide [seq], with the transition [transition]. [step] +1 comes from the right, -1 from the
+     * left.
+     */
     fun show(
         photo: PhotoEntry,
         file: File,
         step: Int,
+        seq: Long,
         transition: Transition,
         durationMs: Long,
     ) {
@@ -80,7 +88,7 @@ class SlideRenderer(
         val ready = preloaded?.takeIf { it.photo.id == photo.id && it.photo.version == photo.version && it.file == file }
         if (ready != null) {
             preloaded = null
-            swapTo(ready, step, transition, durationMs)
+            swapTo(ready, step, seq, transition, durationMs)
             return
         }
         // Not decoded ahead, for example after swiping back: decode now.
@@ -95,7 +103,7 @@ class SlideRenderer(
                 } else if (bitmap == null) {
                     onUndecodable(photo)
                 } else {
-                    swapTo(Decoded(photo, file, bitmap, target), step, transition, durationMs)
+                    swapTo(Decoded(photo, file, bitmap, target), step, seq, transition, durationMs)
                 }
             }
         }
@@ -185,6 +193,7 @@ class SlideRenderer(
     private fun swapTo(
         next: Decoded,
         step: Int,
+        seq: Long,
         transition: Transition,
         durationMs: Long,
     ) {
@@ -201,6 +210,7 @@ class SlideRenderer(
         current = next
         val width = front.width.toFloat().coerceAtLeast(1f)
         val instant = transition == Transition.NONE || durationMs <= 0 || old == null
+        onSwap(seq, !instant, if (instant) 0 else durationMs)
         if (instant) {
             raiseBack()
             exchangeViews()

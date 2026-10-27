@@ -22,6 +22,9 @@
     "displaySchedule.wakeMinutes": [1, 120],
   };
 
+  /** The four corners, for the clock and for the caption. */
+  const corners = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+
   const scheduleTimes = [
     ["weekdays", "on"],
     ["weekdays", "off"],
@@ -229,8 +232,8 @@
       <div class="field">
         <label for="s-clock-pos">{t("settings.clockPosition")}</label>
         <select id="s-clock-pos" bind:value={form.clock.position} disabled={!form.clock.enabled}>
-          {#each ["top-left", "top-right", "bottom-left", "bottom-right"] as v (v)}
-            <option value={v}>{option("settings.clockPosition", v)}</option>
+          {#each corners as v (v)}
+            <option value={v}>{option("settings.corner", v)}</option>
           {/each}
         </select>
       </div>
@@ -252,6 +255,53 @@
         <select id="s-clock-format" bind:value={form.clock.format} disabled={!form.clock.enabled}>
           {#each ["24h", "12h"] as v (v)}<option value={v}>{option("settings.clockFormat", v)}</option>{/each}
         </select>
+      </div>
+    </fieldset>
+
+    <fieldset class="card">
+      <legend>{t("settings.section.caption")}</legend>
+      <p class="hint">{t("settings.captionHint")}</p>
+      <label class="check">
+        <input
+          type="checkbox"
+          bind:checked={form.caption.albumTitle}
+          aria-invalid={!!errors["caption.albumTitle"]}
+        />
+        <span>{t("settings.captionAlbumTitle")}</span>
+      </label>
+      <div class="place">
+        <label class="check">
+          <input
+            type="checkbox"
+            bind:checked={form.caption.place}
+            aria-invalid={!!errors["caption.place"]}
+            aria-describedby="s-caption-attribution"
+          />
+          <span>{t("settings.captionPlace")}</span>
+        </label>
+        <!-- Shipped with the frame's place data; a plain link, nothing is loaded from there. -->
+        <span class="hint" id="s-caption-attribution"
+          >{t("settings.placeAttribution")} (<a
+            href="https://www.geonames.org/"
+            target="_blank"
+            rel="noreferrer">geonames.org</a
+          >)</span
+        >
+      </div>
+      <div class="field">
+        <label for="s-caption-pos">{t("settings.captionPosition")}</label>
+        <select
+          id="s-caption-pos"
+          bind:value={form.caption.position}
+          aria-invalid={!!errors["caption.position"]}
+        >
+          {#each corners as v (v)}
+            <option value={v}>{option("settings.corner", v)}</option>
+          {/each}
+        </select>
+        {#if fieldError("caption.position")}<span class="error" role="alert"
+            >{fieldError("caption.position")}</span
+          >{/if}
       </div>
     </fieldset>
 
@@ -404,6 +454,10 @@
     justify-content: space-between;
     align-items: center;
     font-weight: 600;
+  }
+  .place {
+    display: grid;
+    gap: 4px;
   }
   .times {
     display: grid;
