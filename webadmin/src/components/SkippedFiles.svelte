@@ -30,9 +30,9 @@
 
 <style>
   .skipped {
-    border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--divider));
     background: color-mix(in srgb, var(--danger) 8%, var(--surface));
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-s);
     padding: 8px 12px;
     margin-bottom: 12px;
   }

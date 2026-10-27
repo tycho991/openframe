@@ -191,7 +191,7 @@
 <style>
   dialog {
     border: 0;
-    border-radius: var(--radius);
+    border-radius: var(--radius-m);
     background: var(--surface);
     color: var(--text);
     padding: 16px;

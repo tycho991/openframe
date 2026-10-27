@@ -289,7 +289,7 @@
   }
   .tabs button[aria-selected="true"] {
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
     border-color: var(--accent);
   }
   form {

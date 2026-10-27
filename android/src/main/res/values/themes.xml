@@ -1,23 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Shared look on the frame: black background, light text with a shadow, calm accent color. -->
+    <!-- Values only the frame has; the shared ones are ds_* in design_tokens.xml. Text over a photo or over the
+         panel stays white with a shadow: ds_muted on the panel over a white photo is only about 2.7:1 (design-system,
+         design.md, decision 2). -->
     <color name="frame_background">#000000</color>
     <color name="frame_text">#FFFFFFFF</color>
     <color name="frame_text_muted">#CCFFFFFF</color>
-    <color name="frame_accent">#FF5FB39B</color>
     <color name="frame_panel">#B3101010</color>
     <color name="frame_shadow">#B3000000</color>
 
+    <!-- Type and spacing for a viewing distance of two or three metres, larger than anything in the web UI. -->
+    <dimen name="frame_text_title">32sp</dimen>
+    <dimen name="frame_text_body">20sp</dimen>
+    <dimen name="frame_text_code">44sp</dimen>
+    <dimen name="frame_hint_name">24sp</dimen>
+    <dimen name="frame_hint_code">34sp</dimen>
+    <dimen name="frame_edge">28dp</dimen>
+    <dimen name="frame_hint_padding_vertical">18dp</dimen>
+    <dimen name="frame_pause_min_width">120dp</dimen>
+    <dimen name="frame_empty_body_max_width">640dp</dimen>
+
     <style name="Theme.OpenFrame" parent="android:Theme.Material.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/frame_background</item>
-        <item name="android:colorAccent">@color/frame_accent</item>
+        <item name="android:colorAccent">@color/ds_accent</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
 
     <style name="Theme.OpenFrame.Dialog" parent="android:Theme.Material.Dialog.Alert">
-        <item name="android:colorAccent">@color/frame_accent</item>
+        <item name="android:colorAccent">@color/ds_accent</item>
     </style>
 
+    <!-- The fontFamily values are the fallback; FrameType sets Inter on every text after inflating. -->
     <style name="FrameText">
         <item name="android:textColor">@color/frame_text</item>
         <item name="android:fontFamily">sans-serif</item>
@@ -28,40 +41,40 @@
     </style>
 
     <style name="FrameText.Title">
-        <item name="android:textSize">32sp</item>
+        <item name="android:textSize">@dimen/frame_text_title</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
     <style name="FrameText.Body">
-        <item name="android:textSize">20sp</item>
+        <item name="android:textSize">@dimen/frame_text_body</item>
         <item name="android:textColor">@color/frame_text_muted</item>
         <item name="android:lineSpacingMultiplier">1.15</item>
     </style>
 
     <!-- Pairing QR code as the top drawable, with "Scan with your phone" below it. -->
     <style name="FrameQr" parent="FrameText.Body">
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">@dimen/ds_text_body</item>
         <item name="android:gravity">center_horizontal</item>
-        <item name="android:drawablePadding">8dp</item>
-        <item name="android:layout_margin">12dp</item>
+        <item name="android:drawablePadding">@dimen/ds_space_2</item>
+        <item name="android:layout_margin">@dimen/ds_space_3</item>
         <item name="android:text">@string/qr_scan</item>
     </style>
 
     <!-- The caption over the photo: the clock's shadow, so it reads on bright and dark photos. -->
     <style name="FrameText.Caption">
-        <item name="android:textSize">22sp</item>
+        <item name="android:textSize">@dimen/ds_text_headline</item>
         <item name="android:lineSpacingMultiplier">1.1</item>
     </style>
 
     <style name="FrameText.Caption.Place">
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">@dimen/ds_text_title</item>
         <item name="android:textColor">@color/frame_text_muted</item>
     </style>
 
     <style name="FrameText.Code">
-        <item name="android:textSize">44sp</item>
+        <item name="android:textSize">@dimen/frame_text_code</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0.2</item>
-        <item name="android:textColor">@color/frame_accent</item>
+        <item name="android:textColor">@color/ds_accent</item>
     </style>
 </resources>

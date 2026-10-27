@@ -27,6 +27,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:text="@string/loading"
+        android:textColor="@color/ds_muted"
         android:visibility="gone" />
 
     <!-- Text column and QR code; DisplayActivity puts them side by side in landscape, the QR code on top in portrait. -->
@@ -37,7 +38,7 @@
         android:layout_gravity="center"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="32dp"
+        android:padding="@dimen/ds_space_6"
         android:visibility="gone">
 
         <LinearLayout
@@ -52,24 +53,27 @@
                 style="@style/FrameText.Title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/empty_title" />
+                android:text="@string/empty_title"
+                android:textColor="@color/ds_text" />
 
             <TextView
                 android:id="@+id/empty_body"
                 style="@style/FrameText.Body"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/ds_space_3"
                 android:gravity="center"
-                android:maxWidth="640dp" />
+                android:maxWidth="@dimen/frame_empty_body_max_width"
+                android:textColor="@color/ds_muted" />
 
             <TextView
                 android:id="@+id/empty_code_label"
                 style="@style/FrameText.Body"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="28dp"
-                android:text="@string/pairing_code" />
+                android:layout_marginTop="@dimen/frame_edge"
+                android:text="@string/pairing_code"
+                android:textColor="@color/ds_muted" />
 
             <TextView
                 android:id="@+id/empty_code"
@@ -82,7 +86,8 @@
             android:id="@+id/empty_qr"
             style="@style/FrameQr"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:textColor="@color/ds_muted" />
     </LinearLayout>
 
     <!-- Two caption views that cross-fade with the photo (CaptionOverlay); its corner and alignment come from the
@@ -92,7 +97,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|left"
-        android:layout_margin="28dp"
+        android:layout_margin="@dimen/frame_edge"
         tools:ignore="RtlHardcoded">
 
         <include
@@ -108,7 +113,7 @@
         android:id="@+id/clock"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="28dp"
+        android:layout_margin="@dimen/frame_edge"
         android:orientation="vertical">
 
         <TextView
@@ -136,10 +141,10 @@
         android:background="@color/frame_panel"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingLeft="28dp"
-        android:paddingTop="18dp"
-        android:paddingRight="28dp"
-        android:paddingBottom="18dp"
+        android:paddingLeft="@dimen/frame_edge"
+        android:paddingTop="@dimen/frame_hint_padding_vertical"
+        android:paddingRight="@dimen/frame_edge"
+        android:paddingBottom="@dimen/frame_hint_padding_vertical"
         android:visibility="gone"
         tools:ignore="UselessParent">
 
@@ -162,7 +167,7 @@
                     style="@style/FrameText.Title"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="24sp" />
+                    android:textSize="@dimen/frame_hint_name" />
 
                 <TextView
                     android:id="@+id/hint_address"
@@ -175,8 +180,8 @@
                 android:id="@+id/hint_code_box"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="24dp"
-                android:layout_marginRight="24dp"
+                android:layout_marginLeft="@dimen/ds_space_5"
+                android:layout_marginRight="@dimen/ds_space_5"
                 android:gravity="center_horizontal"
                 android:orientation="vertical">
 
@@ -186,22 +191,22 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/pairing_code"
-                    android:textSize="16sp" />
+                    android:textSize="@dimen/ds_text_body" />
 
                 <TextView
                     android:id="@+id/hint_code"
                     style="@style/FrameText.Code"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="34sp" />
+                    android:textSize="@dimen/frame_hint_code" />
             </LinearLayout>
 
             <Button
                 android:id="@+id/hint_pause"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:minWidth="120dp"
-                android:textSize="18sp" />
+                android:minWidth="@dimen/frame_pause_min_width"
+                android:textSize="@dimen/ds_text_title" />
 
             <TextView
                 android:id="@+id/hint_qr"

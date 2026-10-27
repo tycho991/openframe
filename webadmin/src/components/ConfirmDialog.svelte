@@ -26,8 +26,8 @@
 
 <style>
   dialog {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-m);
     background: var(--surface);
     color: var(--text);
     max-width: min(440px, calc(100vw - 32px));

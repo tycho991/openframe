@@ -183,8 +183,8 @@
 
 <style>
   dialog {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-m);
     background: var(--surface);
     color: var(--text);
     width: min(560px, calc(100vw - 32px));
@@ -197,8 +197,8 @@
     margin-top: 14px;
   }
   .drop {
-    border: 2px dashed var(--border);
-    border-radius: var(--radius);
+    border: 2px dashed var(--outline);
+    border-radius: var(--radius-m);
     padding: 20px;
     text-align: center;
   }

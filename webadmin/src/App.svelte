@@ -120,7 +120,7 @@
     padding: 10px 16px;
     background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
   }
   .brand {
     display: flex;
@@ -158,7 +158,7 @@
   }
   nav a[aria-current="page"] {
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
   }
   .lang {
     width: auto;

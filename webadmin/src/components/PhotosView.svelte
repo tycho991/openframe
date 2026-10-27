@@ -320,7 +320,7 @@
   .photos.dragging {
     outline: 3px dashed var(--accent);
     outline-offset: 4px;
-    border-radius: var(--radius);
+    border-radius: var(--radius-m);
   }
   .toolbar {
     display: flex;
@@ -367,9 +367,9 @@
     width: max-content;
     max-width: calc(100vw - 32px);
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--divider);
     border-radius: 999px;
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-1);
     z-index: 20;
   }
 </style>

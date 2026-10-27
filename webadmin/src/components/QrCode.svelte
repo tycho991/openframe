@@ -44,6 +44,6 @@
     max-width: 280px;
     height: auto;
     aspect-ratio: 1;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-s);
   }
 </style>

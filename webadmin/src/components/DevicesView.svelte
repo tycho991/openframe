@@ -201,7 +201,7 @@
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
     vertical-align: middle;
     margin-left: 6px;
   }
