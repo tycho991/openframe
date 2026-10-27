@@ -105,12 +105,12 @@
 
 ## 8. Web UI
 
-- [ ] 8.1 API client with `comment`, `location` and `caption`. In `PhotoDetail`: a comment `textarea` with a counter of code points, a save action, the error at the field from `fields.comment` (text kept), and the place with coordinates at four decimals, with no map. Texts in `en.json` and `de.json`. Verify:
+- [x] 8.1 API client with `comment`, `location` and `caption`. In `PhotoDetail`: a comment `textarea` with a counter of code points, a save action, the error at the field from `fields.comment` (text kept), and the place with coordinates at four decimals, with no map. Texts in `en.json` and `de.json`. Verify:
   - e2e tests for every scenario of "Edit the comment" and "Location in the detail view", including a Nextcloud photo.
   - A check that no request goes to another host.
   - The i18n test that both languages have the same keys passes.
-- [ ] 8.2 `SettingsView`: the caption group (two switches, the corner control shared with the clock) and the GeoNames attribution with CC BY 4.0 as text next to the place switch. Verify: e2e tests for "Attribution of the place data" › "Settings open" (offline) and for saving the caption settings, and an error at `caption.position` shown at the field.
-- [ ] 8.3 Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e` in `webadmin/`. Verify: all green.
+- [x] 8.2 `SettingsView`: the caption group (two switches, the corner control shared with the clock) and the GeoNames attribution with CC BY 4.0 as text next to the place switch. Verify: e2e tests for "Attribution of the place data" › "Settings open" (offline) and for saving the caption settings, and an error at `caption.position` shown at the field.
+- [x] 8.3 Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e` in `webadmin/`. Verify: all green.
 
 ## 9. Devices
 
