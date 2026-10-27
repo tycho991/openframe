@@ -85,15 +85,15 @@
 
 ## 7. Caption on the frame
 
-- [ ] 7.1 `SlideRenderer` reports the start of each swap with `seq`, whether it animates, and the duration. `CaptionOverlay` with two cross-fading views (text line with at most 2 lines, place line with 1 line, ellipsis, at most 60 % of the width, the clock's shadow) switches only on that report; with the same `seq`, it replaces the text in place (design decision 8). Verify:
+- [x] 7.1 `SlideRenderer` reports the start of each swap with `seq`, whether it animates, and the duration. `CaptionOverlay` with two cross-fading views (text line with at most 2 lines, place line with 1 line, ellipsis, at most 60 % of the width, the clock's shadow) switches only on that report; with the same `seq`, it replaces the text in place (design decision 8). Verify:
   - Robolectric tests that a caption switches at the swap and not at the state change.
   - Robolectric tests that `none` and the instant fallback switch at once.
   - A Robolectric test for "Length of the caption" › "Long comment" (the place line stays visible).
-- [ ] 7.2 Corner, alignment and stacking: the caption in its corner, aligned to its side, and a pure function `cornerOffsets` for the shared corner, fed by a layout listener on the clock. The caption is hidden together with the clock in `setHintVisible`. Verify:
+- [x] 7.2 Corner, alignment and stacking: the caption in its corner, aligned to its side, and a pure function `cornerOffsets` for the shared corner, fed by a layout listener on the clock. The caption is hidden together with the clock in `setHintVisible`. Verify:
   - JVM tests of `cornerOffsets` for all corners, with the clock on and off, and at 50 % and 300 %.
   - Robolectric tests for "Corner of the caption" › "Caption top right" and "Caption and hint" › "Tap on the frame".
   - `./gradlew :android:lintDebug` without new warnings.
-- [ ] 7.3 New rows in `docs/DEVICE_TEST.md`, each with its spec scenario:
+- [x] 7.3 New rows in `docs/DEVICE_TEST.md`, each with its spec scenario:
   - Legibility on a bright and a dark photo (slideshow-display › Caption over the photo).
   - Clock at 300 % in portrait sharing the corner (› Caption and clock in the same corner › Large clock in portrait).
   - Crossfade without a caption over the wrong photo (› Caption changes with the photo › Crossfade).
