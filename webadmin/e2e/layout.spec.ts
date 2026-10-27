@@ -7,20 +7,58 @@ test.beforeEach(async () => {
   await usb("rotated6.jpg", "b.jpg");
 });
 
-for (const width of [360, 390, 1280]) {
+const SECTIONS = [
+  { nav: "Fotos", ready: (page: Page) => page.getByRole("main").getByRole("button", { name: /a\.jpg/ }) },
+  { nav: "Alben", ready: (page: Page) => page.getByRole("heading", { name: "holiday" }) },
+  { nav: "Quellen", ready: (page: Page) => page.getByRole("heading", { name: "Quelle hinzufügen" }) },
+  { nav: "Einstellungen", ready: (page: Page) => page.getByLabel("Uhr anzeigen") },
+  { nav: "Geräte", ready: (page: Page) => page.getByRole("listitem") },
+];
+
+const horizontalOverflow = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+// Spec web-admin, "Supported browsers": from 360 px without horizontal scrolling, in every section.
+for (const width of [360, 390, 800, 1280]) {
   test(`No horizontal scrolling at ${width} px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await pairInUi(page);
-    for (const nav of ["Fotos", "Alben", "Einstellungen", "Geräte"]) {
-      await page.getByRole("link", { name: nav }).click();
-      await page.waitForLoadState("networkidle");
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      );
-      expect(overflow, `${nav} at ${width} px`).toBeLessThanOrEqual(0);
+    for (const { nav, ready } of SECTIONS) {
+      await page.getByRole("navigation").getByRole("link", { name: nav }).click();
+      await expect(ready(page).first()).toBeVisible();
+      expect(await horizontalOverflow(page), `${nav} at ${width} px`).toBeLessThanOrEqual(0);
     }
   });
 }
+
+test("Phone in landscape: no horizontal scrolling, the navigation covers no content", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await pairInUi(page);
+  for (const { nav, ready } of SECTIONS) {
+    await page.getByRole("navigation").getByRole("link", { name: nav }).click();
+    await expect(ready(page).first()).toBeVisible();
+    expect(await horizontalOverflow(page), nav).toBeLessThanOrEqual(0);
+    // Scrolled to the end, the last element of the section is fully visible and beside the navigation.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const covered = await page.evaluate(() => {
+      const nav = document.querySelector("nav")!.getBoundingClientRect();
+      const main = document.querySelector("main")!;
+      const elements = [...main.querySelectorAll("button, a, input, select, h1, h2, p")].filter(
+        (el) => el.getBoundingClientRect().height > 1,
+      );
+      return elements
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          const inView = r.bottom > 0 && r.top < innerHeight;
+          const overlaps =
+            r.left < nav.right && r.right > nav.left && r.top < nav.bottom && r.bottom > nav.top;
+          return inView && overlaps;
+        })
+        .map((el) => el.textContent?.trim().slice(0, 30));
+    });
+    expect(covered, nav).toEqual([]);
+  }
+});
 
 test.describe("German browser", () => {
   test.use({ locale: "de-DE" });
