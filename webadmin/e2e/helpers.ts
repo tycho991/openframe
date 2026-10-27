@@ -94,6 +94,13 @@ export async function pairInUi(page: Page): Promise<void> {
   await expect(page.getByRole("navigation")).toBeVisible();
 }
 
+/** Chooses the interface language in the appearance menu, whose button is named in the current language. */
+export async function chooseLanguage(page: Page, language: "Deutsch" | "English"): Promise<void> {
+  await page.getByRole("button", { name: /^(Darstellung|Appearance)$/ }).click();
+  await page.getByRole("radio", { name: language }).check();
+  await page.keyboard.press("Escape");
+}
+
 /** Call the API with the browser's token; with [body] as a mutating request. */
 export async function apiAsBrowser<T>(
   page: Page,

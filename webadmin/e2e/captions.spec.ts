@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
-import { apiAsBrowser, frameCaption, nextcloudPut, nextcloudShare, pairInUi, reset, usb } from "./helpers";
+import {
+  apiAsBrowser,
+  chooseLanguage,
+  frameCaption,
+  nextcloudPut,
+  nextcloudShare,
+  pairInUi,
+  reset,
+  usb,
+} from "./helpers";
 
 interface PhotoPage {
   items: { id: string; path: string; source: string; comment: string | null }[];
@@ -131,7 +140,7 @@ test.describe("Location in the detail view", () => {
     await pairInUi(page);
     // The frame set to German, the interface in English.
     await apiAsBrowser(page, "/settings", { method: "PATCH", body: { language: "de" } });
-    await page.getByRole("combobox", { name: "Sprache der Oberfläche" }).selectOption("en");
+    await chooseLanguage(page, "English");
     await page.reload();
     const detail = await openPhoto(page);
     await expect(detail.getByText("Siena, Italien")).toBeVisible();
@@ -140,7 +149,7 @@ test.describe("Location in the detail view", () => {
     expect(foreign).toEqual([]);
     // In German the decimals take a comma.
     await detail.getByRole("button", { name: "Close" }).click();
-    await page.getByRole("combobox", { name: "Interface language" }).selectOption("de");
+    await chooseLanguage(page, "Deutsch");
     await expect((await openPhoto(page)).getByText("43,3188; 11,3308")).toBeVisible();
   });
 

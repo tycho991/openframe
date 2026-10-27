@@ -82,21 +82,19 @@
 
     <nav aria-label={t("nav.label")}>
       <div class="brand side-only">{@render brand()}</div>
-      <ul>
+      <div class="links">
         {#each ROUTES as route (route)}
           {@const current = router.route === route}
-          <li>
-            <a
-              href={"/" + route}
-              aria-current={current ? "page" : undefined}
-              onclick={(e) => navigate(e, route)}
-            >
-              <span class="indicator"><Icon name={sections[route].icon} filled={current} /></span>
-              <span class="label">{t(sections[route].label)}</span>
-            </a>
-          </li>
+          <a
+            href={"/" + route}
+            aria-current={current ? "page" : undefined}
+            onclick={(e) => navigate(e, route)}
+          >
+            <span class="indicator"><Icon name={sections[route].icon} filled={current} /></span>
+            <span class="label">{t(sections[route].label)}</span>
+          </a>
         {/each}
-      </ul>
+      </div>
       <button type="button" class="appearance side-only" popovertarget="appearance">
         <Icon name="palette" />
         <span>{t("appearance.open")}</span>
@@ -188,18 +186,13 @@
     background: var(--surface);
     border-top: 1px solid var(--divider);
   }
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .links {
     display: flex;
-  }
-  li {
-    flex: 1 1 0;
-    min-width: 0;
   }
   nav a {
     display: flex;
+    flex: 1 1 0;
+    min-width: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -269,11 +262,11 @@
       border-top: 0;
       border-right: 1px solid var(--divider);
     }
-    ul {
+    .links {
       flex-direction: column;
       gap: var(--space-2);
     }
-    li {
+    nav a {
       flex: none;
     }
     main {
@@ -304,7 +297,7 @@
       flex: none;
       padding: var(--space-2) var(--space-3) var(--space-5);
     }
-    ul {
+    .links {
       gap: var(--space-1);
     }
     nav a {
