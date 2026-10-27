@@ -277,7 +277,6 @@
   }
   .add h2 {
     margin: 0;
-    font-size: 1.15rem;
   }
   .tabs {
     display: flex;
@@ -289,7 +288,7 @@
   }
   .tabs button[aria-selected="true"] {
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
     border-color: var(--accent);
   }
   form {
@@ -304,6 +303,6 @@
     flex-wrap: wrap;
   }
   .warn {
-    color: var(--warning, #a15c00);
+    color: var(--warning);
   }
 </style>

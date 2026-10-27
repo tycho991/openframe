@@ -45,6 +45,10 @@ class CaptionOverlay(
         }
 
     init {
+        for (view in listOf(first, second)) {
+            val (line, place) = lines(view)
+            FrameType.apply(FrameType.Weight.REGULAR, line, place)
+        }
         // At most 60 % of the screen's width; the screen is the parent, and it changes with the orientation.
         (container.parent as? View)?.addOnLayoutChangeListener { parent, _, _, _, _, _, _, _, _ ->
             val max = (parent.width * MAX_WIDTH_FRACTION).toInt()

@@ -36,6 +36,13 @@ class ClockOverlay(
             refreshVisibility()
         }
 
+    init {
+        FrameType.apply(FrameType.Weight.LIGHT, time)
+        FrameType.apply(FrameType.Weight.REGULAR, date)
+        // The colon stays in place when the minute changes.
+        FrameType.tabular(time)
+    }
+
     private val receiver =
         object : BroadcastReceiver() {
             override fun onReceive(

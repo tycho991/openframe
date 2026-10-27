@@ -33,6 +33,14 @@
     [...selected].every((id) => (items.find((p) => p.id === id)?.source ?? "local") === "local"),
   );
   let detail = $state<Photo | null>(null);
+  let grid = $state<VirtualGrid>();
+
+  /** Back to the grid at the tile of the photo that was open. */
+  function closeDetail() {
+    const id = detail?.id;
+    detail = null;
+    if (id) void grid?.focusPhoto(id);
+  }
   let confirm = $state<{ message: string; action: () => Promise<void> } | null>(null);
   let uploadFiles = $state<File[] | null>(null);
   let dragging = $state(false);
@@ -247,6 +255,7 @@
     <p class="empty">{t("photos.empty")}</p>
   {:else}
     <VirtualGrid
+      bind:this={grid}
       {items}
       {hasMore}
       {selecting}
@@ -278,7 +287,7 @@
   <PhotoDetail
     photo={detail}
     {settings}
-    onclose={() => (detail = null)}
+    onclose={closeDetail}
     ontogglehidden={toggleHidden}
     ondelete={(p) => askDelete([p.id], true)}
     onsavecrop={saveCrop}
@@ -320,7 +329,7 @@
   .photos.dragging {
     outline: 3px dashed var(--accent);
     outline-offset: 4px;
-    border-radius: var(--radius);
+    border-radius: var(--radius-m);
   }
   .toolbar {
     display: flex;
@@ -335,18 +344,14 @@
   }
   .toolbar label.check {
     flex: 0 0 auto;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    min-height: 44px;
-    cursor: pointer;
+    font-weight: normal;
   }
   .spacer {
     flex: 1 1 0;
   }
   .count {
     margin: 0 0 8px;
-    font-size: 0.9rem;
+    font-size: var(--text-label);
   }
   .empty {
     padding: 40px 0;
@@ -355,8 +360,8 @@
   }
   .selection-bar {
     position: fixed;
-    left: 50%;
-    bottom: 16px;
+    left: calc(50% + var(--content-left, 0px) / 2);
+    bottom: calc(var(--content-bottom, 0px) + var(--space-4));
     transform: translateX(-50%);
     display: flex;
     gap: 8px;
@@ -365,11 +370,11 @@
     justify-content: center;
     padding: 10px 14px;
     width: max-content;
-    max-width: calc(100vw - 32px);
+    max-width: calc(100vw - var(--content-left, 0px) - 2 * var(--space-4));
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    box-shadow: var(--shadow);
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-1);
     z-index: 20;
   }
 </style>

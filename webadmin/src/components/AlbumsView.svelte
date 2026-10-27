@@ -5,6 +5,7 @@
   import { t, tn } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
   import { api, session } from "../lib/session.svelte";
+  import Icon from "./Icon.svelte";
 
   let albums = $state<Album[] | null>(null);
   let error = $state<string | null>(null);
@@ -79,7 +80,8 @@
               class="icon"
               aria-expanded={isOpen(node)}
               aria-label={t(isOpen(node) ? "albums.collapse" : "albums.expand", { name: node.path })}
-              onclick={() => toggleOpen(node)}>{isOpen(node) ? "▾" : "▸"}</button
+              onclick={() => toggleOpen(node)}
+              ><Icon name={isOpen(node) ? "expandMore" : "chevronRight"} /></button
             >
           {/if}
         </div>
@@ -124,21 +126,22 @@
   }
   li {
     display: grid;
-    grid-template-columns: 32px 72px minmax(0, 1fr) auto;
+    grid-template-columns: 44px 72px minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
     padding: 8px 12px 8px 4px;
     margin-left: calc(min(var(--depth), 4) * 20px);
   }
   .fold button {
-    width: 32px;
-    height: 44px;
+    display: grid;
+    place-items: center;
+    width: var(--target);
+    height: var(--target);
     padding: 0;
     border: 0;
+    border-radius: var(--radius-full);
     background: none;
     color: var(--text);
-    font-size: 1.1rem;
-    cursor: pointer;
   }
   .cover {
     width: 72px;
@@ -158,7 +161,7 @@
     filter: grayscale(0.8);
   }
   h2 {
-    font-size: 1.05rem;
+    font-size: var(--text-body);
     margin: 0;
     overflow-wrap: anywhere;
   }
@@ -170,7 +173,7 @@
     align-items: center;
   }
   .badge {
-    font-size: 0.78rem;
+    font-size: var(--text-caption);
     padding: 1px 8px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -181,7 +184,7 @@
     gap: 8px;
     align-items: center;
     cursor: pointer;
-    min-height: 44px;
+    min-height: var(--target);
   }
   .switch input {
     width: 20px;
@@ -190,7 +193,7 @@
   }
   @media (max-width: 520px) {
     li {
-      grid-template-columns: 32px 56px minmax(0, 1fr);
+      grid-template-columns: 44px 56px minmax(0, 1fr);
     }
     .cover {
       width: 56px;

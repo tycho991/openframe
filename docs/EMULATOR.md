@@ -16,7 +16,8 @@ avdmanager create avd -n of37 -k "system-images;android-37.0;google_apis;x86_64"
 - **Panel size.** `wm size` only changes the logical size, `screencap` keeps the physical one. Set the real panel in
   `~/.android/avd/of21.avd/config.ini` instead: `hw.lcd.width=600`, `hw.lcd.height=1024`, `hw.lcd.density=160`
   for 1024×600, `1200`, `1920`, `240` for 1920×1200 (the natural orientation is portrait, the app runs in landscape,
-  so rotate screenshots by 90°).
+  so rotate screenshots by 90°). `skin.name` in the same file overrides `hw.lcd.*`; set it to the same size
+  (`600x1024` or `1200x1920`).
 - **API 37 needs a bigger data partition** (`disk.dataPartition.size=6G` in its `config.ini`, start once with
   `-wipe-data`) and crashes SurfaceFlinger in a loop without a GPU (`RegionSamplingThread`, started by the Google
   launcher). Disable the launcher right after the first boot:

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The design tokens the frame uses, mirrored from webadmin/src/styles/tokens.css as ds_<token> (design-system,
+     design.md, decision 2): colours take the token's dark value, px becomes dp and, for type sizes, sp.
+     checkDesignTokens fails the build when a value differs or a token does not exist. Values only the frame has
+     are frame_* in themes.xml. -->
+<resources>
+    <color name="ds_text">#FFEDEBE6</color>
+    <color name="ds_muted">#FFA19D95</color>
+    <color name="ds_accent">#FF5FB39B</color>
+
+    <dimen name="ds_space_2">8dp</dimen>
+    <dimen name="ds_space_3">12dp</dimen>
+    <dimen name="ds_space_5">24dp</dimen>
+    <dimen name="ds_space_6">32dp</dimen>
+
+    <dimen name="ds_text_body">16sp</dimen>
+    <dimen name="ds_text_title">18sp</dimen>
+    <dimen name="ds_text_headline">22sp</dimen>
+</resources>

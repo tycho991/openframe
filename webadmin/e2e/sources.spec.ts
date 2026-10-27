@@ -8,6 +8,7 @@ import {
   pairInUi,
   reset,
   usb,
+  photoDetail,
 } from "./helpers";
 
 test.beforeEach(async () => {
@@ -219,7 +220,7 @@ test("A photo of a source cannot be deleted, only hidden", async ({ page }) => {
   let hints = 0;
   for (const i of [0, 1]) {
     await page.locator(".tile").nth(i).click();
-    const detail = page.getByRole("dialog");
+    const detail = photoDetail(page);
     await expect(detail).toBeVisible();
     deletable += await detail.getByRole("button", { name: "Löschen" }).count();
     hints += await detail.getByText("lassen sich hier nicht löschen").count();

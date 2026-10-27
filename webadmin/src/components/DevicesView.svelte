@@ -187,21 +187,21 @@
     flex-wrap: wrap;
   }
   h2 {
-    font-size: 1.05rem;
+    font-size: var(--text-body);
     margin: 0 0 2px;
     overflow-wrap: anywhere;
   }
   .info p {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: var(--text-label);
   }
   .badge {
-    font-size: 0.75rem;
+    font-size: var(--text-caption);
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--accent);
-    color: var(--accent-text);
+    color: var(--on-accent);
     vertical-align: middle;
     margin-left: 6px;
   }

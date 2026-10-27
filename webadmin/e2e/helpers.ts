@@ -94,6 +94,24 @@ export async function pairInUi(page: Page): Promise<void> {
   await expect(page.getByRole("navigation")).toBeVisible();
 }
 
+/** The photo detail: a panel next to the grid from 1200 px, a modal dialog (layer or sheet) below. */
+export const photoDetail = (page: Page, name?: string) =>
+  page.getByRole("complementary", { name }).or(page.getByRole("dialog", { name }));
+
+/** Waits until the photo detail has finished moving in, for measurements of its contents. */
+export async function detailSettled(page: Page): Promise<void> {
+  await photoDetail(page).evaluate((el) =>
+    Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)),
+  );
+}
+
+/** Chooses the interface language in the appearance menu, whose button is named in the current language. */
+export async function chooseLanguage(page: Page, language: "Deutsch" | "English"): Promise<void> {
+  await page.getByRole("button", { name: /^(Darstellung|Appearance)$/ }).click();
+  await page.getByRole("radio", { name: language }).check();
+  await page.keyboard.press("Escape");
+}
+
 /** Call the API with the browser's token; with [body] as a mutating request. */
 export async function apiAsBrowser<T>(
   page: Page,

@@ -7,6 +7,8 @@
   import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
   import { screenFor, shownArea } from "../lib/presentation";
   import { session } from "../lib/session.svelte";
+  import { viewport } from "../lib/viewport.svelte";
+  import Icon from "./Icon.svelte";
   import SectionEditor from "./SectionEditor.svelte";
 
   interface Props {
@@ -22,8 +24,14 @@
   }
 
   let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop, onsavecomment }: Props = $props();
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
+  let panel = $state<HTMLElement>();
   let editing = $state(false);
+
+  // Spec web-admin, "Detail views by width" (design-system, design.md, decision 8): a modal dialog below 1200 px, as
+  // a full-screen layer or a sheet; from 1200 px a panel next to the grid, which stays usable. The photo is state of
+  // PhotosView, so a change of width class only switches the form; what is typed here stays in this component.
+  const asPanel = $derived(viewport.widthClass === "expanded");
 
   /** The text in the comment field; it starts from the photo's comment and is kept while the list reloads. */
   let comment = $state("");
@@ -63,7 +71,24 @@
   }
 
   $effect(() => {
-    dialog.showModal();
+    if (dialog && !dialog.open) dialog.showModal();
+  });
+
+  // Into the panel when it appears, so that the keyboard follows; choosing another photo keeps the focus in the grid.
+  $effect(() => {
+    if (panel) untrack(() => panel?.querySelector<HTMLElement>(".close")?.focus());
+  });
+
+  // Escape closes the panel like the dialog, from anywhere inside it.
+  $effect(() => {
+    if (!panel) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || editing) return;
+      event.preventDefault();
+      onclose();
+    };
+    panel.addEventListener("keydown", onKey);
+    return () => panel?.removeEventListener("keydown", onKey);
   });
 
   const taken = $derived(
@@ -78,7 +103,13 @@
   const position = $derived(photo.location ? coordinates(photo.location, i18n.lang) : null);
 </script>
 
-<dialog bind:this={dialog} oncancel={onclose} aria-label={photo.path}>
+{#snippet content()}
+  <header class="bar">
+    <button type="button" class="close" aria-label={t("common.close")} onclick={onclose}>
+      <Icon name={viewport.widthClass === "compact" ? "arrowBack" : "close"} />
+    </button>
+    <h2>{photo.path.split("/").at(-1)}</h2>
+  </header>
   <div class="layout">
     {#if screen && area}
       <div
@@ -100,7 +131,6 @@
       <img class="plain" src={photo.urls.display} alt={photo.path} />
     {/if}
     <div class="meta">
-      <h2>{photo.path.split("/").at(-1)}</h2>
       <dl>
         <dt>{t("photos.detailAlbum")}</dt>
         <dd>{photo.album ? displayPath(photo.album) : t("photos.detailNoAlbum")}</dd>
@@ -158,11 +188,25 @@
         {:else}
           <button type="button" class="danger" onclick={() => ondelete(photo)}>{t("common.delete")}</button>
         {/if}
-        <button type="button" class="primary" onclick={onclose}>{t("common.close")}</button>
       </div>
     </div>
   </div>
-</dialog>
+{/snippet}
+
+{#if asPanel}
+  <aside class="panel" bind:this={panel} aria-label={photo.path}>
+    {@render content()}
+  </aside>
+{:else}
+  <dialog
+    class={viewport.widthClass === "compact" ? "layer" : "sheet"}
+    bind:this={dialog}
+    oncancel={onclose}
+    aria-label={photo.path}
+  >
+    {@render content()}
+  </dialog>
+{/if}
 
 {#if editing && screen && settings}
   <SectionEditor
@@ -178,17 +222,95 @@
 {/if}
 
 <style>
-  dialog {
+  dialog,
+  .panel {
     border: 0;
-    border-radius: var(--radius);
+    padding: 0;
     background: var(--surface);
     color: var(--text);
-    padding: 0;
-    width: min(1100px, calc(100vw - 32px));
-    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transition:
+      transform var(--motion-medium) var(--ease),
+      opacity var(--motion-medium) var(--ease);
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 70%);
+    background: var(--scrim);
+  }
+  /* Below 600 px: a layer over the whole screen. */
+  dialog.layer {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
+  /* From 600 px: a sheet from the bottom over the list. */
+  dialog.sheet {
+    width: min(1100px, 100vw);
+    max-width: none;
+    max-height: 90dvh;
+    margin: auto auto 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
+  }
+  /* From 1200 px: a panel next to the grid, which stays usable. */
+  .panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    width: var(--detail-width);
+    border-left: 1px solid var(--divider);
+    box-shadow: var(--shadow-1);
+  }
+  @starting-style {
+    dialog[open].layer {
+      opacity: 0;
+    }
+    dialog[open].sheet {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+    .panel {
+      transform: translateX(32px);
+      opacity: 0;
+    }
+  }
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-4) var(--space-1) var(--space-1);
+    background: var(--surface);
+    border-bottom: 1px solid var(--divider);
+  }
+  .close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--target);
+    height: var(--target);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+  }
+  .close:hover {
+    background: var(--surface-2);
+  }
+  h2 {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .layout {
     display: grid;
@@ -198,7 +320,7 @@
     position: relative;
     width: 100%;
     margin: 0 auto;
-    background: #000;
+    background: var(--photo-backdrop);
     overflow: hidden;
   }
   .shown {
@@ -209,25 +331,21 @@
     width: 100%;
     max-height: 70dvh;
     object-fit: contain;
-    background: #000;
+    background: var(--photo-backdrop);
     display: block;
   }
   .layout > :first-child {
     align-self: center;
   }
   .meta {
-    padding: 16px;
+    padding: var(--space-4);
     min-width: 0;
-  }
-  h2 {
-    overflow-wrap: anywhere;
-    font-size: 1.1rem;
   }
   dl {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 4px 12px;
-    margin: 0 0 16px;
+    gap: var(--space-1) var(--space-3);
+    margin: 0 0 var(--space-4);
   }
   dt {
     color: var(--muted);
@@ -238,26 +356,23 @@
   }
   .actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
   .comment {
     display: grid;
     gap: 6px;
-    margin: 0 0 16px;
+    margin: 0 0 var(--space-4);
   }
   .comment label {
     font-weight: 600;
   }
   .comment textarea {
-    width: 100%;
-    box-sizing: border-box;
     resize: vertical;
-    font: inherit;
   }
   .comment-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
   }
@@ -265,7 +380,7 @@
     margin-left: auto;
   }
   .hint {
-    font-size: 0.85rem;
+    font-size: var(--text-small);
     color: var(--muted);
   }
   .over {
@@ -276,12 +391,13 @@
     color: var(--accent);
     font-weight: 600;
   }
+  /* A wide sheet puts the photo and its details side by side. */
   @media (min-width: 900px) {
-    .layout {
-      grid-template-columns: 1fr 300px;
+    .sheet .layout {
+      grid-template-columns: 1fr 320px;
     }
-    .plain {
-      max-height: calc(100dvh - 32px);
+    .sheet .plain {
+      max-height: calc(90dvh - var(--bar-height));
     }
   }
 </style>

@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { Photo } from "../lib/api/client";
   import { gridLayout } from "../lib/grid";
   import { t } from "../lib/i18n/i18n.svelte";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     items: Photo[];
@@ -49,6 +51,27 @@
   $effect(() => {
     if (hasMore && layout.nearEnd) onloadmore();
   });
+
+  /** Brings the tile of photo [id] into view if it is not, and focuses it: the element that opened a detail may
+   *  have been recycled for another photo meanwhile (spec web-admin, "Keyboard operation"). */
+  export async function focusPhoto(id: string): Promise<void> {
+    const index = items.findIndex((p) => p.id === id);
+    if (index < 0) return;
+    const tileTop = top + layout.position(index).y;
+    const bars = container.closest("main")?.getBoundingClientRect().top ?? 0;
+    if (
+      tileTop < window.scrollY + Math.max(0, bars) ||
+      tileTop + layout.tile > window.scrollY + window.innerHeight
+    ) {
+      window.scrollTo({
+        top: Math.max(0, tileTop - (window.innerHeight - layout.tile) / 2),
+        behavior: "instant",
+      });
+      scrollY = window.scrollY;
+    }
+    await tick();
+    container.querySelector<HTMLElement>(`[data-photo="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  }
 </script>
 
 <div class="grid" bind:this={container} style:height="{layout.height}px">
@@ -57,6 +80,7 @@
     <button
       type="button"
       class="tile"
+      data-photo={photo.id}
       class:dimmed={!photo.visible}
       class:selected={selected.has(photo.id)}
       style:transform="translate({pos.x}px, {pos.y}px)"
@@ -73,7 +97,9 @@
         onerror={() => onimageerror(photo)}
       />
       {#if !photo.visible}<span class="badge">{t("photos.hiddenBadge")}</span>{/if}
-      {#if selecting}<span class="check" aria-hidden="true">{selected.has(photo.id) ? "✓" : ""}</span>{/if}
+      {#if selecting}<span class="check" aria-hidden="true"
+          >{#if selected.has(photo.id)}<Icon name="check" size={18} />{/if}</span
+        >{/if}
     </button>
   {/each}
 </div>
@@ -89,7 +115,7 @@
     top: 0;
     padding: 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     overflow: hidden;
     background: var(--surface-2);
     min-height: 0;
@@ -112,11 +138,11 @@
     position: absolute;
     left: 6px;
     bottom: 6px;
-    font-size: 0.75rem;
+    font-size: var(--text-caption);
     padding: 2px 6px;
     border-radius: 999px;
-    background: rgb(0 0 0 / 65%);
-    color: #fff;
+    background: var(--photo-badge);
+    color: var(--on-photo);
   }
   .check {
     position: absolute;
@@ -125,14 +151,15 @@
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    border: 2px solid #fff;
-    background: rgb(0 0 0 / 35%);
-    color: #fff;
+    border: 2px solid var(--on-photo);
+    background: var(--photo-badge);
+    color: var(--on-photo);
     display: grid;
     place-items: center;
     font-weight: 700;
   }
   .tile.selected .check {
     background: var(--accent);
+    color: var(--on-accent);
   }
 </style>

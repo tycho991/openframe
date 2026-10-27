@@ -144,6 +144,7 @@ class DisplayActivity : Activity() {
         hintCodeBox = findViewById(R.id.hint_code_box)
         hintPause = findViewById(R.id.hint_pause)
         hintPause.setOnClickListener { core?.slideshow?.togglePause() }
+        applyTypefaces()
         // Overlays are always above the photos, even if the renderer raises the image views.
         for (id in intArrayOf(R.id.loading, R.id.empty_state, R.id.caption, R.id.clock, R.id.hint)) {
             findViewById<View>(id).translationZ = OVERLAY_Z
@@ -488,6 +489,23 @@ class DisplayActivity : Activity() {
                 }
             view.setCompoundDrawables(null, drawable, null, null)
         }
+    }
+
+    /** Inter by role on the hint and the empty state; the clock and the caption set theirs ([FrameType]). */
+    private fun applyTypefaces() {
+        FrameType.apply(FrameType.Weight.SEMIBOLD, hintName, findViewById(R.id.empty_title))
+        FrameType.apply(
+            FrameType.Weight.REGULAR,
+            loading,
+            hintAddress,
+            findViewById(R.id.hint_code_label),
+            hintQr,
+            emptyBody,
+            emptyCodeLabel,
+            emptyQr,
+        )
+        FrameType.apply(FrameType.Weight.MEDIUM, hintCode, emptyCode, hintPause)
+        FrameType.tabular(hintCode, emptyCode)
     }
 
     /**

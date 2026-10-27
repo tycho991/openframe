@@ -4,6 +4,7 @@
   import { errorText } from "../lib/i18n/errors";
   import { t } from "../lib/i18n/i18n.svelte";
   import { presentationOf, shownArea, zoomRange, type Size } from "../lib/presentation";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     photo: Photo;
@@ -169,13 +170,13 @@
       type="button"
       aria-label={t("section.zoomOut")}
       disabled={atMin}
-      onclick={() => change(0, 0, 1 / ZOOM_STEP)}>−</button
+      onclick={() => change(0, 0, 1 / ZOOM_STEP)}><Icon name="remove" /></button
     >
     <button
       type="button"
       aria-label={t("section.zoomIn")}
       disabled={atMax}
-      onclick={() => change(0, 0, ZOOM_STEP)}>+</button
+      onclick={() => change(0, 0, ZOOM_STEP)}><Icon name="add" /></button
     >
     <button type="button" aria-pressed={crop === null} onclick={() => (crop = null)}
       >{t("section.automatic")}</button
@@ -191,7 +192,7 @@
 <style>
   dialog {
     border: 0;
-    border-radius: var(--radius);
+    border-radius: var(--radius-m);
     background: var(--surface);
     color: var(--text);
     padding: 16px;
@@ -209,22 +210,21 @@
     }
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 70%);
+    background: var(--scrim);
   }
   h2 {
-    font-size: 1.1rem;
     margin: 0 0 4px;
   }
   .hint {
     margin: 0 0 12px;
-    font-size: 0.9rem;
+    font-size: var(--text-label);
   }
   .viewport {
     position: relative;
     width: 100%;
     margin: 0 auto;
     overflow: hidden;
-    background: #000;
+    background: var(--photo-backdrop);
     touch-action: none;
     cursor: grab;
     user-select: none;
@@ -252,11 +252,13 @@
   }
   button {
     min-width: 44px;
-    min-height: 44px;
+    min-height: var(--target);
   }
   .zoom button:not(:last-child) {
-    font-size: 1.3rem;
-    line-height: 1;
+    display: grid;
+    place-items: center;
+    width: var(--target);
+    padding: 0;
   }
   button[aria-pressed="true"] {
     border-color: var(--accent);

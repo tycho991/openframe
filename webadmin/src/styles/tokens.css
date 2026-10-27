@@ -1,0 +1,96 @@
+/* Design tokens of the web UI and the frame (openspec/changes/design-system/design.md, decisions 1 to 3).
+
+   This file is the single source: the frame mirrors the values it uses in android/src/main/res/values/
+   design_tokens.xml as ds_<token>, and `./gradlew check` (checkDesignTokens) fails when they differ. Keep one
+   declaration per line and colours as #rrggbb or #rrggbbaa, which is the shape that check and src/lib/tokens.ts
+   read. Colours name a role, not a hue; each one holds its light and its dark value. */
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* Colours: light-dark(light theme, dark theme). */
+  --bg: light-dark(#f6f5f2, #151514);
+  --surface: light-dark(#ffffff, #1f1f1d);
+  --surface-2: light-dark(#efede8, #2a2a27);
+  --text: light-dark(#1d1c1a, #edebe6);
+  --muted: light-dark(#6b6862, #a19d95);
+  --outline: light-dark(#8a867e, #75716b);
+  --divider: light-dark(#dedad2, #393833);
+  --accent: light-dark(#2f6f5e, #5fb39b);
+  --on-accent: light-dark(#ffffff, #0f1a17);
+  --danger: light-dark(#b3382c, #ef7d70);
+  --on-danger: light-dark(#ffffff, #1d0a07);
+  --warning: light-dark(#8f5200, #e0a050);
+  --focus: light-dark(#3d8b75, #7fcab4);
+  --scrim: light-dark(#00000073, #000000a6);
+  --shadow-color: light-dark(#0000000f, #00000059);
+
+  /* Photos and the QR code look the same in both themes. */
+  --photo-backdrop: #000000;
+  --on-photo: #ffffff;
+  --photo-badge: #000000a6;
+  --qr-dark: #000000;
+  --qr-light: #ffffff;
+
+  /* Spacing. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Corner radii. */
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 20px;
+  --radius-full: 999px;
+
+  /* Type: Inter with the system's sans-serif as the fallback. */
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-caption: 12px;
+  --text-small: 13px;
+  --text-label: 14px;
+  --text-body: 16px;
+  --text-title: 18px;
+  --text-headline: 22px;
+
+  /* Touch target, the measure of forms and the shell's bars. */
+  --target: 44px;
+  --form-width: 720px;
+  --bar-height: 64px;
+  --rail-width: 88px;
+  --side-nav-width: 240px;
+  --detail-width: 420px;
+
+  /* Motion: at most 250 ms, none with reduced motion (see below). */
+  --motion-short: 150ms;
+  --motion-medium: 250ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --shadow-1: 0 1px 2px var(--shadow-color), 0 4px 16px var(--shadow-color);
+}
+
+/* A chosen theme narrows the scheme, which picks one side of every light-dark(). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-short: 0ms;
+    --motion-medium: 0ms;
+  }
+}

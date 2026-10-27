@@ -225,7 +225,6 @@
   }
   h2 {
     margin: 0;
-    font-size: 1.15rem;
     overflow-wrap: anywhere;
   }
   details summary {
@@ -238,17 +237,6 @@
     gap: 14px;
     margin-top: 10px;
   }
-  .check {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-weight: 600;
-  }
-  .check input {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--accent);
-  }
   .actions {
     display: flex;
     gap: 12px;
@@ -257,6 +245,6 @@
     flex-wrap: wrap;
   }
   .warn {
-    color: var(--warning, #a15c00);
+    color: var(--warning);
   }
 </style>

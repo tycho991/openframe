@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import path from "node:path";
-import { apiAsBrowser, FIXTURES, many, pairInUi, reset, usb } from "./helpers";
+import { apiAsBrowser, FIXTURES, many, pairInUi, photoDetail, reset, usb } from "./helpers";
 
 interface Page {
   items: { id: string; visible: boolean; hidden: boolean; path: string }[];
@@ -102,13 +102,13 @@ test("Filter by a parent album, and by the album only", async ({ page }) => {
   await page.getByLabel("Nur dieses Album").check();
   await expect(page.locator(".count")).toHaveText("1 Foto");
   await page.locator(".tile").first().click();
-  await expect(page.getByRole("dialog").getByText("a.jpg")).toBeVisible();
+  await expect(photoDetail(page).getByText("a.jpg")).toBeVisible();
   await page.getByRole("button", { name: "Schließen" }).click();
 
   await filter.selectOption("holiday/2024");
   await expect(page.locator(".count")).toHaveText("1 Foto");
   await page.locator(".tile").first().click();
-  await expect(page.getByRole("dialog").getByText("holiday / 2024")).toBeVisible();
+  await expect(photoDetail(page).getByText("holiday / 2024")).toBeVisible();
 });
 
 test("New sub-album", async ({ page }) => {
