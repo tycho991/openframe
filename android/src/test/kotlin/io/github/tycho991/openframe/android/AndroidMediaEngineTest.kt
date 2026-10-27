@@ -81,6 +81,10 @@ class AndroidMediaEngineTest {
         assertEquals(-22.9068, rio.lat, 1e-4)
         assertEquals(-43.1729, rio.lon, 1e-4)
         assertEquals(siena.lat, engine.readMetadata(fixture("gps-siena.jpg")).gps!!.lat, 0.0)
+        // Rounded to what the float of getLatLong holds (Frameo, 27 Oct 2026: 43.31880187988281 before).
+        assertEquals(43.3188, siena.lat, 0.0)
+        assertEquals(11.3308, siena.lon, 0.0)
+        assertEquals(-43.1729, AndroidMediaEngine.fromFloat(-43.1729f), 0.0)
     }
 
     @Test

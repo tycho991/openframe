@@ -176,7 +176,7 @@ class AndroidMediaEngine(
     private fun gps(exif: ExifInterface): GeoPoint? {
         val latLong = FloatArray(2)
         if (!exif.getLatLong(latLong)) return null
-        return GeoPoint.fromExif(latLong[0].toDouble(), latLong[1].toDouble())
+        return GeoPoint.fromExif(fromFloat(latLong[0]), fromFloat(latLong[1]))
     }
 
     private fun takenAt(exif: ExifInterface): java.time.Instant? =
@@ -234,6 +234,12 @@ class AndroidMediaEngine(
             while (width / (sample * 2) >= reqW && height / (sample * 2) >= reqH) sample *= 2
             return sample
         }
+
+        /**
+         * A degree value of `getLatLong`, which has only a `float[]` before API 26: rounded to the five decimals (about
+         * 1 m) a float holds at up to 180°, so the API does not report `43.31880187988281` for 43.3188.
+         */
+        fun fromFloat(degrees: Float): Double = Math.round(degrees * 100_000.0) / 100_000.0
 
         /** EXIF date without time zone, as the device's local time. */
         fun parseExifDate(value: String?): java.time.Instant? {
