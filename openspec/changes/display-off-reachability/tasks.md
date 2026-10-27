@@ -21,7 +21,7 @@
 ## 4. Devices
 
 - [x] 4.1 Rows in `docs/DEVICE_TEST.md` under "Display schedule", each with its spec scenario: Wi-Fi dropped at night on the Lenovo and the Frameo (display-schedule › Asking for the network while the display is off › Router drops the frame at night; whether the reconnect request alone brings it back, and if not, how long the dark wake takes), how dark the dark wake is (display-schedule › Dark wake for the network › Still no network after ten minutes; the brightness of design.md, Open Questions), and a boot without network on the Frameo (display-schedule › Schedule only with a set clock › Boot without network at night); verify: the rows exist with their references
-- [ ] 4.2 Ask the user before installing the build on each device, before dropping a device's Wi-Fi (and agree how: on the router, or with root on the device) and before a reboot without network; run the rows of 4.1, reading the night afterwards from `GET /api/v1/logs`; verify: results with date and device in the rows, and findings 46 and 54 in `docs/FINDINGS.md` marked fixed or with what is still open
+- [x] 4.2 Ask the user before installing the build on each device, before dropping a device's Wi-Fi (and agree how: on the router, or with root on the device) and before a reboot without network; run the rows of 4.1, reading the night afterwards from `GET /api/v1/logs`; verify: results with date and device in the rows, and findings 46 and 54 in `docs/FINDINGS.md` marked fixed or with what is still open. Done on 27 Oct 2026 as far as the user decided: build installed on the Lenovo; the user chose to complete the change with the Wi-Fi and Frameo rows left open (to be run later), findings 46 and 54 say so
 
 ## 5. Integration
 
