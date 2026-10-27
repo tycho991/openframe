@@ -31,6 +31,7 @@ const webPairs: [string, string, number][] = [
     ["bg", "surface", "surface-2"].map((bg): [string, string, number] => [fg, bg, 4.5]),
   ),
   ["on-accent", "accent", 4.5],
+  ["on-danger", "danger", 4.5],
   ...["outline", "focus"].flatMap((fg) =>
     ["bg", "surface"].map((bg): [string, string, number] => [fg, bg, 3]),
   ),

@@ -31,10 +31,13 @@
   shape-rendering="crispEdges"
   xmlns="http://www.w3.org/2000/svg"
 >
-  <rect width={side} height={side} fill="#fff" />
-  {#each runs as run (run.y * side + run.x)}
-    <rect x={run.x} y={run.y} width={run.w} height="1" fill="#000" />
-  {/each}
+  <!-- Dark on light in both themes: scanners expect it. -->
+  <rect class="light" width={side} height={side} />
+  <g class="dark">
+    {#each runs as run (run.y * side + run.x)}
+      <rect x={run.x} y={run.y} width={run.w} height="1" />
+    {/each}
+  </g>
 </svg>
 
 <style>
@@ -45,5 +48,11 @@
     height: auto;
     aspect-ratio: 1;
     border-radius: var(--radius-s);
+  }
+  .light {
+    fill: var(--qr-light);
+  }
+  .dark {
+    fill: var(--qr-dark);
   }
 </style>

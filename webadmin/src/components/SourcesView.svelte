@@ -277,7 +277,6 @@
   }
   .add h2 {
     margin: 0;
-    font-size: 1.15rem;
   }
   .tabs {
     display: flex;
@@ -304,6 +303,6 @@
     flex-wrap: wrap;
   }
   .warn {
-    color: var(--warning, #a15c00);
+    color: var(--warning);
   }
 </style>

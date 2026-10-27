@@ -225,7 +225,6 @@
   }
   h2 {
     margin: 0;
-    font-size: 1.15rem;
     overflow-wrap: anywhere;
   }
   details summary {
@@ -257,6 +256,6 @@
     flex-wrap: wrap;
   }
   .warn {
-    color: var(--warning, #a15c00);
+    color: var(--warning);
   }
 </style>

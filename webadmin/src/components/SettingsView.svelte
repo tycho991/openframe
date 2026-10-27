@@ -431,7 +431,7 @@
   }
   .actions {
     position: sticky;
-    bottom: 0;
+    bottom: var(--content-bottom, 0px);
     display: flex;
     gap: 12px;
     justify-content: flex-end;
@@ -445,7 +445,7 @@
   }
   .hint {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--text-small);
   }
   .display-state {
     display: flex;

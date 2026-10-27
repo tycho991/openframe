@@ -346,7 +346,7 @@
   }
   .count {
     margin: 0 0 8px;
-    font-size: 0.9rem;
+    font-size: var(--text-label);
   }
   .empty {
     padding: 40px 0;
@@ -355,8 +355,8 @@
   }
   .selection-bar {
     position: fixed;
-    left: 50%;
-    bottom: 16px;
+    left: calc(50% + var(--content-left, 0px) / 2);
+    bottom: calc(var(--content-bottom, 0px) + var(--space-4));
     transform: translateX(-50%);
     display: flex;
     gap: 8px;
@@ -365,10 +365,10 @@
     justify-content: center;
     padding: 10px 14px;
     width: max-content;
-    max-width: calc(100vw - 32px);
+    max-width: calc(100vw - var(--content-left, 0px) - 2 * var(--space-4));
     background: var(--surface);
     border: 1px solid var(--divider);
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     box-shadow: var(--shadow-1);
     z-index: 20;
   }

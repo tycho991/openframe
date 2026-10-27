@@ -102,18 +102,21 @@
     </nav>
 
     <main>
-      {#if session.pairedAs}<PairedBanner client={session.pairedAs} />{/if}
-      {#if router.route === "photos"}
-        <PhotosView />
-      {:else if router.route === "albums"}
-        <AlbumsView />
-      {:else if router.route === "sources"}
-        <SourcesView />
-      {:else if router.route === "settings"}
-        <SettingsView />
-      {:else}
-        <DevicesView />
-      {/if}
+      <!-- Forms and lists in a centred column; the photo grid uses the full width. -->
+      <div class:column={router.route !== "photos"}>
+        {#if session.pairedAs}<PairedBanner client={session.pairedAs} />{/if}
+        {#if router.route === "photos"}
+          <PhotosView />
+        {:else if router.route === "albums"}
+          <AlbumsView />
+        {:else if router.route === "sources"}
+          <SourcesView />
+        {:else if router.route === "settings"}
+          <SettingsView />
+        {:else}
+          <DevicesView />
+        {/if}
+      </div>
     </main>
   </div>
   <AppearanceMenu />
@@ -122,6 +125,9 @@
 <style>
   /* Compact, below 600 px: top bar, section, navigation bar at the bottom. */
   .shell {
+    /* What the navigation covers, for bars that the sections keep at the bottom of the screen. */
+    --content-bottom: calc(var(--bar-height) + env(safe-area-inset-bottom));
+    --content-left: 0px;
     min-height: 100dvh;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -200,7 +206,7 @@
     min-height: var(--bar-height);
     padding: var(--space-2) var(--space-1);
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 500;
     text-decoration: none;
   }
@@ -237,6 +243,10 @@
     padding: var(--space-4) calc(var(--space-4) + env(safe-area-inset-right)) var(--space-5)
       calc(var(--space-4) + env(safe-area-inset-left));
   }
+  .column {
+    max-width: var(--form-width);
+    margin-inline: auto;
+  }
   .pending {
     min-height: 100dvh;
     display: grid;
@@ -246,6 +256,8 @@
   /* Medium, from 600 px: a rail at the left edge next to top bar and section. */
   @media (min-width: 600px) {
     .shell {
+      --content-bottom: env(safe-area-inset-bottom);
+      --content-left: calc(var(--rail-width) + env(safe-area-inset-left));
       grid-template-columns: calc(var(--rail-width) + env(safe-area-inset-left)) minmax(0, 1fr);
       grid-template-rows: auto 1fr;
       grid-template-areas: "nav top" "nav main";
@@ -278,6 +290,7 @@
   /* Expanded, from 1200 px: a side navigation with labels, the frame's name and the appearance button. */
   @media (min-width: 1200px) {
     .shell {
+      --content-left: var(--side-nav-width);
       grid-template-columns: var(--side-nav-width) minmax(0, 1fr);
       grid-template-rows: 1fr;
       grid-template-areas: "nav main";

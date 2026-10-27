@@ -191,7 +191,7 @@
     padding: 20px;
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 45%);
+    background: var(--scrim);
   }
   dialog > * + * {
     margin-top: 14px;
@@ -226,7 +226,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.92rem;
+    font-size: var(--text-label);
   }
   progress {
     width: 100%;

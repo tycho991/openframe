@@ -188,7 +188,7 @@
     max-height: calc(100dvh - 32px);
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 70%);
+    background: var(--scrim);
   }
   .layout {
     display: grid;
@@ -198,7 +198,7 @@
     position: relative;
     width: 100%;
     margin: 0 auto;
-    background: #000;
+    background: var(--photo-backdrop);
     overflow: hidden;
   }
   .shown {
@@ -209,7 +209,7 @@
     width: 100%;
     max-height: 70dvh;
     object-fit: contain;
-    background: #000;
+    background: var(--photo-backdrop);
     display: block;
   }
   .layout > :first-child {
@@ -221,7 +221,6 @@
   }
   h2 {
     overflow-wrap: anywhere;
-    font-size: 1.1rem;
   }
   dl {
     display: grid;
@@ -265,7 +264,7 @@
     margin-left: auto;
   }
   .hint {
-    font-size: 0.85rem;
+    font-size: var(--text-small);
     color: var(--muted);
   }
   .over {

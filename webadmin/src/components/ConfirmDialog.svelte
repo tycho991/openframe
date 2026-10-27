@@ -31,20 +31,20 @@
     background: var(--surface);
     color: var(--text);
     max-width: min(440px, calc(100vw - 32px));
-    padding: 20px;
+    padding: var(--space-5);
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 45%);
+    background: var(--scrim);
   }
   .actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
   .danger-fill {
     background: var(--danger);
     border-color: var(--danger);
-    color: #fff;
+    color: var(--on-danger);
   }
 </style>
