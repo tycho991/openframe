@@ -89,14 +89,17 @@ in `check` and before `preBuild`, like the import check before `compileKotlin`. 
 ### 4. Inter 4.1, subset once, committed
 
 Inter comes from its official release (SIL Open Font License 1.1). It is subset once with fonttools
-(`pyftsubset`): Latin and Latin-1, the general punctuation block, € and the arrows the UI uses, with the layout
-features `kern`, `liga`, `calt`, `tnum` and `case`. The subset files and the command, in a `README.md` next to
-them, are committed; neither build needs Python.
+(`pyftsubset`): Latin, Latin-1 and Latin Extended-A, the general punctuation block, €, the arrows, the minus sign
+and the check mark, with the layout features `kern`, `liga`, `calt`, `tnum` and `case`. Latin Extended-A costs about
+10 KB per file and keeps the place names and album titles of the frame's caption (Łódź, Plzeň, İstanbul) in one
+typeface. The subset files and the command, in a `README.md` next to them, are committed; neither build needs
+Python.
 
 - **Web:** one variable file `InterVariable.woff2` (weights 300 to 700) under `webadmin/src/assets/fonts/`,
   imported from `tokens.css` with `@font-face`, `font-display: swap` and the stack
   `Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`. Vite puts it under `assets/` with a hash, so it
-  is cached for a year. Expected size about 100 KB.
+  is cached for a year. It keeps the optical size axis, so large headings get Inter's display forms. Expected size
+  about 65 KB.
 - **Frame:** static `Inter-Light.ttf` (clock), `Inter-Regular.ttf`, `Inter-Medium.ttf` and `Inter-SemiBold.ttf`
   under `android/src/main/assets/fonts/`, together about 300 KB.
 - *Alternative:* the full files (about 350 KB for the variable woff2, 400 KB per static TTF). Twice the APK and

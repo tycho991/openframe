@@ -2,8 +2,8 @@
 
 ## 1. Font, icons and licences
 
-- [ ] 1.1 Inter 4.1 from its official release, subset with `pyftsubset` per design decision 4 (Latin, Latin-1, general punctuation, €, the arrows in use; features `kern`, `liga`, `calt`, `tnum`, `case`) into `webadmin/src/assets/fonts/InterVariable.woff2` and the four static TTFs in `android/src/main/assets/fonts/`; the exact commands in `android/src/main/assets/fonts/README.md` and `webadmin/src/assets/fonts/README.md`; verify: rerunning the documented commands reproduces byte-identical files, the woff2 is at most 150 KB and the four TTFs together at most 400 KB, and `ttx -t GSUB` lists `tnum` in each file
-- [ ] 1.2 Licence texts: `Inter-OFL.txt` and `MaterialSymbols-LICENSE.txt` in `webadmin/public/licenses/` and `android/src/main/assets/licenses/`; `public/` added to the inputs of `buildWebadmin`; verify: after `npm run build` both files are in `webadmin/dist/licenses/`, and a change to one of them makes `./gradlew :android:buildWebadmin` run again instead of reporting up to date
+- [x] 1.1 Inter 4.1 from its official release, subset with `pyftsubset` per design decision 4 (Latin, Latin-1, Latin Extended-A, general punctuation, €, arrows, minus, check mark; features `kern`, `liga`, `calt`, `tnum`, `case`) into `webadmin/src/assets/fonts/InterVariable.woff2` and the four static TTFs in `android/src/main/assets/fonts/`; the exact commands in `android/src/main/assets/fonts/README.md` and `webadmin/src/assets/fonts/README.md`; verify: rerunning the documented commands reproduces byte-identical files, the woff2 is at most 150 KB and the four TTFs together at most 400 KB, and `ttx -t GSUB` lists `tnum` in each file
+- [x] 1.2 Licence texts: `Inter-OFL.txt` and `MaterialSymbols-LICENSE.txt` in `webadmin/public/licenses/` and `android/src/main/assets/licenses/`; `public/` added to the inputs of `buildWebadmin`; verify: after `npm run build` both files are in `webadmin/dist/licenses/`, and a change to one of them makes `./gradlew :android:buildWebadmin` run again instead of reporting up to date
 
 ## 2. Tokens in the web UI
 

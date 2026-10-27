@@ -74,6 +74,7 @@ val buildWebadmin by tasks.registering(Exec::class) {
     description = "Builds the web UI with npm (Node from .mise.toml)."
     workingDir = webadminDir.asFile
     inputs.dir(webadminDir.dir("src"))
+    inputs.dir(webadminDir.dir("public"))
     inputs.files(
         webadminDir.file("package.json"),
         webadminDir.file("package-lock.json"),
