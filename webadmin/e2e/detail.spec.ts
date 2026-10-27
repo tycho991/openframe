@@ -56,8 +56,8 @@ test("Detail on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pairInUi(page);
   await scrollGrid(page, 900);
+  await expect.poll(async () => (await visibleTiles(page)).length).toBeGreaterThan(4);
   const before = await visibleTiles(page);
-  expect(before.length).toBeGreaterThan(4);
 
   await page
     .locator(".tile")
