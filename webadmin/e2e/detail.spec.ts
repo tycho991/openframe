@@ -9,17 +9,30 @@ test.beforeEach(async () => {
   await many(120);
 });
 
-/** Paths of the tiles that are fully inside the window. */
-function visibleTiles(page: Page): Promise<string[]> {
+interface VisibleTile {
+  id: string;
+  path: string;
+}
+
+/** The tiles fully inside the window and not covered by the top bar or the navigation, sorted by path. */
+function visibleTiles(page: Page): Promise<VisibleTile[]> {
   return page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>(".tile")]
       .filter((tile) => {
         const r = tile.getBoundingClientRect();
-        return r.top >= 0 && r.bottom <= innerHeight;
+        const centre = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return r.top >= 0 && r.bottom <= innerHeight && centre?.closest(".tile") === tile;
       })
-      .map((tile) => tile.querySelector("img")!.alt)
-      .sort(),
+      .map((tile) => ({ id: tile.dataset.photo!, path: tile.querySelector("img")!.alt }))
+      .sort((a, b) => a.path.localeCompare(b.path)),
   );
+}
+
+/** The visible tiles once the grid shows more than four of them after loading or scrolling. */
+async function settledTiles(page: Page): Promise<VisibleTile[]> {
+  let tiles: VisibleTile[] = [];
+  await expect.poll(async () => (tiles = await visibleTiles(page)).length).toBeGreaterThan(4);
+  return tiles;
 }
 
 const focusedPhoto = (page: Page) =>
@@ -27,9 +40,11 @@ const focusedPhoto = (page: Page) =>
 
 const tile = (page: Page, index: number) => page.locator(".tile").nth(index);
 
+/** The tile of one photo; the n-th rendered tile changes while the grid's visible slice moves. */
+const tileOf = (page: Page, id: string) => page.locator(`.tile[data-photo="${id}"]`);
+
 /** Scrolls the page to [y]; again on every poll, because the grid may still be loading and the page too short. */
 async function scrollGrid(page: Page, y: number) {
-  await expect(tile(page, 0)).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate((top) => {
@@ -64,13 +79,9 @@ test("Detail on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pairInUi(page);
   await scrollGrid(page, 900);
-  await expect.poll(async () => (await visibleTiles(page)).length).toBeGreaterThan(4);
-  const before = await visibleTiles(page);
+  const before = await settledTiles(page);
 
-  await page
-    .locator(".tile")
-    .filter({ has: page.locator(`img[alt="${before[2]}"]`) })
-    .click();
+  await tileOf(page, before[2]!.id).click();
   const detail = photoDetail(page);
   await expect(page.getByRole("dialog")).toBeVisible();
   await detailSettled(page);
@@ -86,17 +97,13 @@ test("Rotate a tablet", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await pairInUi(page);
   await scrollGrid(page, 1500);
-  // A tile fully in view, held by its photo: the grid renders other tiles at the same places while it scrolls.
-  await expect.poll(async () => (await visibleTiles(page)).length).toBeGreaterThan(4);
-  const path = (await visibleTiles(page))[3]!;
-  const opener = page.locator(".tile").filter({ has: page.locator(`img[alt="${path}"]`) });
-  const id = await opener.getAttribute("data-photo");
-  await opener.click();
-  await expect(page.getByRole("complementary")).toHaveAccessibleName(path!);
+  const { id, path } = (await settledTiles(page))[3]!;
+  await tileOf(page, id).click();
+  await expect(page.getByRole("complementary")).toHaveAccessibleName(path);
 
   await page.setViewportSize({ width: 800, height: 1280 });
   const sheet = page.getByRole("dialog");
-  await expect(sheet).toHaveAccessibleName(path!);
+  await expect(sheet).toHaveAccessibleName(path);
   await expect(page.getByRole("complementary")).toHaveCount(0);
   await detailSettled(page);
   // A sheet from the bottom, not the whole screen.
@@ -106,7 +113,7 @@ test("Rotate a tablet", async ({ page }) => {
 
   await page.getByRole("button", { name: "Schließen" }).click();
   await expect(sheet).toHaveCount(0);
-  const back = page.locator(`.tile[data-photo="${id}"]`);
+  const back = tileOf(page, id);
   await expect(back).toBeInViewport();
   await expect(back).toBeFocused();
 });
