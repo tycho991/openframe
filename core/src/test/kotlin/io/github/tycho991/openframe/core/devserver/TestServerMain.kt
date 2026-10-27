@@ -142,7 +142,11 @@ object TestServerMain {
                                     val path = "viele/foto%05d.jpg".format(i)
                                     val file = File(core.localSource.root, path)
                                     file.parentFile.mkdirs()
-                                    fixture.copyTo(file, overwrite = true)
+                                    // Copied under a hidden name and renamed: the scan running meanwhile never reads a
+                                    // half-copied file, which it would take as corrupt and drop from the index.
+                                    val part = File(file.parentFile, ".${file.name}.part")
+                                    fixture.copyTo(part, overwrite = true)
+                                    check(part.renameTo(file)) { "Could not rename $part" }
                                     edit.put(
                                         PhotoEntry(
                                             PhotoEntry.idFor("local", path),
