@@ -35,9 +35,11 @@ test("Set the schedule", async ({ page }) => {
     weekend: { on: "09:00", off: "23:00" },
     wakeMinutes: 5,
   });
-  // The frame follows the schedule now: on by it, or woken because it was on when the schedule began.
-  const display = await apiAsBrowser<DisplayState>(page, "/display");
-  expect(["schedule", "wake"]).toContain(display.cause);
+  // The frame follows the schedule now: on by it, or woken because it was on when the schedule began. The display
+  // takes a saved schedule over shortly after the answer, so wait for it.
+  await expect
+    .poll(async () => (await apiAsBrowser<DisplayState>(page, "/display")).cause)
+    .toMatch(/^(schedule|wake)$/);
 });
 
 test("A schedule that is on can be switched off without device administration", async ({ page }) => {
