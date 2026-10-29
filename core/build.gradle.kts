@@ -90,4 +90,7 @@ tasks.register<JavaExec>("runTestServer") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.tycho991.openframe.core.devserver.TestServerMain")
     workingDir = rootProject.projectDir
+    // The data of each test server, in a subfolder per port; `./gradlew clean` removes what a killed server left.
+    val dataDir = layout.buildDirectory.dir("testserver")
+    systemProperty("openframe.testserver.dir", dataDir.get().asFile.absolutePath)
 }

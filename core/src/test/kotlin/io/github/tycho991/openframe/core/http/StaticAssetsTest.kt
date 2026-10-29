@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.concurrent.CopyOnWriteArrayList
 
 class StaticAssetsTest {
     private val files =
@@ -16,7 +17,14 @@ class StaticAssetsTest {
             "assets/index-abc.js" to "console.log(1)",
             "assets/index-abc.css" to "body{}",
         )
-    private val assets = AssetSource { path -> files[path]?.byteInputStream() }
+
+    /** Every path the asset source was asked for. A real one would resolve `..` against a folder or the APK. */
+    private val requested = CopyOnWriteArrayList<String>()
+    private val assets =
+        AssetSource { path ->
+            requested += path
+            files[path]?.byteInputStream()
+        }
     private val noAuth =
         object : Authenticator {
             override fun clientFor(request: HttpRequest): String? = null
@@ -88,5 +96,13 @@ class StaticAssetsTest {
         assertEquals(404, http.get("/assets/missing.js").statusCode())
         assertEquals(404, http.get("/api/v1/missing").statusCode())
         assertEquals(404, http.get("/../etc/passwd.txt").statusCode())
+    }
+
+    @Test
+    fun `Traversal never reaches the asset source`() {
+        // The client sends the paths as they are; the server decodes `%2e%2e` before the handler sees it.
+        val paths = listOf("/../etc/passwd.txt", "/./index.html", "/assets/../index.html", "/%2e%2e/x.txt", "/assets/%2e%2e/index.html")
+        for (path in paths) assertEquals(404, http.get(path).statusCode(), path)
+        assertEquals(emptyList<String>(), requested.filter { p -> p.split('/').any { it == ".." || it == "." } })
     }
 }

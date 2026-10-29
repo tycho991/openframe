@@ -27,8 +27,8 @@ class NextcloudClientTest {
     @BeforeEach
     fun start() {
         nextcloud.start()
-        // Short read timeout so that the stalled download takes a second, not a minute.
-        http = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 1))
+        // Generous on a busy machine, yet a request that hangs fails in seconds rather than after the frame's minute.
+        http = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 10))
     }
 
     @AfterEach
@@ -37,6 +37,7 @@ class NextcloudClientTest {
     private fun folder(
         path: String = "/",
         password: String = nextcloud.appPassword,
+        http: NextcloudHttp = this.http,
     ) = WebDavFolder(http, nextcloud.baseUrl, nextcloud.userId, nextcloud.loginName, password, path)
 
     private fun kindOf(block: () -> Unit) = assertThrows(SourceException::class.java, block).kind
@@ -198,10 +199,12 @@ class NextcloudClientTest {
     fun `A download that stalls fails and leaves no file`() {
         nextcloud.put("Photos/slow.jpg", ByteArray(1000))
         nextcloud.downloadDelayMs = 3_000
+        // A short read timeout of its own, so that the stalled download takes a second.
+        val impatient = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 1))
         val target = File(dir, "slow.part")
         assertEquals(
             SourceException.Kind.UNREACHABLE,
-            kindOf { folder("/Photos").download(RemoteFile("slow.jpg", "e", 1000, 0), target) },
+            kindOf { folder("/Photos", http = impatient).download(RemoteFile("slow.jpg", "e", 1000, 0), target) },
         )
         assertFalse(target.exists())
     }

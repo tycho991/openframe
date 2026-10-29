@@ -5,3 +5,6 @@ api/openapi.yaml:
   # methods (POST and GET) and no source ID is `login` (they are `nextcloud` or `s` plus hex digits).
   no-ambiguous-paths:
     - '#/paths/~1sources~1{sourceId}~1sync'
+  # GET /info has no error case: no auth, no parameters. Every other operation needs a 4xx response.
+  operation-4xx-response:
+    - '#/paths/~1info/get/responses'

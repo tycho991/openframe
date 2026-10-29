@@ -2,23 +2,38 @@ name: openspec-drift
 on: [pull_request]
 permissions:
   contents: read
+# A new push to the pull request cancels its older run.
+concurrency:
+  group: openspec-drift-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
+  MISE_VERSION: "2026.10.17"
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       OPENSPEC_TELEMETRY: "0"
       DO_NOT_TRACK: "1"
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The template itself has no openspec/ yet - then there is nothing to check
-      - uses: jdx/mise-action@v5          # installs node and openspec from .mise.toml
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         if: hashFiles('openspec/config.yaml') != ''
+        with:
+          version: ${{ env.MISE_VERSION }}
+          # Only node and openspec from .mise.toml, no JDK.
+          install_args: node npm:@fission-ai/openspec
 
+      # --skip-tools: otherwise `mise run` would install the JDK from .mise.toml as well.
       - name: Regenerate skills
         if: hashFiles('openspec/config.yaml') != ''
-        run: mise run openspec-sync
+        run: mise run --skip-tools openspec-sync
 
       - name: Skills must match version and profile
         if: hashFiles('openspec/config.yaml') != ''

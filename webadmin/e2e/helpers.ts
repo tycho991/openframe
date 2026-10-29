@@ -1,11 +1,16 @@
 import { expect, type Page } from "@playwright/test";
 import path from "node:path";
+import { CONTROL } from "./ports";
 
-export const CONTROL = "http://127.0.0.1:8091";
+export { CONTROL, FRAME_ORIGIN } from "./ports";
 export const FIXTURES = path.resolve(import.meta.dirname, "../../core/src/test/resources/fixtures");
 
+/** [text] as a regular expression that matches exactly it, e.g. an address inside a pattern. */
+export const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+
 async function control(pathAndQuery: string): Promise<string> {
-  const res = await fetch(CONTROL + pathAndQuery);
+  // The control port refuses requests without this header, so that no other web page can steer it.
+  const res = await fetch(CONTROL + pathAndQuery, { headers: { "x-openframe-control": "1" } });
   if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
   return res.text();
 }
@@ -21,6 +26,28 @@ export const frameSecret = () => control("/qr");
 
 /** Moves the frame's clock forward, e.g. to let a pairing link expire. */
 export const advanceFrameClock = (seconds: number) => control(`/advance?seconds=${seconds}`);
+
+/**
+ * The seconds from [now] to 00:05 of the next day from 23:50 on, otherwise 0. In local time, which the test server on
+ * the same machine shares (UTC in CI).
+ */
+export function secondsToSkipMidnight(now: Date): number {
+  if (now.getHours() < 23 || now.getMinutes() < 50) return 0;
+  const after = new Date(now);
+  after.setDate(after.getDate() + 1);
+  after.setHours(0, 5, 0, 0);
+  return Math.ceil((after.getTime() - now.getTime()) / 1000);
+}
+
+/**
+ * Moves the frame's clock past midnight shortly before it, for a test that needs the schedule's day to last until
+ * the test ends. Comes first in the test, so that pairing and display already run on the moved clock; `reset()` moves
+ * it back.
+ */
+export async function avoidMidnight(): Promise<void> {
+  const seconds = secondsToSkipMidnight(new Date());
+  if (seconds > 0) await advanceFrameClock(seconds);
+}
 
 /** A test file as if it had been copied into the photo folder over USB. */
 export const usb = (fixture: string, to: string, { scan = true } = {}) =>

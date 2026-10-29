@@ -17,17 +17,27 @@ import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import kotlinx.coroutines.runBlocking
 import java.io.File
-import java.nio.file.Files
+import java.io.RandomAccessFile
+import java.nio.channels.FileLock
 import java.time.Duration
 import java.time.Instant
 
 /**
  * `:core` as a test server for the web UI's Playwright tests, with a fake MediaEngine.
- * Serves the built web UI and has a control port for the tests.
+ * Serves the built web UI and has a control port for the tests; both listen on loopback only.
  *
- * Usage: `./gradlew :core:runTestServer --args="<port> <control-port> <webadmin/dist>"`
+ * Usage: `./gradlew :core:runTestServer --args="<port> <control-port> <webadmin/dist>"`. The control port takes only
+ * GET requests with the header `x-openframe-control: 1`, e.g. `curl -H 'x-openframe-control: 1' 127.0.0.1:8091/code`.
+ * The data lives in `core/build/testserver/<port>`, emptied at every start and deleted when the server ends; a second
+ * server on the same port refuses to start instead of emptying it.
  */
 object TestServerMain {
+    /** The header every request to the control port must carry, with the value `1`. */
+    const val CONTROL_HEADER = "x-openframe-control"
+
+    /** The folder for the data of the test servers, one subfolder per port; set by the task `runTestServer`. */
+    private const val DATA_DIR_PROPERTY = "openframe.testserver.dir"
+
     private lateinit var core: FrameCore
 
     /** The Nextcloud the frame talks to, with its shares: in memory, steered through the control port. */
@@ -36,6 +46,9 @@ object TestServerMain {
     /** The display, with device administration active; steered through the control port. */
     private var displayPower = FakeDisplayPower()
     private lateinit var dataDir: File
+
+    /** Held as long as the server runs, see [main]. */
+    private var dataLock: FileLock? = null
     private var port = 0
     private lateinit var dist: File
 
@@ -53,17 +66,92 @@ object TestServerMain {
         port = args.getOrNull(0)?.toInt() ?: 8090
         val controlPort = args.getOrNull(1)?.toInt() ?: 8091
         dist = File(args.getOrNull(2) ?: "webadmin/dist").absoluteFile
-        dataDir = Files.createTempDirectory("openframe-testserver").toFile()
-        startCore()
+        // One folder per port, so that the servers of parallel worktrees never share their data. Emptied first: a
+        // server that was killed could not delete it.
+        val home = File(System.getProperty(DATA_DIR_PROPERTY) ?: "core/build/testserver").absoluteFile.apply { mkdirs() }
+        dataDir = File(home, port.toString())
+        // Claimed before it is emptied: a second server on the same port must not wipe the data of the running one.
+        // The system releases the lock when the process ends, also when it is killed.
+        dataLock = RandomAccessFile(File(home, "$port.lock"), "rw").channel.tryLock()
+            ?: error("Another test server already uses $dataDir")
+        dataDir.deleteRecursively()
+        dataDir.mkdirs()
+        synchronized(TestServerMain) { startCore() }
         Control(controlPort).start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-        println("openframe test server on http://127.0.0.1:$port/ (control on $controlPort, data in $dataDir)")
+        // Only after a successful start: a server that could not start leaves the folder to the next start.
+        Runtime.getRuntime().addShutdownHook(Thread(::shutdown, "testserver-shutdown"))
+        println(
+            "openframe test server on http://127.0.0.1:$port/ " +
+                "(control on 127.0.0.1:$controlPort with the header $CONTROL_HEADER: 1, data in $dataDir)",
+        )
         Thread.currentThread().join()
     }
+
+    /**
+     * On SIGTERM or Ctrl+C: stops the frame and deletes its data. Under the lock, so that it neither runs into a
+     * reset nor into a start that has not finished.
+     */
+    private fun shutdown() {
+        synchronized(TestServerMain) {
+            if (::core.isInitialized) runCatching { runBlocking { core.stop() } }
+            dataDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The file at [relative] inside [root], or `null` if it would lie outside of it: through `..`, as an absolute
+     * path or through a symbolic link. [root] itself does not count as inside.
+     */
+    internal fun resolveInside(
+        root: File,
+        relative: String,
+    ): File? {
+        if (File(relative).isAbsolute) return null
+        val base = root.canonicalFile
+        val target = File(base, relative).canonicalFile
+        return target.takeIf { it.path.startsWith(base.path + File.separator) }
+    }
+
+    /**
+     * Why the control port refuses a request, or `null` if it takes it: only GET without a body, only with
+     * [CONTROL_HEADER] and only for the host `127.0.0.1` or `localhost` on [controlPort]. The header keeps other web
+     * pages out, because a browser asks before it sends such a header to another site and the control port refuses that
+     * question. The host keeps out a page whose own name was pointed at 127.0.0.1 (DNS rebinding) and that could send
+     * the header to itself. A refusal also closes the connection (see [Control]): NanoHTTPD would otherwise read the
+     * unread body of a refused request, e.g. of a form sent by another page, as the next request.
+     */
+    internal fun controlRefusal(
+        method: NanoHTTPD.Method?,
+        headers: Map<String, String>,
+        controlPort: Int,
+    ): Pair<NanoHTTPD.Response.Status, String>? =
+        when {
+            method != NanoHTTPD.Method.GET -> {
+                NanoHTTPD.Response.Status.METHOD_NOT_ALLOWED to "GET only"
+            }
+
+            headers["content-length"].let { it != null && it != "0" } || "transfer-encoding" in headers -> {
+                NanoHTTPD.Response.Status.BAD_REQUEST to "no body"
+            }
+
+            headers[CONTROL_HEADER] != "1" -> {
+                NanoHTTPD.Response.Status.FORBIDDEN to "the header $CONTROL_HEADER: 1 is missing"
+            }
+
+            headers["host"] !in setOf("127.0.0.1:$controlPort", "localhost:$controlPort") -> {
+                NanoHTTPD.Response.Status.FORBIDDEN to "unknown host ${headers["host"]}"
+            }
+
+            else -> {
+                null
+            }
+        }
 
     private fun startCore() {
         val assets =
             AssetSource { path ->
-                File(dist, path).takeIf { it.isFile && it.canonicalPath.startsWith(dist.canonicalPath) }?.inputStream()
+                // With the separator, so that a neighbouring folder such as `dist-old` is not inside.
+                File(dist, path).takeIf { it.isFile && it.canonicalPath.startsWith(dist.canonicalPath + File.separator) }?.inputStream()
             }
         val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"))
         nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
@@ -80,6 +168,7 @@ object TestServerMain {
                 scanInterval = Duration.ofSeconds(2),
                 nextcloudClients = nextcloud,
                 displayPower = displayPower,
+                bindLoopback = true,
             )
         runBlocking { core.start() }
     }
@@ -92,11 +181,14 @@ object TestServerMain {
         startCore()
     }
 
-    private class Control(
-        port: Int,
-    ) : NanoHTTPD("127.0.0.1", port) {
-        override fun serve(session: IHTTPSession): Response =
-            synchronized(TestServerMain) {
+    internal class Control(
+        private val controlPort: Int,
+    ) : NanoHTTPD("127.0.0.1", controlPort) {
+        override fun serve(session: IHTTPSession): Response {
+            controlRefusal(session.method, session.headers, controlPort)?.let { (status, reason) ->
+                return newFixedLengthResponse(status, "text/plain", reason).apply { closeConnection(true) }
+            }
+            return synchronized(TestServerMain) {
                 val q = session.parameters.mapValues { it.value.first() }
                 try {
                     when (session.uri) {
@@ -125,12 +217,17 @@ object TestServerMain {
                             ok("advanced")
                         }
 
-                        // Simulates a file copied over USB.
+                        // Simulates a file copied over USB, into the photo folder only.
                         "/usb" -> {
-                            Fixtures.copy(q.getValue("fixture"), File(core.localSource.root, q.getValue("to")))
-                            // Scan right away unless scan=0, so tests do not wait for the interval.
-                            if (q["scan"] != "0") runBlocking { core.localSource.scan() }
-                            ok("copied")
+                            val target = resolveInside(core.localSource.root, q.getValue("to"))
+                            if (target == null) {
+                                newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "outside the photo folder")
+                            } else {
+                                Fixtures.copy(q.getValue("fixture"), target)
+                                // Scan right away unless scan=0, so tests do not wait for the interval.
+                                if (q["scan"] != "0") runBlocking { core.localSource.scan() }
+                                ok("copied")
+                            }
                         }
 
                         // Many photos at once, without the scan having to open them all.
@@ -248,6 +345,7 @@ object TestServerMain {
                     newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", e.toString())
                 }
             }
+        }
 
         private fun ok(text: String) = newFixedLengthResponse(Response.Status.OK, "text/plain", text)
 

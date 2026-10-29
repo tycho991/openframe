@@ -13,14 +13,22 @@ import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestFrame
+import io.github.tycho991.openframe.core.testing.waitFor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
+import java.net.Socket
 import java.time.Duration
 import java.time.Instant
 
@@ -28,15 +36,6 @@ import java.time.Instant
 class FrameCoreTest {
     @TempDir
     lateinit var dir: File
-
-    private fun waitFor(
-        timeoutMs: Long = 5000,
-        condition: () -> Boolean,
-    ) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(20)
-        assertTrue(condition(), "Condition not met")
-    }
 
     @Test
     fun `Cold start with an empty cache shows the first photo`() {
@@ -210,6 +209,44 @@ class FrameCoreTest {
         clock.advance(java.time.Duration.ofSeconds(6))
         assertEquals("http://10.0.0.5:8080/", core.adminUrl())
     }
+
+    @Test
+    fun `A test frame binds to loopback only and leaves the setting local only off`() {
+        TestFrame(dir).use { frame ->
+            val core = frame.core
+
+            fun binds() =
+                core.log
+                    .recent(1000)
+                    .filter { it.message.startsWith("Server on ") }
+                    .map { it.message }
+            assertTrue(core.server.localOnly)
+            assertFalse(core.settings.localOnly.value)
+            // A network change and both positions of the setting bind the server anew, each time to loopback.
+            core.onNetworkChanged()
+            core.setLocalOnly(true)
+            waitFor { binds().size >= 3 }
+            core.setLocalOnly(false)
+            waitFor { binds().size >= 4 }
+            assertTrue(binds().all { it.startsWith("Server on 127.0.0.1:") }, binds().toString())
+            assertTrue(core.server.localOnly)
+            assertFalse(core.settings.localOnly.value)
+            val port = core.server.boundPort!!
+            Socket().use { it.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), 1000) }
+            for (address in ownLanAddresses()) {
+                assertThrows(IOException::class.java, { Socket().use { it.connect(InetSocketAddress(address, port), 1000) } }, "$address")
+            }
+        }
+    }
+
+    /** This machine's own IPv4 addresses apart from loopback; empty on a machine without a network. */
+    private fun ownLanAddresses(): List<InetAddress> =
+        NetworkInterface
+            .getNetworkInterfaces()
+            .toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .filterIsInstance<Inet4Address>()
 
     @Test
     fun `Empty state without photos`() {

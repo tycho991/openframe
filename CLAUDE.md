@@ -36,6 +36,18 @@ UI and `values-de/strings.xml` on the frame. Commit messages are in English as w
 
 - `./gradlew check` (formatting, tests, API 21 check, Android Lint) must be green.
 - Web UI: `npm run lint`, `npm run typecheck`, `npm test`, `npm run e2e` in `webadmin/`.
+  `npm run lint` also lints `api/openapi.yaml` with Redocly; every operation except `GET /info`
+  needs a 4xx response. When another checkout or session may run e2e at the same time, use your
+  own `OPENFRAME_E2E_PORT` (e.g. 8190); a busy port fails instead of being reused.
+- After every change to Gradle dependencies, plugins or the Gradle version, regenerate
+  `gradle/verification-metadata.xml` with a fresh `GRADLE_USER_HOME` (command in the README) and
+  commit it in the same commit.
+- GitHub Actions: pin every `uses:` to a full 40-character commit SHA with a `# vX.Y.Z` comment,
+  give every checkout `persist-credentials: false`, and pass `version: ${{ env.MISE_VERSION }}`
+  and a minimal `install_args` to every mise step.
+- Do not enable Renovate automerge: `main` deliberately requires no status checks (the
+  release-please pull request planned in app-auto-update is opened with `GITHUB_TOKEN` and gets
+  no CI), so GitHub would merge without waiting for CI.
 - `openspec validate <change>` must end with exit 0 and without warnings. Keep requirements
   under 500 characters; split longer ones into several requirements, otherwise the validator
   warns.

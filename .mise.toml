@@ -1,10 +1,12 @@
 [tools]
-java = "temurin-17.0.16+8"
-node = "24.22.0"
+java = "temurin-17.0.21+9"
+node = "24.22.1"
 "npm:@fission-ai/openspec" = "1.14.3"
 
 [env]
 OPENSPEC_TELEMETRY = "0"
+REDOCLY_TELEMETRY = "off"
+REDOCLY_SUPPRESS_UPDATE_NOTICE = "true"
 DO_NOT_TRACK = "1"
 
 # OpenSpec reads profile and delivery from the machine's global config

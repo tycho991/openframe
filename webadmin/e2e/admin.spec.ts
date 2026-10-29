@@ -1,5 +1,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { apiAsBrowser, pairInUi, pairOtherDevice, reset, slowDisplay, usb } from "./helpers";
+import {
+  apiAsBrowser,
+  escapeRegExp,
+  FRAME_ORIGIN,
+  pairInUi,
+  pairOtherDevice,
+  reset,
+  slowDisplay,
+  usb,
+} from "./helpers";
 
 test.beforeEach(async () => {
   await reset();
@@ -142,7 +151,9 @@ test("Show invitation", async ({ page }) => {
   await page.getByRole("link", { name: "Geräte" }).click();
   await page.getByRole("button", { name: "Gerät einladen" }).click();
   await expect(page.getByRole("img", { name: "QR-Code der Einladung" })).toBeVisible();
-  await expect(page.getByLabel("Link")).toHaveValue(/^http:\/\/127\.0\.0\.1:8090\/#pair=[A-Za-z0-9_-]{22}$/);
+  await expect(page.getByLabel("Link")).toHaveValue(
+    new RegExp(`^${escapeRegExp(FRAME_ORIGIN)}/#pair=[A-Za-z0-9_-]{22}$`),
+  );
   await expect(page.getByRole("timer")).toHaveText(/^Noch [45]:\d\d gültig$/);
 });
 

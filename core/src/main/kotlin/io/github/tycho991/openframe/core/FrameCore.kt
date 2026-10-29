@@ -109,6 +109,11 @@ class FrameCore(
     displayPower: DisplayPower = DisplayPower.None,
     /** The network, which the frame asks to come back while the display is off; a device without it is always connected. */
     networkLink: NetworkLink = NetworkLink.None,
+    /**
+     * Binds the server to loopback whatever the setting "local only" says, which itself stays as it is. Only for the
+     * test server and tests, so that a test frame is not reachable from the LAN; the frame never sets it.
+     */
+    private val bindLoopback: Boolean = false,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -273,9 +278,9 @@ class FrameCore(
                 .collect { cache.trim() }
         }
         scope.launch {
-            settings.localOnly.drop(1).collect { server.restart(it) }
+            settings.localOnly.drop(1).collect { server.restart(bindLoopback || it) }
         }
-        server.start(settings.localOnly.value)
+        server.start(bindLoopback || settings.localOnly.value)
     }
 
     /**

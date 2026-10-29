@@ -1,15 +1,26 @@
 name: ci
+# Pull requests run as pull_request only; push runs only for main, so a push to a PR branch does not start CI twice.
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
+# A new push to a pull request cancels its older run. On main every commit gets a group of its own, so no run there is
+# dropped. The fixed prefix keeps the group apart from a workflow that might call this one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   # UTF-8 everywhere, so that file names and test data with non-ASCII characters behave the same.
   LC_ALL: C.UTF-8
   LANG: C.UTF-8
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
+  MISE_VERSION: "2026.10.17"
   OPENSPEC_TELEMETRY: "0"
+  REDOCLY_TELEMETRY: "off"
+  REDOCLY_SUPPRESS_UPDATE_NOTICE: "true"
   DO_NOT_TRACK: "1"
 
 jobs:
@@ -17,10 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Java and Node pinned exactly as in .mise.toml.
-      - uses: jdx/mise-action@v5
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: java node
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: Check and build
         run: |
           set -o pipefail
@@ -33,21 +49,22 @@ jobs:
       - name: Check APK
         run: |
           apk=android/build/outputs/apk/debug/android-debug.apk
-          aapt2=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2
+          aapt2=$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2
           "$aapt2" dump badging "$apk" | tee badging.txt | grep -E "^package|sdkVersion|native-code" || true
           grep -q "name='io.github.tycho991.openframe'" badging.txt
           grep -q "^minSdkVersion:'21'" badging.txt
-          # No native libraries: runs on all ABIs.
-          ! grep -q "^native-code" badging.txt
+          # No native libraries: runs on all ABIs. (A bare `! grep` would not stop the script under `bash -e`.)
+          if grep -q "^native-code" badging.txt; then exit 1; fi
           unzip -l "$apk" | grep -E "assets/webadmin/(index.html|assets/)" | head -5
           unzip -l "$apk" | grep -q "assets/webadmin/index.html"
-      - uses: actions/upload-artifact@v4
+      # The reports always, the debug APK only from main: a pull request run would offer a build of unreviewed code.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: gradle-reports
           path: |
             **/build/reports/
-            android/build/outputs/apk/debug/*.apk
+            ${{ github.event_name == 'push' && 'android/build/outputs/apk/debug/*.apk' || '' }}
           if-no-files-found: ignore
 
   webadmin:
@@ -57,10 +74,18 @@ jobs:
       run:
         working-directory: webadmin
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Java and Node pinned exactly as in .mise.toml.
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: java node
+      # Install scripts stay off (webadmin/.npmrc); the registry signatures of the installed packages are checked.
       - run: npm ci
+      - run: npm audit signatures
+      # ESLint, Prettier and Redocly on the API contract.
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -73,8 +98,9 @@ jobs:
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: webadmin/package-lock.json
           sparse-checkout-cone-mode: false
       - id: read
@@ -104,16 +130,21 @@ jobs:
       run:
         working-directory: webadmin
     steps:
-      - uses: actions/checkout@v7
-      # Java and Node pinned exactly as in .mise.toml.
-      - uses: jdx/mise-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      # Java and Node pinned exactly as in .mise.toml.
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: ${{ env.MISE_VERSION }}
           install_args: java node
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - run: npm ci
       - run: npm run build
-      - run: npx playwright test --project=${{ matrix.project }}
-      - uses: actions/upload-artifact@v4
+      - run: npx playwright test --project="$PROJECT"
+        env:
+          PROJECT: ${{ matrix.project }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: playwright-report-${{ matrix.project }}
