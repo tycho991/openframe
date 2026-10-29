@@ -45,8 +45,9 @@ UI and `values-de/strings.xml` on the frame. Commit messages are in English as w
 - GitHub Actions: pin every `uses:` to a full 40-character commit SHA with a `# vX.Y.Z` comment,
   give every checkout `persist-credentials: false`, and pass `version: ${{ env.MISE_VERSION }}`
   and a minimal `install_args` to every mise step.
-- Do not enable Renovate automerge: `main` requires no status checks (release-please's pull
-  request gets no CI), so GitHub would merge without waiting for CI.
+- Do not enable Renovate automerge: `main` deliberately requires no status checks (the
+  release-please pull request planned in app-auto-update is opened with `GITHUB_TOKEN` and gets
+  no CI), so GitHub would merge without waiting for CI.
 - `openspec validate <change>` must end with exit 0 and without warnings. Keep requirements
   under 500 characters; split longer ones into several requirements, otherwise the validator
   warns.

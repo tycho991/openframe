@@ -202,7 +202,8 @@ The `:core` test server with fake images can also be started with
 `./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; the web UI is
 then at `http://127.0.0.1:8090/`. It listens on 127.0.0.1 only and keeps its data
 in `core/build/testserver/<port>`, which it empties at start and deletes when it
-stops; `./gradlew clean` removes what a killed server left behind. Its control
+stops; a second server on the same port refuses to start instead of emptying it,
+and `./gradlew clean` removes what a killed server left behind. Its control
 port accepts only GET requests with the header `x-openframe-control: 1`, for
 example `curl -H 'x-openframe-control: 1' http://127.0.0.1:8091/code`.
 
@@ -220,7 +221,10 @@ port when several run at once.
   install script is built with `npm rebuild --ignore-scripts=false <package>`.
 - `npm run lint` also checks `api/openapi.yaml` with Redocly. Every operation needs
   a 4xx response; `.redocly.lint-ignore.yaml` holds the only exception, `GET /info`.
-- Gradle checks every downloaded artifact against `gradle/verification-metadata.xml`.
+- Gradle checks every artifact it resolves against `gradle/verification-metadata.xml`.
+  Not covered are the `android-all-instrumented` jars that Robolectric downloads by
+  itself into `~/.m2` for the `:android` unit tests; it checks them only against the
+  `.sha512` file of the same repository. They are used by tests only, never in the APK.
   After changing a Gradle dependency, a plugin or the Gradle version, regenerate it
   with a fresh Gradle home and commit it together with the change:
 

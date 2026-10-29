@@ -17,6 +17,8 @@ import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.io.RandomAccessFile
+import java.nio.channels.FileLock
 import java.time.Duration
 import java.time.Instant
 
@@ -26,7 +28,8 @@ import java.time.Instant
  *
  * Usage: `./gradlew :core:runTestServer --args="<port> <control-port> <webadmin/dist>"`. The control port takes only
  * GET requests with the header `x-openframe-control: 1`, e.g. `curl -H 'x-openframe-control: 1' 127.0.0.1:8091/code`.
- * The data lives in `core/build/testserver/<port>`, emptied at every start and deleted when the server ends.
+ * The data lives in `core/build/testserver/<port>`, emptied at every start and deleted when the server ends; a second
+ * server on the same port refuses to start instead of emptying it.
  */
 object TestServerMain {
     /** The header every request to the control port must carry, with the value `1`. */
@@ -43,6 +46,9 @@ object TestServerMain {
     /** The display, with device administration active; steered through the control port. */
     private var displayPower = FakeDisplayPower()
     private lateinit var dataDir: File
+
+    /** Held as long as the server runs, see [main]. */
+    private var dataLock: FileLock? = null
     private var port = 0
     private lateinit var dist: File
 
@@ -62,12 +68,18 @@ object TestServerMain {
         dist = File(args.getOrNull(2) ?: "webadmin/dist").absoluteFile
         // One folder per port, so that the servers of parallel worktrees never share their data. Emptied first: a
         // server that was killed could not delete it.
-        dataDir = File(System.getProperty(DATA_DIR_PROPERTY) ?: "core/build/testserver", port.toString()).absoluteFile
+        val home = File(System.getProperty(DATA_DIR_PROPERTY) ?: "core/build/testserver").absoluteFile.apply { mkdirs() }
+        dataDir = File(home, port.toString())
+        // Claimed before it is emptied: a second server on the same port must not wipe the data of the running one.
+        // The system releases the lock when the process ends, also when it is killed.
+        dataLock = RandomAccessFile(File(home, "$port.lock"), "rw").channel.tryLock()
+            ?: error("Another test server already uses $dataDir")
         dataDir.deleteRecursively()
         dataDir.mkdirs()
-        Runtime.getRuntime().addShutdownHook(Thread(::shutdown, "testserver-shutdown"))
         synchronized(TestServerMain) { startCore() }
         Control(controlPort).start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+        // Only after a successful start: a server that could not start leaves the folder to the next start.
+        Runtime.getRuntime().addShutdownHook(Thread(::shutdown, "testserver-shutdown"))
         println(
             "openframe test server on http://127.0.0.1:$port/ " +
                 "(control on 127.0.0.1:$controlPort with the header $CONTROL_HEADER: 1, data in $dataDir)",
@@ -101,10 +113,12 @@ object TestServerMain {
     }
 
     /**
-     * Why the control port refuses a request, or `null` if it takes it: only GET, only with [CONTROL_HEADER] and only
-     * for the host `127.0.0.1` or `localhost` on [controlPort]. The header keeps other web pages out, because a browser
-     * asks before it sends such a header to another site and the control port refuses that question. The host keeps
-     * out a page whose own name was pointed at 127.0.0.1 (DNS rebinding) and that could send the header to itself.
+     * Why the control port refuses a request, or `null` if it takes it: only GET without a body, only with
+     * [CONTROL_HEADER] and only for the host `127.0.0.1` or `localhost` on [controlPort]. The header keeps other web
+     * pages out, because a browser asks before it sends such a header to another site and the control port refuses that
+     * question. The host keeps out a page whose own name was pointed at 127.0.0.1 (DNS rebinding) and that could send
+     * the header to itself. A refusal also closes the connection (see [Control]): NanoHTTPD would otherwise read the
+     * unread body of a refused request, e.g. of a form sent by another page, as the next request.
      */
     internal fun controlRefusal(
         method: NanoHTTPD.Method?,
@@ -114,6 +128,10 @@ object TestServerMain {
         when {
             method != NanoHTTPD.Method.GET -> {
                 NanoHTTPD.Response.Status.METHOD_NOT_ALLOWED to "GET only"
+            }
+
+            headers["content-length"].let { it != null && it != "0" } || "transfer-encoding" in headers -> {
+                NanoHTTPD.Response.Status.BAD_REQUEST to "no body"
             }
 
             headers[CONTROL_HEADER] != "1" -> {
@@ -163,12 +181,12 @@ object TestServerMain {
         startCore()
     }
 
-    private class Control(
+    internal class Control(
         private val controlPort: Int,
     ) : NanoHTTPD("127.0.0.1", controlPort) {
         override fun serve(session: IHTTPSession): Response {
             controlRefusal(session.method, session.headers, controlPort)?.let { (status, reason) ->
-                return newFixedLengthResponse(status, "text/plain", reason)
+                return newFixedLengthResponse(status, "text/plain", reason).apply { closeConnection(true) }
             }
             return synchronized(TestServerMain) {
                 val q = session.parameters.mapValues { it.value.first() }
