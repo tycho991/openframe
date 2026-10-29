@@ -1,7 +1,8 @@
 extends:
   - recommended
 rules:
-  # GET /info has no error case: no auth, no parameters.
-  operation-4xx-response: off
+  # Only a warning in `recommended`, and warnings do not fail the lint. GET /info, which has no error case, is the
+  # single exception in .redocly.lint-ignore.yaml.
+  operation-4xx-response: error
   # License is still open (design.md, Open Questions).
   info-license: off

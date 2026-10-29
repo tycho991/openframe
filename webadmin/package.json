@@ -12,7 +12,7 @@
     "build": "npm run gen:api && vite build",
     "preview": "vite preview",
     "typecheck": "npm run gen:api && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && prettier --check . && redocly lint ../api/openapi.yaml --config ../redocly.yaml",
     "format": "prettier --write .",
     "test": "vitest run",
     "e2e": "npm run build && playwright test"
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
+    "@redocly/cli": "2.63.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",

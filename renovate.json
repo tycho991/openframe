@@ -1,9 +1,16 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver"
   ],
   "minimumReleaseAge": "7 days",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ]
+  },
   "packageRules": [
     {
       "matchDepNames": [
@@ -53,7 +60,7 @@
         "minor",
         "patch"
       ],
-      "groupName": "Web-UI-Werkzeuge"
+      "groupName": "Web UI tools"
     },
     {
       "description": "Playwright changes the browsers, own PR",
@@ -84,6 +91,21 @@
         "major"
       ],
       "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The mise version that jdx/mise-action installs in the workflows",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/(ci|openspec-drift)\\.yml$/"
+      ],
+      "matchStrings": [
+        "MISE_VERSION: \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "jdx/mise",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ]
 }
