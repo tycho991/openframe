@@ -1,6 +1,6 @@
 # Emulator checks
 
-How the emulator results in `DEVICE_TEST.md` were produced, so that they can be repeated. The emulators need
+How the emulator results in the device checklist were produced, so that they can be repeated. The emulators need
 about 8 GB under the Android SDK (system images 7 GB, emulator 0.9 GB).
 
 ## Images and virtual devices
@@ -50,5 +50,6 @@ the code only while no device is paired, the hint (tap) shows it always.
 
 ## What was checked
 
-See the sections "Emulator checks (API 21, x86)" and "Android 17 (API 37) emulator" in `DEVICE_TEST.md`. The
+The results are in the sections "Emulator checks (API 21, x86)" and "Android 17 (API 37) emulator" of the device
+checklist, which is kept in a private companion repository together with the findings. The
 screenshots in `screenshots/` come from the API 21 emulator at both panel sizes.

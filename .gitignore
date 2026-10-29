@@ -14,3 +14,21 @@ webadmin/dist/
 webadmin/test-results/
 webadmin/playwright-report/
 webadmin/src/lib/api/schema.d.ts
+
+# Keys, secrets and local notes, never committed
+*.keystore
+*.jks
+keystore.properties
+*.b64
+/*.p12
+.env*
+CLAUDE.local.md
+
+# Logs and photos pulled from a device
+*.log
+/photos/
+
+# Editors and operating systems
+.idea/
+*.iml
+.DS_Store
