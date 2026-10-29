@@ -34,13 +34,17 @@ class LocalPhotoSource(
     private val engine: MediaEngine,
     private val index: PhotoIndexStore,
     private val log: AppLog,
+    /** Lists the image files below [root]; replaced only by tests that act while the folder is listed. */
+    private val listFiles: (File) -> Map<String, File> = { listImageFiles(it) },
 ) : PhotoSource {
     override val id = SOURCE_ID
 
     override suspend fun scan(): ScanResult {
         root.mkdirs()
-        val files = listFiles()
+        // The index before the folder: a photo that enters the index while the folder is listed (an upload) is then
+        // not one of the known entries, so its missing file in the listing cannot remove it (see the removal below).
         val library = index.library.value
+        val files = listFiles(root)
         val known =
             library.photos.values
                 .filter { it.source == id }
@@ -78,17 +82,19 @@ class LocalPhotoSource(
                             skipped++
                         }
                 }
-                // Only entries that existed when the scan began may be removed: a photo added meanwhile
-                // (an upload) is not in the file list taken earlier.
+                // Only entries exactly as they were when the scan began may be removed: a photo added meanwhile (an
+                // upload, also under the name of a photo deleted meanwhile) is not in the file list taken earlier. An
+                // edit keeps the objects of unchanged entries and every change creates a new one, so the identity
+                // tells them apart.
                 var removed = 0
                 for (entry in edit.entries(id)) {
-                    if (entry.path !in files && entry.path in known) {
+                    if (entry.path !in files && known[entry.path] === entry) {
                         edit.remove(entry.id)
                         removed++
                     }
                 }
                 for (skip in edit.skipped(id)) {
-                    if (skip.path !in files && skip.path in skippedKnown) edit.unskip(id, skip.path)
+                    if (skip.path !in files && skippedKnown[skip.path] == skip) edit.unskip(id, skip.path)
                 }
                 ScanResult(added, updated, removed, skipped)
             }.also {
@@ -104,7 +110,7 @@ class LocalPhotoSource(
         file: File,
         info: ImageInfo? = null,
     ): PhotoEntry {
-        val path = relativePath(file)
+        val path = relativePath(root, file)
         val entry = read(path, file, previous = index.library.value.photos[PhotoEntry.idFor(id, path)], info)
         return index.edit { edit -> entry.withStateOf(edit.get(entry.id)).also(edit::put) }
     }
@@ -135,18 +141,22 @@ class LocalPhotoSource(
         )
     }
 
-    /** All files with an image extension, hidden files and folders excluded. */
-    private fun listFiles(): Map<String, File> =
-        root
-            .walkTopDown()
-            .onEnter { it == root || !it.name.startsWith('.') }
-            .filter { it.isFile && !it.name.startsWith('.') && ImageFormats.hasImageExtension(it.name) }
-            .associateBy { relativePath(it) }
-
-    private fun relativePath(file: File) = file.relativeTo(root).invariantSeparatorsPath
-
     companion object {
         const val SOURCE_ID = "local"
         private const val TAG = "scan"
+
+        /** All files with an image extension below [root] by relative path, hidden files and folders excluded. */
+        internal fun listImageFiles(root: File): Map<String, File> =
+            root
+                .walkTopDown()
+                .onEnter { it == root || !it.name.startsWith('.') }
+                .filter { it.isFile && !it.name.startsWith('.') && ImageFormats.hasImageExtension(it.name) }
+                .associateBy { relativePath(root, it) }
+
+        /** The path of an entry: scan and [add] must build it the same way, it is part of the photo's ID. */
+        private fun relativePath(
+            root: File,
+            file: File,
+        ) = file.relativeTo(root).invariantSeparatorsPath
     }
 }

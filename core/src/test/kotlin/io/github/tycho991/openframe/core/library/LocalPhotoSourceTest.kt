@@ -55,6 +55,46 @@ class LocalPhotoSourceTest {
     }
 
     @Test
+    fun `A photo that enters the index while the folder is listed stays`() {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        scan()
+        // An upload that finishes while the scan lists the folder: its file is missing from the listing, but its entry
+        // is in the index before the scan applies its result.
+        val late = File(photos, "late.jpg")
+        val racing =
+            LocalPhotoSource(photos, engine, index, log) { root ->
+                LocalPhotoSource.listImageFiles(root).also {
+                    Fixtures.copy("landscape.jpg", late)
+                    source.add(late)
+                }
+            }
+        val result = runBlocking { racing.scan() }
+        assertEquals(listOf("a.jpg", "late.jpg"), paths())
+        assertEquals(0, result.removed)
+    }
+
+    @Test
+    fun `A photo uploaded under the name of one deleted while the folder is listed stays`() {
+        val a = File(photos, "a.jpg")
+        Fixtures.copy("landscape.jpg", a)
+        scan()
+        // The old a.jpg is deleted before the listing reaches it, a new a.jpg is uploaded right after: same path and
+        // ID, but a new entry, not the one the scan knew.
+        val racing =
+            LocalPhotoSource(photos, engine, index, log) { root ->
+                a.delete()
+                index.edit { it.remove(PhotoEntry.idFor(LocalPhotoSource.SOURCE_ID, "a.jpg")) }
+                LocalPhotoSource.listImageFiles(root).also {
+                    Fixtures.copy("landscape.jpg", a)
+                    source.add(a)
+                }
+            }
+        val result = runBlocking { racing.scan() }
+        assertEquals(listOf("a.jpg"), paths())
+        assertEquals(0, result.removed)
+    }
+
+    @Test
     fun `All formats`() {
         for (name in listOf("landscape.jpg", "image.png", "image.webp", "anim.gif")) Fixtures.copy(name, File(photos, name))
         scan()
