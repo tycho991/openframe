@@ -200,7 +200,56 @@ OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite with hot reload, 
 
 The `:core` test server with fake images can also be started with
 `./gradlew :core:runTestServer --args="8090 8091 webadmin/dist"`; the web UI is
-then at `http://127.0.0.1:8090/`.
+then at `http://127.0.0.1:8090/`. It listens on 127.0.0.1 only and keeps its data
+in `core/build/testserver/<port>`, which it empties at start and deletes when it
+stops; `./gradlew clean` removes what a killed server left behind. Its control
+port accepts only GET requests with the header `x-openframe-control: 1`, for
+example `curl -H 'x-openframe-control: 1' http://127.0.0.1:8091/code`.
+
+`npm run e2e` starts its own test server on `OPENFRAME_E2E_PORT` (default 8090)
+and `OPENFRAME_E2E_CONTROL_PORT` (default: the next port). If the port is busy,
+it stops instead of testing against whatever runs there. Set `PW_REUSE_SERVER=1`
+to test against a server you started yourself, and give each checkout its own
+port when several run at once.
+
+### Toolchain, dependencies and CI
+
+- Java and Node come from `.mise.toml`; run `mise install` after pulling.
+- `webadmin/.npmrc` sets `ignore-scripts=true`, so install scripts of dependencies
+  never run (in `npm ci`, in the Gradle build and in CI). A package that needs its
+  install script is built with `npm rebuild --ignore-scripts=false <package>`.
+- `npm run lint` also checks `api/openapi.yaml` with Redocly. Every operation needs
+  a 4xx response; `.redocly.lint-ignore.yaml` holds the only exception, `GET /info`.
+- Gradle checks every downloaded artifact against `gradle/verification-metadata.xml`.
+  After changing a Gradle dependency, a plugin or the Gradle version, regenerate it
+  with a fresh Gradle home and commit it together with the change:
+
+  ```bash
+  GRADLE_USER_HOME=$(mktemp -d) ./gradlew --no-configuration-cache --no-build-cache \
+    --write-verification-metadata sha256 help check :android:assembleDebug
+  ```
+
+  The fresh home matters, because Gradle would record whatever an existing cache
+  already holds. Compare new entries of declared dependencies with the `.sha256` or
+  `.sha1` files on Maven Central or Google Maven, then delete the temporary home
+  (about 1.5 GB). Regenerating only adds entries; to drop stale ones, empty
+  `<components>` first.
+- aapt2 is recorded for Linux only. On macOS or Windows the build stops with
+  "Dependency verification failed" for `aapt2-<version>-osx.jar` or `-windows.jar`.
+  Run the command above on that machine, compare the new entry with
+  `https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/<version>/aapt2-<version>-<osx|windows>.jar.sha256`
+  and commit only that entry.
+- To upgrade Gradle, run
+  `./gradlew wrapper --gradle-version <X> --gradle-distribution-sha256-sum <sum>`
+  twice, with the sum from
+  `https://services.gradle.org/distributions/gradle-<X>-bin.zip.sha256` (only the
+  second run, on the new version, renews the jar and the scripts). Check
+  `gradle/wrapper/gradle-wrapper.jar` against `gradle-<X>-wrapper.jar.sha256`, then
+  regenerate the verification metadata.
+- GitHub Actions are pinned by full commit SHA with a `# vX.Y.Z` comment, and mise
+  by `MISE_VERSION` in both workflows; Renovate raises both. CI runs once per push
+  to a pull request (a newer push cancels the older run), and the debug APK
+  artifact exists only for runs on `main`.
 
 What can be verified only on real hardware is listed in
 [`docs/DEVICE_TEST.md`](docs/DEVICE_TEST.md).
