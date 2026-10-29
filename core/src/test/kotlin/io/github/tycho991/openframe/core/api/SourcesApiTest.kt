@@ -6,6 +6,7 @@ import io.github.tycho991.openframe.core.nextcloud.FakeLoginFlow
 import io.github.tycho991.openframe.core.sources.SourceException
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestFrame
+import io.github.tycho991.openframe.core.testing.waitFor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -94,17 +95,6 @@ class SourcesApiTest {
         return id
     }
 
-    private fun waitFor(
-        what: String,
-        condition: () -> Boolean,
-    ) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (!condition()) {
-            check(System.currentTimeMillis() < deadline) { "Timed out waiting for $what" }
-            Thread.sleep(25)
-        }
-    }
-
     private fun synced(id: String) = source(id).status.let { it.ok == true && !it.syncing }
 
     // --- List and access
@@ -171,7 +161,7 @@ class SourcesApiTest {
         assertEquals(SourceSettingsDto("Shared", true, "/", true, true, 20, 2000), added.settings, "named after the shared folder")
         assertTrue(added.status.syncing, "the first sync shows as running")
         assertFalse(res.body().contains("AbC123"), "no token in the answer")
-        waitFor("the first sync") { synced(added.id) }
+        waitFor(SYNC_TIMEOUT_MS, "the first sync") { synced(added.id) }
         val photo = photos().items.single()
         assertEquals(added.id, photo.source)
         assertEquals("holiday", photo.album)
@@ -328,7 +318,7 @@ class SourcesApiTest {
         frame.send("PATCH", "/api/v1/sources/$id", """{"intervalMinutes":45}""")
         clients.remote.put("a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")
         frame.send("POST", "/api/v1/sources/$id/sync")
-        waitFor("the sync") { synced(id) }
+        waitFor(SYNC_TIMEOUT_MS, "the sync") { synced(id) }
         login.approved = false
         assertEquals(id, connect(folder = null))
         assertEquals(1, list().size)
@@ -408,7 +398,7 @@ class SourcesApiTest {
         clients.remote.put("holiday/a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")
         val res = frame.send("POST", "/api/v1/sources/$id/sync")
         assertEquals(202, res.statusCode())
-        waitFor("the sync") { synced(id) }
+        waitFor(SYNC_TIMEOUT_MS, "the sync") { synced(id) }
         val status = source(id).status
         assertEquals(1, status.added)
         assertNull(status.error)
@@ -426,13 +416,13 @@ class SourcesApiTest {
             .remote
             .put("a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")
         frame.send("POST", "/api/v1/sources/${share.id}/sync")
-        waitFor("the first sync") { synced(share.id) && photos().total == 1 }
+        waitFor(SYNC_TIMEOUT_MS, "the first sync") { synced(share.id) && photos().total == 1 }
         clients.shares
             .getValue("AbC123")
             .remote.listFailure =
             SourceException(SourceException.Kind.UNREACHABLE, "The server cloud.example.org did not answer in time")
         frame.send("POST", "/api/v1/sources/${share.id}/sync")
-        waitFor("the failure") { source(share.id).status.let { it.ok == false && !it.syncing } }
+        waitFor(SYNC_TIMEOUT_MS, "the failure") { source(share.id).status.let { it.ok == false && !it.syncing } }
         assertEquals("The server cloud.example.org did not answer in time", source(share.id).status.error)
         assertEquals(1, photos().total)
     }
@@ -452,9 +442,9 @@ class SourcesApiTest {
         Fixtures.copy("image.png", File(frame.photos, "mine.png"))
         frame.scan()
         frame.send("POST", "/api/v1/sources/${first.id}/sync")
-        waitFor("the first source") { synced(first.id) && photos().total >= 2 }
+        waitFor(SYNC_TIMEOUT_MS, "the first source") { synced(first.id) && photos().total >= 2 }
         frame.send("POST", "/api/v1/sources/${second.id}/sync")
-        waitFor("the second source") { synced(second.id) && photos().total == 3 }
+        waitFor(SYNC_TIMEOUT_MS, "the second source") { synced(second.id) && photos().total == 3 }
         val albums = ApiJson.decodeFromString(AlbumListDto.serializer(), frame.get("/api/v1/albums").body()).albums
         assertEquals(2, albums.single { it.name == "holiday" }.count, "one album from both sources")
 
@@ -471,10 +461,13 @@ class SourcesApiTest {
         val id = connect()
         clients.remote.put("a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")
         frame.send("POST", "/api/v1/sources/$id/sync")
-        waitFor("the sync") { synced(id) && photos().total == 1 }
+        waitFor(SYNC_TIMEOUT_MS, "the sync") { synced(id) && photos().total == 1 }
         assertEquals(204, frame.send("DELETE", "/api/v1/sources/$id").statusCode())
-        waitFor("the revoke") { login.revoked == 1 }
+        waitFor(SYNC_TIMEOUT_MS, "the revoke") { login.revoked == 1 }
         assertEquals(0, photos().total)
         assertEquals(emptyList<SourceDto>(), list())
     }
 }
+
+/** Time for a sync on a busy machine. */
+private const val SYNC_TIMEOUT_MS = 10_000L

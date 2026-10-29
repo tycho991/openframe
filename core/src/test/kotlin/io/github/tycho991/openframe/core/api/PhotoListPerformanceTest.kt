@@ -2,7 +2,9 @@ package io.github.tycho991.openframe.core.api
 
 import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.library.PhotoEntry
+import io.github.tycho991.openframe.core.testing.Res
 import io.github.tycho991.openframe.core.testing.TestFrame
+import io.github.tycho991.openframe.core.testing.bestOfMs
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -42,7 +44,10 @@ class PhotoListPerformanceTest {
         }
     }
 
-    /** Five pages of each query after warming up: median under 50 ms, none over 200 ms. */
+    /**
+     * Five pages of each query after warming up: median under 50 ms, none over 200 ms. Each page counts with the
+     * fastest of three requests, so a GC pause or a busy CI runner does not fail the test, a slow handler does.
+     */
     private fun assertPagesFast(queries: List<String>) {
         repeat(5) { queries.forEach { frame.get("/api/v1/photos$it") } }
 
@@ -51,9 +56,8 @@ class PhotoListPerformanceTest {
             var cursor: String? = null
             repeat(5) {
                 val q = if (cursor == null) query else (if (query.isEmpty()) "?" else "$query&") + "cursor=$cursor"
-                val start = System.nanoTime()
-                val res = frame.get("/api/v1/photos$q")
-                times += (System.nanoTime() - start) / 1_000_000
+                lateinit var res: Res
+                times += bestOfMs(3) { res = frame.get("/api/v1/photos$q") }
                 assertEquals(200, res.statusCode())
                 cursor = ApiJson.decodeFromString(PhotoPageDto.serializer(), res.body()).nextCursor
             }

@@ -14,7 +14,7 @@ import java.io.File
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** A complete [FrameCore] on a free port, with a paired client and contract check. */
+/** A complete [FrameCore] on a free port of the loopback address, with a paired client and contract check. */
 class TestFrame(
     dir: File,
     val engine: JvmMediaEngine = JvmMediaEngine(),
@@ -43,6 +43,7 @@ class TestFrame(
             nextcloudClients = nextcloudClients,
             displayPower = displayPower,
             networkLink = networkLink,
+            bindLoopback = true,
         ).also {
             runBlocking { it.start() }
         }

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiAsBrowser, displayAdmin, pairInUi, powerButton, reset } from "./helpers";
+import { apiAsBrowser, avoidMidnight, displayAdmin, pairInUi, powerButton, reset } from "./helpers";
 
 // Spec `web-admin`: Display schedule in the interface, Display state and manual switch.
 
@@ -87,6 +87,8 @@ test("No device administration", async ({ page }) => {
 });
 
 test("Switch off now", async ({ page }) => {
+  // From 23:59 the schedule below has the display off, so the frame's clock skips the last minutes before midnight.
+  await avoidMidnight();
   await pairInUi(page);
   // On all day, so that it is day whenever the test runs.
   await apiAsBrowser(page, "/settings", {

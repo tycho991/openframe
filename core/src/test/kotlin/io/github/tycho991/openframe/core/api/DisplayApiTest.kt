@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.api
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestFrame
+import io.github.tycho991.openframe.core.testing.waitFor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -43,12 +44,6 @@ class DisplayApiTest {
     }
 
     private fun json(body: String): JsonObject = Json.parseToJsonElement(body).jsonObject
-
-    private fun waitFor(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5000
-        while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(20)
-        assertTrue(condition(), "Condition not met")
-    }
 
     @Test
     fun `State at night`() {

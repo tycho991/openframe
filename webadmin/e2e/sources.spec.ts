@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  FRAME_ORIGIN,
   nextcloudApprove,
   nextcloudFail,
   nextcloudPut,
@@ -40,7 +41,7 @@ async function connect(page: Page) {
   await pairInUi(page);
   await openSources(page);
   await page.getByRole("tab", { name: "Nextcloud-Konto" }).click();
-  await page.getByLabel("Adresse des Servers").fill("http://127.0.0.1:8090");
+  await page.getByLabel("Adresse des Servers").fill(FRAME_ORIGIN);
   // A plain http address is called out.
   await expect(page.getByText("Diese Adresse nutzt http")).toBeVisible();
   const popup = page.waitForEvent("popup").catch(() => null);
@@ -49,7 +50,7 @@ async function connect(page: Page) {
   await popup;
   await nextcloudApprove();
   const account = card(page, "127.0.0.1");
-  await expect(account.getByText("Anna auf http://127.0.0.1:8090")).toBeVisible({ timeout: 15_000 });
+  await expect(account.getByText(`Anna auf ${FRAME_ORIGIN}`)).toBeVisible({ timeout: 15_000 });
   // No folder is chosen yet: nothing syncs, and the interface says so.
   await expect(account.getByText("Wähle den Ordner")).toBeVisible();
   await expect(account.getByRole("button", { name: "Jetzt abgleichen" })).toBeDisabled();
@@ -233,13 +234,13 @@ test("A slow approval is not reported as expired", async ({ page }) => {
   await pairInUi(page);
   await openSources(page);
   await page.getByRole("tab", { name: "Nextcloud-Konto" }).click();
-  await page.getByLabel("Adresse des Servers").fill("http://127.0.0.1:8090");
+  await page.getByLabel("Adresse des Servers").fill(FRAME_ORIGIN);
   const popup = page.waitForEvent("popup").catch(() => null);
   await page.getByRole("button", { name: "Verbinden" }).click();
   await popup;
   // The answer to the approved login takes longer than the interval between two questions.
   await nextcloudApprove(5_000);
-  await expect(card(page, "127.0.0.1").getByText("Anna auf http://127.0.0.1:8090")).toBeVisible({
+  await expect(card(page, "127.0.0.1").getByText(`Anna auf ${FRAME_ORIGIN}`)).toBeVisible({
     timeout: 20_000,
   });
   await expect(page.getByText("Die Anmeldung ist abgelaufen")).toHaveCount(0);

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { CONTROL_PORT, FRAME_ORIGIN, FRAME_PORT } from "./e2e/ports";
 
 // Locally without downloaded browsers: path to an existing Chromium.
 const chromiumPath = process.env.PW_CHROMIUM_PATH;
@@ -12,14 +13,18 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://127.0.0.1:8090",
+    baseURL: FRAME_ORIGIN,
     trace: "retain-on-failure",
     locale: "de-DE",
   },
   webServer: {
-    command: "cd .. && ./gradlew -q :core:runTestServer --args='8090 8091 webadmin/dist'",
-    url: "http://127.0.0.1:8090/api/v1/info",
-    reuseExistingServer: !process.env.CI,
+    command: `cd .. && ./gradlew -q :core:runTestServer --args='${FRAME_PORT} ${CONTROL_PORT} webadmin/dist'`,
+    url: `${FRAME_ORIGIN}/api/v1/info`,
+    // A server already on the port may run another checkout's code, so it is taken over only on request
+    // (PW_REUSE_SERVER=1); otherwise Playwright stops with "already used".
+    reuseExistingServer: process.env.PW_REUSE_SERVER === "1",
+    // Without it Playwright kills the server with SIGKILL, and the server cannot delete its data folder.
+    gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
     timeout: 300_000,
   },
   projects: [

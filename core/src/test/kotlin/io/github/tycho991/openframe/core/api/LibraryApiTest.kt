@@ -5,6 +5,7 @@ import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestFrame
+import io.github.tycho991.openframe.core.testing.waitFor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -44,18 +45,20 @@ class LibraryApiTest {
     fun `Hide and unhide photo`() {
         put("a.jpg")
         frame.scan()
+        // The slideshow's list follows the library in the background: first it has the photo, then it loses it.
+        waitFor(message = "a.jpg in the slideshow") {
+            frame.core.visiblePhotos.value
+                .any { it.path == "a.jpg" }
+        }
         val res = frame.send("PATCH", "/api/v1/photos/${id("a.jpg")}", """{"hidden":true}""")
         assertEquals(200, res.statusCode())
         val dto = ApiJson.decodeFromString(PhotoDto.serializer(), res.body())
         assertTrue(dto.hidden)
         assertFalse(dto.visible)
-        assertEquals(
-            emptyList<PhotoEntry>(),
-            frame.core.visiblePhotos.value.also { Thread.sleep(50) }.filter {
-                it.path == "a.jpg" &&
-                    !it.hidden
-            },
-        )
+        waitFor(message = "a.jpg out of the slideshow") {
+            frame.core.visiblePhotos.value
+                .none { it.path == "a.jpg" }
+        }
         assertEquals(1, page().total, "stays in the library")
         frame.send("PATCH", "/api/v1/photos/${id("a.jpg")}", """{"hidden":false}""")
         assertTrue(page().items.single().visible)
