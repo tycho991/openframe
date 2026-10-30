@@ -20,7 +20,10 @@ webadmin/src/lib/api/schema.d.ts
 *.jks
 keystore.properties
 *.b64
-/*.p12
+*.p12
+*.pk8
+*.key
+!core/src/test/resources/tls/*.p12
 .env*
 CLAUDE.local.md
 
