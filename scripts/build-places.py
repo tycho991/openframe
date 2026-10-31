@@ -37,8 +37,9 @@
 # that is marked preferred first, then one that is not a short name, then the lowest alternate name ID; historic
 # and colloquial names are skipped.
 #
-# SOURCE.txt: the dump dates, the dataset ID, the attribution, the licence and the changes made to the data. The
-# same text goes to webadmin/public/licenses/GeoNames.txt, which the licence menu of the web UI links.
+# SOURCE.txt: the dump dates, the dataset ID, the attribution, the licence and the changes made to the data. When the
+# target is core/src/main/resources/places, the same text also goes to webadmin/public/licenses/GeoNames.txt, which
+# the licence menu of the web UI links; a trial run into another folder leaves the repository alone.
 import gzip, hashlib, io, os, struct, sys, zipfile
 
 LANGUAGES = ["de"]
@@ -168,8 +169,11 @@ def main():
         "\n"
         f"Dataset ID: {dataset_id.hex()}\n"
     )
-    licenses = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "webadmin", "public", "licenses")
-    for path in (os.path.join(target, "SOURCE.txt"), os.path.join(licenses, "GeoNames.txt")):
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    paths = [os.path.join(target, "SOURCE.txt")]
+    if os.path.realpath(target) == os.path.realpath(os.path.join(repo, "core", "src", "main", "resources", "places")):
+        paths.append(os.path.join(repo, "webadmin", "public", "licenses", "GeoNames.txt"))
+    for path in paths:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(source)
     print(f"{len(places)} places, " + ", ".join(f"{len(n)} names ({lang})" for lang, n in packs.items()))

@@ -207,7 +207,7 @@ abstract class CheckThirdPartyNotices : DefaultTask() {
         (listed - expected).sorted().forEach { problems += "$it: \"Module:\" line for a module the app does not use" }
         val desugar =
             Regex(
-                """^Module: ${Regex.escape(desugarModule.get())}\nVersion: (\S+)\n""" +
+                """^Module: ${Regex.escape(desugarModule.get())}\r?\nVersion: (\S+)\r?\n""" +
                     """Source: https://github\.com/google/desugar_jdk_libs/tree/[0-9a-f]{40}$""",
                 RegexOption.MULTILINE,
             ).find(text)
@@ -232,9 +232,11 @@ val checkThirdPartyNotices by tasks.registering(CheckThirdPartyNotices::class) {
             .get()
     desugarModule.set("${desugar.group}:${desugar.name}")
     desugarVersion.set(libs.versions.desugar)
-    // Project modules and platforms (BOMs) bring no code of their own.
-    modules.set(
-        configurations.named("releaseRuntimeClasspath").flatMap { it.incoming.resolutionResult.rootComponent }.map { root ->
+
+    // Both APKs count: the README installs the debug build. Project modules and platforms (BOMs) bring no code of
+    // their own.
+    fun runtimeModules(configuration: String) =
+        configurations.named(configuration).flatMap { it.incoming.resolutionResult.rootComponent }.map { root ->
             val seen = mutableSetOf<ResolvedComponentResult>()
             val queue = ArrayDeque(listOf(root))
             while (queue.isNotEmpty()) {
@@ -247,13 +249,14 @@ val checkThirdPartyNotices by tasks.registering(CheckThirdPartyNotices::class) {
                 .filterNot { component ->
                     component.variants.any { variant ->
                         variant.attributes.keySet().any {
-                            it.name == "org.gradle.category" && variant.attributes.getAttribute(it).toString() == "platform"
+                            it.name == "org.gradle.category" &&
+                                variant.attributes.getAttribute(it).toString() in setOf("platform", "enforced-platform")
                         }
                     }
                 }.map { (it.id as ModuleComponentIdentifier).moduleIdentifier.toString() }
                 .toSet()
-        },
-    )
+        }
+    modules.set(runtimeModules("debugRuntimeClasspath").zip(runtimeModules("releaseRuntimeClasspath")) { a, b -> a + b })
 }
 
 tasks.named("check") {

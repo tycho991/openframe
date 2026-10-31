@@ -92,7 +92,7 @@ bar, so links do not reach it: pair it with the code ("Show code on frame").
 
 On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
-with "local only", the display schedule, "Revoke all pairings" and info.
+with "local only", the display schedule, "Unpair all devices" and info.
 
 ## Display off at night
 
@@ -210,7 +210,7 @@ openframe is made for a home network you trust. Read this before you install it.
   the same network can see the traffic between a browser and the frame.
 - **Pairing.** A browser gets a token by entering the code shown on the frame, by scanning its QR code or through an
   invitation from a paired device. Every paired device has full rights for now: it can change settings, delete
-  photos, add sources and pair further devices. "Revoke all pairings" in the device menu removes every token.
+  photos, add sources and pair further devices. "Unpair all devices" in the device menu removes every token.
 - **Without a token** only three API endpoints answer: `GET /api/v1/info` (name and versions of the frame),
   `POST /api/v1/pairing` and `POST /api/v1/pairing/code`. The static files of the web UI are open to everyone on the
   LAN; they hold no data. Image URLs carry a signature instead of the token, valid for one photo and at most two
@@ -222,8 +222,8 @@ openframe is made for a home network you trust. Read this before you install it.
 - **Image decoding.** Android's native image decoders parse every photo the frame shows. On Android 5 and 6 with a
   security patch level before 2016-09-01 these decoders have known flaws (for example CVE-2016-3862), so a crafted
   file could take over the app. Check the patch level under Settings › About (Android 5.0 shows none, which counts
-  as before that date); on such a device connect only sources you trust: your own photos, your own Nextcloud. Share links from other people and USB sticks of unknown origin
-  count as untrusted.
+  as before that date); on such a device connect only sources you trust: your own photos, your own Nextcloud.
+  Share links from other people and USB sticks of unknown origin count as untrusted.
 
 ## Privacy
 
