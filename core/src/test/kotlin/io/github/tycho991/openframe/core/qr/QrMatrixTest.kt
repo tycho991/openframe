@@ -38,7 +38,7 @@ class QrMatrixTest {
 
     @Test
     fun `long host name gets a higher version`() {
-        val url = "http://a-rather-long-host-name-for-the-picture-frame.fritz.box:8080/#pair=AbCdEfGhIjKlMnOpQrSt_-"
+        val url = "http://a-rather-long-host-name-for-the-picture-frame.home.arpa:8080/#pair=AbCdEfGhIjKlMnOpQrSt_-"
         val m = QrMatrix.encode(url)
         assertEquals(url, decode(m))
         assertTrue(m.version > 4)

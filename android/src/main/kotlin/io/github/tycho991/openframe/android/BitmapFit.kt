@@ -20,7 +20,7 @@ import kotlin.math.roundToInt
  *
  * The black borders are part of the bitmap, not transparent space around it: a crossfade then blends the borders of
  * the incoming photo over the outgoing one like the rest of it, instead of leaving the old photo in them until the
- * transition ends (`FINDINGS.md` 57). The views keep having no background, so `alpha` needs no hardware layer.
+ * transition ends. The views keep having no background, so `alpha` needs no hardware layer.
  */
 object BitmapFit {
     /**
@@ -42,7 +42,7 @@ object BitmapFit {
             try {
                 Bitmap.createBitmap(boxW, boxH, Bitmap.Config.ARGB_8888)
             } catch (e: OutOfMemoryError) {
-                // Without the black pixels the photo is still right, only its borders do not fade (FINDINGS.md 57);
+                // Without the black pixels the photo is still right, only its borders do not fade;
                 // a decode that failed here would skip the photo as undecodable.
                 return if (scale >= 1f) src else Bitmap.createScaledBitmap(src, w, h, true).also { if (it !== src) src.recycle() }
             }

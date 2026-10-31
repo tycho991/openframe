@@ -69,7 +69,7 @@ class InviteTest {
     @Test
     fun `Same origin`() {
         val phone = h.pairedAuth("Phone")
-        assertTrue(invite(phone, "frame.fritz.box:8080").url.startsWith("http://frame.fritz.box:8080/#pair="))
+        assertTrue(invite(phone, "frame.home.arpa:8080").url.startsWith("http://frame.home.arpa:8080/#pair="))
         assertTrue(invite(phone, "[fe80::1]:8080").url.startsWith("http://[fe80::1]:8080/#pair="))
         assertTrue(invite(phone, "192.168.100.215").url.startsWith("http://192.168.100.215/#pair="))
     }

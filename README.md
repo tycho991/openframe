@@ -52,7 +52,7 @@ by itself after a restart, choose it as the home screen (HOME) in the Android
 settings.
 
 1. Without photos the frame shows the address of the admin interface, for
-   example `http://192.168.100.215:8080/`, a QR code and a six-digit pairing
+   example `http://<frame-ip>:8080/`, a QR code and a six-digit pairing
    code.
 2. Scan the QR code with the phone's camera app and open the link. The admin
    interface opens and pairs by itself, without typing anything. The device
@@ -183,8 +183,9 @@ An address with `http://` sends the access without encryption; the interface say
 trusts what the system trusts plus the root certificates delivered with the app, so that Let's Encrypt works on the
 old devices (Android 5 and 6). A server with a certificate of another authority is refused.
 
-Uninstalling deletes the photo folder as well. Back it up first:
-`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos`.
+Uninstalling deletes the photo folder as well. Back it up first, into a folder outside any repository:
+`mkdir -p ~/openframe-backup && adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos ~/openframe-backup/`
+(the photos land in `~/openframe-backup/photos/`).
 
 ## Developing
 
@@ -195,7 +196,7 @@ cd webadmin
 npm ci
 npm run lint && npm run typecheck && npm test
 npm run e2e                     # builds the web UI and tests it with Playwright against a :core test server
-OPENFRAME_URL=http://192.168.100.215:8080 npm run dev   # Vite with hot reload, API proxied to the frame
+OPENFRAME_URL=http://<frame-ip>:8080 npm run dev   # Vite with hot reload, API proxied to the frame
 ```
 
 The `:core` test server with fake images can also be started with
@@ -255,8 +256,11 @@ port when several run at once.
   to a pull request (a newer push cancels the older run), and the debug APK
   artifact exists only for runs on `main`.
 
-What can be verified only on real hardware is listed in
-[`docs/DEVICE_TEST.md`](docs/DEVICE_TEST.md).
+What can be verified only on real hardware, and the findings of the device tests, are kept in
+the device checklist and findings list of a private companion repository, because they hold
+details of the household's devices and network. Archived changes under
+`openspec/changes/archive/` still name these documents by their old paths in `docs/` and
+`scripts/`.
 
 ## Workflow with OpenSpec
 
@@ -274,6 +278,7 @@ in the PR's branch then:
 ```bash
 mise install
 mise run openspec-sync
+git status --short   # only what openspec update wrote, as the drift check sees it
 git add -A && git commit -m "Update OpenSpec skills"
 ```
 
