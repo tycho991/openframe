@@ -57,6 +57,11 @@ jobs:
           if grep -q "^native-code" badging.txt; then exit 1; fi
           unzip -l "$apk" | grep -E "assets/webadmin/(index.html|assets/)" | head -5
           unzip -l "$apk" | grep -q "assets/webadmin/index.html"
+          # Licences of the bundled libraries, the place data, the typeface and the icon set (visual-design).
+          listing=$(unzip -Z1 "$apk")
+          for f in third-party-android.txt third-party-webadmin.txt GeoNames.txt Inter-OFL.txt MaterialSymbols-LICENSE.txt; do
+            grep -qx "assets/webadmin/licenses/$f" <<<"$listing" || { echo "Missing in the APK: $f" >&2; exit 1; }
+          done
       # The reports always, the debug APK only from main: a pull request run would offer a build of unreviewed code.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

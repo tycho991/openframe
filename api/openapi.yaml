@@ -3,6 +3,9 @@ info:
   title: openframe API
   version: "1"
   summary: Management of an openframe picture frame on the LAN.
+  license:
+    name: MIT
+    identifier: MIT
   description: |
     Versioned JSON API of the frame under `/api/v1`. Source of truth for the
     web UI's types and for the contract tests in `:core`.

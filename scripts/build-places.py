@@ -37,7 +37,8 @@
 # that is marked preferred first, then one that is not a short name, then the lowest alternate name ID; historic
 # and colloquial names are skipped.
 #
-# SOURCE.txt: the dump dates, the dataset ID, the attribution and the licence.
+# SOURCE.txt: the dump dates, the dataset ID, the attribution, the licence and the changes made to the data. The
+# same text goes to webadmin/public/licenses/GeoNames.txt, which the licence menu of the web UI links.
 import gzip, hashlib, io, os, struct, sys, zipfile
 
 LANGUAGES = ["de"]
@@ -154,18 +155,23 @@ def main():
     write_gzip(os.path.join(target, "base.bin"), base)
     for lang, names in packs.items():
         write_gzip(os.path.join(target, f"names-{lang}.bin"), build_pack(lang, dataset_id, names))
-    with open(os.path.join(target, "SOURCE.txt"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(
-            "Place names: GeoNames (https://www.geonames.org/), licensed under CC BY 4.0\n"
-            "(https://creativecommons.org/licenses/by/4.0/).\n"
-            "\n"
-            f"cities500.txt of {cities_date} and alternateNamesV2.txt of {names_date} from\n"
-            "https://download.geonames.org/export/dump/, converted by scripts/build-places.py into base.bin and\n"
-            f"{', '.join(f'names-{lang}.bin' for lang in packs)}. Names and positions are taken over unchanged;\n"
-            "positions are rounded to 1/10,000 degree.\n"
-            "\n"
-            f"Dataset ID: {dataset_id.hex()}\n"
-        )
+    source = (
+        "Place names: GeoNames (https://www.geonames.org/), licensed under CC BY 4.0\n"
+        "(https://creativecommons.org/licenses/by/4.0/).\n"
+        "\n"
+        f"cities500.txt of {cities_date} and alternateNamesV2.txt of {names_date} from\n"
+        "https://download.geonames.org/export/dump/, changed by scripts/build-places.py: converted into\n"
+        f"{' and '.join(['base.bin'] + [f'names-{lang}.bin' for lang in packs])}, only the name, position and country of each place kept,\n"
+        "positions rounded to 1/10,000 degree, and one name per place chosen for each language pack from the\n"
+        "alternate names (preferred names first, historic and colloquial names left out). The names\n"
+        "themselves are not changed.\n"
+        "\n"
+        f"Dataset ID: {dataset_id.hex()}\n"
+    )
+    licenses = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "webadmin", "public", "licenses")
+    for path in (os.path.join(target, "SOURCE.txt"), os.path.join(licenses, "GeoNames.txt")):
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(source)
     print(f"{len(places)} places, " + ", ".join(f"{len(n)} names ({lang})" for lang, n in packs.items()))
     for name in sorted(os.listdir(target)):
         print(f"  {name}: {os.path.getsize(os.path.join(target, name))} bytes")

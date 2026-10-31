@@ -51,4 +51,8 @@ the code only while no device is paired, the hint (tap) shows it always.
 ## What was checked
 
 The author's results are kept in a private companion repository together with the findings; the
-expected behaviour is in the scenarios of `openspec/specs`. The screenshots in `screenshots/` come from the API 21 emulator at both panel sizes.
+expected behaviour is in the scenarios of `openspec/specs`. The screenshots in `screenshots/` come from the API 21
+emulator at both panel sizes. The four `*-menu.png` show the current device menu and typeface, in landscape with
+`core/src/test/resources/fixtures/landscape.jpg` as the only photo. All others are historical: they
+were taken before the frame used the Inter typeface and before the device menu had the display schedule, so they
+can differ in details from the current build.

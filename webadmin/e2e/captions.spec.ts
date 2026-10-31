@@ -176,9 +176,13 @@ test.describe("Caption settings", () => {
     await page.getByRole("link", { name: "Einstellungen" }).click();
     const place = page.getByLabel("Ort in einer Zeile darunter");
     await expect(place).toBeVisible();
-    await expect(page.getByText("Ortsnamen: GeoNames, CC BY 4.0")).toBeVisible();
-    // Next to the place switch, which it describes.
-    await expect(place).toHaveAccessibleDescription(/GeoNames, CC BY 4\.0/);
+    await expect(page.getByText(/Ortsnamen: GeoNames/)).toBeVisible();
+    // Next to the place switch, which it describes, with the licence and the changes made to the data.
+    await expect(place).toHaveAccessibleDescription(/GeoNames \(geonames\.org\), CC BY 4\.0; umgewandelt/);
+    await expect(page.getByRole("link", { name: "CC BY 4.0" })).toHaveAttribute(
+      "href",
+      "https://creativecommons.org/licenses/by/4.0/",
+    );
     await page.waitForLoadState("networkidle");
     expect(foreign).toEqual([]);
   });

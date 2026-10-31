@@ -8,6 +8,14 @@ or from Nextcloud (a share link or an account), and the frame itself is the serv
 Target devices run Android 5.0 (API 21) or newer, tested on the Frameo `PFF_1024`
 (Android 6.0.1) and the Lenovo Yoga Tablet 2 1050F (Android 5.0.1).
 
+openframe is not related to openframe.io or any other project of that name.
+
+## Status
+
+A one-person project, used daily on the two frames named above and tested on the Android emulator. There are no
+releases yet: build the app yourself (see "Building"). Expect changes to the API and the settings between versions.
+Questions and bug reports are welcome as issues; security problems go through [SECURITY.md](SECURITY.md).
+
 ## Architecture
 
 One codebase in Kotlin. `:core` contains all the business logic and runs on the
@@ -40,16 +48,21 @@ Without Node the build aborts with a message instead of building an APK without
 the web UI. Without an Android SDK `:android` is skipped; `:core` and the web UI
 can still be built and tested.
 
-## Installing and first pairing
+## Installing
 
 ```bash
 adb install -r android/build/outputs/apk/debug/android-debug.apk
 adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
 ```
 
-openframe runs in parallel to `pictureframe` (own package ID). To have it appear
-by itself after a restart, choose it as the home screen (HOME) in the Android
-settings.
+The debug build is meant for development: it is debuggable, so anyone with USB access to the frame can read the
+app's stored data (including the Nextcloud credentials) with `run-as`. Use it on a frame you control, and once
+releases exist, never install a debug build over a release.
+
+openframe has its own package ID, so it can be installed next to another kiosk app. To have it appear by itself
+after a restart, choose it as the home screen (HOME) in the Android settings.
+
+### First pairing
 
 1. Without photos the frame shows the address of the admin interface, for
    example `http://<frame-ip>:8080/`, a QR code and a six-digit pairing
@@ -122,9 +135,10 @@ APK under `core/src/main/resources/places/`, about 2.7 MB. Photos that were on t
 position once, in the background.
 
 Place names: [GeoNames](https://www.geonames.org/), licensed under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the admin interface shows the attribution next to the place
-setting, and `SOURCE.txt` next to the data names the dumps it was built from. The data is regenerated on purpose, not on
-every build:
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The data is changed: converted into a compact format,
+positions rounded to 1/10,000 degree, and one German name chosen per place. The admin interface shows the attribution
+next to the place setting; `SOURCE.txt` next to the data, and the same note under "Licences" in the web UI, names the
+dumps it was built from and the changes. The data is regenerated on purpose, not on every build:
 
 ```bash
 # Dumps from https://download.geonames.org/export/dump/, into a folder outside the repository
@@ -186,6 +200,45 @@ old devices (Android 5 and 6). A server with a certificate of another authority 
 Uninstalling deletes the photo folder as well. Back it up first, into a folder outside any repository:
 `mkdir -p ~/openframe-backup && adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos ~/openframe-backup/`
 (the photos land in `~/openframe-backup/photos/`).
+
+## Security model
+
+openframe is made for a home network you trust. Read this before you install it.
+
+- **LAN only, without TLS.** The frame serves the web UI and the API over plain HTTP on port 8080. Never make it
+  reachable from the internet: no port forwarding in the router, and switch off UPnP port mappings for it. Anyone on
+  the same network can see the traffic between a browser and the frame.
+- **Pairing.** A browser gets a token by entering the code shown on the frame, by scanning its QR code or through an
+  invitation from a paired device. Every paired device has full rights for now: it can change settings, delete
+  photos, add sources and pair further devices. "Revoke all pairings" in the device menu removes every token.
+- **Without a token** only three API endpoints answer: `GET /api/v1/info` (name and versions of the frame),
+  `POST /api/v1/pairing` and `POST /api/v1/pairing/code`. The static files of the web UI are open to everyone on the
+  LAN; they hold no data. Image URLs carry a signature instead of the token, valid for one photo and at most two
+  hours.
+- **Local only.** "Local only" in the device menu binds the server to `127.0.0.1`, so nothing on the LAN reaches it.
+- **Stored credentials.** App passwords, share links and share passwords of Nextcloud sources are stored
+  unencrypted in the app's private storage. They never appear in an API answer or in the log, but anyone who can
+  read the app's data (root, or `run-as` on a debug build) can read them.
+- **Image decoding.** Android's native image decoders parse every photo the frame shows. On Android 5 and 6 with a
+  security patch level before 2016-09-01 these decoders have known flaws (for example CVE-2016-3862), so a crafted
+  file could take over the app. Check the patch level under Settings › About (Android 5.0 shows none, which counts
+  as before that date); on such a device connect only sources you trust: your own photos, your own Nextcloud. Share links from other people and USB sticks of unknown origin
+  count as untrusted.
+
+## Privacy
+
+openframe has no telemetry and no account of its own. The frame connects only to the sources you configure (your
+Nextcloud server); place names are looked up offline in data shipped with the app. The web UI loads nothing from
+outside the frame.
+
+## Licence
+
+openframe is licensed under the [MIT licence](LICENSE). The licences of the bundled libraries, the typeface, the
+icons and the place data ship with the app; the web UI links them under "Appearance" › "Licences".
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security problems: [SECURITY.md](SECURITY.md).
 
 ## Developing
 
@@ -256,10 +309,9 @@ port when several run at once.
   to a pull request (a newer push cancels the older run), and the debug APK
   artifact exists only for runs on `main`.
 
-What can be verified only on real hardware, and the findings of the device tests, are kept in
-the device checklist and findings list of a private companion repository, because they hold
-details of the household's devices and network. Archived changes under
-`openspec/changes/archive/` still name these documents by their old paths in `docs/` and
+What can be verified only on real hardware, and the findings of the device tests, are kept
+privately by the maintainer, because they hold details of the devices and the network they were measured on.
+Archived changes under `openspec/changes/archive/` still name these documents by their old paths in `docs/` and
 `scripts/`.
 
 ## Workflow with OpenSpec

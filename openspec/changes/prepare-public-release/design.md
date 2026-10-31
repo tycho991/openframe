@@ -36,7 +36,7 @@ The old repository is renamed to `openframe-archive`, archived at once and stays
 
 ### 2. Private device docs live in openframe-private
 
-The device checklist, the findings list, the endurance run guide and the three device scripts move there with their history (done), and future device rows and findings go there. `CLAUDE.md` imports `@../openframe-private/CLAUDE.md`, which holds the device access reference and the state of pictureframe on each frame; Claude Code does not load a CLAUDE.md in a neighbouring folder by itself, and it asks once per project path before it follows an import outside the project. In a clone without that folder the import is simply missing; the safety rules themselves stay in the public CLAUDE.md.
+The device checklist, the findings list, the endurance run guide and the three device scripts move there with their history (done), and future device rows and findings go there. `CLAUDE.md` imports `@../openframe-private/CLAUDE.md`, which holds the device access reference and the state of pictureframe on each frame; Claude Code does not load a CLAUDE.md in a neighbouring folder by itself, and the first interactive session in a project shows a dialog to approve imports outside the working directory; if it is declined they stay disabled and the dialog does not come back. In a clone without that folder the import is simply missing; the safety rules themselves stay in the public CLAUDE.md.
 
 *Alternative:* keeping the docs public with neutral wording. The owner chose to keep them private; the findings list also names open weaknesses, which is better kept private.
 
@@ -68,7 +68,7 @@ Since deltas take effect only at archive time, pull request A syncs the `admin-a
 - README:
   - not related to openframe.io (the name stays);
   - status: a one-person project, tested on two frames;
-  - installing: build it yourself until releases exist; the debug build is for development only, because it is debuggable (so `run-as` can read the stored passwords) and registers the crash test receiver, and it is never installed over a release;
+  - installing: build it yourself until releases exist; the debug build is for development only, because it is debuggable (so `run-as` can read the stored passwords), and it is never installed over a release; the crash-resilience change adds its crash test receiver to these reasons when it registers one;
   - security model: LAN only, HTTP without TLS; never expose the frame through port forwarding or UPnP; every paired device has full rights for now; only three API endpoints work without a token, the static files of the web UI are open on the LAN; image URLs carry a signature valid for one photo and two hours; local-only binds to loopback; credentials are stored unencrypted in the app's storage; native image decoders parse every file, so on Android 5/6 with a security patch level before 2016-09-01 (CVE-2016-3862) only trusted sources should be connected, and share links from others and USB count as untrusted;
   - privacy: no telemetry; outgoing traffic only to configured sources (the update check is described by the updater change);
   - licence and contributing; a sentence that the device checklist and findings are kept privately and that archived changes still name their old paths.
@@ -104,7 +104,7 @@ The "Devices" section stays public in generic wording (ask before every persiste
 - [The local hooks exist only on this machine] → cloud sessions, other machines, GitHub web edits and Renovate are not covered; the private patterns and gitleaks run again over every ref right before the switch.
 - [The tree changes during the filter run] → pull requests A and B land first; the filtered `main` must have the same tree hash as the old `main`.
 - [A wrong or incomplete filter] → only `main` is cloned (no `--mirror`, which would fetch refs/pull/*); after filtering: one root that is not the old one, no personal identity, no session trailer, every changed commit message explained by the rules (checked pair by pair through filter-repo's commit map), no private path in any commit, no hit for the private patterns or gitleaks, and EXIF data of all image blobs checked.
-- [The import of the private CLAUDE.md needs a one-time approval per project path] → only the device specifics depend on it; the approval is checked in a new session after pull request A and again after the re-clone.
+- [The import of the private CLAUDE.md needs a one-time approval per project path] → only the device specifics depend on it; the approval is given and checked with `/context` in a new session after pull request A and again after the re-clone; it is never declined.
 - ["Block command line pushes" applies to the whole account] → switched on only after every repository the owner pushes from uses the noreply address.
 - [GitHub Free enables rulesets and fork approval only after the switch, leaving a short window] → the settings are applied right after the switch, before anything else is pushed; the signing secret comes only later with the release-path change.
 - [New commit SHAs] → `bootstrap-sha` and SHA references in app-auto-update and in the memory notes are updated; SHAs in the private docs keep pointing to `openframe-archive`.

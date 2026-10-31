@@ -174,15 +174,27 @@ test("Language in the appearance menu", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
 
-test("Licences of font and icons", async ({ page, request }) => {
+test("Licences in the appearance menu", async ({ page, request }) => {
   await pairInUi(page);
   await page.getByRole("button", { name: "Darstellung" }).click();
-  await expect(page.getByRole("link", { name: /Inter/ })).toHaveAttribute("href", "/licenses/Inter-OFL.txt");
-  const inter = await request.get("/licenses/Inter-OFL.txt");
-  expect(inter.ok()).toBe(true);
-  expect(await inter.text()).toContain("SIL OPEN FONT LICENSE Version 1.1");
-  const icons = await request.get("/licenses/MaterialSymbols-LICENSE.txt");
-  expect(await icons.text()).toContain("Apache License");
+  const licences = [
+    { name: /Inter/, href: "/licenses/Inter-OFL.txt", text: "SIL OPEN FONT LICENSE Version 1.1" },
+    { name: /Material Symbols/, href: "/licenses/MaterialSymbols-LICENSE.txt", text: "Apache License" },
+    {
+      name: "Bibliotheken der App am Rahmen",
+      href: "/licenses/third-party-android.txt",
+      text: "Module: org.nanohttpd:nanohttpd",
+    },
+    { name: "Bibliotheken dieser Oberfläche", href: "/licenses/third-party-webadmin.txt", text: "## svelte" },
+    { name: /GeoNames/, href: "/licenses/GeoNames.txt", text: "CC BY 4.0" },
+  ];
+  for (const licence of licences) {
+    await expect(page.getByRole("link", { name: licence.name })).toHaveAttribute("href", licence.href);
+    const response = await request.get(licence.href);
+    expect(response.status(), licence.href).toBe(200);
+    expect(response.headers()["content-type"], licence.href).toContain("text/plain");
+    expect(await response.text(), licence.href).toContain(licence.text);
+  }
 });
 
 test("Texts in Inter", async ({ page }) => {

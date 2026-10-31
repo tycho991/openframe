@@ -279,13 +279,17 @@
           />
           <span>{t("settings.captionPlace")}</span>
         </label>
-        <!-- Shipped with the frame's place data; a plain link, nothing is loaded from there. -->
+        <!-- Shipped with the frame's place data; plain links, nothing is loaded from there. The full source note
+             is in the licence menu. -->
         <span class="hint" id="s-caption-attribution"
           >{t("settings.placeAttribution")} (<a
             href="https://www.geonames.org/"
             target="_blank"
             rel="noreferrer">geonames.org</a
-          >)</span
+          >),
+          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a
+          >;
+          {t("settings.placeChanges")}</span
         >
       </div>
       <div class="field">
