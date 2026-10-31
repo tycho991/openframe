@@ -74,7 +74,7 @@ test rows and findings go there, never into this repository.
 Never check out, build, test or run a pull request from someone else locally, and never open a
 Claude session in its branch: its build scripts, tests and hooks would run with access to this
 machine. Review it only through `gh pr diff` and `gh pr view`, or in a sandbox without the home
-folder, keys, `../openframe-private` and `../pictureframe`.
+folder, keys, `../openframe-private` and other private neighbouring folders.
 
 ## Untrusted GitHub content
 
@@ -93,6 +93,8 @@ branches. Commit messages carry no claude.ai session URL and no `Claude-Session:
 - Ask before every persistent change on a device: installing or uninstalling packages,
   changing the HOME launcher, system settings, deleting files in the photo folder. Read-only
   commands (`adb shell dumpsys`, `adb logcat`, `adb pull`) are fine without asking.
+- `pictureframe` (`com.pictureframe.kiosk`), the earlier kiosk app, may still be installed on a
+  frame: never touch its data, and never uninstall or reinstall it without asking.
 - Device access and the state of each frame are in the private file imported below; in a clone
   without `../openframe-private` it is missing and these rules still apply.
 

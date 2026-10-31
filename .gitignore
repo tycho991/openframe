@@ -24,6 +24,9 @@ keystore.properties
 *.pk8
 *.key
 !core/src/test/resources/tls/*.p12
+*.pem
+!core/src/main/resources/trust/*.pem
+!core/src/test/resources/tls/*.pem
 .env*
 CLAUDE.local.md
 

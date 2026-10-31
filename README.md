@@ -184,7 +184,8 @@ trusts what the system trusts plus the root certificates delivered with the app,
 old devices (Android 5 and 6). A server with a certificate of another authority is refused.
 
 Uninstalling deletes the photo folder as well. Back it up first, into a folder outside any repository:
-`adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos ~/openframe-backup/`.
+`mkdir -p ~/openframe-backup && adb pull /sdcard/Android/data/io.github.tycho991.openframe/files/photos ~/openframe-backup/`
+(the photos land in `~/openframe-backup/photos/`).
 
 ## Developing
 
@@ -277,7 +278,8 @@ in the PR's branch then:
 ```bash
 mise install
 mise run openspec-sync
-git add .claude && git commit -m "Update OpenSpec skills"
+git status --short   # only what openspec update wrote, as the drift check sees it
+git add -A && git commit -m "Update OpenSpec skills"
 ```
 
 The drift check in `.github/workflows/openspec-drift.yml` makes sure that the
