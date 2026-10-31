@@ -65,6 +65,18 @@
       <span>{t("licence.icons")}</span>
       <Icon name="openInNew" size={20} />
     </a>
+    <a class="option" href="/licenses/third-party-android.txt" target="_blank" rel="noopener">
+      <span>{t("licence.app")}</span>
+      <Icon name="openInNew" size={20} />
+    </a>
+    <a class="option" href="/licenses/third-party-webadmin.txt" target="_blank" rel="noopener">
+      <span>{t("licence.webadmin")}</span>
+      <Icon name="openInNew" size={20} />
+    </a>
+    <a class="option" href="/licenses/GeoNames.txt" target="_blank" rel="noopener">
+      <span>{t("licence.places")}</span>
+      <Icon name="openInNew" size={20} />
+    </a>
   </section>
 </div>
 

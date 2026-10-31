@@ -180,8 +180,87 @@ val checkDesignTokens by tasks.registering {
     }
 }
 
+// The APK ships webadmin/public/licenses/third-party-android.txt (visual-design, "Licences of bundled components").
+// Every runtime module of the app needs a "Module: group:name" line there, and the desugared JDK library, which
+// carries GPL-2.0 with the Classpath Exception, needs its exact version next to the link to that version's source.
+abstract class CheckThirdPartyNotices : DefaultTask() {
+    @get:Input
+    abstract val modules: SetProperty<String>
+
+    @get:Input
+    abstract val desugarModule: Property<String>
+
+    @get:Input
+    abstract val desugarVersion: Property<String>
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val notices: RegularFileProperty
+
+    @TaskAction
+    fun check() {
+        val text = notices.get().asFile.readText()
+        val listed = Regex("""^Module: (\S+)$""", RegexOption.MULTILINE).findAll(text).map { it.groupValues[1] }.toSet()
+        val expected = modules.get() + desugarModule.get()
+        val problems = mutableListOf<String>()
+        (expected - listed).sorted().forEach { problems += "$it: runtime module without a \"Module:\" line" }
+        (listed - expected).sorted().forEach { problems += "$it: \"Module:\" line for a module the app does not use" }
+        val desugar =
+            Regex(
+                """^Module: ${Regex.escape(desugarModule.get())}\r?\nVersion: (\S+)\r?\n""" +
+                    """Source: https://github\.com/google/desugar_jdk_libs/tree/[0-9a-f]{40}$""",
+                RegexOption.MULTILINE,
+            ).find(text)
+        val version = desugarVersion.get()
+        if (desugar?.groupValues?.get(1) != version) {
+            problems += "${desugarModule.get()}: needs \"Version: $version\" and the \"Source:\" link to the commit of that version"
+        }
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                "${notices.get().asFile.name} does not match the app's runtime modules:\n" + problems.joinToString("\n") { "  $it" },
+            )
+        }
+    }
+}
+
+val checkThirdPartyNotices by tasks.registering(CheckThirdPartyNotices::class) {
+    group = "verification"
+    description = "Checks that third-party-android.txt names every runtime module of the app."
+    notices.set(webadminDir.file("public/licenses/third-party-android.txt"))
+    val desugar =
+        libs.desugar.jdk.libs
+            .get()
+    desugarModule.set("${desugar.group}:${desugar.name}")
+    desugarVersion.set(libs.versions.desugar)
+
+    // Both APKs count: the README installs the debug build. Project modules and platforms (BOMs) bring no code of
+    // their own.
+    fun runtimeModules(configuration: String) =
+        configurations.named(configuration).flatMap { it.incoming.resolutionResult.rootComponent }.map { root ->
+            val seen = mutableSetOf<ResolvedComponentResult>()
+            val queue = ArrayDeque(listOf(root))
+            while (queue.isNotEmpty()) {
+                val component = queue.removeFirst()
+                if (!seen.add(component)) continue
+                component.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { queue += it.selected }
+            }
+            seen
+                .filter { it.id is ModuleComponentIdentifier }
+                .filterNot { component ->
+                    component.variants.any { variant ->
+                        variant.attributes.keySet().any {
+                            it.name == "org.gradle.category" &&
+                                variant.attributes.getAttribute(it).toString() in setOf("platform", "enforced-platform")
+                        }
+                    }
+                }.map { (it.id as ModuleComponentIdentifier).moduleIdentifier.toString() }
+                .toSet()
+        }
+    modules.set(runtimeModules("debugRuntimeClasspath").zip(runtimeModules("releaseRuntimeClasspath")) { a, b -> a + b })
+}
+
 tasks.named("check") {
-    dependsOn(checkDesignTokens)
+    dependsOn(checkDesignTokens, checkThirdPartyNotices)
 }
 
 tasks.named("preBuild") {

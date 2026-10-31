@@ -23,6 +23,9 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     assetsInlineLimit: 0,
+    // Licences of the bundled libraries, served by the frame and linked from the licence menu. A .txt name, because
+    // the frame's static file server has no type for .md and a .json name would switch Vite to JSON output.
+    license: { fileName: "licenses/third-party-webadmin.txt" },
   },
   test: {
     include: ["src/**/*.test.ts"],
