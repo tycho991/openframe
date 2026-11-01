@@ -83,7 +83,7 @@ A new package `core/.../health` holds `RunJournal`. It uses plain `java.io`, nev
 
 ### 6. Planned exits
 
-`health.plannedExit(reason, validForMs)` records the reason, the `boot_id` and the expiry; `cancelPlannedExit()` removes it. An expired record does not count. The app records it before restarting from the device menu or the API, before starting a system activity (device administration; the setting for unknown sources from app-auto-update) with a short validity, because the Frameo's firmware may end the app when another activity starts. The comment in `FrameService` about the watchdog alarm is corrected: AOSP refuses to start a process that AMS marked as bad from an alarm.
+`health.plannedExit(reason, validForMs)` records the reason, the `boot_id` and the expiry; `cancelPlannedExit()` removes it. An expired record does not count. The app records it before restarting from the device menu or the API, before starting a system activity (device administration) with a short validity, because the Frameo's firmware may end the app when another activity starts. The comment in `FrameService` about the watchdog alarm is corrected: AOSP refuses to start a process that AMS marked as bad from an alarm.
 
 ### 7. Stores: load, backup, broken files, critical writes
 
