@@ -68,7 +68,7 @@ Since deltas take effect only at archive time, pull request A syncs the `admin-a
 - README:
   - not related to openframe.io (the name stays);
   - status: a one-person project, tested on two frames;
-  - installing: build it yourself until releases exist; the debug build is for development only, because it is debuggable (so `run-as` can read the stored passwords), and it is never installed over a release; the crash-resilience change adds its crash test receiver to these reasons when it registers one;
+  - installing: build it yourself until releases exist; the debug build is for development only, because it is debuggable (so `run-as` can read the stored passwords) and registers the crash test receiver (`DEBUG_CRASH` in `FrameService`, exported so that adb can send it), and it is never installed over a release;
   - security model: LAN only, HTTP without TLS; never expose the frame through port forwarding or UPnP; every paired device has full rights for now; only three API endpoints work without a token, the static files of the web UI are open on the LAN; image URLs carry a signature valid for one photo and two hours; local-only binds to loopback; credentials are stored unencrypted in the app's storage; native image decoders parse every file, so on Android 5/6 with a security patch level before 2016-09-01 (CVE-2016-3862) only trusted sources should be connected, and share links from others and USB count as untrusted;
   - privacy: no telemetry; outgoing traffic only to configured sources (the update check is described by the updater change);
   - licence and contributing; a sentence that the device checklist and findings are kept privately and that archived changes still name their old paths.

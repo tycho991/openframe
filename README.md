@@ -56,8 +56,9 @@ adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
 ```
 
 The debug build is meant for development: it is debuggable, so anyone with USB access to the frame can read the
-app's stored data (including the Nextcloud credentials) with `run-as`. Use it on a frame you control, and once
-releases exist, never install a debug build over a release.
+app's stored data (including the Nextcloud credentials) with `run-as`, and it registers a crash test receiver that
+any app on the frame can trigger. Use it on a frame you control, and once releases exist, never install a debug
+build over a release.
 
 openframe has its own package ID, so it can be installed next to another kiosk app. To have it appear by itself
 after a restart, choose it as the home screen (HOME) in the Android settings.
