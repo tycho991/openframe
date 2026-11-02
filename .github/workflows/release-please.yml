@@ -102,9 +102,9 @@ jobs:
           if grep -q "^native-code" badging.txt; then exit 1; fi
           if grep -q "^application-debuggable" badging.txt; then exit 1; fi
           listing=$(unzip -Z1 "$apk")
-          for f in webadmin/index.html licenses/third-party-android.txt licenses/third-party-webadmin.txt \
+          for f in index.html licenses/third-party-android.txt licenses/third-party-webadmin.txt \
             licenses/GeoNames.txt licenses/Inter-OFL.txt licenses/MaterialSymbols-LICENSE.txt; do
-            grep -qxF "assets/webadmin/$f" <<<"$listing" || { echo "Missing in the APK: $f" >&2; exit 1; }
+            grep -qxF "assets/webadmin/$f" <<<"$listing" || { echo "Missing in the APK: assets/webadmin/$f" >&2; exit 1; }
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
