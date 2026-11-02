@@ -1,0 +1,220 @@
+name: release-please
+# After every push to main, release-please keeps the release pull request up to date. Merging that pull request creates
+# the tag vX.Y.Z and a draft release. Then the full CI runs on the tag's commit, a job without secrets builds the
+# unsigned APK, and a job in the environment `release` signs it once the owner approved, attaches it and publishes the
+# release (release-pipeline, design.md, decisions 3 to 5).
+on:
+  push:
+    branches: [main]
+permissions: {}
+env:
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
+  MISE_VERSION: "2026.10.17"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    # Only here: at workflow level a sign job waiting for approval would hold the group and queue or cancel every later
+    # run on main.
+    concurrency:
+      group: release-please-main
+      cancel-in-progress: false
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # The gate: all checks of ci.yml on the release commit. A later push may have started this run, so the commit is
+  # release-please's `sha`, never github.sha.
+  checks:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.release-please.outputs.sha }}
+
+  # No secret, no environment, no cache and no write right: a compromised build dependency can neither read the key nor
+  # change the repository or its releases.
+  build:
+    needs: [release-please, checks]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+      RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+      # A read-only token cannot see draft releases, so the tag is checked with git; the sign job checks the draft.
+      - name: Check the tag
+        run: |
+          head=$(git rev-parse HEAD)
+          echo "$TAG is $head, release-please released $RELEASE_SHA"
+          test "$head" = "$RELEASE_SHA"
+          test "$(cat version.txt)" = "$VERSION"
+      # Java and Node pinned exactly as in .mise.toml.
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: java node
+          cache: false
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-disabled: true
+      # npm runs without install scripts (webadmin/.npmrc).
+      - name: Build
+        run: ./gradlew --no-build-cache --no-configuration-cache :android:assembleRelease --console=plain
+      - name: Check APK
+        run: |
+          apk=android/build/outputs/apk/release/android-release-unsigned.apk
+          aapt2=$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2
+          "$aapt2" dump badging "$apk" | tee badging.txt | grep -E "^package|sdkVersion|native-code|debuggable" || true
+          IFS=. read -r major minor patch <<<"$VERSION"
+          code=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+          echo "Expected: version $VERSION, version code $code, not debuggable"
+          grep -q "^package: name='io.github.tycho991.openframe' versionCode='$code' versionName='$VERSION' " badging.txt
+          grep -q "^minSdkVersion:'21'" badging.txt
+          # (A bare `! grep` would not stop the script under `bash -e`.)
+          if grep -q "^native-code" badging.txt; then exit 1; fi
+          if grep -q "^application-debuggable" badging.txt; then exit 1; fi
+          listing=$(unzip -Z1 "$apk")
+          for f in webadmin/index.html licenses/third-party-android.txt licenses/third-party-webadmin.txt \
+            licenses/GeoNames.txt licenses/Inter-OFL.txt licenses/MaterialSymbols-LICENSE.txt; do
+            grep -qxF "assets/webadmin/$f" <<<"$listing" || { echo "Missing in the APK: $f" >&2; exit 1; }
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-apk-unsigned
+          path: android/build/outputs/apk/release/android-release-unsigned.apk
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  # The only job that can read the key, and only after the owner approved the run (environment `release`). It checks
+  # out no project code: it runs download-artifact, the runner's gh and the SDK's build tools.
+  sign:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+      RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+      # Without a checkout gh cannot infer the repository.
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # SHA-256 of the frames' signing certificate. Public: it is in every APK signed with the key.
+      FRAME_CERT_SHA256: 2f1a67021c705203a0cb8f0324229abdd42a31d69d6c4907ca2ae41538ce34fe
+    steps:
+      # By name: the called ci.yml uploads a debug APK into the same run.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-apk-unsigned
+          path: ${{ runner.temp }}/unsigned
+      - name: Check the draft
+        run: |
+          shopt -s nullglob
+          apks=("$RUNNER_TEMP"/unsigned/*.apk)
+          test "${#apks[@]}" -eq 1 || { echo "Expected one APK in the artifact, found ${#apks[@]}" >&2; exit 1; }
+          draft=$(gh release view "$TAG" --json isDraft --jq .isDraft)
+          test "$draft" = true || { echo "$TAG is not a draft release" >&2; exit 1; }
+          tagged=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)
+          echo "$TAG is $tagged, release-please released $RELEASE_SHA"
+          test "$tagged" = "$RELEASE_SHA"
+      - name: Sign and check
+        env:
+          FRAME_KEYSTORE_BASE64: ${{ secrets.FRAME_KEYSTORE_BASE64 }}
+        run: |
+          # >>> check_certificate (tested by scripts/release-functions-test.sh)
+          # Verifies the APK for Android 5.0 and up (with the v1 signature that Android 5 and 6 need) and compares its only
+          # signer with the pinned certificate.
+          check_certificate() {
+            local apksigner=$1 apk=$2 expected=$3 out found
+            out=$("$apksigner" verify -v --min-sdk-version 21 --print-certs "$apk") || {
+              echo "apksigner rejects $apk" >&2
+              return 1
+            }
+            grep -E "^Verified using v1 |^Number of signers|^Signer #1 certificate (DN|SHA-256 digest):" <<<"$out"
+            found=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$out")
+            if ! grep -q "^Number of signers: 1$" <<<"$out" || [ "$found" != "$expected" ]; then
+              echo "Signed with certificate SHA-256 ${found:-none}, expected $expected" >&2
+              return 1
+            fi
+          }
+          # <<< check_certificate
+          test -n "$FRAME_KEYSTORE_BASE64" || { echo "The secret FRAME_KEYSTORE_BASE64 is empty" >&2; exit 1; }
+          tools=$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          keystore="$RUNNER_TEMP/frame.keystore"
+          (umask 077 && base64 -d <<<"$FRAME_KEYSTORE_BASE64" > "$keystore")
+          unsigned=$(printf '%s\n' "$RUNNER_TEMP"/unsigned/*.apk)
+          apk="$RUNNER_TEMP/openframe-$VERSION.apk"
+          "$tools/zipalign" -f 4 "$unsigned" "$RUNNER_TEMP/aligned.apk"
+          # The alias and passwords of a debug keystore are public; the file alone is the secret. apksigner takes the
+          # minSdkVersion 21 from the manifest and adds the v1 signature Android 5 and 6 need.
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias androiddebugkey --ks-pass pass:android \
+            --key-pass pass:android --out "$apk" "$RUNNER_TEMP/aligned.apk"
+          check_certificate "$tools/apksigner" "$apk" "$FRAME_CERT_SHA256"
+          test "$(head -c 4 "$apk" | od -An -tx1 | tr -d ' \n')" = 504b0304
+          IFS=. read -r major minor patch <<<"$VERSION"
+          code=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+          "$tools/aapt2" dump badging "$apk" | tee "$RUNNER_TEMP/badging.txt" | grep -E "^package"
+          grep -q "^package: name='io.github.tycho991.openframe' versionCode='$code' versionName='$VERSION' " \
+            "$RUNNER_TEMP/badging.txt"
+          echo "APK=$apk" >> "$GITHUB_ENV"
+      - name: Delete the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/frame.keystore"
+      - name: Attach and publish
+        run: |
+          # >>> latest_flag (tested by scripts/release-functions-test.sh)
+          # Prints --latest if version $1 is higher than every published release named after it, --latest=false if not.
+          latest_flag() {
+            local own=$1 tag v
+            shift
+            for tag in "$@"; do
+              [ -n "$tag" ] || continue
+              v=${tag#v}
+              if [ "$v" = "$own" ] || [ "$(printf '%s\n%s\n' "$v" "$own" | sort -V | tail -1)" != "$own" ]; then
+                echo --latest=false
+                return
+              fi
+            done
+            echo --latest
+          }
+          # <<< latest_flag
+          gh release upload "$TAG" "$APK"
+          # Listed right before publishing: two approved sign jobs then rarely both see themselves as the highest. The
+          # runbook says to approve one release at a time.
+          list=$(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName')
+          mapfile -t published <<<"$list"
+          flag=$(latest_flag "$VERSION" "${published[@]}")
+          echo "Published releases: ${published[*]:-none}; $TAG gets $flag"
+          gh release edit "$TAG" --draft=false "$flag"

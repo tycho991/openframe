@@ -44,15 +44,30 @@ UI and `values-de/strings.xml` on the frame. Commit messages are in English as w
   commit it in the same commit.
 - GitHub Actions: pin every `uses:` to a full 40-character commit SHA with a `# vX.Y.Z` comment,
   give every checkout `persist-credentials: false`, and pass `version: ${{ env.MISE_VERSION }}`
-  and a minimal `install_args` to every mise step.
+  and a minimal `install_args` to every mise step. A local `uses: ./.github/workflows/…` refers
+  to the same commit and needs no pin.
 - Do not enable Renovate automerge: `main` deliberately requires no status checks (the
-  release-please pull request planned in app-auto-update is opened with `GITHUB_TOKEN` and gets
-  no CI), so GitHub would merge without waiting for CI.
+  release pull request of release-pipeline is opened with `GITHUB_TOKEN` and gets no CI), so
+  GitHub would merge without waiting for CI.
 - `openspec validate <change>` must end with exit 0 and without warnings. Keep requirements
   under 500 characters; split longer ones into several requirements, otherwise the validator
   warns.
 - What is measurable only on hardware belongs in the device checklist in `../openframe-private/`
   with a reference to the spec scenario (see "Private device docs").
+
+## Versions and releases
+
+- Pull request titles follow Conventional Commits (`type(scope)!: description`); the
+  `pr-title` workflow checks them. A change's implementation is `feat:` or `fix:`, a proposal
+  `docs: propose <change>`, ticks and archives `chore:`, a revert `fix: revert …`.
+- Merge with `gh pr merge --squash`: the title becomes the commit subject (repository default),
+  and release-please reads the version step from it.
+- The version lives in `version.txt`. Never edit it, `versionName`/`versionCode` or the version
+  in `webadmin/package.json` and its lock file by hand; only the release pull request changes
+  them.
+- Merging the release pull request publishes a release. Merge it only when the owner says so.
+- Never approve a deployment, also not through the REST API (`pending_deployments`), and never
+  change repository or environment settings or secrets; the owner does that.
 
 ## Private device docs
 

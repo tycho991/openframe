@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release gate: release-please.yml runs these checks on the release commit before it builds the release.
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to check, by default the one that started the run.
+        type: string
+        required: false
 permissions:
   contents: read
 # A new push to a pull request cancels its older run. On main every commit gets a group of its own, so no run there is
@@ -30,6 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       # Java and Node pinned exactly as in .mise.toml.
       - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
@@ -53,6 +61,21 @@ jobs:
           "$aapt2" dump badging "$apk" | tee badging.txt | grep -E "^package|sdkVersion|native-code" || true
           grep -q "name='io.github.tycho991.openframe'" badging.txt
           grep -q "^minSdkVersion:'21'" badging.txt
+          # One version source (app-release): version.txt names the APK's version, its code is X*10000 + Y*100 + Z,
+          # and the release pull request keeps the web UI's package files equal to it. A JSONPath of release-please
+          # that matches nothing would fail silently, so the three package fields are checked here.
+          version=$(cat version.txt)
+          IFS=. read -r major minor patch <<<"$version"
+          code=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+          echo "version.txt: $version, version code $code"
+          grep -q "versionCode='$code' versionName='$version'" badging.txt
+          for field in "webadmin/package.json .version" "webadmin/package-lock.json .version" \
+            'webadmin/package-lock.json .packages[""].version'; do
+            read -r file path <<<"$field"
+            found=$(jq -r "$path" "$file")
+            echo "$file $path: $found"
+            test "$found" = "$version" || { echo "$file $path is $found, version.txt says $version" >&2; exit 1; }
+          done
           # No native libraries: runs on all ABIs. (A bare `! grep` would not stop the script under `bash -e`.)
           if grep -q "^native-code" badging.txt; then exit 1; fi
           unzip -l "$apk" | grep -E "assets/webadmin/(index.html|assets/)" | head -5
@@ -81,6 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       # Java and Node pinned exactly as in .mise.toml.
       - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
@@ -105,6 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
           sparse-checkout: webadmin/package-lock.json
           sparse-checkout-cone-mode: false
@@ -137,6 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       # Java and Node pinned exactly as in .mise.toml.
       - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
