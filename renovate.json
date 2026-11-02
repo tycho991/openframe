@@ -45,10 +45,10 @@
       "semanticCommitType": "fix"
     },
     {
-      "description": "Android Gradle Plugin and desugaring together; majors only after approval",
+      "description": "Android Gradle Plugin and desugaring together; majors only after approval. A Gradle plugin matches by its package name <id>:<id>.gradle.plugin, not by its id",
       "matchPackageNames": [
         "com.android.tools.build:gradle",
-        "com.android.application",
+        "com.android.application:com.android.application.gradle.plugin",
         "com.android.tools:desugar_jdk_libs"
       ],
       "groupName": "Android Gradle Plugin",
@@ -57,7 +57,7 @@
     {
       "matchPackageNames": [
         "com.android.tools.build:gradle",
-        "com.android.application"
+        "com.android.application:com.android.application.gradle.plugin"
       ],
       "matchUpdateTypes": [
         "major"
