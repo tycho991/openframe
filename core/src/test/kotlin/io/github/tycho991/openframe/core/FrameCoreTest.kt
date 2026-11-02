@@ -318,4 +318,18 @@ class FrameCoreTest {
             assertTrue(entry!!.hidden)
         }
     }
+
+    /** A scan still running at stop() logged into the state folder afterwards, and `@TempDir` could not delete it. */
+    @Test
+    fun `Stop waits for a running scan`() {
+        val frame = TestFrame(dir)
+        // The scan loop runs every 200 ms in tests: while photos arrive, one of its scans is running at close().
+        for (i in 1..250) Fixtures.copy("landscape.jpg", File(frame.photos, "p%03d.jpg".format(i)))
+        frame.close()
+        val atStop = files()
+        Thread.sleep(500)
+        assertEquals(atStop, files())
+    }
+
+    private fun files() = dir.walk().filter { it.isFile }.associate { it.relativeTo(dir).path to (it.length() to it.lastModified()) }
 }
