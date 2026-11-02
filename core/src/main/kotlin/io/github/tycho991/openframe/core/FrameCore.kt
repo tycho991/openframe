@@ -61,6 +61,7 @@ import io.github.tycho991.openframe.core.sources.StoredSources
 import io.github.tycho991.openframe.core.sources.StoredSyncResults
 import io.github.tycho991.openframe.core.sources.SyncResultStore
 import io.github.tycho991.openframe.core.store.JsonStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -77,6 +78,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -326,10 +328,20 @@ class FrameCore(
         if (!settings.localOnly.value) server.restart()
     }
 
-    /** Stops the server and writes pending changes. */
+    /** Stops the server, waits for the background work and writes pending changes. */
     suspend fun stop() {
         server.stop()
-        scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
+        // Cancelling alone returns while a scan is still in blocking I/O; it would log into the state folder after
+        // stop() returned. The Android app never stops the core, the tests do with every TestFrame.
+        val jobs =
+            scope.coroutineContext[kotlinx.coroutines.Job]
+                ?.children
+                ?.toList()
+                .orEmpty()
+        jobs.forEach { it.cancel() }
+        if (withTimeoutOrNull(STOP_WAIT_MS) { jobs.joinAll() } == null) {
+            log.w(TAG, "Background work still running ${STOP_WAIT_MS / 1000} s after stop")
+        }
         cache.close()
         backfill.close()
         settings.flush()
@@ -354,6 +366,8 @@ class FrameCore(
         while (scope.isActive) {
             try {
                 backfill.scanned(localSource.scan())
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }
@@ -365,6 +379,7 @@ class FrameCore(
         const val DEFAULT_PORT = 8080
         private const val HANDLER_THREADS = 8
         private const val LAN_ADDRESS_TTL_MS = 5_000L
+        private const val STOP_WAIT_MS = 5_000L
         private const val TAG = "core"
     }
 }
