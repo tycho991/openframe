@@ -73,6 +73,38 @@ expect "the error names both fingerprints" \
   "Signed with certificate SHA-256 $a, expected $b" "$(cat "$work/err")"
 expect "an unsigned APK stops" 1 "$(run_check "$unsigned" "$a")"
 
+# The signer lines as build tools 36 and 37 print them, played back by a stand-in for apksigner.
+fake() {
+  printf '#!/bin/sh\ncat <<"OUT"\n%s\nOUT\n' "$1" >"$work/apksigner"
+  chmod +x "$work/apksigner"
+}
+fake_check() {
+  local status=0
+  check_certificate "$work/apksigner" unused.apk "$1" >"$work/out" 2>"$work/err" || status=$?
+  echo "$status"
+}
+v1="Verified using v1 scheme (JAR signing): true"
+fake "$v1
+Number of signers: 1
+Signer #1 certificate DN: CN=Android Debug, O=Android, C=US
+Signer #1 certificate SHA-256 digest: $a
+Signer #1 public key SHA-256 digest: $b"
+expect "the format of build tools 36 passes" 0 "$(fake_check "$a")"
+fake "$v1
+Number of signers: 1
+V3.0 Signer: certificate DN: CN=Android Debug, O=Android, C=US
+V3.0 Signer: certificate SHA-256 digest: $a
+V3.0 Signer: public key SHA-256 digest: $b"
+expect "the format of build tools 37 passes" 0 "$(fake_check "$a")"
+expect "a public key digest is not taken for the certificate" 1 "$(fake_check "$b")"
+fake "$v1
+Number of signers: 1
+V2 Signer: certificate SHA-256 digest: $a
+V3.0 Signer: certificate SHA-256 digest: $b"
+expect "two different certificates stop" 1 "$(fake_check "$a")"
+expect "the error names both certificates" \
+  "Signed with certificate SHA-256 $(printf '%s\n' "$a" "$b" | sort | paste -sd ' '), expected $a" "$(cat "$work/err")"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed" >&2
   exit 1
