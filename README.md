@@ -12,8 +12,9 @@ openframe is not related to openframe.io or any other project of that name.
 
 ## Status
 
-A one-person project, used daily on the two frames named above and tested on the Android emulator. There are no
-releases yet: build the app yourself (see "Building"). Expect changes to the API and the settings between versions.
+A one-person project, used daily on the two frames named above and tested on the Android emulator. Signed APKs are
+attached to the [GitHub releases](https://github.com/tycho991/openframe/releases) (see "Releases"); before the first
+one, build the app yourself (see "Building"). Expect changes to the API and the settings between versions.
 Questions and bug reports are welcome as issues; security problems go through [SECURITY.md](SECURITY.md).
 
 ## Architecture
@@ -56,9 +57,10 @@ adb shell am start -n io.github.tycho991.openframe/.android.DisplayActivity
 ```
 
 The debug build is meant for development: it is debuggable, so anyone with USB access to the frame can read the
-app's stored data (including the Nextcloud credentials) with `run-as`, and it registers a crash test receiver that
-any app on the frame can trigger. Use it on a frame you control, and once releases exist, never install a debug
-build over a release.
+app's stored data (including the Nextcloud credentials) with `run-as`, and it registers a crash test receiver. Only
+`adb` can trigger that receiver: it needs the permission `android.permission.DUMP`, which the shell holds and an
+ordinary app cannot get. Use the debug build on a frame you control, and once releases exist, never install it over a
+release.
 
 openframe has its own package ID, so it can be installed next to another kiosk app. To have it appear by itself
 after a restart, choose it as the home screen (HOME) in the Android settings.
@@ -306,7 +308,7 @@ port when several run at once.
   `gradle/wrapper/gradle-wrapper.jar` against `gradle-<X>-wrapper.jar.sha256`, then
   regenerate the verification metadata.
 - GitHub Actions are pinned by full commit SHA with a `# vX.Y.Z` comment, and mise
-  by `MISE_VERSION` in both workflows; Renovate raises both. CI runs once per push
+  by `MISE_VERSION` in every workflow that installs it; Renovate raises both. CI runs once per push
   to a pull request (a newer push cancels the older run), and the debug APK
   artifact exists only for runs on `main`.
 
@@ -314,6 +316,65 @@ What can be verified only on real hardware, and the findings of the device tests
 privately by the maintainer, because they hold details of the devices and the network they were measured on.
 Archived changes under `openspec/changes/archive/` still name these documents by their old paths in `docs/` and
 `scripts/`.
+
+## Releases
+
+Versions come from the pull request titles. Every pull request is squash-merged with its title as the commit
+subject, and the title is a [Conventional Commit](https://www.conventionalcommits.org/) (`pr-title.yml` checks it).
+release-please (`release-please.yml`) keeps a release pull request `chore(main): release X.Y.Z` open with the next
+version and its `CHANGELOG.md` entries:
+
+- Below 1.0, `feat` and breaking changes raise the minor version, `fix` and `perf` the patch version. `chore`,
+  `docs`, `test`, `ci`, `build` and `refactor` alone lead to no release. Renovate titles updates of what ends up in
+  the APK or the web UI bundle `fix(deps)`, and those of tools and tests `chore(deps)`.
+- The version lives in `version.txt`, which only the release pull request changes, together with
+  `webadmin/package.json` and its lock file. Gradle derives `versionName` from it and `versionCode` as
+  `X*10000 + Y*100 + Z`; CI checks that all of them agree.
+
+Merging the release pull request, which only the owner decides, starts the release:
+
+1. release-please creates the tag `vX.Y.Z` and a draft release.
+2. `checks` runs the full CI (`ci.yml`) on the tag's commit.
+3. `build` builds the unsigned release APK with a read-only token, without secrets and without caches, checks
+   package, version, version code and that it is not debuggable, and keeps it as an artifact for one day.
+4. `sign` runs in the environment `release` and waits for the owner's approval ("Review deployments" in the run).
+   It checks out no project code, signs with the key from the environment secret `FRAME_KEYSTORE_BASE64`, stops
+   unless the certificate's SHA-256 is the pinned
+   `2f1a67021c705203a0cb8f0324229abdd42a31d69d6c4907ca2ae41538ce34fe` (`FRAME_CERT_SHA256` in the workflow), attaches
+   `openframe-X.Y.Z.apk` and publishes the release. It becomes the latest release only if no higher version is
+   published.
+
+Until the release is published, a frame asking for the latest release gets the previous one.
+
+Runbook:
+
+- A flaky test in the gate: "Re-run failed jobs" in the run. Every new sign job needs a new approval.
+- The approval came more than a day later and the sign job finds no artifact: re-run the `build` job, which re-runs
+  `sign` after it. "Re-run all jobs" would not help, because release-please would find no pending release and skip
+  everything.
+- Approve one release at a time, so that two sign jobs never decide at the same moment which one is the latest.
+- A published release is never changed (releases are immutable). A bad one is fixed forward with a `fix:` pull
+  request. A draft that is never published can be deleted; its tag stays, and the fix gets the next version.
+- Checking a release, in a folder outside any repository:
+
+  ```bash
+  gh release download vX.Y.Z --repo tycho991/openframe --pattern 'openframe-*.apk' --dir ~/openframe-release
+  "$ANDROID_HOME"/build-tools/<version>/apksigner verify -v --min-sdk-version 21 --print-certs \
+    ~/openframe-release/openframe-X.Y.Z.apk
+  ```
+
+  The output must show the v1 scheme verified and the pinned SHA-256 digest above.
+
+GitHub settings, all made by the owner (release-pipeline, design decision 8):
+
+- Before the first release pull request: Actions may create and approve pull requests (Settings › Actions › General
+  › Workflow permissions), and the labels `autorelease: pending` and `autorelease: tagged` exist.
+- With the repository public, and before any release pull request is merged: the rulesets for `main` and `v*`, then
+  the environment `release` with deployment branches only `main`, the owner as required reviewer, "Prevent
+  self-review" off and no admin bypass. A job that names a missing environment would create it without protection.
+- Right before the first release: the secret `FRAME_KEYSTORE_BASE64` in the environment `release` only, never as a
+  repository secret. It holds the frames' keystore (the developer's debug keystore, whose alias and passwords are
+  public) as `base64 -w0`, taken from the restored backup after `keytool -list -v` showed the pinned SHA-256.
 
 ## Workflow with OpenSpec
 

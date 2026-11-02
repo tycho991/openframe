@@ -11,7 +11,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -182,25 +181,10 @@ class FrameService : Service() {
      * triggers a crash to check the self-healing.
      */
     private fun registerDebugCommands() {
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
-        val receiver =
-            object : BroadcastReceiver() {
-                override fun onReceive(
-                    context: Context,
-                    intent: Intent,
-                ) {
-                    main.post { throw IllegalStateException("Crash on request (DEBUG_CRASH)") }
-                }
+        debugReceiver =
+            DebugCommands.register(this, ACTION_DEBUG_CRASH) {
+                main.post { throw IllegalStateException("Crash on request (DEBUG_CRASH)") }
             }
-        val filter = IntentFilter(ACTION_DEBUG_CRASH)
-        // Exported so that adb can send the broadcast. The flag does not exist before API 33.
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            @SuppressLint("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(receiver, filter)
-        }
-        debugReceiver = receiver
     }
 
     companion object {

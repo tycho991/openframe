@@ -15,6 +15,14 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// The version lives only in version.txt, which only the release pull request changes (app-release, "Single version
+// source"). Minor and patch stay below 100, so the version code X*10000 + Y*100 + Z grows with every release.
+val appVersion: String = rootProject.file("version.txt").readText().trim()
+val appVersionCode: Int =
+    Regex("""^(\d+)\.(\d{1,2})\.(\d{1,2})$""").matchEntire(appVersion)?.destructured?.let { (major, minor, patch) ->
+        major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+    } ?: throw GradleException("version.txt holds \"$appVersion\"; expected X.Y.Z with minor and patch below 100, e.g. 0.4.1")
+
 android {
     namespace = "io.github.tycho991.openframe"
     compileSdk = 36
@@ -23,8 +31,17 @@ android {
         applicationId = "io.github.tycho991.openframe"
         minSdk = 21
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersion
+    }
+
+    buildTypes {
+        // Unsigned: CI signs a release in a job of its own, apart from the build (release-pipeline, design.md,
+        // decisions 2 and 5). No fallback to a local keystore. R8 stays off, kotlinx.serialization would need keep rules.
+        getByName("release") {
+            signingConfig = null
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {

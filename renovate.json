@@ -2,6 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "minimumReleaseAge": "7 days",
@@ -9,9 +11,21 @@
   "vulnerabilityAlerts": {
     "labels": [
       "security"
-    ]
+    ],
+    "semanticCommitType": "fix"
   },
   "packageRules": [
+    {
+      "description": "What ends up in the APK or the web UI bundle is a fix, so its update leads to a patch release; tools and tests stay chore",
+      "matchPackageNames": [
+        "com.squareup.okhttp3:okhttp",
+        "org.nanohttpd:nanohttpd",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json",
+        "com.android.tools:desugar_jdk_libs",
+        "svelte"
+      ],
+      "semanticCommitType": "fix"
+    },
     {
       "matchDepNames": [
         "node"
@@ -27,7 +41,8 @@
         "org.jetbrains.kotlin{/,}**",
         "org.jetbrains.kotlinx{/,}**"
       ],
-      "groupName": "Kotlin"
+      "groupName": "Kotlin",
+      "semanticCommitType": "fix"
     },
     {
       "description": "Android Gradle Plugin and desugaring together; majors only after approval",
@@ -36,7 +51,8 @@
         "com.android.application",
         "com.android.tools:desugar_jdk_libs"
       ],
-      "groupName": "Android Gradle Plugin"
+      "groupName": "Android Gradle Plugin",
+      "semanticCommitType": "fix"
     },
     {
       "matchPackageNames": [
@@ -61,6 +77,13 @@
         "patch"
       ],
       "groupName": "Web UI tools"
+    },
+    {
+      "description": "Svelte is in the web UI bundle: its own fix PR, apart from the Web UI tools (after their rule, later rules win)",
+      "matchPackageNames": [
+        "svelte"
+      ],
+      "groupName": "Svelte"
     },
     {
       "description": "Playwright changes the browsers, own PR",
@@ -98,7 +121,7 @@
       "customType": "regex",
       "description": "The mise version that jdx/mise-action installs in the workflows",
       "managerFilePatterns": [
-        "/^\\.github/workflows/(ci|openspec-drift)\\.yml$/"
+        "/^\\.github/workflows/(ci|openspec-drift|release-please)\\.yml$/"
       ],
       "matchStrings": [
         "MISE_VERSION: \"(?<currentValue>[^\"]+)\""
