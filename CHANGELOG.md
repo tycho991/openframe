@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/tycho991/openframe/compare/v0.2.2...v0.2.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.squareup.okhttp3:okhttp to v4.12.1 ([#25](https://github.com/tycho991/openframe/issues/25)) ([c9897ef](https://github.com/tycho991/openframe/commit/c9897ef36dc93b7aab219b23b6f0fe8e01c8fd11))
+
 ## [0.2.2](https://github.com/tycho991/openframe/compare/v0.2.1...v0.2.2) (2026-11-02)
 
 
