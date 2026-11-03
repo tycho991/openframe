@@ -328,8 +328,10 @@ release-please (`release-please.yml`) keeps a release pull request `chore(main):
 version and its `CHANGELOG.md` entries:
 
 - Below 1.0, `feat` and breaking changes raise the minor version, `fix` and `perf` the patch version. `chore`,
-  `docs`, `test`, `ci`, `build` and `refactor` alone lead to no release. Renovate titles updates of what ends up in
-  the APK or the web UI bundle `fix(deps)`, and those of tools and tests `chore(deps)`.
+  `docs`, `test`, `ci`, `build` and `refactor` alone lead to no release. Renovate collects a week's updates into two
+  pull requests on Monday morning: `fix(deps): update app dependencies` for what ends up in the APK or the web
+  UI bundle, and `chore(deps): update tools` for tools and tests. Majors wait for approval on the dependency
+  dashboard; security fixes come at once.
 - The version lives in `version.txt`, which only the release pull request changes, together with
   `webadmin/package.json` and its lock file. Gradle derives `versionName` from it and `versionCode` as
   `X*10000 + Y*100 + Z`; CI checks that all of them agree.
