@@ -28,19 +28,36 @@ data class ScanResult(
 /**
  * The local photo folder, reachable over USB. The scan recognizes unchanged
  * files by `mtime` and size and does not open them, not even skipped ones.
+ *
+ * While the storage of the folder is not mounted or the folder cannot be listed, the scan changes nothing (spec
+ * "Photo folder kept"): an empty listing then is not an empty folder.
  */
 class LocalPhotoSource(
     val root: File,
     private val engine: MediaEngine,
     private val index: PhotoIndexStore,
     private val log: AppLog,
+    /** Whether the storage that holds [root] is mounted (`PlatformInfo.storageMounted`). */
+    private val mounted: (File) -> Boolean = { true },
     /** Lists the image files below [root]; replaced only by tests that act while the folder is listed. */
     private val listFiles: (File) -> Map<String, File> = { listImageFiles(it) },
 ) : PhotoSource {
     override val id = SOURCE_ID
 
+    /** Whether the folder can be used now: its storage mounted, and the folder listable if it exists. */
+    fun available(): Boolean = mounted(root) && (!root.exists() || root.list() != null)
+
     override suspend fun scan(): ScanResult {
+        if (!mounted(root)) {
+            log.w(TAG, "The storage of the photo folder is not mounted; the scan changes nothing")
+            return NOTHING
+        }
+        // A folder deleted over USB on mounted storage is created again, and its entries go below.
         root.mkdirs()
+        if (root.list() == null) {
+            log.w(TAG, "The photo folder cannot be listed; the scan changes nothing")
+            return NOTHING
+        }
         // The index before the folder: a photo that enters the index while the folder is listed (an upload) is then
         // not one of the known entries, so its missing file in the listing cannot remove it (see the removal below).
         val library = index.library.value
@@ -144,6 +161,7 @@ class LocalPhotoSource(
     companion object {
         const val SOURCE_ID = "local"
         private const val TAG = "scan"
+        private val NOTHING = ScanResult(0, 0, 0, 0)
 
         /** All files with an image extension below [root] by relative path, hidden files and folders excluded. */
         internal fun listImageFiles(root: File): Map<String, File> =

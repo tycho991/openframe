@@ -6,6 +6,7 @@ import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Environment
 import android.util.DisplayMetrics
 import android.view.Surface
 import android.view.WindowManager
@@ -16,6 +17,7 @@ import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.platform.kindOfInterfaceName
 import io.github.tycho991.openframe.core.platform.lanAddresses
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.net.Inet4Address
@@ -43,6 +45,11 @@ class AndroidPlatformInfo(
     override val systemLocale: Locale get() = Resources.getSystem().configuration.locale
 
     override fun ipAddresses(): List<String> = lanAddresses(addressCandidates())
+
+    /** The app's internal folder always is; a folder on shared storage only while that is mounted. */
+    override fun storageMounted(dir: File): Boolean =
+        dir.absolutePath.startsWith(context.filesDir.absolutePath) ||
+            Environment.getExternalStorageState(dir) == Environment.MEDIA_MOUNTED
 
     /**
      * Every IPv4 address of the device with the kind of connection it is on. The system says what a network is

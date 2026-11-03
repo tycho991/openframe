@@ -45,6 +45,9 @@ interface PlatformInfo {
 
     /** Free storage on the volume that contains [dir]. */
     fun freeBytes(dir: File): Long = dir.usableSpace
+
+    /** Whether the storage that holds [dir] is mounted; internal storage always is. */
+    fun storageMounted(dir: File): Boolean = true
 }
 
 /** The web UI's files, from the APK assets in :android. */

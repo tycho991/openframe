@@ -14,6 +14,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -458,13 +459,26 @@ class DisplayActivity : Activity() {
 
     private fun updateEmpty() {
         val c = core ?: return
-        val folder = "Android/data/$packageName/files/photos"
         val address = c.adminUrl()
+        val reachable = address != null && !c.settings.localOnly.value
+        val portTaken = c.server.state.value is ServerState.Failed
+        // The real folder: on shared storage as USB shows it; the internal one is not reachable over USB at all.
+        val root = c.localSource.root
+        val shared = Environment.getExternalStorageDirectory()
         emptyBody.text =
-            when {
-                address != null && !c.settings.localOnly.value -> text(R.string.empty_body, address, folder)
-                c.server.state.value is ServerState.Failed -> text(R.string.empty_port_taken, folder)
-                else -> text(R.string.empty_no_network, folder)
+            if (root.absolutePath.startsWith(filesDir.absolutePath)) {
+                when {
+                    reachable -> text(R.string.empty_body_internal, address!!)
+                    portTaken -> text(R.string.empty_port_taken_internal)
+                    else -> text(R.string.empty_no_network_internal)
+                }
+            } else {
+                val folder = if (root.absolutePath.startsWith(shared.absolutePath)) root.relativeTo(shared).path else root.path
+                when {
+                    reachable -> text(R.string.empty_body, address!!, folder)
+                    portTaken -> text(R.string.empty_port_taken, folder)
+                    else -> text(R.string.empty_no_network, folder)
+                }
             }
         val shown = c.pairing.display.value
         // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:

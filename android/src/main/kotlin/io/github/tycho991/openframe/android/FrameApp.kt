@@ -6,11 +6,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Environment
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.library.PhotoRoot
 import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.log.LogSink
 import kotlinx.coroutines.launch
@@ -28,11 +30,12 @@ class FrameApp : Application() {
     val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
 
     val core: FrameCore by lazy {
+        val state = File(filesDir, "state")
         val dirs =
             FrameDirs(
-                state = File(filesDir, "state"),
+                state = state,
                 cache = cacheDir,
-                photos = getExternalFilesDir("photos") ?: File(filesDir, "photos"),
+                photos = photoFolder(File(state, "storage.json")),
             )
         FrameCore(
             dirs = dirs,
@@ -44,6 +47,28 @@ class FrameApp : Application() {
             displayPower = displayPower,
             networkLink = networkLink,
         )
+    }
+
+    /**
+     * The stored photo folder, or the external one, which is stored then (spec `photo-library`, "Photo folder kept").
+     * Internal storage only on a device that never stored a folder and has no shared storage at all.
+     */
+    private fun photoFolder(record: File): File {
+        val choice =
+            PhotoRoot.resolve(
+                stored = PhotoRoot.read(record),
+                external = getExternalFilesDir("photos"),
+                expectedExternal = File(Environment.getExternalStorageDirectory(), "Android/data/$packageName/files/photos"),
+                internal = File(filesDir, "photos"),
+                storage =
+                    when (Environment.getExternalStorageState()) {
+                        Environment.MEDIA_MOUNTED -> PhotoRoot.Storage.MOUNTED
+                        Environment.MEDIA_REMOVED, Environment.MEDIA_UNMOUNTABLE -> PhotoRoot.Storage.NONE
+                        else -> PhotoRoot.Storage.NOT_MOUNTED
+                    },
+            )
+        if (choice.store) PhotoRoot.write(record, choice.folder)
+        return choice.folder
     }
 
     private val started =

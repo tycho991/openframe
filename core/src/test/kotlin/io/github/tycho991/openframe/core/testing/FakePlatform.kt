@@ -13,7 +13,10 @@ class FakePlatform(
     var free: Long? = null,
     var ips: List<String> = listOf("192.168.100.215"),
     override var systemLocale: Locale = Locale.ENGLISH,
+    var mounted: Boolean = true,
 ) : PlatformInfo {
+    override fun storageMounted(dir: File) = mounted
+
     override fun ipAddresses() = ips
 
     override fun freeBytes(dir: File): Long = free ?: super.freeBytes(dir)

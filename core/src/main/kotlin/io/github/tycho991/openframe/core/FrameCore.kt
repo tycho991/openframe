@@ -154,7 +154,7 @@ class FrameCore(
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
     private val index =
         PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true))
-    val localSource = LocalPhotoSource(dirs.photos, engine, index, log)
+    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
@@ -263,6 +263,7 @@ class FrameCore(
         val loadedSources = sourceConfigs.load()
         if (loadedSources == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
+        library.removePartialUploads()
         registerRoutes()
         slideshow.start()
         display.start()

@@ -82,6 +82,13 @@ class PhotoLibrary(
             MultipartReader.boundaryOf(request.header("content-type"))
                 ?: throw HttpException(415, "unsupported_media_type", "Expected multipart/form-data")
         val root = local.root
+        if (!local.available()) {
+            throw HttpException(
+                503,
+                "storage_unavailable",
+                "The photo folder is not available; is the storage mounted?",
+            )
+        }
         val staging = File(root, STAGING).apply { mkdirs() }
         request.contentLength?.let { length ->
             if (platform.freeBytes(root) - length < RESERVE_BYTES) throw insufficientStorage()
@@ -98,7 +105,7 @@ class PhotoLibrary(
                     }
 
                     part.name == "file" && part.filename != null -> {
-                        val tmp = File(staging, UUID.randomUUID().toString() + ".part")
+                        val tmp = File(staging, UUID.randomUUID().toString() + PART)
                         staged += Staged(sanitizeName(part.filename), tmp)
                         copyWithSpaceCheck(part.body, tmp, root)
                     }
@@ -114,6 +121,17 @@ class PhotoLibrary(
         } finally {
             staged.forEach { it.tmp.delete() }
         }
+    }
+
+    /**
+     * Deletes the partial files of uploads that a crash, a kill or an update interrupted (spec "Partial uploads after
+     * a crash"). At the start, before the server accepts uploads.
+     */
+    fun removePartialUploads() {
+        if (!local.available()) return
+        val parts = File(local.root, STAGING).listFiles { f -> f.isFile && f.name.endsWith(PART) }.orEmpty()
+        val removed = parts.count { it.delete() }
+        if (removed > 0) log.i(TAG, "$removed partial uploads removed")
     }
 
     private class Staged(
@@ -186,6 +204,7 @@ class PhotoLibrary(
         const val RESERVE_BYTES = 100L * 1024 * 1024
         private const val SPACE_CHECK_BYTES = 4L * 1024 * 1024
         private const val STAGING = ".upload"
+        private const val PART = ".part"
         private const val TAG = "library"
         private const val FORBIDDEN = "<>:\"/\\|?*"
 
