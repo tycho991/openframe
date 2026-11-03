@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.settings
 
+import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -29,7 +30,7 @@ object SettingsPatch {
         for ((key, value) in patch) {
             when (key) {
                 "name" -> {
-                    string(value, key, errors)?.trim()?.let {
+                    string(value, key, errors)?.let(::singleLine)?.let {
                         if (it.isEmpty() || it.length > Settings.NAME_MAX_LENGTH) {
                             errors[key] = "1 to ${Settings.NAME_MAX_LENGTH} characters"
                         } else {

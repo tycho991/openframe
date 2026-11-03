@@ -74,4 +74,23 @@ class RenameTest {
         assertEquals(200, rename(laptop, id, "x".repeat(64)).statusCode())
         assertEquals(404, rename(laptop, "unknown", "Name").statusCode())
     }
+
+    /** Spec `admin-access`: Device names without control characters. */
+    @Test
+    fun `Rename to only control characters`() {
+        val laptop = h.pairedAuth("Laptop")
+        val id =
+            h.clients.clients.value
+                .single()
+                .id
+        assertEquals(400, rename(laptop, id, "\\r\\n\\u0007").statusCode())
+        assertEquals(
+            "Laptop",
+            h.clients.clients.value
+                .single()
+                .name,
+        )
+        val res = rename(laptop, id, "Tablet\\rX")
+        assertEquals("Tablet X", ApiJson.decodeFromString(ClientDto.serializer(), res.body()).name)
+    }
 }

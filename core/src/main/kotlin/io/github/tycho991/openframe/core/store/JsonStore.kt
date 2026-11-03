@@ -43,6 +43,7 @@ class JsonStore<T>(
     private val signal = Channel<Unit>(Channel.CONFLATED)
 
     private val pending = AtomicReference<Pending<T>?>(null)
+    private val writeFailure = "${file.name} could not be written"
 
     init {
         scope.launch {
@@ -50,11 +51,12 @@ class JsonStore<T>(
                 delay(debounceMs)
                 try {
                     flush()
+                    log.recovered(TAG, writeFailure, "${file.name} written again")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     // The state is back in `pending`; try again later instead of ending the writer.
-                    log.e(TAG, "${file.name} could not be written, trying again in ${RETRY_MS / 1000} s", e)
+                    log.e(TAG, "$writeFailure, trying again in ${RETRY_MS / 1000} s", e)
                     delay(RETRY_MS)
                     signal.trySend(Unit)
                 }

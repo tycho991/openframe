@@ -80,6 +80,16 @@ class InfoRoutesTest {
     }
 
     @Test
+    fun `Name with a line break`() {
+        server(identity(), settings()).use { http ->
+            assertEquals(200, http.request("PATCH", "/api/v1/settings", """{"name":"Living\nroom"}""", auth.header).statusCode())
+            assertEquals("Living room", ApiJson.decodeFromString(InfoDto.serializer(), http.get("/api/v1/info").body()).name)
+            val onlyControls = http.request("PATCH", "/api/v1/settings", """{"name":"\r\n"}""", auth.header)
+            assertEquals(400, onlyControls.statusCode())
+        }
+    }
+
+    @Test
     fun `ID stays the same across restart`() {
         val first = identity()
         assertEquals(32, first.id.length)

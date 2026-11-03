@@ -146,6 +146,7 @@ class SourceScheduler(
                     } finally {
                         syncLock.unlock()
                     }
+                if (failures > 0) log.recovered(TAG, "Sync of ${source.id} failed", "Sync of ${source.id} works again")
                 failures = 0
                 StoredSyncResult(clock.millis(), true, null, counts.added, counts.updated, counts.removed)
             } catch (e: CancellationException) {

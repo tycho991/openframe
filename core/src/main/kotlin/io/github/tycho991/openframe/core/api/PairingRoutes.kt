@@ -9,6 +9,7 @@ import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.qr.QrMatrix
+import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -92,7 +93,7 @@ fun Router.pairingRoutes(
         }
         val name =
             body.deviceName
-                ?.trim()
+                ?.let(::singleLine)
                 ?.take(64)
                 ?.ifBlank { null } ?: DeviceName.fromUserAgent(req.header("user-agent"))
         val (token, client) = if (code != null) pairing.pair(code, name) else pairing.pairWithSecret(secret!!, name)
@@ -117,7 +118,7 @@ fun Router.pairingRoutes(
         HttpResponse.json(ClientListDto.serializer(), ClientListDto(clients.clients.value.map { it.toDto(req.clientId) }))
     }
     patch("/api/v1/clients/{clientId}") { req ->
-        val name = req.bodyAs(ClientUpdateDto.serializer()).name.trim()
+        val name = singleLine(req.bodyAs(ClientUpdateDto.serializer()).name)
         if (name.isEmpty() || name.length > 64) {
             throw HttpException.badRequest("The name has 1 to 64 characters", mapOf("name" to "1 to 64 characters"))
         }
