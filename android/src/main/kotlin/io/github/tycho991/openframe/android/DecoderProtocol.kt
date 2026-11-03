@@ -222,8 +222,12 @@ internal open class DecoderBinder(
             return true
         }
         if (code == DecoderProtocol.RENDER && crashNextRender) {
-            // A native crash as a broken decoder would cause it, for the device test of the quarantine.
+            // A native crash as a broken decoder would cause it, for the device test of the quarantine. On Android 5
+            // the signal can reach the idle main thread, whose handler then waits for debuggerd without ending the
+            // process; so the process ends for sure a moment later, while this call is still in flight.
             Process.sendSignal(Process.myPid(), SIGSEGV)
+            Thread.sleep(SIGNAL_GRACE_MS)
+            Process.killProcess(Process.myPid())
         }
         if (reply != null && DecoderProtocol.dispatch(engine, code, data, reply)) return true
         return super.onTransact(code, data, reply, flags)
@@ -231,5 +235,6 @@ internal open class DecoderBinder(
 
     private companion object {
         const val SIGSEGV = 11
+        const val SIGNAL_GRACE_MS = 2_000L
     }
 }
