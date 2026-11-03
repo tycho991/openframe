@@ -157,7 +157,7 @@ class SlideshowController(
                     handle(command)
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     log.e(TAG, "Error in the slideshow", e)
                 }
             }
@@ -326,7 +326,8 @@ class SlideshowController(
                 return
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // An OutOfMemoryError skips the photo as well (spec `slideshow-display`, "Skip faulty files").
                 log.w(TAG, "Photo skipped, rendering failed: ${entry.path}")
             }
         }
@@ -354,7 +355,7 @@ class SlideshowController(
                 images.render(shown.photo)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 log.w(TAG, "Photo not rendered for the new presentation: ${shown.photo.path}")
                 return
             }

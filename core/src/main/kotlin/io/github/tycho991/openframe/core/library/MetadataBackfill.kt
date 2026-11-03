@@ -45,7 +45,7 @@ class MetadataBackfill(
                 scheduled.set(false)
                 try {
                     run()
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     log.e(TAG, "Reading the metadata of the photos in the index failed", e)
                 }
             }
@@ -83,7 +83,7 @@ class MetadataBackfill(
                     val metadata =
                         try {
                             engine.readMetadata(file)
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
                             log.w(TAG, "Metadata of ${entry.path} not readable: ${e.message}")
                             ImageMetadata.NONE
                         }

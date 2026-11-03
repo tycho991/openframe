@@ -32,8 +32,8 @@ import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
-import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.auth.PairingDisplay
+import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation

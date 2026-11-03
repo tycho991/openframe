@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
+import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.readAtMost
 import java.io.File
 import java.util.UUID
@@ -127,6 +128,7 @@ class PhotoLibrary(
         return try {
             engine.probe(s.tmp)
         } catch (e: ImageException) {
+            if (e.reason == SkipReason.TOO_LARGE) throw HttpException(415, "image_too_large", "${s.name} is too large: ${e.message}")
             throw unsupported(s.name)
         }
     }

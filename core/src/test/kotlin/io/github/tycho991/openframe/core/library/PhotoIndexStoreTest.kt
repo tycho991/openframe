@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -194,4 +195,36 @@ class PhotoIndexStoreTest {
     private data class PreviousStoredIndex(
         val hiddenAlbums: Set<String> = emptySet(),
     )
+
+    /** Design decision 3 of `crash-resilience`: a new skip reason stays readable for an older build. */
+    @Test
+    fun `A new skip reason is stored as corrupt with a detail, and an unknown one loads as corrupt`() =
+        runBlocking {
+            val s = store()
+            s.edit {
+                it.skip(SkippedFile("local", "strip.png", SkipReason.TOO_LARGE, 10, 1))
+                it.skip(SkippedFile("local", "old.heic", SkipReason.UNSUPPORTED, 10, 1))
+            }
+            s.flush()
+            val stored = File(dir, "index.json").readText()
+            assertTrue(""""path":"strip.png","reason":"CORRUPT","detail":"too_large"""" in stored, stored)
+            assertTrue(""""path":"old.heic","reason":"UNSUPPORTED","fileSize"""" in stored, stored)
+            assertEquals(
+                mapOf("strip.png" to SkipReason.TOO_LARGE, "old.heic" to SkipReason.UNSUPPORTED),
+                store()
+                    .library.value.skipped
+                    .associate { it.path to it.reason },
+            )
+
+            File(dir, "index.json").writeText(
+                """{"skipped":[{"source":"local","path":"a.jpg","reason":"EXPLODED","fileSize":1,"modifiedMs":1},""" +
+                    """{"source":"local","path":"b.jpg","reason":"CORRUPT","detail":"future_reason","fileSize":1,"modifiedMs":1}]}""",
+            )
+            assertEquals(
+                listOf(SkipReason.CORRUPT, SkipReason.CORRUPT),
+                store()
+                    .library.value.skipped
+                    .map { it.reason },
+            )
+        }
 }

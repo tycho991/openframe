@@ -217,6 +217,67 @@ class AndroidMediaEngineTest {
         assertTrue("${part.width}×${part.height}", part.width <= 2000 / 4 + 1 && part.height <= 1250 / 4 + 1)
     }
 
+    /** A grey PNG that declares [width]×[height] with one row of data: bounds without a decodable image. */
+    private fun pngOfSize(
+        width: Int,
+        height: Int,
+    ): File {
+        val out = java.io.ByteArrayOutputStream()
+        val data = java.io.DataOutputStream(out)
+
+        fun chunk(
+            type: String,
+            body: ByteArray,
+        ) {
+            data.writeInt(body.size)
+            val typed = type.toByteArray(Charsets.US_ASCII) + body
+            data.write(typed)
+            data.writeInt(
+                java.util.zip
+                    .CRC32()
+                    .apply { update(typed) }
+                    .value
+                    .toInt(),
+            )
+        }
+        data.write(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10))
+        val header = java.io.ByteArrayOutputStream()
+        java.io.DataOutputStream(header).apply {
+            writeInt(width)
+            writeInt(height)
+            write(byteArrayOf(8, 0, 0, 0, 0))
+        }
+        chunk("IHDR", header.toByteArray())
+        val row = ByteArray(minOf(width, 4096) + 1)
+        val deflated = ByteArray(row.size + 64)
+        val n =
+            java.util.zip.Deflater().run {
+                setInput(row)
+                finish()
+                deflate(deflated).also { end() }
+            }
+        chunk("IDAT", deflated.copyOf(n))
+        chunk("IEND", ByteArray(0))
+        return File(tmp.root, "${width}x$height.png").apply { writeBytes(out.toByteArray()) }
+    }
+
+    /** Spec `photo-library`: Image size limits. */
+    @Test
+    fun probeDecodesAboutOneMegapixelAndRejectsImagesOverTheLimits() {
+        assertEquals(16, AndroidMediaEngine.probeSampleSize(1_000_000, 127))
+        assertEquals(128, AndroidMediaEngine.probeSampleSize(65_500, 65_500))
+        assertEquals(16, AndroidMediaEngine.probeSampleSize(12_240, 16_320))
+        assertEquals(8, AndroidMediaEngine.probeSampleSize(8_000, 6_000))
+        assertEquals(1, AndroidMediaEngine.probeSampleSize(1_000, 1_000))
+
+        for ((w, h) in listOf(1_000_000 to 127, 500_000 to 127, 65_500 to 65_500, 12_240 to 16_320)) {
+            assertEquals("$w×$h", SkipReason.TOO_LARGE, skipReason { engine.probe(pngOfSize(w, h)) })
+        }
+        // 48 MP passes the limits (Large phone photo); the decoder fills the rows the file does not have.
+        val info = engine.probe(pngOfSize(8_000, 6_000))
+        assertEquals(8_000 to 6_000, info.width to info.height)
+    }
+
     @Test
     fun inSampleSizeInTwoPasses() {
         assertEquals(1, AndroidMediaEngine.sampleSize(400, 300, 400, 300))

@@ -1,7 +1,9 @@
 package io.github.tycho991.openframe.core
 
+import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.RenderSize
+import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.Region
@@ -14,6 +16,7 @@ import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestFrame
 import io.github.tycho991.openframe.core.testing.waitFor
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -22,16 +25,13 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import io.github.tycho991.openframe.core.http.ServerState
-import io.github.tycho991.openframe.core.log.LogLevel
-import java.net.ServerSocket
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.net.Socket
 import java.time.Duration
 import java.time.Instant

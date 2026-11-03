@@ -238,4 +238,21 @@ class UploadApiTest {
                 ).statusCode(),
         )
     }
+
+    /** Spec `photo-library`: Image size limits › Upload over the limit. */
+    @Test
+    fun `Upload over the limit`() {
+        val res = frame.upload(null, "a.jpg" to jpeg, "huge.png" to Fixtures.pngOfSize(12_000, 10_000))
+        assertEquals(415, res.statusCode())
+        assertEquals(
+            "image_too_large",
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["code"]!!
+                .jsonPrimitive.content,
+        )
+        assertEquals(emptyList<String>(), files(), "nothing stored")
+        assertEquals(415, frame.upload(null, "strip.png" to Fixtures.pngOfSize(500_000, 127)).statusCode())
+    }
 }
