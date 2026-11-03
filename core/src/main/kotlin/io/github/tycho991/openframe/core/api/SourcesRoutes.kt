@@ -92,6 +92,8 @@ data class SyncRequestDto(
 fun Router.sourcesRoutes(
     sources: SourceRegistry,
     nextcloud: NextcloudConnector,
+    /** Safe mode: a sync on request answers 503 `safe_mode`. */
+    safeMode: () -> Boolean = { false },
 ) {
     fun dto(config: StoredSource): SourceDto {
         val status = sources.status(config.id)
@@ -179,6 +181,7 @@ fun Router.sourcesRoutes(
     }
 
     post("/api/v1/sources/{sourceId}/sync") { req ->
+        if (safeMode()) throw safeModeRefusal()
         HttpResponse.json(SyncRequestDto.serializer(), SyncRequestDto(sources.requestSync(req.pathParam("sourceId"))), 202)
     }
 }
