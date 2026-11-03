@@ -4,6 +4,7 @@
   import DevicesView from "./components/DevicesView.svelte";
   import Icon from "./components/Icon.svelte";
   import PairedBanner from "./components/PairedBanner.svelte";
+  import SafeModeBanner from "./components/SafeModeBanner.svelte";
   import PairingDialog from "./components/PairingDialog.svelte";
   import PhotosView from "./components/PhotosView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
@@ -104,6 +105,7 @@
     <main>
       <!-- Forms and lists in a centred column; the photo grid uses the full width. -->
       <div class:column={router.route !== "photos"}>
+        <SafeModeBanner />
         {#if session.pairedAs}<PairedBanner client={session.pairedAs} />{/if}
         {#if router.route === "photos"}
           <PhotosView />

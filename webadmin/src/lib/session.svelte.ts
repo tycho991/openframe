@@ -10,6 +10,8 @@ class Session {
   settingsVersion = $state(-1);
   /** The frame changes photos instantly because its display could not keep up with the transition. */
   transitionFallback = $state(false);
+  /** The frame runs in safe mode after repeated crashes: photos rest until it starts normally. */
+  safeMode = $state(false);
   /** A pairing link is being redeemed; the interface waits instead of showing the pairing dialog. */
   linkPending = $state(false);
   /** Why the pairing link could not be redeemed, shown in the pairing dialog. */
@@ -67,6 +69,7 @@ export async function refreshState(): Promise<void> {
     session.libraryVersion = s.libraryVersion;
     session.settingsVersion = s.settingsVersion;
     session.transitionFallback = s.transitionFallback;
+    session.safeMode = s.safeMode;
   } catch {
     // Frame briefly unreachable: try again next time.
   }
