@@ -262,6 +262,16 @@ object TestServerMain {
                             ok("added $n")
                         }
 
+                        // A local photo as if its rendering had crashed the decoder, e.g. `/quarantine?path=a.jpg`; answers its ID.
+                        "/quarantine" -> {
+                            val id = PhotoEntry.idFor("local", q.getValue("path"))
+                            core.library.index.edit { edit ->
+                                val entry = edit.get(id) ?: error("No photo ${q.getValue("path")}")
+                                edit.put(entry.copy(quarantinedVersion = entry.version))
+                            }
+                            ok(id)
+                        }
+
                         // The caption the frame shows over the photo on screen: its line and its place, each on a line of
                         // its own (empty without one).
                         "/caption" -> {
