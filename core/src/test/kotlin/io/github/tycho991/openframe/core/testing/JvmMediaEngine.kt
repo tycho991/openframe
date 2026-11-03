@@ -48,6 +48,8 @@ class JvmMediaEngine(
 
     @Volatile var renderFailure: (File) -> Throwable? = { null }
 
+    @Volatile var metadataFailure: (File) -> Throwable? = { null }
+
     override fun probe(file: File): ImageInfo {
         probes.incrementAndGet()
         probeFailure(file)?.let { throw it }
@@ -68,6 +70,7 @@ class JvmMediaEngine(
 
     override fun readMetadata(file: File): ImageMetadata {
         metadataReads.incrementAndGet()
+        metadataFailure(file)?.let { throw it }
         return ImageMetadata(gps = gps(file))
     }
 

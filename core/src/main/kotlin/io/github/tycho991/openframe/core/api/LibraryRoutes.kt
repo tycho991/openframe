@@ -367,7 +367,7 @@ fun Router.libraryRoutes(
     fun albumList(): HttpResponse {
         val albums =
             index.library.value.albums.values
-                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, urls(it.newest)) }
+                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let(::urls)) }
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
     }
 

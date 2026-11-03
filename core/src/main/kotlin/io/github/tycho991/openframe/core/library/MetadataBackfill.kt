@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import java.io.File
@@ -75,15 +76,22 @@ class MetadataBackfill(
                 .sortedBy { it.id }
         if (due.isEmpty()) return
         var read = 0
+        var unavailable = false
         for (batch in due.chunked(batchSize)) {
             if (Thread.currentThread().isInterrupted) return
             val results =
                 batch.mapNotNull { entry ->
+                    if (unavailable) return@mapNotNull null
                     val file = fileOf(entry)?.takeIf { it.isFile } ?: return@mapNotNull null
                     val metadata =
                         try {
                             engine.readMetadata(file)
+                        } catch (e: DecoderUnavailableException) {
+                            // Not marked as read: the next run reads it once the decoder is there.
+                            unavailable = true
+                            return@mapNotNull null
                         } catch (e: Throwable) {
+                            // A crash of the decoder included: the photo is marked as read without a position.
                             log.w(TAG, "Metadata of ${entry.path} not readable: ${e.message}")
                             ImageMetadata.NONE
                         }
@@ -99,6 +107,10 @@ class MetadataBackfill(
                 }
             }
             read += results.size
+            if (unavailable) {
+                log.w(TAG, "The decoder is not available; the metadata of the remaining photos is read at the next run")
+                break
+            }
         }
         if (read > 0) log.i(TAG, "Metadata of $read photos read, ${due.size - read} left for their next download")
     }

@@ -132,7 +132,7 @@ class AlbumTreeTest {
         val albums = library().albums
         assertEquals(listOf("holiday", "holiday/2024", "holiday/2024/june", "holiday/2024/may"), albums.keys.toList())
         assertEquals(2, albums.getValue("holiday").count)
-        assertEquals("holiday/2024/june/new.jpg", albums.getValue("holiday").newest.path, "cover from the whole branch")
+        assertEquals("holiday/2024/june/new.jpg", albums.getValue("holiday").newest?.path, "cover from the whole branch")
         assertEquals(1, albums.getValue("holiday/2024/may").count)
     }
 

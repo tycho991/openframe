@@ -1,8 +1,10 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.Region
+import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Orientation
 import kotlinx.coroutines.CompletableDeferred
@@ -93,6 +95,8 @@ class RenderCache(
     private val fillMode: () -> FillMode,
     private val budgetBytes: () -> Long,
     private val log: AppLog,
+    /** A rendering of this entry's version crashed the decoder: it is to be quarantined (spec "Quarantined photos"). */
+    private val onCrashed: (PhotoEntry) -> Unit = {},
 ) {
     private class Job(
         val priority: RenderPriority,
@@ -191,6 +195,8 @@ class RenderCache(
         target: RenderTarget,
         priority: RenderPriority = RenderPriority.DEMAND,
     ): File {
+        // Also a size rendered before the crash: a quarantined photo has no image at all.
+        if (entry.quarantined) throw RenderFailedException("${entry.path} is quarantined")
         peek(target)?.let { return it }
         return enqueue(entry, target, priority).await()
     }
@@ -231,6 +237,7 @@ class RenderCache(
         priority: RenderPriority = RenderPriority.PREFETCH,
     ) {
         for (entry in entries) {
+            if (entry.quarantined) continue
             val target = target(entry, RenderSize.DISPLAY)
             if (!File(dir, target.name).exists()) enqueue(entry, target, priority)
         }
@@ -310,6 +317,10 @@ class RenderCache(
                 job.result.complete(target)
             } catch (e: Throwable) {
                 log.w(TAG, "Rendering of ${job.entry.path} failed", e)
+                if (e is ImageException && e.reason == SkipReason.CRASHED) {
+                    log.e(TAG, "${job.entry.path} made the decoder crash and is quarantined")
+                    onCrashed(job.entry)
+                }
                 // An Error such as OutOfMemoryError would end whoever awaits the result: the slideshow or a request.
                 job.result.completeExceptionally(
                     if (e is Exception) e else RenderFailedException("Rendering of ${job.entry.path} failed", e),
@@ -354,8 +365,11 @@ class RenderCache(
     }
 }
 
-/** A rendering that failed with an [Error], for example out of memory, passed on as an ordinary exception. */
+/**
+ * A rendering that failed with an [Error], for example out of memory, passed on as an ordinary exception, or one that
+ * was refused because the photo is quarantined.
+ */
 class RenderFailedException(
     message: String,
-    cause: Throwable,
+    cause: Throwable? = null,
 ) : Exception(message, cause)

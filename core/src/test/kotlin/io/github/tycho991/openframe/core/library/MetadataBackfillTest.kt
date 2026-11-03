@@ -1,9 +1,12 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.GeoPoint
+import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
+import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -219,5 +222,33 @@ class MetadataBackfillTest {
             b.close()
         }
         assertEquals(Thread.MIN_PRIORITY, priority)
+    }
+
+    /** Design decision 2 of `crash-resilience`: a crash of the decoder marks the metadata as read. */
+    @Test
+    fun `A file that crashes the decoder is marked as read without a position`() {
+        Fixtures.copy("gps-siena.jpg", File(photos, "a.jpg"))
+        index.edit { it.put(old("a.jpg")) }
+        engine.metadataFailure = { ImageException(SkipReason.CRASHED, "The decoder died") }
+        backfill().request()
+        assertEquals(PhotoEntry.METADATA_VERSION, entry("a.jpg").metadataVersion)
+        assertNull(entry("a.jpg").gps)
+    }
+
+    /** Spec `kiosk-host`: Decoding in a separate process › Decoder cannot be started. */
+    @Test
+    fun `A decoder that cannot be started leaves the metadata to the next run`() {
+        val paths = (1..60).map { "%03d.jpg".format(it) }
+        paths.forEach { Fixtures.copy("gps-siena.jpg", File(photos, it)) }
+        index.edit { edit -> paths.forEach { edit.put(old(it)) } }
+        engine.metadataFailure = { DecoderUnavailableException("not bound") }
+        backfill().request()
+        assertTrue(paths.all { entry(it).metadataVersion == 0 }, "nothing marked as read")
+        assertEquals(1, engine.metadataReads.get(), "the run stops at the first file")
+
+        engine.metadataFailure = { null }
+        backfill().request()
+        assertTrue(paths.all { entry(it).metadataVersion == PhotoEntry.METADATA_VERSION })
+        assertEquals(43.3188, entry("001.jpg").gps!!.lat, 1e-6)
     }
 }

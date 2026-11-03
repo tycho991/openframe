@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.platform
 import io.github.tycho991.openframe.core.readFully
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.io.IOException
 import java.time.Instant
 
 enum class ImageFormat(
@@ -71,6 +72,9 @@ enum class SkipReason(
 
     /** Over [MediaEngine.MAX_PIXELS] or with an aspect ratio over [MediaEngine.MAX_ASPECT]:1, or too big for the heap. */
     TOO_LARGE("too_large"),
+
+    /** The decoder process died or hung on the file (spec `photo-library`, "Skipped after a decoder crash"). */
+    CRASHED("crashed"),
     ;
 
     companion object {
@@ -85,11 +89,20 @@ class ImageException(
 ) : Exception(message, cause)
 
 /**
+ * The decoder could not be started, so the file says nothing about itself: scan, sync and backfill record nothing
+ * for it and check it at their next run, and an upload answers 503 `decoder_unavailable`.
+ */
+class DecoderUnavailableException(
+    message: String,
+    cause: Throwable? = null,
+) : IOException(message, cause)
+
+/**
  * Image operations of the platform. In :android through `BitmapFactory`, in tests as a JVM fake. All methods block,
  * and they are called from several threads at once: the render worker, scans, syncs, the metadata backfill and
  * uploads.
  *
- * Only [ImageException] and [java.io.IOException] are thrown. An image over [MAX_PIXELS] pixels or with an aspect
+ * Only [ImageException] and [IOException] (among them [DecoderUnavailableException]) are thrown. An image over [MAX_PIXELS] pixels or with an aspect
  * ratio over [MAX_ASPECT]:1 is rejected as [SkipReason.TOO_LARGE] after reading its bounds (spec `photo-library`,
  * "Image size limits"); so is one whose probe runs out of memory, while running out of memory in [render] fails that
  * rendering as [SkipReason.CORRUPT].
