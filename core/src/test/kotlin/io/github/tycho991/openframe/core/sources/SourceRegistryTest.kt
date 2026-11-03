@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.sources
 
 import io.github.tycho991.openframe.core.http.HttpException
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.StoredIndex
@@ -160,6 +161,39 @@ class SourceRegistryTest {
         assertFalse(File(dir, "sources/sgone").exists())
         assertTrue(File(dir, "sources/skept").exists(), "the folder of a stored source stays")
         assertEquals(listOf(orphan.id), removedPhotos.map { it.id })
+    }
+
+    /** Spec `remote-sources`: Photos kept when the sources cannot be read. */
+    @Test
+    fun `An unreadable sources json keeps the remote photos with comments, sections and originals`() {
+        val photo =
+            PhotoEntry(PhotoEntry.idFor("skept", "a.jpg"), "skept", "a.jpg", 1, 1, 0, 1, 1, 1, hidden = true)
+                .copy(comment = "Grandma's garden", crop = Crop(0.5, 0.2, 1.5))
+        index.edit { it.put(photo) }
+        File(dir, "sources/skept").mkdirs()
+        File(dir, "sources/skept/${photo.id}.jpg").writeBytes(ByteArray(10))
+        File(dir, "sources.json").writeText("{ damaged")
+        val unreadable = SourceConfigStore(JsonStore(File(dir, "sources.json"), StoredSources.serializer(), TestScope(), log))
+        assertEquals(SourceConfigStore.Loaded.UNREADABLE, unreadable.load())
+
+        SourceRegistry(
+            scope,
+            unreadable,
+            results,
+            listOf(kind),
+            index,
+            JvmMediaEngine(),
+            File(dir, "sources"),
+            { removedPhotos += it },
+            TestClock(),
+            log,
+            { removedSources += it.id },
+        ).start(removeOrphans = false)
+
+        assertEquals(photo, index.library.value.photos[photo.id])
+        assertTrue(File(dir, "sources/skept/${photo.id}.jpg").isFile)
+        assertEquals(emptyList<PhotoEntry>(), removedPhotos)
+        assertEquals("{ damaged", File(dir, "sources.json").readText())
     }
 
     @Test

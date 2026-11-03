@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.testing.TestFrame
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -137,5 +138,34 @@ class SourcesSecrecyTest {
         val errors = sources().associate { it.id to it.status.error }
         assertEquals("The server refused the credentials (HTTP 401)", errors[account])
         assertEquals("The share refused the password (HTTP 401)", errors[shareId])
+    }
+
+    /** Spec `nextcloud-source`: Secrecy of the credentials › Unreadable list of sources. */
+    @Test
+    fun `A damaged sources json leaves no trace of its secrets in the log`() {
+        val other = File(dir, "other")
+        File(other, "state").mkdirs()
+        // Truncated in the middle of a share's password, and once with a type error right after the secret.
+        val damaged =
+            listOf(
+                """{"sources":[{"id":"s1","kind":"nextcloud-share","link":"https://cloud.example.com/s/$token","password":"$sharePassword""",
+                """{"sources":[{"id":"s1","kind":"nextcloud-share","appPassword":"$appPassword","enabled":"$sharePassword"}]}""",
+            )
+        for (text in damaged) {
+            File(other, "state/sources.json").writeText(text)
+            TestFrame(other).use { broken ->
+                val logged = broken.core.log.recent(5000)
+                assertTrue(logged.any { "sources.json not readable" in it.message }, "the entry is there")
+                val logFiles =
+                    File(broken.dirs.state, "logs")
+                        .walkTopDown()
+                        .filter { it.isFile }
+                        .joinToString("\n") { it.readText() }
+                for (secret in listOf(appPassword, token, sharePassword)) {
+                    assertFalse(logged.any { secret in it.message }, "\"$secret\" in the log")
+                    assertFalse(secret in logFiles, "\"$secret\" in the log file")
+                }
+            }
+        }
     }
 }

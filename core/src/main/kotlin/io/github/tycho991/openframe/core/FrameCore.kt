@@ -126,7 +126,7 @@ class FrameCore(
 
     val settings =
         SettingsRepository(
-            JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log),
+            JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log, backupOnLoad = true),
             platform.model,
             log,
         ) { displayPower.available }
@@ -135,15 +135,19 @@ class FrameCore(
     val display = DisplayController(scope, displayPower, settings.settings, clock, log, networkLink)
 
     val transitions =
-        TransitionGovernor(JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log), log)
+        TransitionGovernor(
+            JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log, backupOnLoad = true),
+            log,
+        )
 
     val clients = ClientRegistry(JsonStore(File(dirs.state, "clients.json"), StoredClients.serializer(), scope, log), clock)
     val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
     val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
-    private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log)
-    private val index = PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log))
+    private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
+    private val index =
+        PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true))
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
@@ -248,7 +252,8 @@ class FrameCore(
         index.load()
         syncResults.load()
         // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
-        if (sourceConfigs.load() == SourceConfigStore.Loaded.MISSING) migration.migrate()
+        val loadedSources = sourceConfigs.load()
+        if (loadedSources == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         registerRoutes()
         slideshow.start()
@@ -261,7 +266,7 @@ class FrameCore(
                 .collect(slideshow::setResting)
         }
         scope.launch { settings.settings.collect(transitions::onSettings) }
-        sources.start()
+        sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE)
         _ready.value = true
         backfill.request()
 

@@ -53,7 +53,10 @@ class SettingsRepository(
         }
         _settings.value = result.settings
         _version.value = stored.version
-        _localOnly.value = stored.localOnly
+        // Fail-closed (spec `admin-access`, "Local-only mode"): even a copy of the last start may predate turning it on.
+        // Not saved: that would set the file aside and turn a short read error into lost settings.
+        if (store.unreadable) log.e(TAG, "settings.json not readable: local-only mode is on until it is turned off on the frame")
+        _localOnly.value = stored.localOnly || store.unreadable
     }
 
     /** Applies [patch] completely or not at all. Throws [ValidationException] with errors per field. */

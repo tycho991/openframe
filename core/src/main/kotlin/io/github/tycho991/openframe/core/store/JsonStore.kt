@@ -8,28 +8,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 
-/** JSON for stored files: tolerant of fields removed from older versions. */
+/**
+ * JSON for stored files: tolerant of fields removed from older versions. Without debug info, so that an error names
+ * the offset but quotes nothing of the file, which may hold secrets.
+ */
+@OptIn(ExperimentalSerializationApi::class)
 val StoreJson =
     Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         explicitNulls = false
+        exceptionsWithDebugInfo = false
     }
 
 /**
- * A JSON file that is written atomically: first `name.tmp`, then `fsync`,
- * then `rename`. A power loss thus leaves either the old or the new
+ * A JSON file that is written atomically through [AtomicFile], so a power loss leaves either the old or the new
  * state, never half a file.
  *
- * [save] batches changes: a single writer flushes the latest state after
- * [debounceMs] at most. [flush] writes immediately.
+ * [save] batches changes: a single writer flushes the latest state after [debounceMs] at most. [flush] writes
+ * immediately.
+ *
+ * A file that cannot be read is not discarded (spec `frame-settings`, "Durable, atomic storage"): a read error is
+ * retried, then [load] returns `null` and the store is [unreadable] without renaming anything. The first write over
+ * it keeps it as `<name>.broken-<epochMs>`; the [KEPT_BROKEN] newest of those stay. With [backupOnLoad], a successful
+ * load copies the file to `<name>.bak` once, and [load] falls back to that copy when the file is unreadable.
  */
 class JsonStore<T>(
     private val file: File,
@@ -37,13 +46,21 @@ class JsonStore<T>(
     private val scope: CoroutineScope,
     private val log: AppLog,
     private val debounceMs: Long = 1000,
+    private val backupOnLoad: Boolean = false,
 ) {
-    private val tmp = File(file.parentFile, file.name + ".tmp")
+    private val atomic = AtomicFile(file)
+    private val backup = File(file.parentFile, file.name + ".bak")
     private val writeLock = Mutex()
     private val signal = Channel<Unit>(Channel.CONFLATED)
 
     private val pending = AtomicReference<Pending<T>?>(null)
     private val writeFailure = "${file.name} could not be written"
+
+    @Volatile private var backedUp = false
+
+    /** Whether the file is there but could not be read at the last [load], and has not been written since. */
+    @Volatile var unreadable = false
+        private set
 
     init {
         scope.launch {
@@ -67,21 +84,86 @@ class JsonStore<T>(
     /** Whether the file is there, readable or not. */
     fun exists(): Boolean = file.exists()
 
-    /** Reads the stored state or `null` if there is no readable one. */
+    /**
+     * Reads the stored state, or `null` if there is none or no readable one. An unreadable file is retried, then
+     * left in place and replaced by the copy of the last start if there is one.
+     */
     fun load(): T? {
-        if (tmp.exists()) {
-            // An aborted write. The main file is the valid state.
-            log.w(TAG, "Incomplete file ${tmp.name} discarded")
-            tmp.delete()
+        try {
+            if (atomic.tmp.exists()) {
+                // An aborted write. The main file is the valid state.
+                log.w(TAG, "Incomplete file ${atomic.tmp.name} discarded")
+                atomic.tmp.delete()
+            }
+        } catch (e: Exception) {
+            log.w(TAG, "${atomic.tmp.name} could not be removed: $e")
         }
         if (!file.exists()) return null
-        return try {
-            StoreJson.decodeFromString(serializer, file.readText())
+        when (val main = read(file, READ_RETRIES)) {
+            is Read.Ok -> {
+                unreadable = false
+                if (backupOnLoad) backUp(main.text)
+                return main.value
+            }
+
+            is Read.Failed -> {
+                unreadable = true
+                log.e(TAG, "${file.name} not readable (${main.reason}); it stays until it is next written")
+            }
+        }
+        if (!backupOnLoad || !backup.exists()) return null
+        return when (val copy = read(backup, 0)) {
+            is Read.Ok -> {
+                log.w(TAG, "${file.name}: the copy of the last start (${backup.name}) applies")
+                copy.value
+            }
+
+            is Read.Failed -> {
+                log.e(TAG, "${backup.name} not readable either (${copy.reason})")
+                null
+            }
+        }
+    }
+
+    private fun read(
+        from: File,
+        retries: Int,
+    ): Read<T> {
+        var attempt = 0
+        while (true) {
+            val text =
+                try {
+                    from.readText()
+                } catch (e: IOException) {
+                    if (attempt++ < retries) {
+                        Thread.sleep(RETRY_READ_MS)
+                        continue
+                    }
+                    return Read.Failed("${e.javaClass.simpleName}: ${e.message}")
+                } catch (e: OutOfMemoryError) {
+                    return Read.Failed("OutOfMemoryError")
+                }
+            return try {
+                Read.Ok(StoreJson.decodeFromString(serializer, text), text)
+            } catch (e: Exception) {
+                // The message of a format error quotes the input, which may hold a password: class and offset only.
+                val offset = OFFSET.find(e.message.orEmpty())?.groupValues?.get(1)
+                Read.Failed(e.javaClass.simpleName + if (offset != null) " at offset $offset" else "")
+            } catch (e: OutOfMemoryError) {
+                Read.Failed("OutOfMemoryError")
+            } catch (e: StackOverflowError) {
+                Read.Failed("StackOverflowError")
+            }
+        }
+    }
+
+    private fun backUp(text: String) {
+        if (backedUp) return
+        backedUp = true
+        try {
+            AtomicFile(backup).writeText(text)
         } catch (e: Exception) {
-            val broken = File(file.parentFile, file.name + ".broken")
-            log.e(TAG, "${file.name} not readable, set aside as ${broken.name}", e)
-            file.renameTo(broken)
-            null
+            log.w(TAG, "${backup.name} could not be written: $e")
         }
     }
 
@@ -117,23 +199,53 @@ class JsonStore<T>(
     }
 
     private fun write(value: T) {
-        file.parentFile?.mkdirs()
         val text = StoreJson.encodeToString(serializer, value)
-        FileOutputStream(tmp).use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
-            out.flush()
-            out.fd.sync()
-        }
-        // rename(2) replaces the target file atomically. java.nio.file exists on Android only from API 26.
-        if (!tmp.renameTo(file)) throw IOException("${tmp.name} could not be renamed to ${file.name}")
+        atomic.writeText(text) { if (unreadable) setAside() }
+        unreadable = false
+    }
+
+    /** Keeps the unreadable file as `<name>.broken-<epochMs>`, never over an existing one, and the newest three of them. */
+    private fun setAside() {
+        if (!file.exists()) return
+        var ms = System.currentTimeMillis()
+        var target: File
+        do {
+            target = File(file.parentFile, "${file.name}$BROKEN${ms++}")
+        } while (target.exists())
+        if (!file.renameTo(target)) throw IOException("${file.name} could not be kept as ${target.name}")
+        log.w(TAG, "The unreadable ${file.name} is kept as ${target.name}")
+        file.parentFile
+            ?.listFiles()
+            .orEmpty()
+            .filter { it.name.startsWith(file.name + BROKEN) }
+            .sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
+            .drop(KEPT_BROKEN)
+            .forEach { it.delete() }
+    }
+
+    private sealed interface Read<out T> {
+        class Ok<T>(
+            val value: T,
+            val text: String,
+        ) : Read<T>
+
+        class Failed(
+            val reason: String,
+        ) : Read<Nothing>
     }
 
     private class Pending<T>(
         val value: T,
     )
 
-    private companion object {
-        const val TAG = "store"
-        const val RETRY_MS = 10_000L
+    companion object {
+        /** How many broken copies of a file are kept. */
+        const val KEPT_BROKEN = 3
+        private const val BROKEN = ".broken-"
+        private const val TAG = "store"
+        private const val RETRY_MS = 10_000L
+        private const val READ_RETRIES = 3
+        private const val RETRY_READ_MS = 100L
+        private val OFFSET = Regex("offset (\\d+)")
     }
 }
