@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # renovate-artifacts.yml starts the checks after its push to a Renovate branch, which itself starts no workflow.
+  workflow_dispatch:
   # The release gate: release-please.yml runs these checks on the release commit before it builds the release.
   workflow_call:
     inputs:
