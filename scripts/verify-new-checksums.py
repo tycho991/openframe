@@ -10,9 +10,11 @@ renovate-artifacts.yml runs it before it pushes the file to a Renovate branch.
 """
 
 import hashlib
+import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -61,27 +63,48 @@ def published(url):
     return body.decode().split()[0].lower() if body and body.strip() else None
 
 
+def locations(repository, group, name, version, file):
+    """The artifact's URL in the repository; Gradle module metadata can place a file elsewhere (Guava's -android jar
+    of the -jre version lies in the -android version's folder)."""
+    folder = f"{repository}/{group.replace('.', '/')}/{name}/{version}"
+    yield f"{folder}/{file}"
+    if file.endswith(".module"):
+        return
+    module_url = f"{folder}/{name}-{version}.module"
+    module = fetch(module_url)
+    if module is None:
+        return
+    urls = {
+        f["url"]
+        for variant in json.loads(module).get("variants", [])
+        for f in variant.get("files", [])
+        if f.get("name") == file and f.get("url") != file
+    }
+    for url in sorted(urls):
+        yield urllib.parse.urljoin(module_url, url)
+
+
 def check(entry):
     group, name, version, file, sha256 = entry
     seen = []
     for repository in REPOSITORIES:
-        url = f"{repository}/{group.replace('.', '/')}/{name}/{version}/{file}"
-        expected = published(url + ".sha256")
-        if expected is not None:
-            if expected == sha256:
-                return entry, f"ok ({url}.sha256)"
-            seen.append(f"{url}.sha256 says {expected}")
-            continue
-        sha1 = published(url + ".sha1")
-        if sha1 is None:
-            continue
-        body = fetch(url)
-        if body is None:
-            continue
-        actual = hashlib.sha256(body).hexdigest()
-        if actual == sha256 and hashlib.sha1(body).hexdigest() == sha1:
-            return entry, f"ok ({url}.sha1)"
-        seen.append(f"{url} has SHA-256 {actual}")
+        for url in locations(repository, group, name, version, file):
+            expected = published(url + ".sha256")
+            if expected is not None:
+                if expected == sha256:
+                    return entry, f"ok ({url}.sha256)"
+                seen.append(f"{url}.sha256 says {expected}")
+                continue
+            sha1 = published(url + ".sha1")
+            if sha1 is None:
+                continue
+            body = fetch(url)
+            if body is None:
+                continue
+            actual = hashlib.sha256(body).hexdigest()
+            if actual == sha256 and hashlib.sha1(body).hexdigest() == sha1:
+                return entry, f"ok ({url}.sha1)"
+            seen.append(f"{url} has SHA-256 {actual}")
     return entry, "MISMATCH: " + ("; ".join(seen) if seen else "in none of the repositories")
 
 
