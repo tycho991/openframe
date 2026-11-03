@@ -22,6 +22,10 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import io.github.tycho991.openframe.core.http.ServerState
+import io.github.tycho991.openframe.core.log.LogLevel
+import java.net.ServerSocket
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
@@ -170,23 +174,24 @@ class FrameCoreTest {
 
     @Test
     fun `Admin address as the frame shows it`() {
-        fun core(
-            port: Int,
-            platform: FakePlatform = FakePlatform(),
-        ) = FrameCore(
-            FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
-            platform,
-            JvmMediaEngine(),
-            AssetSource { null },
-            MediaStoreNotifier.None,
-            port = port,
-        )
-        assertEquals("http://192.168.100.215:8080/", core(8080).adminUrl())
-        assertEquals("http://192.168.100.215/", core(80).adminUrl())
-        assertNull(core(8080, FakePlatform(ips = emptyList())).adminUrl())
-        // A running server reports the port it is bound to.
+        assertEquals("http://192.168.100.215:8080/", FrameCore.adminUrl("192.168.100.215", 8080))
+        assertEquals("http://192.168.100.215/", FrameCore.adminUrl("192.168.100.215", 80))
+        // A running server reports the port it is bound to; before the start there is none.
+        val unstarted =
+            FrameCore(
+                FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
+                FakePlatform(),
+                JvmMediaEngine(),
+                AssetSource { null },
+                MediaStoreNotifier.None,
+            )
+        assertNull(unstarted.adminUrl())
         TestFrame(dir).use { frame ->
             assertEquals("http://192.168.100.215:${frame.core.server.boundPort}/", frame.core.adminUrl())
+        }
+        TestFrame(File(dir, "offline"), platform = FakePlatform(ips = emptyList())).use { frame ->
+            assertNull(frame.core.adminUrl())
+            assertTrue(frame.core.server.state.value is ServerState.Running)
         }
     }
 
@@ -194,20 +199,64 @@ class FrameCoreTest {
     fun `Admin address is read from the network only every few seconds`() {
         val clock = TestClock()
         val platform = FakePlatform()
+        TestFrame(dir, platform = platform, clock = clock).use { frame ->
+            val port = frame.core.server.boundPort
+            assertEquals("http://192.168.100.215:$port/", frame.core.adminUrl())
+            platform.ips = listOf("10.0.0.5")
+            assertEquals("http://192.168.100.215:$port/", frame.core.adminUrl())
+            clock.advance(java.time.Duration.ofSeconds(6))
+            assertEquals("http://10.0.0.5:$port/", frame.core.adminUrl())
+        }
+    }
+
+    /** Spec `kiosk-host`: Server port unavailable › Port taken at start. */
+    @Test
+    fun `A taken port does not stop the start, and the server binds once it is free`() {
+        val holder = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val port = holder.localPort
+        Fixtures.copy("landscape.jpg", File(File(dir, "photos"), "a.jpg"))
         val core =
             FrameCore(
                 FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
-                platform,
+                FakePlatform(),
                 JvmMediaEngine(),
                 AssetSource { null },
                 MediaStoreNotifier.None,
-                clock = clock,
+                port = port,
+                bindLoopback = true,
+                serverRetryMs = 200,
             )
-        assertEquals("http://192.168.100.215:8080/", core.adminUrl())
-        platform.ips = listOf("10.0.0.5")
-        assertEquals("http://192.168.100.215:8080/", core.adminUrl())
-        clock.advance(java.time.Duration.ofSeconds(6))
-        assertEquals("http://10.0.0.5:8080/", core.adminUrl())
+        try {
+            runBlocking { core.start() }
+            assertTrue(core.ready.value)
+            assertTrue(core.server.state.value is ServerState.Failed)
+            assertNull(core.adminUrl())
+            assertTrue(core.log.recent(1000).any { it.level == LogLevel.ERROR && "could not bind" in it.message })
+            waitFor { core.slideshow.state.value is SlideState.Showing }
+
+            // Neither a change of local-only mode nor of the network throws while the port is taken.
+            core.setLocalOnly(true)
+            core.setLocalOnly(false)
+            repeat(20) { core.onNetworkChanged() }
+            holder.close()
+            waitFor { core.server.state.value is ServerState.Running }
+            assertEquals(port, core.server.boundPort)
+            assertEquals("http://192.168.100.215:$port/", core.adminUrl())
+
+            // Many triggers at once end with exactly one bound server on the port.
+            repeat(20) {
+                core.onNetworkChanged()
+                core.setLocalOnly(it % 2 == 0)
+            }
+            core.setLocalOnly(false)
+            waitFor { core.server.state.value is ServerState.Running }
+            Thread.sleep(300)
+            assertEquals(ServerState.Running(port), core.server.state.value)
+            assertThrows(IOException::class.java) { ServerSocket(port, 50, InetAddress.getLoopbackAddress()).close() }
+        } finally {
+            holder.close()
+            runBlocking { core.stop() }
+        }
     }
 
     @Test
@@ -224,6 +273,7 @@ class FrameCoreTest {
             assertFalse(core.settings.localOnly.value)
             // A network change and both positions of the setting bind the server anew, each time to loopback.
             core.onNetworkChanged()
+            waitFor { binds().size >= 2 }
             core.setLocalOnly(true)
             waitFor { binds().size >= 3 }
             core.setLocalOnly(false)

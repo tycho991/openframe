@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
+import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.auth.PairingDisplay
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
@@ -282,7 +283,7 @@ class DisplayActivity : Activity() {
             launch { core.slideshow.paused.collect { updateHint() } }
             launch { followDark(core.display.dark) }
             launch {
-                core.settings.localOnly.collect {
+                combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
                     updateHint()
                     updateEmpty()
                 }
@@ -441,7 +442,7 @@ class DisplayActivity : Activity() {
         hintAddress.text =
             when {
                 c.settings.localOnly.value -> text(R.string.hint_local_only)
-                else -> c.adminUrl()?.let { "${text(R.string.hint_address)}: $it" } ?: text(R.string.hint_no_network)
+                else -> c.adminUrl()?.let { "${text(R.string.hint_address)}: $it" } ?: unreachable(c)
             }
         val shown = c.pairing.display.value
         val localOnly = c.settings.localOnly.value
@@ -451,15 +452,19 @@ class DisplayActivity : Activity() {
         hintPause.text = if (c.slideshow.paused.value) text(R.string.hint_resume) else text(R.string.hint_pause)
     }
 
+    /** Why there is no address to show: no network, or the port could not be bound (spec "Server port unavailable"). */
+    private fun unreachable(c: FrameCore) =
+        if (c.server.state.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
+
     private fun updateEmpty() {
         val c = core ?: return
         val folder = "Android/data/$packageName/files/photos"
         val address = c.adminUrl()
         emptyBody.text =
-            if (address != null && !c.settings.localOnly.value) {
-                text(R.string.empty_body, address, folder)
-            } else {
-                text(R.string.empty_no_network, folder)
+            when {
+                address != null && !c.settings.localOnly.value -> text(R.string.empty_body, address, folder)
+                c.server.state.value is ServerState.Failed -> text(R.string.empty_port_taken, folder)
+                else -> text(R.string.empty_no_network, folder)
             }
         val shown = c.pairing.display.value
         // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:
@@ -617,7 +622,7 @@ class DisplayActivity : Activity() {
                 c.platform.appVersion,
                 c.platform.model,
                 c.platform.androidVersion,
-                c.adminUrl() ?: text(R.string.hint_no_network),
+                c.adminUrl() ?: unreachable(c),
                 c.identity.id,
             )
         showImmersive(

@@ -7,11 +7,13 @@
     <string name="empty_title">Noch keine Fotos</string>
     <string name="empty_body">Öffne %1$s im Browser, um Fotos hochzuladen, oder kopiere sie per USB in den Ordner %2$s.</string>
     <string name="empty_no_network">Kein Netzwerk. Kopiere Fotos per USB in den Ordner %1$s.</string>
+    <string name="empty_port_taken">Die Verwaltung ist nicht erreichbar, weil eine andere App ihren Port belegt. Kopiere Fotos per USB in den Ordner %1$s.</string>
     <string name="qr_scan">Mit dem Handy scannen</string>
     <string name="code_locked">Code gesperrt</string>
     <string name="pairing_code">Kopplungscode</string>
     <string name="hint_address">Verwaltung</string>
     <string name="hint_no_network">Kein Netzwerk</string>
+    <string name="hint_port_taken">Verwaltung nicht erreichbar: Port belegt</string>
     <string name="hint_pause">Pause</string>
     <string name="hint_resume">Weiter</string>
     <string name="hint_local_only">Nur lokal: aus dem Netzwerk nicht erreichbar</string>

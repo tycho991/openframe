@@ -89,7 +89,7 @@ class LocalAccessTest {
             assertEquals(true, connects("127.0.0.1", port), "Reachable from the device itself")
             assertEquals(false, connects(lan!!.hostAddress, port), "Not reachable from the LAN")
 
-            server.restart(localOnly = false)
+            server.start(localOnly = false)
             assertEquals(true, connects(lan.hostAddress, server.boundPort!!), "Turned off on the frame: reachable from the LAN again")
         } finally {
             server.stop()
