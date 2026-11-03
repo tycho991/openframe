@@ -250,4 +250,15 @@ class JsonStoreTest {
         assertEquals(Doc(2), store.load())
         scope.cancel()
     }
+
+    @Test
+    fun `A failed atomic write leaves no temporary file`() {
+        val file = File(dir, "doc.json")
+        // A directory with content in the place of the target: the rename fails after the temporary file is complete.
+        File(file, "inside").apply { parentFile.mkdirs() }.writeText("x")
+        assertThrows(IOException::class.java) { AtomicFile(file).writeText("{}") }
+        assertFalse(File(dir, "doc.json.tmp").exists())
+        assertThrows(IllegalStateException::class.java) { AtomicFile(File(dir, "other.json")).writeText("{}") { error("refused") } }
+        assertFalse(File(dir, "other.json.tmp").exists())
+    }
 }

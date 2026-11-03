@@ -13,20 +13,28 @@ class AtomicFile(
 ) {
     val tmp = File(file.parentFile, file.name + ".tmp")
 
-    /** Writes [bytes]; [beforeReplace] runs after the temporary file is complete and before it replaces [file]. */
+    /**
+     * Writes [bytes]; [beforeReplace] runs after the temporary file is complete and before it replaces [file]. After
+     * a failure the temporary file is removed, so that a full disk does not keep what was written of it.
+     */
     fun write(
         bytes: ByteArray,
         beforeReplace: () -> Unit = {},
     ) {
         file.parentFile?.mkdirs()
-        FileOutputStream(tmp).use { out ->
-            out.write(bytes)
-            out.flush()
-            out.fd.sync()
+        try {
+            FileOutputStream(tmp).use { out ->
+                out.write(bytes)
+                out.flush()
+                out.fd.sync()
+            }
+            beforeReplace()
+            // rename(2) replaces the target file atomically. java.nio.file exists on Android only from API 26.
+            if (!tmp.renameTo(file)) throw IOException("${tmp.name} could not be renamed to ${file.name}")
+        } catch (e: Exception) {
+            if (tmp.isFile) tmp.delete()
+            throw e
         }
-        beforeReplace()
-        // rename(2) replaces the target file atomically. java.nio.file exists on Android only from API 26.
-        if (!tmp.renameTo(file)) throw IOException("${tmp.name} could not be renamed to ${file.name}")
     }
 
     fun writeText(

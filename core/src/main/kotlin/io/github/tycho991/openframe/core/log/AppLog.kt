@@ -2,6 +2,8 @@ package io.github.tycho991.openframe.core.log
 
 import io.github.tycho991.openframe.core.platform.Clock
 import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.time.Instant
 
 enum class LogLevel { DEBUG, INFO, WARN, ERROR }
@@ -268,7 +270,18 @@ class RotatingFileLog(
             previous.delete()
             current.renameTo(previous)
         }
-        current.appendText(format(entry) + "\n")
+        val before = current.length()
+        try {
+            current.appendText(format(entry) + "\n")
+        } catch (e: IOException) {
+            // A full disk may take part of the line: cut it off again, which needs no space, so that the next line
+            // does not join it and the entry is not read twice (from the file and from the memory buffer).
+            try {
+                RandomAccessFile(current, "rw").use { it.setLength(before) }
+            } catch (ignored: IOException) {
+            }
+            throw e
+        }
     }
 
     @Synchronized
