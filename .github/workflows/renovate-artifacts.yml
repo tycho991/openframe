@@ -1,0 +1,131 @@
+name: renovate-artifacts
+# Renovate cannot regenerate two kinds of files: gradle/verification-metadata.xml (its own attempt runs only
+# `dependencies`, from shared servers that Maven Central answers with 429) and the skills that `openspec update` writes.
+# This workflow regenerates them on Renovate's branches and pushes them as a commit of its own.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions: {}
+# A new push of Renovate cancels the older run; its push would fail anyway, the branch has moved on.
+concurrency:
+  group: renovate-artifacts-${{ github.head_ref }}
+  cancel-in-progress: true
+env:
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
+  MISE_VERSION: "2026.10.19"
+  OPENSPEC_TELEMETRY: "0"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  # Runs the build of the updated dependencies, so it gets no write access: it only hands over a patch.
+  regenerate:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: java node npm:@fission-ai/openspec
+      - name: Changed files
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only "$BASE...$HEAD" | tee changed.txt
+          if grep -qE '^(gradle/libs\.versions\.toml|gradle/wrapper/gradle-wrapper\.properties|gradle\.properties|(.*/)?[^/]+\.gradle\.kts)$' changed.txt; then
+            echo "gradle=true" >> "$GITHUB_OUTPUT"
+          fi
+          rm changed.txt
+      # The command from the README, with a fresh Gradle home: an existing cache would be recorded as it is.
+      - name: Regenerate the dependency checksums
+        if: steps.changed.outputs.gradle == 'true'
+        run: |
+          GRADLE_USER_HOME=$(mktemp -d) ./gradlew --no-configuration-cache --no-build-cache --console=plain \
+            --write-verification-metadata sha256 help check :android:assembleDebug
+      # Cheap, so always: a new openspec version and a changed profile both show up here.
+      - name: Regenerate the skills
+        run: mise run --skip-tools openspec-sync
+      - name: Patch
+        id: patch
+        run: |
+          git add -A
+          git diff --cached --stat
+          git diff --cached --binary > "$RUNNER_TEMP/regenerated.patch"
+          if [ -s "$RUNNER_TEMP/regenerated.patch" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: regenerated-patch
+          path: ${{ runner.temp }}/regenerated.patch
+          retention-days: 3
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+
+  # Has write access and runs no code of the dependencies: it checks the patch, commits and pushes it.
+  push:
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: regenerated-patch
+          path: ${{ runner.temp }}/patch
+      # Only the two kinds of generated files, only as regular files.
+      - name: Apply the patch
+        run: |
+          git apply --index "$RUNNER_TEMP/patch/regenerated.patch"
+          git diff --cached --raw
+          # Fields: :old-mode new-mode old-sha new-sha status path. A deletion has the new mode 000000.
+          bad=$(git diff --cached --raw --no-renames | awk '$2 != "100644" && $5 != "D"')
+          paths=$(git diff --cached --name-only --no-renames)
+          outside=$(grep -vE '^(gradle/verification-metadata\.xml|\.claude/skills/[^/]+/SKILL\.md|\.claude/commands/[a-z0-9/-]+\.md)$' <<<"$paths" || true)
+          if [ -n "$outside" ] || [ -n "$bad" ]; then
+            echo "The patch touches more than the generated files:" >&2
+            echo "$outside$bad" >&2
+            exit 1
+          fi
+      - name: Compare new checksums with the repositories
+        env:
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --cached --quiet -- gradle/verification-metadata.xml; then exit 0; fi
+          git show "$HEAD:gradle/verification-metadata.xml" > "$RUNNER_TEMP/old.xml"
+          python3 -I scripts/verify-new-checksums.py "$RUNNER_TEMP/old.xml" gradle/verification-metadata.xml
+      # A push with GITHUB_TOKEN starts no workflow, a workflow_dispatch does: the checks of the new commit appear on
+      # the pull request. Renovate leaves the commit alone and keeps rebasing (gitIgnoredAuthors in renovate.json).
+      - name: Commit, push and start the checks
+        env:
+          BRANCH: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "chore(deps): regenerate dependency checksums and skills" \
+            -m "Regenerated by the renovate-artifacts workflow."
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+          gh workflow run ci.yml --repo "$REPOSITORY" --ref "$BRANCH"
+          gh workflow run openspec-drift.yml --repo "$REPOSITORY" --ref "$BRANCH"

@@ -294,7 +294,10 @@ port when several run at once.
   already holds. Compare new entries of declared dependencies with the `.sha256` or
   `.sha1` files on Maven Central or Google Maven, then delete the temporary home
   (about 1.5 GB). Regenerating only adds entries; to drop stale ones, empty
-  `<components>` first.
+  `<components>` first. On Renovate's pull requests the workflow `renovate-artifacts`
+  does this: it runs the command, compares every new checksum with the `.sha256` or
+  `.sha1` the repository publishes (`scripts/verify-new-checksums.py`) and pushes the
+  file to the branch.
 - aapt2 is recorded for Linux only. On macOS or Windows the build stops with
   "Dependency verification failed" for `aapt2-<version>-osx.jar` or `-windows.jar`.
   Run the command above on that machine, compare the new entry with
@@ -386,8 +389,9 @@ Changes are planned as an OpenSpec change (proposal, specs, design, tasks under
 3. `/opsx:apply` to implement
 4. `/opsx:archive` or `openspec archive <name> --yes`
 
-Node and OpenSpec are pinned in `.mise.toml`. Renovate raises the version by PR;
-in the PR's branch then:
+Node and OpenSpec are pinned in `.mise.toml`. Renovate raises the version by PR, and
+the workflow `renovate-artifacts` pushes the regenerated skills to its branch. By hand,
+in a branch:
 
 ```bash
 mise install

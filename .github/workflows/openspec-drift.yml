@@ -1,5 +1,8 @@
 name: openspec-drift
-on: [pull_request]
+on:
+  pull_request:
+  # renovate-artifacts.yml starts the check after its push to a Renovate branch, which itself starts no workflow.
+  workflow_dispatch:
 permissions:
   contents: read
 # A new push to the pull request cancels its older run.

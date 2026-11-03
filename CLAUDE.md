@@ -41,7 +41,8 @@ UI and `values-de/strings.xml` on the frame. Commit messages are in English as w
   own `OPENFRAME_E2E_PORT` (e.g. 8190); a busy port fails instead of being reused.
 - After every change to Gradle dependencies, plugins or the Gradle version, regenerate
   `gradle/verification-metadata.xml` with a fresh `GRADLE_USER_HOME` (command in the README) and
-  commit it in the same commit.
+  commit it in the same commit. On Renovate's branches the workflow `renovate-artifacts` does
+  this and pushes it.
 - GitHub Actions: pin every `uses:` to a full 40-character commit SHA with a `# vX.Y.Z` comment,
   give every checkout `persist-credentials: false`, and pass `version: ${{ env.MISE_VERSION }}`
   and a minimal `install_args` to every mise step. A local `uses: ./.github/workflows/…` refers

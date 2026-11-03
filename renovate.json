@@ -7,6 +7,9 @@
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "minimumReleaseAge": "7 days",
+  "gitIgnoredAuthors": [
+    "41898282+github-actions[bot]@users.noreply.github.com"
+  ],
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "labels": [
@@ -121,7 +124,7 @@
       "customType": "regex",
       "description": "The mise version that jdx/mise-action installs in the workflows",
       "managerFilePatterns": [
-        "/^\\.github/workflows/(ci|openspec-drift|release-please)\\.yml$/"
+        "/^\\.github/workflows/(ci|openspec-drift|release-please|renovate-artifacts)\\.yml$/"
       ],
       "matchStrings": [
         "MISE_VERSION: \"(?<currentValue>[^\"]+)\""
