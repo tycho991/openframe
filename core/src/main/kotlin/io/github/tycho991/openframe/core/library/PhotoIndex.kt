@@ -41,7 +41,15 @@ data class PhotoEntry(
      * an index of a build that did not read the GPS position, which [MetadataBackfill] then reads once.
      */
     val metadataVersion: Int = 0,
+    /**
+     * The [version] whose rendering crashed the decoder (spec `photo-library`, "Quarantined photos"); `null` if none.
+     * Older builds ignore it. A new version of the file no longer matches, which lifts the quarantine.
+     */
+    val quarantinedVersion: Int? = null,
 ) {
+    /** This version is never rendered or shown; see [quarantinedVersion]. */
+    val quarantined: Boolean get() = quarantinedVersion == version
+
     /** The folder path below the source's folder, `null` for photos directly in it. */
     val album: String? get() = AlbumPaths.parent(path)
 

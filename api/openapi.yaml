@@ -250,7 +250,9 @@ paths:
         `image_too_large`). If less than 100 MB would remain free after the upload,
         nothing is stored (507). While the photo folder is unavailable, for example
         because the storage is not mounted, nothing is stored (503,
-        `storage_unavailable`). An album path longer than
+        `storage_unavailable`); the same holds while the decoder cannot be started
+        (503, `decoder_unavailable`). A file that crashes the decoder is refused as
+        an unsupported format (415). An album path longer than
         255 characters after sanitizing is refused with 400 and the error code
         `invalid_album`, naming the field `album`.
       requestBody:
@@ -387,7 +389,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503":
-          description: The image could not be rendered.
+          description: "The image could not be rendered (`render_failed`), also for a quarantined photo without a rendering attempt."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -737,7 +739,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Unavailable:
-      description: "The frame cannot do this right now, for example because the photo folder is unavailable (`storage_unavailable`)."
+      description: "The frame cannot do this right now, for example because the photo folder is unavailable (`storage_unavailable`) or the decoder cannot be started (`decoder_unavailable`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1179,8 +1181,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, source, path, album, hidden, visible, width, height, takenAt, fileSize, version, crop, presentation, urls,
-         comment, location]
+        [id, source, path, album, hidden, visible, quarantined, width, height, takenAt, fileSize, version, crop, presentation,
+         urls, comment, location]
       properties:
         id: { type: string }
         source:
@@ -1191,6 +1193,12 @@ components:
         album: { type: [string, "null"], description: "Folder path of the photo below the folder of its source, `null` directly in it." }
         hidden: { type: boolean, description: "The photo itself is hidden." }
         visible: { type: boolean, description: "Neither the photo nor its album is hidden, by the album's own setting or by inheritance." }
+        quarantined:
+          type: boolean
+          description: |
+            The decoder crashed while rendering this version of the photo. It is never rendered or shown in the
+            slideshow, and its image URLs answer 503; it keeps its comment, section and visibility. `PATCH` with
+            `quarantined: false` tries it again, and a new version of the file lifts it.
         width: { type: integer, description: "Width after EXIF rotation." }
         height: { type: integer, description: "Height after EXIF rotation." }
         takenAt: { type: string, format: date-time, description: "Capture date from EXIF, falling back to the file date." }
@@ -1253,6 +1261,10 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Crop"
             - type: "null"
+        quarantined:
+          type: boolean
+          enum: [false]
+          description: Only `false`, to try a quarantined photo again; nothing happens for a photo that is not quarantined.
 
     UploadResult:
       type: object
@@ -1296,8 +1308,8 @@ components:
         path: { type: string }
         reason:
           type: string
-          enum: [unsupported, corrupt, too_large]
-          description: "`unsupported`: format cannot be decoded on this device; `corrupt`: file damaged; `too_large`: over 100 megapixels or an aspect ratio over 32:1."
+          enum: [unsupported, corrupt, too_large, crashed]
+          description: "`unsupported`: format cannot be decoded on this device; `corrupt`: file damaged; `too_large`: over 100 megapixels or an aspect ratio over 32:1; `crashed`: the decoder crashed or hung while checking the file, which is not checked again until its size or modification time changes."
         fileSize: { type: integer }
         modifiedAt: { type: string, format: date-time }
 

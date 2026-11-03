@@ -55,6 +55,7 @@ data class PhotoDto(
     val album: String?,
     val hidden: Boolean,
     val visible: Boolean,
+    val quarantined: Boolean,
     val width: Int,
     val height: Int,
     val takenAt: String,
@@ -206,6 +207,7 @@ fun Router.libraryRoutes(
             album = entry.album,
             hidden = entry.hidden,
             visible = lib.isVisible(entry),
+            quarantined = entry.quarantined,
             width = entry.width,
             height = entry.height,
             takenAt = Instant.ofEpochMilli(entry.takenAtMs).toString(),
@@ -387,12 +389,12 @@ fun Router.libraryRoutes(
 private val BATCH_ACTIONS = setOf("hide", "show", "delete")
 
 /**
- * The change of a `PhotoPatch`: `hidden`, `comment` and `crop` are all optional, at least one is given, and `null`
- * removes the comment or the section. Every field is checked before anything changes, so an invalid one rejects the
- * whole patch.
+ * The change of a `PhotoPatch`: `hidden`, `comment`, `crop` and `quarantined` are all optional, at least one is given,
+ * and `null` removes the comment or the section; `quarantined` takes only `false`, to try the photo again. Every field
+ * is checked before anything changes, so an invalid one rejects the whole patch.
  */
 private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
-    if (body.isEmpty()) throw HttpException.badRequest("hidden, comment or crop is required")
+    if (body.isEmpty()) throw HttpException.badRequest("hidden, comment, crop or quarantined is required")
     val errors = LinkedHashMap<String, String>()
     var hidden: Boolean? = null
     var comment: String? = null
@@ -429,6 +431,11 @@ private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
                 crop = cropOf(value, errors)
             }
 
+            "quarantined" -> {
+                val flag = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+                if (flag != false) errors[key] = "Only false, to try the photo again"
+            }
+
             else -> {
                 errors[key] = "Unknown field"
             }
@@ -437,8 +444,10 @@ private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
     if (errors.isNotEmpty()) throw ValidationException(errors)
     val setsComment = Comments.FIELD in body
     val setsCrop = "crop" in body
+    val retries = "quarantined" in body
     return { entry ->
         var next = entry
+        if (retries) next = next.copy(quarantinedVersion = null)
         hidden?.let { next = next.copy(hidden = it) }
         if (setsComment) next = next.copy(comment = comment)
         if (setsCrop) next = next.copy(crop = crop)

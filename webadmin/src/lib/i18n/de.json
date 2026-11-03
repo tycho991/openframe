@@ -114,6 +114,7 @@
   "skipped.unsupported": "nicht unterstützt",
   "skipped.corrupt": "beschädigt",
   "skipped.too_large": "zu groß (mehr als 100 Megapixel oder länger als 32:1)",
+  "skipped.crashed": "hat den Bilddecoder abstürzen lassen; sie wird wieder geprüft, wenn sich die Datei ändert",
   "upload.button": "Hochladen",
   "upload.title": "Fotos hochladen",
   "upload.drop": "Dateien hierher ziehen oder auswählen",

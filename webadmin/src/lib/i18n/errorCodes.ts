@@ -8,6 +8,7 @@ export const skipReasonKeys: Record<SkippedFile["reason"], Key> = {
   unsupported: "skipped.unsupported",
   corrupt: "skipped.corrupt",
   too_large: "skipped.too_large",
+  crashed: "skipped.crashed",
 };
 
 /**
