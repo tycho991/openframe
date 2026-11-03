@@ -102,6 +102,17 @@ internal class RemoteMediaEngine(
         quality: Int,
     ) = call { DecoderProtocol.render(it, source, target, width, height, region, quality) }
 
+    /** Debug builds only: the decoder crashes at its next render (`DEBUG_DECODE_CRASH`). Binds if needed. */
+    fun crashNextRender() {
+        isolation.read {
+            try {
+                DecoderProtocol.crashNextRender(connection().binder)
+            } catch (e: RemoteException) {
+                throw IOException("The decoder could not be called: $e", e)
+            }
+        }
+    }
+
     private fun <T> call(block: (IBinder) -> T): T {
         val first = isolation.read { attempt(block) }
         if (first is Attempt.Done) return first.value

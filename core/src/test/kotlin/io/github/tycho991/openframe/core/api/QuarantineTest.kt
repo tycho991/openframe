@@ -71,7 +71,11 @@ class QuarantineTest {
         val upload = frame.upload(null, "bad.jpg" to Fixtures.file("landscape.jpg").readBytes())
         assertEquals(415, upload.statusCode())
         assertEquals("unsupported_format", errorCode(upload))
-        assertTrue(frame.core.log.recent(1000).any { "bad.jpg" in it.message && "crash" in it.message })
+        assertTrue(
+            frame.core.log
+                .recent(1000)
+                .any { "bad.jpg" in it.message && "crash" in it.message },
+        )
 
         // Replaced by a file of a different size: checked again.
         frame.engine.probeFailure = { null }

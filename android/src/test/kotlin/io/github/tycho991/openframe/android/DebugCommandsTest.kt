@@ -63,6 +63,55 @@ class DebugCommandsTest {
         assertEquals(Context.RECEIVER_EXPORTED, wrapper.flags and Context.RECEIVER_EXPORTED)
     }
 
+    /** crash-resilience, design decision 13: `DEBUG_DECODE_CRASH` is forwarded to the decoder, in debug builds only. */
+    @Test
+    fun `The decoder crash exists only in a debug build, behind the DUMP permission, and reaches the decoder`() {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        debuggable(false)
+        assertTrue(FrameService.registerDebugCommands(app, main) {}.isEmpty())
+        assertTrue(shadowOf(app).registeredReceivers.none { it.intentFilter.hasAction(FrameService.ACTION_DEBUG_DECODE_CRASH) })
+
+        debuggable(true)
+        val forwarded = java.util.concurrent.CountDownLatch(1)
+        assertEquals(2, FrameService.registerDebugCommands(app, main) { forwarded.countDown() }.size)
+        val wrapper = shadowOf(app).registeredReceivers.single { it.intentFilter.hasAction(FrameService.ACTION_DEBUG_DECODE_CRASH) }
+        assertEquals(android.Manifest.permission.DUMP, wrapper.broadcastPermission)
+        wrapper.broadcastReceiver.onReceive(app, Intent(FrameService.ACTION_DEBUG_DECODE_CRASH))
+        assertTrue(forwarded.await(5, java.util.concurrent.TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `Only a debug decoder accepts the crash request`() {
+        val engine = RemoteMediaEngine(OneDecoder(DecoderBinder(NoEngine, debuggable = false)))
+        assertTrue(runCatching { engine.crashNextRender() }.exceptionOrNull() is java.io.IOException)
+        RemoteMediaEngine(OneDecoder(DecoderBinder(NoEngine, debuggable = true))).crashNextRender()
+    }
+
+    private class OneDecoder(
+        val binder: android.os.IBinder,
+    ) : DecoderConnector {
+        override fun connect(timeoutMs: Long) = binder
+
+        override fun disconnect() {}
+
+        override fun kill(pid: Int) {}
+    }
+
+    private object NoEngine : io.github.tycho991.openframe.core.platform.MediaEngine {
+        override fun probe(file: java.io.File) = throw UnsupportedOperationException()
+
+        override fun readMetadata(file: java.io.File) = throw UnsupportedOperationException()
+
+        override fun render(
+            source: java.io.File,
+            target: java.io.File,
+            width: Int,
+            height: Int,
+            region: io.github.tycho991.openframe.core.platform.Region,
+            quality: Int,
+        ) = throw UnsupportedOperationException()
+    }
+
     private companion object {
         const val ACTION = "io.github.tycho991.openframe.TEST_COMMAND"
     }

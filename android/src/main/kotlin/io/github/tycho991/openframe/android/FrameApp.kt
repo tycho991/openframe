@@ -32,6 +32,9 @@ class FrameApp : Application() {
     /** The network; the [FrameService] reports its network callbacks to it. */
     val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
 
+    /** The decoder process, bound by the core's first decoding. */
+    internal val decoder: RemoteMediaEngine by lazy { RemoteMediaEngine(ServiceDecoderConnector(this)) }
+
     private val coreHolder =
         lazy {
             val state = File(filesDir, "state")
@@ -44,7 +47,7 @@ class FrameApp : Application() {
             FrameCore(
                 dirs = dirs,
                 platform = AndroidPlatformInfo(this),
-                engine = RemoteMediaEngine(ServiceDecoderConnector(this)),
+                engine = decoder,
                 assets = ApkAssets(this),
                 notifier = AndroidMediaStoreNotifier(this),
                 logSinks = listOf(LogcatSink),

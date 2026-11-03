@@ -28,6 +28,9 @@ internal object DecoderProtocol {
     const val RENDER = IBinder.FIRST_CALL_TRANSACTION + 2
     const val PID = IBinder.FIRST_CALL_TRANSACTION + 3
 
+    /** Debug builds only (`DEBUG_DECODE_CRASH`): the next render ends the decoder process with a native crash. */
+    const val CRASH_NEXT_RENDER = IBinder.FIRST_CALL_TRANSACTION + 4
+
     private const val OK = 0
     private const val IMAGE_ERROR = 1
     private const val IO_ERROR = 2
@@ -63,6 +66,21 @@ internal object DecoderProtocol {
     }) { }
 
     fun pid(binder: IBinder): Int = call(binder, PID, {}) { readInt() }
+
+    fun crashNextRender(binder: IBinder) = call(binder, CRASH_NEXT_RENDER, {}) { }
+
+    /** The decoder's answer to [CRASH_NEXT_RENDER]: accepted only by a debug build. */
+    fun answerCrashRequest(
+        reply: Parcel,
+        debuggable: Boolean,
+    ) {
+        if (debuggable) {
+            reply.writeInt(OK)
+        } else {
+            reply.writeInt(IO_ERROR)
+            reply.writeString("DEBUG_DECODE_CRASH exists only in debug builds")
+        }
+    }
 
     private inline fun <T> call(
         binder: IBinder,
@@ -182,17 +200,36 @@ internal object DecoderProtocol {
     private fun Parcel.readGps(): GeoPoint? = if (readInt() == 1) GeoPoint(readDouble(), readDouble()) else null
 }
 
-/** The binder of the decoder: [DecoderProtocol.dispatch] with [engine]. Also used in-process by tests. */
+/**
+ * The binder of the decoder: [DecoderProtocol.dispatch] with [engine]. Also used in-process by tests. Only a
+ * [debuggable] build accepts [DecoderProtocol.CRASH_NEXT_RENDER].
+ */
 internal open class DecoderBinder(
     private val engine: MediaEngine,
+    private val debuggable: Boolean = false,
 ) : Binder() {
+    @Volatile private var crashNextRender = false
+
     override fun onTransact(
         code: Int,
         data: Parcel,
         reply: Parcel?,
         flags: Int,
     ): Boolean {
+        if (code == DecoderProtocol.CRASH_NEXT_RENDER && reply != null) {
+            if (debuggable) crashNextRender = true
+            DecoderProtocol.answerCrashRequest(reply, debuggable)
+            return true
+        }
+        if (code == DecoderProtocol.RENDER && crashNextRender) {
+            // A native crash as a broken decoder would cause it, for the device test of the quarantine.
+            Process.sendSignal(Process.myPid(), SIGSEGV)
+        }
         if (reply != null && DecoderProtocol.dispatch(engine, code, data, reply)) return true
         return super.onTransact(code, data, reply, flags)
+    }
+
+    private companion object {
+        const val SIGSEGV = 11
     }
 }
