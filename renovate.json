@@ -7,6 +7,11 @@
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "minimumReleaseAge": "7 days",
+  "description": "One week's updates as two pull requests on Monday morning: what ends up in the APK or the web UI bundle, and the tools. Majors only after approval on the dashboard, security fixes at once.",
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "* 0-5 * * 1"
+  ],
   "gitIgnoredAuthors": [
     "41898282+github-actions[bot]@users.noreply.github.com"
   ],
@@ -30,84 +35,46 @@
       "semanticCommitType": "fix"
     },
     {
-      "matchDepNames": [
-        "node"
-      ],
+      "description": "All minor and patch updates of tools and tests in one pull request",
       "matchUpdateTypes": [
-        "major"
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
       ],
-      "dependencyDashboardApproval": true
+      "groupName": "tools"
     },
     {
-      "description": "Kotlin, serialization and coroutines together, otherwise compiler and libraries do not fit",
+      "description": "What ends up in the APK or the web UI bundle in one fix pull request (after the tools rule, later rules win); Kotlin compiler and libraries, AGP and desugaring stay together. A Gradle plugin matches by its package name <id>:<id>.gradle.plugin, not by its id",
       "matchPackageNames": [
+        "com.squareup.okhttp3:okhttp",
+        "org.nanohttpd:nanohttpd",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json",
+        "com.android.tools:desugar_jdk_libs",
+        "svelte",
         "org.jetbrains.kotlin{/,}**",
-        "org.jetbrains.kotlinx{/,}**"
-      ],
-      "groupName": "Kotlin",
-      "semanticCommitType": "fix"
-    },
-    {
-      "description": "Android Gradle Plugin and desugaring together; majors only after approval. A Gradle plugin matches by its package name <id>:<id>.gradle.plugin, not by its id",
-      "matchPackageNames": [
-        "com.android.tools.build:gradle",
-        "com.android.application:com.android.application.gradle.plugin",
-        "com.android.tools:desugar_jdk_libs"
-      ],
-      "groupName": "Android Gradle Plugin",
-      "semanticCommitType": "fix"
-    },
-    {
-      "matchPackageNames": [
+        "org.jetbrains.kotlinx{/,}**",
         "com.android.tools.build:gradle",
         "com.android.application:com.android.application.gradle.plugin"
-      ],
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "dependencyDashboardApproval": true
-    },
-    {
-      "description": "Web UI tools (lint, format, types, build, tests) bundled, except majors",
-      "matchFileNames": [
-        "webadmin/package.json"
-      ],
-      "matchDepTypes": [
-        "devDependencies"
       ],
       "matchUpdateTypes": [
         "minor",
         "patch"
       ],
-      "groupName": "Web UI tools"
+      "groupName": "app dependencies",
+      "semanticCommitType": "fix"
     },
     {
-      "description": "Svelte is in the web UI bundle: its own fix PR, apart from the Web UI tools (after their rule, later rules win)",
-      "matchPackageNames": [
-        "svelte"
-      ],
-      "groupName": "Svelte"
-    },
-    {
-      "description": "Playwright changes the browsers, own PR",
-      "matchPackageNames": [
-        "@playwright/test"
-      ],
-      "groupName": "Playwright"
-    },
-    {
-      "description": "openapi-typescript and typescript-eslint need TypeScript 5",
-      "matchPackageNames": [
-        "typescript"
-      ],
+      "description": "Every major only after approval on the dependency dashboard: it needs work of its own (Node stays on 24 and TypeScript on 5 for openapi-typescript and typescript-eslint, AGP majors change the build)",
       "matchUpdateTypes": [
         "major"
       ],
       "dependencyDashboardApproval": true
     },
     {
-      "description": "JDK stays on 17 (Gradle toolchain and Android)",
-      "matchPackageNames": [
+      "description": "JDK stays on 17 (Gradle toolchain and Android). mise's java has the package name java-jdk, so it matches by its dep name",
+      "matchDepNames": [
         "java"
       ],
       "matchManagers": [
