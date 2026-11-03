@@ -15,7 +15,7 @@ env:
   LANG: C.UTF-8
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
-  MISE_VERSION: "2026.10.19"
+  MISE_VERSION: "2026.10.21"
   OPENSPEC_TELEMETRY: "0"
   DO_NOT_TRACK: "1"
 

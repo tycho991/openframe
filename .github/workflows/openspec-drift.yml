@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 env:
   # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
-  MISE_VERSION: "2026.10.19"
+  MISE_VERSION: "2026.10.21"
 jobs:
   check:
     runs-on: ubuntu-latest
