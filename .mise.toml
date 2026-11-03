@@ -1,7 +1,7 @@
 [tools]
 java = "temurin-17.0.21+9"
 node = "24.22.1"
-"npm:@fission-ai/openspec" = "1.14.3"
+"npm:@fission-ai/openspec" = "1.15.0"
 
 [env]
 OPENSPEC_TELEMETRY = "0"
