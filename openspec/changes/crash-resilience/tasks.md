@@ -30,7 +30,7 @@
 - [x] 3.4 Android wiring: `FrameApp.onCreate` installs the crash handler, then calls the journal with `boot_id` and `installId`; the crash handler order with the growing display delay from the third early end; `startCore` logs and rethrows; the `ProcessControl` implementation; `DisplayActivity` with the safe-mode screen without `SlideRenderer` and `GpuProbe` and "Start normally" in the device menu; `plannedExit` before starting the device administration screen; the corrected watchdog comment in `FrameService`; strings in `values` and `values-de`. Verify: `SelfHealingAlarmsTest` (Robolectric): the handler schedules the restart even when the core does not exist yet or the log throws; the delay grows from the third early end; `startCore` rethrows a start failure.
 - [x] 3.5 The interface for app-auto-update (design decision 9) is in place and documented in KDoc: `health.state`, `plannedExit(reason, validForMs)`, `cancelPlannedExit()`, `recentEarlyEnds`. Verify: a test records a planned exit, simulates the end and checks that the next start classifies it as `planned`; an expired one counts as `died`.
 - [x] 3.6 Web UI: the safe mode banner from `/state` with "Start normally" calling `POST /safe-mode/exit`, the error codes `safe_mode` and `decoder_unavailable` with their messages; `TestServerMain` control command for safe mode. Verify: vitest for the banner state; e2e: with safe mode set the banner appears, "Start normally" sends the request, and the banner disappears once `/state` reports normal mode.
-- [ ] 3.7 Run all checks and open pull request 3. Verify: as in 1.10.
+- [x] 3.7 Run all checks and open pull request 3. Verify: as in 1.10.
 
 ## 4. Device tests (in ../openframe-private, only with the owner's consent)
 
