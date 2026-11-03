@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SkippedFile } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
+  import { skipReasonKeys } from "../lib/i18n/errorCodes";
 
   let { files }: { files: SkippedFile[] } = $props();
   let open = $state(false);
@@ -18,9 +19,7 @@
       <ul>
         {#each files as file (file.path)}
           <li>
-            <code>{file.path}</code> – {file.reason === "unsupported"
-              ? t("skipped.unsupported")
-              : t("skipped.corrupt")}
+            <code>{file.path}</code> – {t(skipReasonKeys[file.reason] ?? "skipped.corrupt")}
           </li>
         {/each}
       </ul>

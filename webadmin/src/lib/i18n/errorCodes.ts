@@ -1,6 +1,14 @@
+import type { SkippedFile } from "../api/client";
 import type de from "./de.json";
 
 type Key = keyof typeof de;
+
+/** The text of every skip reason; a reason the contract gains without a text fails the type check. */
+export const skipReasonKeys: Record<SkippedFile["reason"], Key> = {
+  unsupported: "skipped.unsupported",
+  corrupt: "skipped.corrupt",
+  too_large: "skipped.too_large",
+};
 
 /**
  * Error codes of the API with a text in the interface language. `invalid_code`, `expired_code` and
@@ -18,6 +26,8 @@ export const errorKeys: Record<string, Key> = {
   bad_request: "error.bad_request",
   validation_failed: "error.validation_failed",
   insufficient_storage: "error.insufficient_storage",
+  image_too_large: "error.image_too_large",
+  storage_unavailable: "error.storage_unavailable",
   delete_failed: "error.delete_failed",
   move_failed: "error.move_failed",
   render_failed: "error.render_failed",
