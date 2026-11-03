@@ -54,9 +54,9 @@ class Health(
         fun normal(): Health = Health(RunJournal(null), HealthState(), { 0L })
 
         /** A run in safe mode with a journal in memory only, for tests and the test server. */
-        fun safe(sinceMs: Long = 0L): Health =
+        fun safe(sinceMs: Long): Health =
             Health(
-                RunJournal(null),
+                RunJournal(null).also { it.forceSafe(sinceMs) },
                 HealthState(HealthMode.SAFE, SafeMode(sinceMs, "test"), RunJournal.EARLY_ENDS_FOR_SAFE_MODE),
                 { 0L },
             )

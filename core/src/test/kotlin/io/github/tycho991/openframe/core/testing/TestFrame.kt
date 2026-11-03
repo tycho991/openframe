@@ -2,12 +2,15 @@ package io.github.tycho991.openframe.core.testing
 
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.health.Health
+import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
+import io.github.tycho991.openframe.core.platform.ProcessControl
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -24,6 +27,9 @@ class TestFrame(
     clock: Clock = Clock.System,
     displayPower: DisplayPower = DisplayPower.None,
     networkLink: NetworkLink = NetworkLink.None,
+    health: Health = Health.normal(),
+    processControl: ProcessControl = ProcessControl.None,
+    stableAfterMs: Long = RunJournal.STABLE_AFTER_MS,
 ) : AutoCloseable {
     val dirs = FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"))
     val notified = CopyOnWriteArrayList<File>()
@@ -44,6 +50,9 @@ class TestFrame(
             displayPower = displayPower,
             networkLink = networkLink,
             bindLoopback = true,
+            health = health,
+            processControl = processControl,
+            stableAfterMs = stableAfterMs,
         ).also {
             runBlocking { it.start() }
         }

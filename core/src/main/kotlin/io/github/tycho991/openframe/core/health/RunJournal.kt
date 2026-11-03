@@ -191,6 +191,13 @@ class RunJournal(
         write()
     }
 
+    /** Safe mode since [sinceMs] without three early ends, for tests and the test server. */
+    @Synchronized
+    internal fun forceSafe(sinceMs: Long) {
+        stored = stored.copy(safeSinceMs = sinceMs, safeReason = "test", inSafeMode = true)
+        write()
+    }
+
     /** When the probe leaves safe mode, measured from when it began: 1 h, then doubling up to 24 h. */
     @Synchronized
     fun probeAtMs(): Long? {
