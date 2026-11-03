@@ -37,4 +37,8 @@
     <string name="confirm_reset_yes">Unpair all</string>
     <string name="cancel">Cancel</string>
     <string name="info_text">openframe %1$s\nDevice: %2$s, Android %3$s\nAddress: %4$s\nFrame ID: %5$s</string>
+    <string name="safe_title">Safe mode</string>
+    <string name="safe_body">openframe stopped showing photos after repeated crashes. Open %1$s in a browser and choose “Start normally”, or press a corner of the screen for three seconds and choose it in the menu.</string>
+    <string name="safe_body_unreachable">openframe stopped showing photos after repeated crashes. Press a corner of the screen for three seconds and choose “Start normally” in the menu.</string>
+    <string name="menu_start_normally">Start normally</string>
 </resources>

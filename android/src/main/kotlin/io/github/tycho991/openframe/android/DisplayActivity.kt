@@ -67,7 +67,11 @@ class DisplayActivity : Activity() {
     private var core: FrameCore? = null
     private var bound = false
 
-    private lateinit var renderer: SlideRenderer
+    /** `null` in safe mode, where nothing is decoded and the display shows a static notice. */
+    private var renderer: SlideRenderer? = null
+
+    /** Safe mode, read once in [onCreate] (spec `kiosk-host`, "Safe mode after repeated crashes"). */
+    private var safeMode = false
     private lateinit var clock: ClockOverlay
     private lateinit var caption: CaptionOverlay
     private lateinit var loading: TextView
@@ -124,13 +128,16 @@ class DisplayActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         setContentView(R.layout.activity_display)
         caption = CaptionOverlay(findViewById(R.id.caption), findViewById(R.id.caption_a), findViewById(R.id.caption_b))
-        renderer =
-            SlideRenderer(
-                findViewById(R.id.photo_a),
-                findViewById(R.id.photo_b),
-                { core?.slideshow?.reportUndecodable(it) },
-                caption::swapStarted,
-            )
+        safeMode = (application as FrameApp).health.safe
+        if (!safeMode) {
+            renderer =
+                SlideRenderer(
+                    findViewById(R.id.photo_a),
+                    findViewById(R.id.photo_b),
+                    { core?.slideshow?.reportUndecodable(it) },
+                    caption::swapStarted,
+                )
+        }
         clock = ClockOverlay(this, findViewById(R.id.clock), findViewById(R.id.clock_time), findViewById(R.id.clock_date))
         // The caption stands next to the clock in a shared corner, so it moves with every change of the clock's size.
         findViewById<View>(R.id.clock).addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
@@ -203,12 +210,12 @@ class DisplayActivity : Activity() {
         core?.pairing?.setShownOnFrame(false)
         if (bound) unbindService(connection)
         bound = false
-        renderer.clear()
+        renderer?.clear()
         super.onStop()
     }
 
     override fun onDestroy() {
-        renderer.release()
+        renderer?.release()
         main.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -276,11 +283,17 @@ class DisplayActivity : Activity() {
         s.launch {
             // Wait only for the core, not for server or network.
             core.ready.filter { it }.first()
-            launch { core.transitions.judgementDue.collect { if (it) judgeTransitions(core) } }
             launch { core.settings.settings.collect(::applySettings) }
-            launch { core.slideshow.state.collect(::render) }
-            launch { core.caption.collect(caption::update) }
-            launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
+            val renderer = renderer
+            if (renderer == null) {
+                showSafeMode()
+            } else {
+                // GpuProbe and the slideshow only outside safe mode.
+                launch { core.transitions.judgementDue.collect { if (it) judgeTransitions(core) } }
+                launch { core.slideshow.state.collect(::render) }
+                launch { core.caption.collect(caption::update) }
+                launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
+            }
             launch { core.slideshow.paused.collect { updateHint() } }
             launch { followDark(core.display.dark) }
             launch {
@@ -348,7 +361,7 @@ class DisplayActivity : Activity() {
             localized = localizedResources(s.language)
             hintPause.text = text(R.string.hint_pause)
             loading.text = text(R.string.loading)
-            findViewById<TextView>(R.id.empty_title).text = text(R.string.empty_title)
+            findViewById<TextView>(R.id.empty_title).text = text(if (safeMode) R.string.safe_title else R.string.empty_title)
             emptyCodeLabel.text = text(R.string.pairing_code)
             findViewById<TextView>(R.id.hint_code_label).text = text(R.string.pairing_code)
             emptyQr.text = text(R.string.qr_scan)
@@ -376,11 +389,11 @@ class DisplayActivity : Activity() {
             is SlideState.Showing -> {
                 // A display that could not keep up with the transitions gets instant changes, the setting stays as it is.
                 val transition = if (core?.transitions?.cut?.value == true) Transition.NONE else s.transition
-                renderer.show(state.photo, state.file, state.step, state.seq, transition, s.transitionDurationMs.toLong())
+                renderer?.show(state.photo, state.file, state.step, state.seq, transition, s.transitionDurationMs.toLong())
             }
 
             SlideState.Empty -> {
-                renderer.clear()
+                renderer?.clear()
                 caption.clear()
             }
 
@@ -457,11 +470,25 @@ class DisplayActivity : Activity() {
     private fun unreachable(c: FrameCore) =
         if (c.server.state.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
 
+    /** Safe mode: the empty state as a static notice with the address, the pairing code while nobody is paired. */
+    private fun showSafeMode() {
+        showingEmpty = true
+        loading.visibility = View.GONE
+        emptyState.visibility = View.VISIBLE
+        findViewById<TextView>(R.id.empty_title).text = text(R.string.safe_title)
+        updateEmpty()
+    }
+
     private fun updateEmpty() {
         val c = core ?: return
         val address = c.adminUrl()
         val reachable = address != null && !c.settings.localOnly.value
         val portTaken = c.server.state.value is ServerState.Failed
+        if (safeMode) {
+            emptyBody.text = if (reachable) text(R.string.safe_body, address!!) else text(R.string.safe_body_unreachable)
+            updateEmptyPairing(c)
+            return
+        }
         // The real folder: on shared storage as USB shows it; the internal one is not reachable over USB at all.
         val root = c.localSource.root
         val shared = Environment.getExternalStorageDirectory()
@@ -480,6 +507,10 @@ class DisplayActivity : Activity() {
                     else -> text(R.string.empty_no_network, folder)
                 }
             }
+        updateEmptyPairing(c)
+    }
+
+    private fun updateEmptyPairing(c: FrameCore) {
         val shown = c.pairing.display.value
         // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:
         // the hint shows the same code and QR code, and the two would be drawn on top of each other.
@@ -578,25 +609,31 @@ class DisplayActivity : Activity() {
         val localOnly = c.settings.localOnly.value
         val power = (application as FrameApp).displayPower
         val admin = power.available
-        val items =
-            arrayOf(
-                text(if (localOnly) R.string.menu_local_only_on else R.string.menu_local_only_off),
-                text(if (admin) R.string.menu_admin_on else R.string.menu_admin_off),
-                text(R.string.menu_reset),
-                text(R.string.menu_info),
+        // A list of entries: "Start normally" only in safe mode (spec `kiosk-host`, "Leaving safe mode").
+        val entries =
+            listOfNotNull(
+                (text(R.string.menu_start_normally) to { c.leaveSafeMode("menu") }).takeIf { c.health.safe },
+                text(if (localOnly) R.string.menu_local_only_on else R.string.menu_local_only_off) to {
+                    c.setLocalOnly(!localOnly).also { updateHint() }
+                },
+                text(if (admin) R.string.menu_admin_on else R.string.menu_admin_off) to {
+                    if (admin) {
+                        confirmAdminOff(power)
+                    } else {
+                        // The Frameo's firmware may end the app when another activity starts: a planned end, not a crash.
+                        c.health.plannedExit("device administration", ADMIN_SCREEN_VALID_MS)
+                        startActivity(power.activationIntent(text(R.string.admin_explanation)))
+                    }
+                },
+                text(R.string.menu_reset) to { confirmReset(c) },
+                text(R.string.menu_info) to { showInfo(c) },
             )
         showImmersive(
             AlertDialog
                 .Builder(this, R.style.Theme_OpenFrame_Dialog)
                 .setTitle(text(R.string.menu_title))
-                .setItems(items) { _, which ->
-                    when (which) {
-                        0 -> c.setLocalOnly(!localOnly).also { updateHint() }
-                        1 -> if (admin) confirmAdminOff(power) else startActivity(power.activationIntent(text(R.string.admin_explanation)))
-                        2 -> confirmReset(c)
-                        3 -> showInfo(c)
-                    }
-                }.setNegativeButton(text(R.string.menu_close), null)
+                .setItems(entries.map { it.first }.toTypedArray()) { _, which -> entries[which].second() }
+                .setNegativeButton(text(R.string.menu_close), null)
                 .setOnDismissListener {
                     menuOpen = false
                     enterImmersive()
@@ -705,6 +742,8 @@ class DisplayActivity : Activity() {
     }
 
     private companion object {
+        /** How long the device administration screen may be open before its end counts as unexplained. */
+        const val ADMIN_SCREEN_VALID_MS = 10 * 60_000L
         const val OVERLAY_Z = 10f
         const val DARK_Z = 20f
         const val DARK_BRIGHTNESS = 0.01f

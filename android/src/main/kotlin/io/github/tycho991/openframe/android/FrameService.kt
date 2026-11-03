@@ -220,10 +220,12 @@ class FrameService : Service() {
         internal fun watchdogNeeded(sdk: Int) = sdk < 31
 
         /**
-         * Brings the service back after the system killed the app. The Frameo firmware ends the HOME app as soon
-         * as another activity starts ("user request after error") and then treats its process as bad: broadcasts
-         * and background activity starts are refused, but a started service is not. So an alarm starts the service
-         * itself, every [WATCHDOG_MS]. Each start re-arms the next alarm, while the process lives that is cheap.
+         * Brings the service back after the system or the firmware ended the app; the Frameo firmware ends the HOME
+         * app as soon as another activity starts ("user request after error"). An alarm starts the service itself,
+         * every [WATCHDOG_MS]; each start re-arms the next alarm, while the process lives that is cheap. It does not
+         * help once AMS has marked the process as bad after repeated crashes: AOSP refuses to start a bad process from
+         * an alarm, and only a start by the user (the Home button) clears the mark. That is why a planned end is
+         * recorded before another activity starts, and why the safe mode exists.
          * The alarm counts the time since boot: the Frameo starts with its clock in 2021 and corrects it later,
          * and an alarm on the wall clock would then wait until the clock catches up.
          */

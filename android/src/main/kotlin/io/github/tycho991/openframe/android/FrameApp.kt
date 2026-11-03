@@ -12,6 +12,9 @@ import android.os.SystemClock
 import android.util.Log
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.health.Health
+import io.github.tycho991.openframe.core.health.HealthState
+import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.library.PhotoRoot
 import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.log.LogSink
@@ -53,8 +56,20 @@ class FrameApp : Application() {
                 logSinks = listOf(LogcatSink),
                 displayPower = displayPower,
                 networkLink = networkLink,
+                health = health,
+                processControl = AndroidProcessControl(this) { health },
             )
         }
+
+    /** The run journal of the app process (`state/health/runs.json`), started in [onCreate] before the core exists. */
+    internal val journal: RunJournal by lazy { RunJournal(File(filesDir, "state/health/runs.json")) }
+
+    @Volatile private var startState = HealthState()
+
+    private val healthHolder = lazy { Health(journal, startState, SystemClock::elapsedRealtime) }
+
+    /** What the journal decided at the start of this process: normal or safe mode. */
+    val health: Health by healthHolder
 
     /**
      * The stored photo folder, or the external one, which is stored then (spec `photo-library`, "Photo folder kept").
@@ -78,22 +93,15 @@ class FrameApp : Application() {
         return choice.folder
     }
 
-    private val started =
+    private val coreStarted =
         java.util.concurrent.atomic
             .AtomicBoolean(false)
     private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** Starts the core exactly once per process. */
     fun startCore() {
-        if (!started.compareAndSet(false, true)) return
-        appScope.launch {
-            try {
-                core.start()
-            } catch (e: Exception) {
-                core.log.e("app", "Starting the core failed", e)
-                throw e
-            }
-        }
+        if (!coreStarted.compareAndSet(false, true)) return
+        appScope.launch { startLogged({ core.start() }) { e -> core.log.e("app", "Starting the core failed", e) } }
     }
 
     val core: FrameCore by coreHolder
@@ -106,10 +114,43 @@ class FrameApp : Application() {
         start(processName())
     }
 
-    /** What [onCreate] does in the process named [processName]. */
+    /**
+     * What [onCreate] does in the process named [processName]. In the app process the crash handler comes first, then
+     * the journal records the start, so that even a crash right after it counts.
+     */
     internal fun start(processName: String) {
-        if (processName.endsWith(DECODER_PROCESS)) installDecoderCrashHandler() else installCrashHandler()
+        if (processName.endsWith(DECODER_PROCESS)) {
+            installDecoderCrashHandler()
+            return
+        }
+        val earlyEnds = { if (healthHolder.isInitialized()) health.state.value.recentEarlyEnds else startState.recentEarlyEnds }
+        Thread.setDefaultUncaughtExceptionHandler(
+            CrashHandler(this, journal, earlyEnds, log = { thread, error ->
+                if (coreCreated) core.log.e("crash", "Crash in ${thread.name}", error)
+            }),
+        )
+        startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId(), installId())
     }
+
+    /** `null` where the kernel does not let the app read it. */
+    private fun bootId(): String? =
+        try {
+            File("/proc/sys/kernel/random/boot_id").readText().trim().ifEmpty { null }
+        } catch (e: Exception) {
+            null
+        }
+
+    /** Version code and `lastUpdateTime`: a debug build has the version code of the release it was built from. */
+    private fun installId(): String =
+        try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+
+            @Suppress("DEPRECATION")
+            val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+            "$code:${info.lastUpdateTime}"
+        } catch (e: Exception) {
+            ""
+        }
 
     /** From `/proc/self/cmdline`: `Application.getProcessName` exists only from API 28. */
     private fun processName(): String =
@@ -130,31 +171,28 @@ class FrameApp : Application() {
         }
     }
 
-    /**
-     * Self-healing: log the crash and have the display restart in 5 seconds.
-     * The service restarts anyway because of `START_STICKY`.
-     */
-    private fun installCrashHandler() {
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            try {
-                core.log.e("crash", "Crash in ${thread.name}", error)
-                scheduleRestart(this, RESTART_DELAY_MS)
-            } catch (ignored: Throwable) {
-                // Do not risk anything more during a crash.
-            }
-            // Do not hand over to the default handler: it reports the crash to the system, and on
-            // some devices (Frameo) that shows an error dialog that keeps the process alive until
-            // "OK" is tapped. The restart would then never come. So end the process ourselves. What the
-            // default handler would have put into Logcat is written here, the report to the system
-            // (`am_crash`, the drop box) is given up on purpose.
-            Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}\nProcess: $packageName, PID: ${Process.myPid()}", error)
-            Process.killProcess(Process.myPid())
-        }
-    }
-
     companion object {
         const val RESTART_DELAY_MS = 5_000L
         const val DECODER_PROCESS = ":decode"
+
+        /**
+         * Runs [start] and passes on any failure after [log] wrote it, which itself may fail: a swallowed failure would
+         * leave a half-started core that never counts as an early end.
+         */
+        internal suspend fun startLogged(
+            start: suspend () -> Unit,
+            log: (Throwable) -> Unit,
+        ) {
+            try {
+                start()
+            } catch (e: Throwable) {
+                try {
+                    log(e)
+                } catch (ignored: Throwable) {
+                }
+                throw e
+            }
+        }
 
         fun scheduleRestart(
             context: Context,
