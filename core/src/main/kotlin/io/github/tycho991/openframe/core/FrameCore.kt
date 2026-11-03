@@ -324,7 +324,16 @@ class FrameCore(
      * "Revoke all pairings", only through the device menu. The tokens are replaced and written
      * with `fsync`, which must not run on the UI thread, so this runs on the core's scope.
      */
-    fun resetAllPairings(): kotlinx.coroutines.Job = scope.launch { admin.resetAll() }
+    fun resetAllPairings(): kotlinx.coroutines.Job =
+        scope.launch {
+            try {
+                admin.resetAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                log.e(TAG, "Revoking all pairings failed", e)
+            }
+        }
 
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {

@@ -5,9 +5,11 @@ import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -55,14 +57,39 @@ class ClientRegistryPersistenceTest {
         assertEquals("Tablet", registry.rename(client.id, "Tablet")!!.name)
     }
 
+    /** Spec `admin-access`: Manage tokens › Revoke with full storage. */
     @Test
     fun `Revocation holds even if storing fails`() {
         val registry = registry()
         val (token, client) = registry.create("Phone")
+        val (otherToken, other) = registry.create("Laptop")
         breakStorage()
         assertTrue(registry.remove(client.id))
         assertNull(registry.authenticate(token))
+
+        // Written in place: after a restart the revoked token is invalid and the other one valid.
+        val restarted = registry()
+        assertNull(restarted.authenticate(token))
+        assertEquals(other.id, restarted.authenticate(otherToken)?.id)
+
         registry.removeAll()
         assertTrue(registry.clients.value.isEmpty())
+        assertTrue(registry().clients.value.isEmpty())
+    }
+
+    @Test
+    fun `Revocation on a storage that cannot be written at all deletes the list`() {
+        assumeFalse(System.getProperty("user.name") == "root", "root writes a read-only file")
+        val registry = registry()
+        val (token, client) = registry.create("Phone")
+        val (otherToken, _) = registry.create("Laptop")
+        breakStorage()
+        File(dir, "clients.json").setWritable(false)
+        assertTrue(registry.remove(client.id))
+
+        assertFalse(File(dir, "clients.json").exists(), "fail-closed: every device pairs again")
+        val restarted = registry()
+        assertNull(restarted.authenticate(token))
+        assertNull(restarted.authenticate(otherToken))
     }
 }

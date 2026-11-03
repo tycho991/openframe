@@ -13,6 +13,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -195,6 +196,49 @@ class JsonStore<T>(
         writeLock.withLock {
             pending.set(null)
             write(value)
+        }
+    }
+
+    /**
+     * Stores [value] at once, replacing any queued state, with steps that need no extra space: atomically; else in
+     * place if the new content is not longer; else by deleting the file (an unreadable one is kept as a broken copy
+     * instead). Throws [IOException] only if even that fails.
+     *
+     * Writing in place is not atomic, and a missing file loads as `null`: only for files whose unreadable or missing
+     * state is fail-closed, `clients.json` (nobody is paired) and `secret.json` (a new key).
+     */
+    suspend fun saveCritical(value: T) {
+        writeLock.withLock {
+            pending.set(null)
+            val bytes = StoreJson.encodeToString(serializer, value).toByteArray(Charsets.UTF_8)
+            val atomicError =
+                try {
+                    atomic.write(bytes) { if (unreadable) setAside() }
+                    unreadable = false
+                    return
+                } catch (e: IOException) {
+                    e
+                }
+            try {
+                if (!unreadable && file.isFile && bytes.size <= file.length()) {
+                    RandomAccessFile(file, "rw").use { out ->
+                        out.write(bytes)
+                        out.setLength(bytes.size.toLong())
+                        out.fd.sync()
+                    }
+                    log.w(TAG, "${file.name} written in place: ${atomicError.message}")
+                    return
+                }
+            } catch (e: IOException) {
+                log.w(TAG, "${file.name} could not be written in place either: ${e.message}")
+            }
+            if (unreadable) {
+                setAside()
+                unreadable = false
+            } else if (file.exists() && !file.delete()) {
+                throw IOException("${file.name} could not be written, written in place or deleted", atomicError)
+            }
+            log.e(TAG, "${file.name} could not be written and is gone (fail-closed): ${atomicError.message}")
         }
     }
 

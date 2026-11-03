@@ -54,11 +54,18 @@ class ImageSigner(
         }
     }
 
-    /** New key: all signatures issued so far become invalid. */
+    /**
+     * New key: all signatures issued so far become invalid at once. Stored with [JsonStore.saveCritical], so that no
+     * earlier signature is valid after a restart, even on a full disk; if even that fails, the key is queued.
+     */
     @Synchronized
     fun rotate() {
         key = ByteArray(KEY_BYTES).also(random::nextBytes)
-        runBlocking { store.saveNow(stored()) }
+        try {
+            runBlocking { store.saveCritical(stored()) }
+        } catch (e: Exception) {
+            store.save(stored())
+        }
     }
 
     private fun stored() = StoredSecret(Base64.getUrlEncoder().withoutPadding().encodeToString(key))
