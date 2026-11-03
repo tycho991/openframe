@@ -239,8 +239,8 @@ class FrameCoreTest {
             core.setLocalOnly(false)
             repeat(20) { core.onNetworkChanged() }
             holder.close()
-            waitFor { core.server.state.value is ServerState.Running }
-            assertEquals(port, core.server.boundPort)
+            // Requests queued meanwhile may rebind once more; between two binds the port is briefly not held.
+            waitFor { core.server.boundPort == port }
             assertEquals("http://192.168.100.215:$port/", core.adminUrl())
 
             // Many triggers at once end with exactly one bound server on the port.
@@ -249,8 +249,9 @@ class FrameCoreTest {
                 core.setLocalOnly(it % 2 == 0)
             }
             core.setLocalOnly(false)
-            waitFor { core.server.state.value is ServerState.Running }
+            waitFor { core.server.boundPort == port }
             Thread.sleep(300)
+            waitFor { core.server.boundPort == port }
             assertEquals(ServerState.Running(port), core.server.state.value)
             assertThrows(IOException::class.java) { ServerSocket(port, 50, InetAddress.getLoopbackAddress()).close() }
         } finally {
