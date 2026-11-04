@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/tycho991/openframe/compare/v0.2.3...v0.3.0) (2026-11-04)
+
+
+### Features
+
+* decode photos in a separate process and quarantine those that crash it ([#45](https://github.com/tycho991/openframe/issues/45)) ([0c722a3](https://github.com/tycho991/openframe/commit/0c722a3c3c9edf073d71b0da1820a93937891359))
+* harden the log, stores, server port, image limits and photo folder ([#44](https://github.com/tycho991/openframe/issues/44)) ([499e0c6](https://github.com/tycho991/openframe/commit/499e0c66c80f8eee79544058c63cc0d276de9900))
+* run journal and safe mode after repeated crashes ([#46](https://github.com/tycho991/openframe/issues/46)) ([c8fee50](https://github.com/tycho991/openframe/commit/c8fee50d244d3dd18cf07372147957f6ee1ee040))
+
+
+### Bug Fixes
+
+* **android:** bring the display back after an unexplained end ([#48](https://github.com/tycho991/openframe/issues/48)) ([4efa8c3](https://github.com/tycho991/openframe/commit/4efa8c37e5500c35aa8e0bef02bb4022a09670a7))
+* **deps:** update dependency svelte to v5.57.3 ([#27](https://github.com/tycho991/openframe/issues/27)) ([c29bf83](https://github.com/tycho991/openframe/commit/c29bf83eb3dd09ef5e87fca4c72a4e016794b258))
+
 ## [0.2.3](https://github.com/tycho991/openframe/compare/v0.2.2...v0.2.3) (2026-11-02)
 
 
