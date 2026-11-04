@@ -41,4 +41,9 @@
     <string name="safe_body">openframe stopped showing photos after repeated crashes. Open %1$s in a browser and choose “Start normally”, or press a corner of the screen for three seconds and choose it in the menu.</string>
     <string name="safe_body_unreachable">openframe stopped showing photos after repeated crashes. Press a corner of the screen for three seconds and choose “Start normally” in the menu.</string>
     <string name="menu_start_normally">Start normally</string>
+    <string name="hint_update">Update %1$s ready – install it from the frame menu</string>
+    <string name="menu_update">Install update %1$s</string>
+    <string name="update_not_allowed">Android does not allow openframe to install apps. Allow apps from unknown sources in the system settings: up to Android 7 under Security › Unknown sources, which applies to the whole device and can be turned off again after the update; from Android 8 for openframe alone under Apps › Special access › Install unknown apps.</string>
+    <string name="update_not_ready">No update is ready to install.</string>
+    <string name="update_in_progress">The installation dialog is already open.</string>
 </resources>

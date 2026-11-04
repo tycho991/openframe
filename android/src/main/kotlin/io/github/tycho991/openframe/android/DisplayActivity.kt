@@ -41,6 +41,8 @@ import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.settings.Settings
 import io.github.tycho991.openframe.core.settings.Transition
 import io.github.tycho991.openframe.core.slideshow.SlideState
+import io.github.tycho991.openframe.core.update.InstallRequest
+import io.github.tycho991.openframe.core.update.UpdatePhase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,6 +87,7 @@ class DisplayActivity : Activity() {
     private lateinit var hintQr: TextView
     private lateinit var hintName: TextView
     private lateinit var hintAddress: TextView
+    private lateinit var hintUpdate: TextView
     private lateinit var hintCode: TextView
     private lateinit var hintCodeBox: View
     private lateinit var hintPause: Button
@@ -154,6 +157,7 @@ class DisplayActivity : Activity() {
         hintQr = findViewById(R.id.hint_qr)
         hintName = findViewById(R.id.hint_name)
         hintAddress = findViewById(R.id.hint_address)
+        hintUpdate = findViewById(R.id.hint_update)
         hintCode = findViewById(R.id.hint_code)
         hintCodeBox = findViewById(R.id.hint_code_box)
         hintPause = findViewById(R.id.hint_pause)
@@ -298,6 +302,7 @@ class DisplayActivity : Activity() {
                 launch { core.slideshow.nextUp.collect { renderer.preload(it) } }
             }
             launch { core.slideshow.paused.collect { updateHint() } }
+            launch { core.update.state.collect { updateHint() } }
             launch { followDark(core.display.dark) }
             launch {
                 combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
@@ -467,6 +472,12 @@ class DisplayActivity : Activity() {
         showCode(hintCode, shown, HINT_CODE_SP)
         showQr(hintQr, shown.url.takeIf { !localOnly })
         hintPause.text = if (c.slideshow.paused.value) text(R.string.hint_resume) else text(R.string.hint_pause)
+        val ready =
+            c.update.state.value
+                .takeIf { it.phase == UpdatePhase.READY }
+                ?.readyVersion
+        hintUpdate.visibility = if (ready != null) View.VISIBLE else View.GONE
+        ready?.let { hintUpdate.text = text(R.string.hint_update, it) }
     }
 
     /** Why there is no address to show: no network, or the port could not be bound (spec "Server port unavailable"). */
@@ -580,6 +591,7 @@ class DisplayActivity : Activity() {
             FrameType.Weight.REGULAR,
             loading,
             hintAddress,
+            hintUpdate,
             findViewById(R.id.hint_code_label),
             hintQr,
             emptyBody,
@@ -612,7 +624,9 @@ class DisplayActivity : Activity() {
         val localOnly = c.settings.localOnly.value
         val power = (application as FrameApp).displayPower
         val admin = power.available
-        // A list of entries: "Start normally" only in safe mode (spec `kiosk-host`, "Leaving safe mode").
+        val update = c.update.state.value
+        // A list of entries: "Start normally" only in safe mode (spec `kiosk-host`, "Leaving safe mode"), the update
+        // only while one is ready (spec `app-update`, "Ready update on the frame").
         val entries =
             listOfNotNull(
                 (text(R.string.menu_start_normally) to { c.leaveSafeMode("menu") }).takeIf { c.health.safe },
@@ -629,6 +643,8 @@ class DisplayActivity : Activity() {
                     }
                 },
                 text(R.string.menu_reset) to { confirmReset(c) },
+                (text(R.string.menu_update, update.readyVersion.orEmpty()) to { installUpdate(c) })
+                    .takeIf { update.phase == UpdatePhase.READY },
                 text(R.string.menu_info) to { showInfo(c) },
             )
         showImmersive(
@@ -641,6 +657,27 @@ class DisplayActivity : Activity() {
                     menuOpen = false
                     enterImmersive()
                 },
+        )
+    }
+
+    /**
+     * Opens Android's installation dialog for the ready update, or says why not (design decision 9). Never opens the
+     * system settings, which would leave the kiosk; [FrameCore.update] does the file work on its own scope.
+     */
+    private fun installUpdate(c: FrameCore) {
+        val notice =
+            when (c.update.install(null)) {
+                InstallRequest.Accepted -> return
+                InstallRequest.NotAllowed -> R.string.update_not_allowed
+                InstallRequest.InProgress -> R.string.update_in_progress
+                InstallRequest.NotReady, InstallRequest.Cooldown -> R.string.update_not_ready
+            }
+        showImmersive(
+            AlertDialog
+                .Builder(this, R.style.Theme_OpenFrame_Dialog)
+                .setMessage(text(notice))
+                .setPositiveButton(text(R.string.menu_close), null)
+                .setOnDismissListener { enterImmersive() },
         )
     }
 

@@ -22,6 +22,9 @@ class AndroidDisplayPower(
     @Volatile
     private var listener: DisplayPower.Listener? = null
 
+    /** Held during the installation dialog, see [keepOn]. */
+    private var keepLock: PowerManager.WakeLock? = null
+
     val admin = ComponentName(context, DisplayAdminReceiver::class.java)
 
     override val available: Boolean get() = policy.isAdminActive(admin)
@@ -43,6 +46,27 @@ class AndroidDisplayPower(
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
                 "openframe:display-on",
             ).acquire(WAKE_MS)
+    }
+
+    /**
+     * A screen wake lock without `ACQUIRE_CAUSES_WAKEUP` while the installation dialog is open: touches in Android's
+     * installer never reach the display's activity, so a short screen timeout would switch the screen off under it.
+     * [timeoutMs], the dialog's deadline, is a safety net should the release never come.
+     */
+    @Synchronized
+    @Suppress("DEPRECATION")
+    override fun keepOn(
+        on: Boolean,
+        timeoutMs: Long,
+    ) {
+        keepLock?.let { if (it.isHeld) it.release() }
+        keepLock = null
+        if (!on) return
+        keepLock =
+            power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "openframe:installer").apply {
+                setReferenceCounted(false)
+                acquire(timeoutMs)
+            }
     }
 
     override fun setListener(listener: DisplayPower.Listener) {

@@ -40,4 +40,9 @@
     <string name="safe_body">openframe zeigt nach wiederholten Abstürzen keine Fotos mehr. Öffne %1$s im Browser und wähle „Normal starten“, oder drücke drei Sekunden auf eine Ecke des Bildschirms und wähle es im Menü.</string>
     <string name="safe_body_unreachable">openframe zeigt nach wiederholten Abstürzen keine Fotos mehr. Drücke drei Sekunden auf eine Ecke des Bildschirms und wähle „Normal starten“ im Menü.</string>
     <string name="menu_start_normally">Normal starten</string>
+    <string name="hint_update">Update %1$s bereit – im Rahmenmenü installieren</string>
+    <string name="menu_update">Update %1$s installieren</string>
+    <string name="update_not_allowed">Android erlaubt openframe nicht, Apps zu installieren. Erlaube Apps aus unbekannten Quellen in den Systemeinstellungen: bis Android 7 unter Sicherheit › Unbekannte Quellen – das gilt für das ganze Gerät und lässt sich nach dem Update wieder ausschalten; ab Android 8 nur für openframe unter Apps › Spezieller App-Zugriff › Unbekannte Apps installieren.</string>
+    <string name="update_not_ready">Es ist kein Update zum Installieren bereit.</string>
+    <string name="update_in_progress">Der Installationsdialog ist schon geöffnet.</string>
 </resources>

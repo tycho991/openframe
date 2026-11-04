@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Updates through Android's installation dialog; a normal permission that takes effect from API 26. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".android.FrameApp"
@@ -62,8 +64,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- After Android replaced the app with a new version: service and display start again. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Results of the installation sessions of an update; only the system answers through the session's intent. -->
+        <receiver
+            android:name=".android.InstallStatusReceiver"
+            android:exported="false" />
 
         <!-- Device administration, only to switch the display off (policy force-lock). -->
         <receiver
