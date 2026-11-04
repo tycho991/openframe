@@ -29,6 +29,8 @@ keystore.properties
 *.pem
 !core/src/main/resources/trust/*.pem
 !core/src/test/resources/tls/*.pem
+# Recorded public certificate chains of GitHub for the update client's chain test.
+!core/src/test/resources/update/chain-*.pem
 .env*
 CLAUDE.local.md
 
