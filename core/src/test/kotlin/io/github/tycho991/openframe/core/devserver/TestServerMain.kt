@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.devserver
 import fi.iki.elonen.NanoHTTPD
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.nextcloud.FakeClients
 import io.github.tycho991.openframe.core.nextcloud.FakeLoginFlow
@@ -147,7 +148,13 @@ object TestServerMain {
             }
         }
 
-    private fun startCore() {
+    /** Stops the core and starts it again on the same data, in normal or safe mode. */
+    private fun restartCore(health: Health) {
+        runBlocking { core.stop() }
+        startCore(health)
+    }
+
+    private fun startCore(health: Health = Health.normal()) {
         val assets =
             AssetSource { path ->
                 // With the separator, so that a neighbouring folder such as `dist-old` is not inside.
@@ -169,6 +176,9 @@ object TestServerMain {
                 nextcloudClients = nextcloud,
                 displayPower = displayPower,
                 bindLoopback = true,
+                health = health,
+                // "Start normally" as a restart in normal mode; on a thread of its own, the request comes from the core.
+                processControl = { Thread { synchronized(TestServerMain) { restartCore(Health.normal()) } }.start() },
             )
         runBlocking { core.start() }
     }
@@ -260,6 +270,12 @@ object TestServerMain {
                                 }
                             }
                             ok("added $n")
+                        }
+
+                        // Restarts the frame in safe mode (`on=1`) or in normal mode (`on=0`), with its data.
+                        "/safe-mode" -> {
+                            restartCore(if (q["on"] == "1") Health.safe(TestServerClock.millis()) else Health.normal())
+                            ok("restarted")
                         }
 
                         // A local photo as if its rendering had crashed the decoder, e.g. `/quarantine?path=a.jpg`; answers its ID.

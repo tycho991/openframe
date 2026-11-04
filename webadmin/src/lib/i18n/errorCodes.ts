@@ -30,6 +30,8 @@ export const errorKeys: Record<string, Key> = {
   image_too_large: "error.image_too_large",
   storage_unavailable: "error.storage_unavailable",
   decoder_unavailable: "error.decoder_unavailable",
+  safe_mode: "error.safe_mode",
+  not_in_safe_mode: "error.not_in_safe_mode",
   delete_failed: "error.delete_failed",
   move_failed: "error.move_failed",
   render_failed: "error.render_failed",

@@ -137,3 +137,15 @@ fun interface MediaStoreNotifier {
         val None = MediaStoreNotifier { }
     }
 }
+
+/**
+ * Ends the app process and starts it again, for leaving safe mode (design decision 5 of `crash-resilience`). On
+ * Android it records a planned exit, schedules the display and ends the process; a fake in tests.
+ */
+fun interface ProcessControl {
+    fun restart(reason: String)
+
+    companion object {
+        val None = ProcessControl {}
+    }
+}

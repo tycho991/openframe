@@ -36,4 +36,8 @@
     <string name="confirm_reset_yes">Alle aufheben</string>
     <string name="cancel">Abbrechen</string>
     <string name="info_text">openframe %1$s\nGerät: %2$s, Android %3$s\nAdresse: %4$s\nRahmen-ID: %5$s</string>
+    <string name="safe_title">Sicherer Modus</string>
+    <string name="safe_body">openframe zeigt nach wiederholten Abstürzen keine Fotos mehr. Öffne %1$s im Browser und wähle „Normal starten“, oder drücke drei Sekunden auf eine Ecke des Bildschirms und wähle es im Menü.</string>
+    <string name="safe_body_unreachable">openframe zeigt nach wiederholten Abstürzen keine Fotos mehr. Drücke drei Sekunden auf eine Ecke des Bildschirms und wähle „Normal starten“ im Menü.</string>
+    <string name="menu_start_normally">Normal starten</string>
 </resources>

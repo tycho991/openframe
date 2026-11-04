@@ -139,6 +139,7 @@ data class StateDto(
     val libraryVersion: Long,
     val settingsVersion: Long,
     val transitionFallback: Boolean,
+    val safeMode: Boolean,
 )
 
 /** Position in a sorted list: key of the last entry of the previous page. */
@@ -183,8 +184,14 @@ fun Router.libraryRoutes(
     transitions: TransitionGovernor,
     places: PlaceIndex,
     platform: PlatformInfo,
+    /** Safe mode: images and uploads answer 503 `safe_mode`, so that nothing decodes. */
+    safeMode: () -> Boolean = { false },
 ) {
     val index = library.index
+
+    fun refuseInSafeMode() {
+        if (safeMode()) throw safeModeRefusal()
+    }
 
     // The display URL carries the key of the shown window, so it changes with section, fill mode and format.
     fun urls(
@@ -280,6 +287,7 @@ fun Router.libraryRoutes(
     }
 
     post("/api/v1/photos") { req ->
+        refuseInSafeMode()
         val entries = library.upload(req)
         val lib = index.library.value
         HttpResponse.json(UploadResultDto.serializer(), UploadResultDto(entries.map { dto(it, lib) }), 201)
@@ -328,6 +336,7 @@ fun Router.libraryRoutes(
     }
 
     get("/api/v1/photos/{photoId}/image", Access.TOKEN_OR_IMAGE_SIGNATURE) { req ->
+        refuseInSafeMode()
         val entry = entryOrThrow(req.pathParam("photoId"))
         val size =
             RenderSize.entries.firstOrNull { it.apiName == req.queryParam("size") }
@@ -382,7 +391,10 @@ fun Router.libraryRoutes(
     }
 
     get("/api/v1/state") {
-        HttpResponse.json(StateDto.serializer(), StateDto(index.library.value.version, settings.version.value, transitions.cut.value))
+        HttpResponse.json(
+            StateDto.serializer(),
+            StateDto(index.library.value.version, settings.version.value, transitions.cut.value, safeMode()),
+        )
     }
 }
 

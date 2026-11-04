@@ -35,6 +35,8 @@ tags:
     description: Versions for detecting changes.
   - name: diagnostics
     description: Log of the frame.
+  - name: health
+    description: Safe mode after repeated crashes.
   - name: sources
     description: Remote sources of photos (a Nextcloud account or share link), read only.
   - name: display
@@ -251,7 +253,7 @@ paths:
         nothing is stored (507). While the photo folder is unavailable, for example
         because the storage is not mounted, nothing is stored (503,
         `storage_unavailable`); the same holds while the decoder cannot be started
-        (503, `decoder_unavailable`). A file that crashes the decoder is refused as
+        (503, `decoder_unavailable`) and in safe mode (503, `safe_mode`). A file that crashes the decoder is refused as
         an unsupported format (415). An album path longer than
         255 characters after sanitizing is refused with 400 and the error code
         `invalid_album`, naming the field `album`.
@@ -389,7 +391,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503":
-          description: "The image could not be rendered (`render_failed`), also for a quarantined photo without a rendering attempt."
+          description: "The image could not be rendered (`render_failed`), also for a quarantined photo without a rendering attempt, or the frame is in safe mode (`safe_mode`)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -638,7 +640,8 @@ paths:
       summary: Start a sync of one source now.
       description: >-
         Answers at once. If a sync of this source is already running, nothing is started and `started` is false. An
-        account without a folder is refused with `source_no_folder`.
+        account without a folder is refused with `source_no_folder`, and in safe mode the frame answers 503 with
+        `safe_mode`.
       responses:
         "202":
           description: A sync was started or is already running.
@@ -648,6 +651,25 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /safe-mode/exit:
+    post:
+      tags: [health]
+      operationId: exitSafeMode
+      summary: Restart the frame in normal mode.
+      description: >-
+        Answers first and restarts the app about a second later; the next start runs in normal mode, and an early end
+        in that run leads straight back into safe mode. A frame not in safe mode answers 409 with `not_in_safe_mode`.
+      responses:
+        "202":
+          description: The frame restarts in normal mode.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: false }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /logs:
@@ -712,7 +734,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`) or switching the display while openframe is not a device administrator (`display_unavailable`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`), switching the display while openframe is not a device administrator (`display_unavailable`) or leaving safe mode while not in it (`not_in_safe_mode`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -739,7 +761,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Unavailable:
-      description: "The frame cannot do this right now, for example because the photo folder is unavailable (`storage_unavailable`) or the decoder cannot be started (`decoder_unavailable`)."
+      description: "The frame cannot do this right now: the photo folder is unavailable (`storage_unavailable`), the decoder cannot be started (`decoder_unavailable`), or the frame is in safe mode (`safe_mode`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1357,7 +1379,7 @@ components:
     State:
       type: object
       additionalProperties: false
-      required: [libraryVersion, settingsVersion, transitionFallback]
+      required: [libraryVersion, settingsVersion, transitionFallback, safeMode]
       properties:
         libraryVersion: { type: integer }
         settingsVersion: { type: integer }
@@ -1366,6 +1388,11 @@ components:
           description: >-
             The frame changes photos instantly because its display could not keep up with the transition in the
             settings. Changing the transition or its duration tries it again.
+        safeMode:
+          type: boolean
+          description: >-
+            The frame started in safe mode after repeated crashes: photos, sources and image work rest, the rest of
+            the API works. `POST /safe-mode/exit` starts it normally.
 
     LogEntry:
       type: object

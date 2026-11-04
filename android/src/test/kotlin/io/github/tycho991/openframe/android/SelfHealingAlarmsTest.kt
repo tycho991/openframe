@@ -3,6 +3,9 @@ package io.github.tycho991.openframe.android
 import android.app.AlarmManager
 import android.content.Context
 import android.os.SystemClock
+import io.github.tycho991.openframe.core.health.RunEnd
+import io.github.tycho991.openframe.core.health.RunJournal
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -15,6 +18,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowAlarmManager
+import java.io.File
 
 /** Spec `kiosk-host`: Self-healing. The alarms count the time since boot, the watchdog is armed only where it works. */
 @RunWith(RobolectricTestRunner::class)
@@ -53,5 +57,49 @@ class SelfHealingAlarmsTest {
         assertTrue(FrameService.watchdogNeeded(30))
         assertFalse(FrameService.watchdogNeeded(31))
         assertFalse(FrameService.watchdogNeeded(36))
+    }
+
+    private fun journal() = RunJournal(File(context.filesDir, "test-runs.json").apply { delete() })
+
+    private fun assertRestartIn(delayMs: Long) {
+        val alarm = nextAlarm()
+        assertNotNull(alarm)
+        val expected = SystemClock.elapsedRealtime() + delayMs
+        assertTrue("trigger ${alarm!!.triggerAtTime} against $expected", kotlin.math.abs(alarm.triggerAtTime - expected) < 1_000)
+    }
+
+    /** crash-resilience, design decision 5: the order of the crash handler. */
+    @Test
+    fun `The crash handler schedules the restart even without a core or with a log that throws`() {
+        val journal = journal().also { it.onProcessStart(0, 1_000, "boot", "1") }
+        var killed = false
+        val handler =
+            CrashHandler(context, journal, { 0 }, log = { _, _ -> throw IllegalStateException("no core yet") }, kill = { killed = true })
+        handler.uncaughtException(Thread.currentThread(), IllegalArgumentException("boom"))
+        assertRestartIn(FrameApp.RESTART_DELAY_MS)
+        assertTrue(killed)
+        val next = RunJournal(File(context.filesDir, "test-runs.json")).onProcessStart(0, 2_000, "boot", "1")
+        assertEquals(RunEnd.CRASHED, next.previousEnd)
+        assertEquals("java.lang.IllegalArgumentException", next.previousCrash)
+    }
+
+    /** Spec `kiosk-host`: Self-healing › Repeated early ends. */
+    @Test
+    fun `From the third early end in a row the display comes back after a growing delay`() {
+        assertEquals(listOf(5_000L, 5_000L, 30_000L, 120_000L, 600_000L, 600_000L), (0..5).map { CrashHandler.restartDelayMs(it) })
+        CrashHandler(context, journal(), { 2 }, log = { _, _ -> }, kill = {}).uncaughtException(Thread.currentThread(), RuntimeException())
+        assertRestartIn(30_000L)
+    }
+
+    @Test
+    fun `A failing start of the core is logged and passed on`() {
+        val logged = mutableListOf<Throwable>()
+        val failure = IllegalStateException("store")
+        val thrown = runCatching { runBlocking { FrameApp.startLogged({ throw failure }) { logged += it } } }.exceptionOrNull()
+        assertEquals(failure, thrown)
+        assertEquals(listOf<Throwable>(failure), logged)
+        // Also when the log itself fails.
+        val again = runCatching { runBlocking { FrameApp.startLogged({ throw failure }) { throw RuntimeException("log") } } }
+        assertEquals(failure, again.exceptionOrNull())
     }
 }

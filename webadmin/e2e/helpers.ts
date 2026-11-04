@@ -55,6 +55,9 @@ export const usb = (fixture: string, to: string, { scan = true } = {}) =>
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
+/** Restarts the frame in safe mode or in normal mode, with its data and pairings. */
+export const safeMode = (on: boolean) => control(`/safe-mode?on=${on ? 1 : 0}`);
+
 /** A local photo as if its rendering had crashed the decoder; returns its ID. */
 export const quarantine = (path: string) => control(`/quarantine?path=${encodeURIComponent(path)}`);
 

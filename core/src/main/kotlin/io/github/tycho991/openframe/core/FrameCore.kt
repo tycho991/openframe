@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core
 
 import io.github.tycho991.openframe.core.api.diagnosticsRoutes
 import io.github.tycho991.openframe.core.api.displayRoutes
+import io.github.tycho991.openframe.core.api.healthRoutes
 import io.github.tycho991.openframe.core.api.infoRoutes
 import io.github.tycho991.openframe.core.api.libraryRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
@@ -15,6 +16,9 @@ import io.github.tycho991.openframe.core.auth.PairingManager
 import io.github.tycho991.openframe.core.auth.StoredClients
 import io.github.tycho991.openframe.core.auth.StoredSecret
 import io.github.tycho991.openframe.core.display.DisplayController
+import io.github.tycho991.openframe.core.health.Health
+import io.github.tycho991.openframe.core.health.RunEnd
+import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.http.FrameServer
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.Router
@@ -46,6 +50,7 @@ import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
 import io.github.tycho991.openframe.core.platform.PlatformInfo
+import io.github.tycho991.openframe.core.platform.ProcessControl
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
 import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
@@ -122,6 +127,12 @@ class FrameCore(
     private val bindLoopback: Boolean = false,
     /** The first wait before binding the port again after a failure; it doubles up to [SERVER_RETRY_MAX_MS]. */
     private val serverRetryMs: Long = SERVER_RETRY_FIRST_MS,
+    /** What the run journal decided at the start of this process; in safe mode photos, sources and image work rest. */
+    val health: Health = Health.normal(),
+    /** Restarts the app to leave safe mode. */
+    private val processControl: ProcessControl = ProcessControl.None,
+    /** How long a run in normal mode lasts before it counts as stable. */
+    private val stableAfterMs: Long = RunJournal.STABLE_AFTER_MS,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -254,6 +265,7 @@ class FrameCore(
     /** Loads everything, starts the background work and the server. */
     suspend fun start() {
         log.i(TAG, "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion}")
+        logHealth()
         settings.load()
         transitions.load()
         clients.load()
@@ -266,7 +278,10 @@ class FrameCore(
         identity = FrameIdentity.loadOrCreate(identityStore)
         library.removePartialUploads()
         registerRoutes()
-        slideshow.start()
+        val safe = health.safe
+        // Safe mode (spec `kiosk-host`, "Safe mode after repeated crashes"): no slideshow, scan, sync, backfill or
+        // prefetch, so that nothing decodes; server, pairing, settings, display schedule and log run.
+        if (!safe) slideshow.start()
         display.start()
         // It follows the real screen, so the slideshow also rests while the display is off by the power button.
         scope.launch {
@@ -276,11 +291,24 @@ class FrameCore(
                 .collect(slideshow::setResting)
         }
         scope.launch { settings.settings.collect(transitions::onSettings) }
-        sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE)
+        sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE, launch = !safe)
         _ready.value = true
-        backfill.request()
-
-        scope.launch { scanLoop() }
+        if (!safe) {
+            backfill.request()
+            scope.launch { scanLoop() }
+            scope.launch {
+                delay(stableAfterMs)
+                health.markStable()
+            }
+        } else {
+            scope.launch { probeLoop() }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(UPTIME_RECORD_MS)
+                health.recordUptime()
+            }
+        }
         scope.launch {
             while (isActive) {
                 pairing.tick()
@@ -299,6 +327,42 @@ class FrameCore(
         scope.launch { settings.localOnly.drop(1).collect { requestBind() } }
         requestBind()
         firstBind.await()
+    }
+
+    private fun logHealth() {
+        val h = health.state.value
+        val crash = h.previousCrash?.let { " ($it)" } ?: ""
+        val bootId = if (h.bootIdReadable) "boot_id readable" else "boot_id not readable"
+        val line = "Previous run: ${h.previousEnd.description}$crash; early ends in a row: ${h.recentEarlyEnds}; $bootId"
+        if (h.previousEnd == RunEnd.CRASHED || h.previousEnd == RunEnd.DIED) log.w(TAG, line) else log.i(TAG, line)
+        h.safeMode?.let { log.w(TAG, "Safe mode: ${it.reason}; photos, sources and image work rest") }
+        if (h.probation) log.i(TAG, "First run after safe mode: an early end leads straight back into it")
+    }
+
+    /** In safe mode: leaves it by a restart in normal mode 1 h after it began, doubling up to 24 h. */
+    private suspend fun probeLoop() {
+        val at = health.probeAtMs() ?: return
+        delay((at - clock.millis()).coerceIn(0, RunJournal.PROBE_HOURS.last() * RunJournal.HOUR_MS))
+        log.i(TAG, "Safe mode: trying normal mode again")
+        restartNormally("probe")
+    }
+
+    /**
+     * Leaves safe mode: the next start runs in normal mode (spec `kiosk-host`, "Leaving safe mode"). `false` if the
+     * frame is not in safe mode. The restart comes about a second later, so that an API answer gets out first.
+     */
+    fun leaveSafeMode(reason: String): Boolean {
+        if (!health.safe) return false
+        scope.launch {
+            delay(RESTART_DELAY_MS)
+            restartNormally(reason)
+        }
+        return true
+    }
+
+    private fun restartNormally(reason: String) {
+        health.requestNormalStart()
+        processControl.restart(reason)
     }
 
     /** Asks the one rebind path to bind the server anew. Several requests in a row lead to one bind. */
@@ -382,7 +446,7 @@ class FrameCore(
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         lanAddressCache = null
-        sources.networkChanged()
+        if (!health.safe) sources.networkChanged()
         // Bound to loopback, local-only mode does not care about the network, unless it could not bind at all.
         if (!settings.localOnly.value || server.state.value is ServerState.Failed) requestBind()
     }
@@ -416,8 +480,9 @@ class FrameCore(
         router.infoRoutes(identity, settings, platform)
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
-        router.libraryRoutes(library, settings, signer, transitions, places, platform)
-        router.sourcesRoutes(sources, nextcloud)
+        router.libraryRoutes(library, settings, signer, transitions, places, platform, health::safe)
+        router.sourcesRoutes(sources, nextcloud, health::safe)
+        router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
         router.diagnosticsRoutes(log)
     }
@@ -438,6 +503,8 @@ class FrameCore(
     companion object {
         const val DEFAULT_PORT = 8080
         const val SERVER_RETRY_FIRST_MS = 30_000L
+        private const val UPTIME_RECORD_MS = 60_000L
+        private const val RESTART_DELAY_MS = 1_000L
         const val SERVER_RETRY_MAX_MS = 5 * 60_000L
         private const val MAX_RETRY_DOUBLINGS = 10
         private const val HANDLER_THREADS = 8

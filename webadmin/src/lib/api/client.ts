@@ -153,6 +153,7 @@ export function createApi(options: ApiOptions) {
     setAlbumHidden: (name: string, hidden: boolean) =>
       call<S["AlbumList"]>("PATCH", "/albums", { name, hidden }).then((r) => r.albums),
     state: () => call<State>("GET", "/state"),
+    exitSafeMode: () => call<Record<string, never>>("POST", "/safe-mode/exit"),
     sources: () => call<S["SourceList"]>("GET", "/sources").then((r) => r.sources),
     addShare: (share: Omit<ShareRequest, "kind">) =>
       call<Source>("POST", "/sources", { kind: "nextcloud-share", ...share } satisfies ShareRequest),

@@ -53,10 +53,20 @@ class SourceRegistry(
      * [removeOrphans] `false`, for an unreadable `sources.json` (spec `remote-sources`, "Photos kept when the sources
      * cannot be read"): its sources are not lost, only not readable now.
      */
-    fun start(removeOrphans: Boolean = true) {
+    fun start(
+        removeOrphans: Boolean = true,
+        launch: Boolean = true,
+    ) {
         if (removeOrphans) removeOrphans()
-        for (config in configs.sources.value) launch(config)
+        launching = launch
+        if (launch) for (config in configs.sources.value) launch(config)
     }
+
+    /**
+     * `false` in safe mode: sources are stored on add, patch and reconnect, but no scheduler starts and no sync is
+     * requested; they start with the next normal run (spec `kiosk-host`, "Safe mode after repeated crashes").
+     */
+    @Volatile private var launching = true
 
     fun kindOf(source: StoredSource): SourceKind? = kinds[source.kind]
 
@@ -68,7 +78,7 @@ class SourceRegistry(
     /** Stores and starts [source]. One that can sync at once does, so that its first sync shows as running. */
     fun add(source: StoredSource): StoredSource {
         val added = configs.add(source)
-        val started = launch(added)
+        val started = if (launching) launch(added) else null
         if (added.ready) started?.scheduler?.requestSync()
         log.i(TAG, "Source ${added.id} (${added.kind}) on ${SourceConfigStore.hostOf(added.connection.serverUrl)} added")
         return added
