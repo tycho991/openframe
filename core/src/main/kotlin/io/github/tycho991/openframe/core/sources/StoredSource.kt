@@ -115,7 +115,10 @@ class SourceConfigStore(
         /** There is no `sources.json`: a new frame, or one that has only the `nextcloud.json` of 0.1.0. */
         MISSING,
 
-        /** `sources.json` is there but could not be read; the [JsonStore] set it aside. The sources it held are gone. */
+        /**
+         * `sources.json` is there but could not be read. It stays in place until a source is stored, which keeps it as a
+         * broken copy; until then no source syncs and their photos stay.
+         */
         UNREADABLE,
     }
 

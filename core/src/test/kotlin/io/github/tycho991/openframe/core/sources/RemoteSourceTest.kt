@@ -478,4 +478,21 @@ class RemoteSourceTest {
         assertEquals(ScanResult(0, 0, 0, 0), sync())
         assertEquals(emptyList<String>(), remote.downloads)
     }
+
+    /** Spec `photo-library`: Image size limits; design decision 4 of `crash-resilience`. */
+    @Test
+    fun `An engine running out of memory skips the file and the sync succeeds`() {
+        engine.probeFailure = { if (it.name.contains(PhotoEntry.idFor("nextcloud", "b.jpg"))) OutOfMemoryError("test") else null }
+        remote.put("a.jpg", jpg(), "e1")
+        remote.put("b.jpg", jpg(), "e2")
+        val result = sync()
+        assertEquals(1, result.added)
+        assertEquals(1, result.skipped)
+        assertEquals(setOf("a.jpg"), photos().keys)
+        assertEquals(
+            listOf("b.jpg" to SkipReason.CORRUPT),
+            index.library.value.skipped
+                .map { it.path to it.reason },
+        )
+    }
 }

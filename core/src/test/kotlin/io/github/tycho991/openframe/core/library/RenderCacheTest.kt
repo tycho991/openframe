@@ -7,6 +7,7 @@ import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
+import io.github.tycho991.openframe.core.testing.TestFrame
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -253,5 +254,24 @@ class RenderCacheTest {
         val e = entry("b.jpg", "broken.jpg")
         val result = runCatching { runBlocking { cache().get(e, RenderSize.THUMB) } }
         assertTrue(result.isFailure)
+    }
+
+    /** Spec `slideshow-display`: Skip faulty files › Out of memory while rendering. */
+    @Test
+    fun `Out of memory while rendering fails the request with 503 and the worker goes on`() {
+        TestFrame(File(dir, "frame")).use { frame ->
+            Fixtures.copy("landscape.jpg", File(frame.photos, "a.jpg"))
+            Fixtures.copy("landscape.jpg", File(frame.photos, "b.jpg"))
+            frame.scan()
+            frame.engine.renderFailure = { if (it.name == "a.jpg") OutOfMemoryError("test") else null }
+            val a = PhotoEntry.idFor("local", "a.jpg")
+            val b = PhotoEntry.idFor("local", "b.jpg")
+            assertEquals(503, frame.get("/api/v1/photos/$a/image?size=full").statusCode())
+            assertEquals(200, frame.get("/api/v1/photos/$b/image?size=full").statusCode())
+        }
+        val e = entry("c.jpg")
+        engine.renderFailure = { OutOfMemoryError("test") }
+        val result = runCatching { runBlocking { cache().get(e, RenderSize.THUMB) } }
+        assertTrue(result.exceptionOrNull() is RenderFailedException, "${result.exceptionOrNull()}")
     }
 }

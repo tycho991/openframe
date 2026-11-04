@@ -11,6 +11,7 @@ import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -404,5 +405,59 @@ class LocalPhotoSourceTest {
                 .firstOrNull(),
         )
         assertNotEquals(0, index.library.value.version)
+    }
+
+    private var mounted = true
+    private val guarded by lazy { LocalPhotoSource(photos, engine, index, log, mounted = { mounted }) }
+
+    private fun guardedScan() = runBlocking { guarded.scan() }
+
+    /** A photo with comment, section and hidden state, scanned into the index. */
+    private fun keptPhoto(): PhotoEntry {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        guardedScan()
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        index.edit { it.put(it.get(id)!!.copy(comment = "Grandma's garden", crop = Crop(0.5, 0.2, 1.5), hidden = true)) }
+        return index.library.value.photos[id]!!
+    }
+
+    /** Spec `photo-library`: Photo folder kept › Storage mounted late after a restart. */
+    @Test
+    fun `While the storage is not mounted the scan removes and creates nothing`() {
+        val kept = keptPhoto()
+        photos.deleteRecursively()
+        mounted = false
+        assertEquals(ScanResult(0, 0, 0, 0), guardedScan())
+        assertEquals(kept, index.library.value.photos[kept.id], "comment, section and hidden state kept")
+        assertFalse(photos.exists(), "no folder created on the unmounted storage")
+        assertFalse(guarded.available())
+    }
+
+    @Test
+    fun `A photo folder that cannot be listed removes nothing`() {
+        val kept = keptPhoto()
+        photos.deleteRecursively()
+        photos.writeText("a file in the place of the folder")
+        assertEquals(ScanResult(0, 0, 0, 0), guardedScan())
+        assertEquals(kept, index.library.value.photos[kept.id])
+        assertFalse(guarded.available())
+    }
+
+    @Test
+    fun `An empty folder on mounted storage still removes its entries`() {
+        val kept = keptPhoto()
+        File(photos, "a.jpg").delete()
+        assertEquals(1, guardedScan().removed)
+        assertNull(index.library.value.photos[kept.id])
+    }
+
+    /** Spec `photo-library`: Photo folder kept › Folder deleted over USB. */
+    @Test
+    fun `A folder deleted on mounted storage is created again and its entries removed`() {
+        val kept = keptPhoto()
+        photos.deleteRecursively()
+        assertEquals(1, guardedScan().removed)
+        assertTrue(photos.isDirectory)
+        assertNull(index.library.value.photos[kept.id])
     }
 }

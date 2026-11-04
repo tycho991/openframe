@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import de from "./de.json";
 import en from "./en.json";
-import { errorKeys } from "./errorCodes";
+import { ApiError } from "../api/client";
+import { errorKeys, skipReasonKeys } from "./errorCodes";
+import { errorMessage } from "./errors";
+import { i18n } from "./i18n.svelte";
 
 /** Codes the pairing dialog turns into texts of its own. */
 const handledInPairingDialog = ["invalid_code", "expired_code", "locked"];
@@ -39,6 +42,33 @@ describe("Error texts", () => {
 
   it("the keys exist in both catalogs", () => {
     for (const key of Object.values(errorKeys)) {
+      expect(key in en, `en: ${key}`).toBe(true);
+      expect(key in de, `de: ${key}`).toBe(true);
+    }
+  });
+
+  it("an image over the limits and an unavailable photo folder each have their own message", () => {
+    i18n.lang = "en";
+    const tooLarge = errorMessage(new ApiError(415, "image_too_large", "huge.jpg is too large"));
+    const unavailable = errorMessage(
+      new ApiError(503, "storage_unavailable", "The photo folder is not available"),
+    );
+    expect(tooLarge).toBe(en["error.image_too_large"]);
+    expect(unavailable).toBe(en["error.storage_unavailable"]);
+    const others = [
+      en["error.unsupported_format"],
+      en["error.insufficient_storage"],
+      en["error.render_failed"],
+    ];
+    expect(new Set([tooLarge, unavailable, ...others]).size).toBe(5);
+    i18n.lang = "de";
+    expect(errorMessage(new ApiError(415, "image_too_large", ""))).toBe(de["error.image_too_large"]);
+  });
+
+  it("every skip reason has a text of its own in both languages", () => {
+    const keys = Object.values(skipReasonKeys);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of keys) {
       expect(key in en, `en: ${key}`).toBe(true);
       expect(key in de, `de: ${key}`).toBe(true);
     }

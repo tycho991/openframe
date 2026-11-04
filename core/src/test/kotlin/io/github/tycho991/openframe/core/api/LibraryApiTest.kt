@@ -642,6 +642,17 @@ class LibraryApiTest {
         assertEquals(mapOf("damaged.jpg" to "corrupt", "holiday/x.heic" to "unsupported"), items.associate { it.path to it.reason })
     }
 
+    /** Spec `photo-library`: Image size limits › Very long strip. */
+    @Test
+    fun `Very long strip`() {
+        File(frame.photos, "strip.png").writeBytes(Fixtures.pngOfSize(500_000, 127))
+        File(frame.photos, "huge.png").writeBytes(Fixtures.pngOfSize(12_240, 16_320))
+        frame.scan()
+        val items = ApiJson.decodeFromString(SkippedFileListDto.serializer(), frame.get("/api/v1/skipped-files").body()).items
+        assertEquals(mapOf("huge.png" to "too_large", "strip.png" to "too_large"), items.associate { it.path to it.reason })
+        assertEquals(0, frame.engine.decodes.get(), "rejected from the bounds, without decoding")
+    }
+
     @Test
     fun `State tells that the frame changes photos instantly`() {
         fun fallback() =

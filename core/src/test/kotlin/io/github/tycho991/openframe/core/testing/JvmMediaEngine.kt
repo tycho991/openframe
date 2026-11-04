@@ -43,10 +43,17 @@ class JvmMediaEngine(
     /** The region of every render, in order. */
     val regions: MutableList<Region> = Collections.synchronizedList(mutableListOf())
 
+    /** What a probe or a render of a file throws instead of decoding it, for example an [OutOfMemoryError]. */
+    @Volatile var probeFailure: (File) -> Throwable? = { null }
+
+    @Volatile var renderFailure: (File) -> Throwable? = { null }
+
     override fun probe(file: File): ImageInfo {
         probes.incrementAndGet()
+        probeFailure(file)?.let { throw it }
         val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "No known image format")
         if (format == ImageFormat.HEIF && !supportsHeic) throw ImageException(SkipReason.UNSUPPORTED, "HEIC not decodable")
+        bounds(file)?.let { (w, h) -> MediaEngine.checkLimits(w, h) }
         val orientation = orientation(file)
         val image = decode(file)
         val swap = orientation in 5..8
@@ -74,6 +81,7 @@ class JvmMediaEngine(
     ) {
         renders.incrementAndGet()
         regions += region
+        renderFailure(source)?.let { throw it }
         val rotated = rotate(decode(source), orientation(source))
         val x = (region.x * rotated.width).roundToInt().coerceIn(0, rotated.width - 1)
         val y = (region.y * rotated.height).roundToInt().coerceIn(0, rotated.height - 1)
@@ -103,6 +111,20 @@ class JvmMediaEngine(
             writer.dispose()
         }
     }
+
+    /** Width and height from the header, without decoding, as `BitmapFactory` reads the bounds first. */
+    private fun bounds(file: File): Pair<Int, Int>? =
+        runCatching {
+            ImageIO.createImageInputStream(file).use { input ->
+                val reader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: return null
+                try {
+                    reader.input = input
+                    reader.getWidth(0) to reader.getHeight(0)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        }.getOrNull()
 
     private fun decode(file: File): BufferedImage =
         try {

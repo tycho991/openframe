@@ -30,6 +30,7 @@ class SlideshowControllerTest {
     private class FakeImages : DisplayImages {
         val readyIds = mutableSetOf<String>()
         val broken = mutableSetOf<String>()
+        val outOfMemory = mutableSetOf<String>()
         val prefetched = mutableListOf<Pair<String, RenderPriority>>()
         val pending = mutableMapOf<String, CompletableDeferred<File>>()
         val demanded = mutableListOf<String>()
@@ -42,6 +43,7 @@ class SlideshowControllerTest {
         override suspend fun render(entry: PhotoEntry): File {
             demanded += entry.id
             if (entry.id in broken) throw IllegalStateException("broken")
+            if (entry.id in outOfMemory) throw OutOfMemoryError("test")
             return pending.getOrPut(entry.id) { CompletableDeferred() }.await().also { readyIds += entry.id }
         }
 
@@ -235,6 +237,34 @@ class SlideshowControllerTest {
             images.pending.getValue(photos[1].id).complete(File("p02.jpg"))
             runCurrent()
             assertEquals(photos[1], (controller.state.value as SlideState.Showing).photo)
+        }
+
+    /** Spec `slideshow-display`: Skip faulty files › Out of memory while rendering. */
+    @Test
+    fun `Out of memory while rendering skips the photo and the slideshow goes on`() =
+        runTest {
+            val images = FakeImages().apply { outOfMemory += photos[0].id }
+            val s = Setup(this, photos, allReady = false)
+            val controller =
+                SlideshowController(
+                    MutableStateFlow(photos),
+                    { true },
+                    s.settings,
+                    images,
+                    backgroundScope,
+                    AppLog(TestClock()),
+                ).also { it.start() }
+            runCurrent()
+            assertEquals(listOf(photos[0].id, photos[1].id), images.demanded, "after the error the photo that follows")
+            images.pending.getValue(photos[1].id).complete(File("p02.jpg"))
+            runCurrent()
+            assertEquals(photos[1], (controller.state.value as SlideState.Showing).photo)
+
+            // The command loop still runs: a swipe reaches the next photo.
+            images.readyIds += photos[2].id
+            controller.next()
+            runCurrent()
+            assertEquals(photos[2], (controller.state.value as SlideState.Showing).photo)
         }
 
     @Test

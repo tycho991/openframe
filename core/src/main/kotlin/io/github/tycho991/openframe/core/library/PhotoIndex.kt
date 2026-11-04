@@ -6,7 +6,11 @@ import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import java.security.MessageDigest
 
 /** A photo in the index. Paths are relative to the source's folder, separated by `/`. */
@@ -70,8 +74,12 @@ data class PhotoEntry(
     }
 }
 
-/** A file with an image extension that could not be accepted. */
-@Serializable
+/**
+ * A file with an image extension that could not be accepted. A reason that is not [SkipReason.legacy] is stored as
+ * `CORRUPT` with `detail`, and a reason this build does not know loads as `CORRUPT`, so builds before and after a new
+ * reason read each other's index (design decision 3 of `crash-resilience`).
+ */
+@Serializable(with = SkippedFileSerializer::class)
 data class SkippedFile(
     val source: String,
     val path: String,
@@ -79,6 +87,42 @@ data class SkippedFile(
     val fileSize: Long,
     val modifiedMs: Long,
 )
+
+@Serializable
+private class StoredSkippedFile(
+    val source: String,
+    val path: String,
+    val reason: String,
+    val detail: String? = null,
+    val fileSize: Long,
+    val modifiedMs: Long,
+)
+
+internal object SkippedFileSerializer : KSerializer<SkippedFile> {
+    private val stored = StoredSkippedFile.serializer()
+    override val descriptor: SerialDescriptor = SerialDescriptor("SkippedFile", stored.descriptor)
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SkippedFile,
+    ) {
+        val reason = value.reason
+        val (name, detail) = if (reason.legacy) reason.name to null else SkipReason.CORRUPT.name to reason.apiName
+        encoder.encodeSerializableValue(
+            stored,
+            StoredSkippedFile(value.source, value.path, name, detail, value.fileSize, value.modifiedMs),
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): SkippedFile {
+        val s = decoder.decodeSerializableValue(stored)
+        val reason =
+            s.detail?.let(SkipReason::ofApiName)
+                ?: SkipReason.entries.firstOrNull { it.legacy && it.name == s.reason }
+                ?: SkipReason.CORRUPT
+        return SkippedFile(s.source, s.path, reason, s.fileSize, s.modifiedMs)
+    }
+}
 
 /** Album paths: folder paths below a source's folder, levels separated by `/`. */
 object AlbumPaths {

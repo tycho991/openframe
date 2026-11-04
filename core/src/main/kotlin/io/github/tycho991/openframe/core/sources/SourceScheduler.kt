@@ -146,6 +146,7 @@ class SourceScheduler(
                     } finally {
                         syncLock.unlock()
                     }
+                if (failures > 0) log.recovered(TAG, "Sync of ${source.id} failed", "Sync of ${source.id} works again")
                 failures = 0
                 StoredSyncResult(clock.millis(), true, null, counts.added, counts.updated, counts.removed)
             } catch (e: CancellationException) {
@@ -154,7 +155,8 @@ class SourceScheduler(
                 failures++
                 log.w(TAG, "Sync of ${source.id} failed: ${e.message}")
                 StoredSyncResult(clock.millis(), false, e.message, 0, 0, 0)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // An OutOfMemoryError or anything else a fake or future engine throws must not end the schedule.
                 failures++
                 log.e(TAG, "Sync of ${source.id} failed unexpectedly", e)
                 StoredSyncResult(clock.millis(), false, "The sync failed unexpectedly (${e.javaClass.simpleName})", 0, 0, 0)

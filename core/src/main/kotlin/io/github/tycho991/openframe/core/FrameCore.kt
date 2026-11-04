@@ -18,6 +18,7 @@ import io.github.tycho991.openframe.core.display.DisplayController
 import io.github.tycho991.openframe.core.http.FrameServer
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.http.StaticAssets
 import io.github.tycho991.openframe.core.identity.FrameIdentity
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
@@ -62,10 +63,13 @@ import io.github.tycho991.openframe.core.sources.StoredSyncResults
 import io.github.tycho991.openframe.core.sources.SyncResultStore
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -116,6 +120,8 @@ class FrameCore(
      * test server and tests, so that a test frame is not reachable from the LAN; the frame never sets it.
      */
     private val bindLoopback: Boolean = false,
+    /** The first wait before binding the port again after a failure; it doubles up to [SERVER_RETRY_MAX_MS]. */
+    private val serverRetryMs: Long = SERVER_RETRY_FIRST_MS,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -126,7 +132,7 @@ class FrameCore(
 
     val settings =
         SettingsRepository(
-            JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log),
+            JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log, backupOnLoad = true),
             platform.model,
             log,
         ) { displayPower.available }
@@ -135,16 +141,20 @@ class FrameCore(
     val display = DisplayController(scope, displayPower, settings.settings, clock, log, networkLink)
 
     val transitions =
-        TransitionGovernor(JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log), log)
+        TransitionGovernor(
+            JsonStore(File(dirs.state, "transitions.json"), StoredTransitionGovernor.serializer(), scope, log, backupOnLoad = true),
+            log,
+        )
 
     val clients = ClientRegistry(JsonStore(File(dirs.state, "clients.json"), StoredClients.serializer(), scope, log), clock)
     val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
     val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
-    private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log)
-    private val index = PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log))
-    val localSource = LocalPhotoSource(dirs.photos, engine, index, log)
+    private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
+    private val index =
+        PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true))
+    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
@@ -237,6 +247,8 @@ class FrameCore(
     val server = FrameServer(port, Dispatchers.IO.limitedParallelism(HANDLER_THREADS), log, pipeline::handle)
 
     private val scanSignal = Channel<Unit>(Channel.CONFLATED)
+    private val bindSignal = Channel<Unit>(Channel.CONFLATED)
+    private var bindJob: Job? = null
 
     /** Loads everything, starts the background work and the server. */
     suspend fun start() {
@@ -248,8 +260,10 @@ class FrameCore(
         index.load()
         syncResults.load()
         // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
-        if (sourceConfigs.load() == SourceConfigStore.Loaded.MISSING) migration.migrate()
+        val loadedSources = sourceConfigs.load()
+        if (loadedSources == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
+        library.removePartialUploads()
         registerRoutes()
         slideshow.start()
         display.start()
@@ -261,7 +275,7 @@ class FrameCore(
                 .collect(slideshow::setResting)
         }
         scope.launch { settings.settings.collect(transitions::onSettings) }
-        sources.start()
+        sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE)
         _ready.value = true
         backfill.request()
 
@@ -279,20 +293,46 @@ class FrameCore(
                 .drop(1)
                 .collect { cache.trim() }
         }
-        scope.launch {
-            settings.localOnly.drop(1).collect { server.restart(bindLoopback || it) }
+        val firstBind = CompletableDeferred<Unit>()
+        bindJob = scope.launch { bindLoop(firstBind) }
+        scope.launch { settings.localOnly.drop(1).collect { requestBind() } }
+        requestBind()
+        firstBind.await()
+    }
+
+    /** Asks the one rebind path to bind the server anew. Several requests in a row lead to one bind. */
+    private fun requestBind() {
+        bindSignal.trySend(Unit)
+    }
+
+    /**
+     * The only place that binds the server, one request after the other, so that start, local-only changes, network
+     * changes and retries do not race and nothing binds on the main thread. While binding fails, it tries again after
+     * [serverRetryMs], doubling up to [SERVER_RETRY_MAX_MS] (spec `kiosk-host`, "Server port unavailable").
+     */
+    private suspend fun bindLoop(firstBind: CompletableDeferred<Unit>) {
+        var failures = 0
+        while (true) {
+            if (failures == 0) {
+                bindSignal.receive()
+            } else {
+                val wait = minOf(serverRetryMs shl minOf(failures - 1, MAX_RETRY_DOUBLINGS), SERVER_RETRY_MAX_MS)
+                withTimeoutOrNull(wait) { bindSignal.receive() }
+            }
+            server.start(bindLoopback || settings.localOnly.value)
+            failures = if (server.state.value is ServerState.Failed) failures + 1 else 0
+            firstBind.complete(Unit)
         }
-        server.start(bindLoopback || settings.localOnly.value)
     }
 
     /**
      * Address of the admin interface as the frame shows it, e.g. `http://192.168.100.215:8080/`:
-     * first LAN address and bound port, without port for port 80. `null` without a network address.
+     * first LAN address and bound port, without port for port 80. `null` without a network address and while the
+     * server is not bound; [FrameServer.state] tells the two apart.
      */
     fun adminUrl(): String? {
-        val ip = lanAddress() ?: return null
-        val port = server.boundPort ?: port
-        return if (port == 80) "http://$ip/" else "http://$ip:$port/"
+        val port = (server.state.value as? ServerState.Running)?.port ?: return null
+        return adminUrl(lanAddress() ?: return null, port)
     }
 
     /**
@@ -319,17 +359,28 @@ class FrameCore(
      * "Revoke all pairings", only through the device menu. The tokens are replaced and written
      * with `fsync`, which must not run on the UI thread, so this runs on the core's scope.
      */
-    fun resetAllPairings(): kotlinx.coroutines.Job = scope.launch { admin.resetAll() }
+    fun resetAllPairings(): kotlinx.coroutines.Job =
+        scope.launch {
+            try {
+                admin.resetAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                log.e(TAG, "Revoking all pairings failed", e)
+            }
+        }
 
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         lanAddressCache = null
         sources.networkChanged()
-        if (!settings.localOnly.value) server.restart()
+        // Bound to loopback, local-only mode does not care about the network, unless it could not bind at all.
+        if (!settings.localOnly.value || server.state.value is ServerState.Failed) requestBind()
     }
 
     /** Stops the server, waits for the background work and writes pending changes. */
     suspend fun stop() {
+        bindJob?.cancelAndJoin()
         server.stop()
         // Cancelling alone returns while a scan is still in blocking I/O; it would log into the state folder after
         // stop() returned. The Android app never stops the core, the tests do with every TestFrame.
@@ -377,9 +428,18 @@ class FrameCore(
 
     companion object {
         const val DEFAULT_PORT = 8080
+        const val SERVER_RETRY_FIRST_MS = 30_000L
+        const val SERVER_RETRY_MAX_MS = 5 * 60_000L
+        private const val MAX_RETRY_DOUBLINGS = 10
         private const val HANDLER_THREADS = 8
         private const val LAN_ADDRESS_TTL_MS = 5_000L
         private const val STOP_WAIT_MS = 5_000L
         private const val TAG = "core"
+
+        /** `http://<ip>:<port>/`, without the port for port 80. */
+        fun adminUrl(
+            ip: String,
+            port: Int,
+        ): String = if (port == 80) "http://$ip/" else "http://$ip:$port/"
     }
 }

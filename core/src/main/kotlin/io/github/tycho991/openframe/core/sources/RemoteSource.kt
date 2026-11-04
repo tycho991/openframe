@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.SkipReason
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -131,6 +132,7 @@ class RemoteSource(
                         // A file that vanished after the listing is not a bad file; the next sync sees it gone.
                         if (e is SourceException) return@onFailure
                         val reason = (e as? ImageException)?.reason ?: SkipReason.CORRUPT
+                        if (e !is ImageException) log.w(TAG, "Error reading $path", e)
                         val file = listing.first { it.path == path }
                         edit.skip(SkippedFile(id, path, reason, file.size, file.modifiedMs))
                         skipped++
@@ -217,7 +219,12 @@ class RemoteSource(
             val info =
                 try {
                     engine.probe(part)
-                } catch (e: ImageException) {
+                } catch (e: CancellationException) {
+                    part.delete()
+                    throw e
+                } catch (e: Throwable) {
+                    // Anything a fake or future engine throws, an OutOfMemoryError included, skips the file (corrupt
+                    // unless it says why) instead of ending the sync.
                     part.delete()
                     return Result.failure(e)
                 }

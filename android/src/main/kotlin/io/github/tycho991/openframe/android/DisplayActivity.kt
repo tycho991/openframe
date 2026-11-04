@@ -14,6 +14,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -33,6 +34,7 @@ import android.window.OnBackInvokedDispatcher
 import io.github.tycho991.openframe.R
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.auth.PairingDisplay
+import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.settings.FrameLanguage
 import io.github.tycho991.openframe.core.settings.Orientation
@@ -282,7 +284,7 @@ class DisplayActivity : Activity() {
             launch { core.slideshow.paused.collect { updateHint() } }
             launch { followDark(core.display.dark) }
             launch {
-                core.settings.localOnly.collect {
+                combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
                     updateHint()
                     updateEmpty()
                 }
@@ -441,7 +443,7 @@ class DisplayActivity : Activity() {
         hintAddress.text =
             when {
                 c.settings.localOnly.value -> text(R.string.hint_local_only)
-                else -> c.adminUrl()?.let { "${text(R.string.hint_address)}: $it" } ?: text(R.string.hint_no_network)
+                else -> c.adminUrl()?.let { "${text(R.string.hint_address)}: $it" } ?: unreachable(c)
             }
         val shown = c.pairing.display.value
         val localOnly = c.settings.localOnly.value
@@ -451,15 +453,32 @@ class DisplayActivity : Activity() {
         hintPause.text = if (c.slideshow.paused.value) text(R.string.hint_resume) else text(R.string.hint_pause)
     }
 
+    /** Why there is no address to show: no network, or the port could not be bound (spec "Server port unavailable"). */
+    private fun unreachable(c: FrameCore) =
+        if (c.server.state.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
+
     private fun updateEmpty() {
         val c = core ?: return
-        val folder = "Android/data/$packageName/files/photos"
         val address = c.adminUrl()
+        val reachable = address != null && !c.settings.localOnly.value
+        val portTaken = c.server.state.value is ServerState.Failed
+        // The real folder: on shared storage as USB shows it; the internal one is not reachable over USB at all.
+        val root = c.localSource.root
+        val shared = Environment.getExternalStorageDirectory()
         emptyBody.text =
-            if (address != null && !c.settings.localOnly.value) {
-                text(R.string.empty_body, address, folder)
+            if (root.absolutePath.startsWith(filesDir.absolutePath)) {
+                when {
+                    reachable -> text(R.string.empty_body_internal, address!!)
+                    portTaken -> text(R.string.empty_port_taken_internal)
+                    else -> text(R.string.empty_no_network_internal)
+                }
             } else {
-                text(R.string.empty_no_network, folder)
+                val folder = if (root.absolutePath.startsWith(shared.absolutePath)) root.relativeTo(shared).path else root.path
+                when {
+                    reachable -> text(R.string.empty_body, address!!, folder)
+                    portTaken -> text(R.string.empty_port_taken, folder)
+                    else -> text(R.string.empty_no_network, folder)
+                }
             }
         val shown = c.pairing.display.value
         // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:
@@ -617,7 +636,7 @@ class DisplayActivity : Activity() {
                 c.platform.appVersion,
                 c.platform.model,
                 c.platform.androidVersion,
-                c.adminUrl() ?: text(R.string.hint_no_network),
+                c.adminUrl() ?: unreachable(c),
                 c.identity.id,
             )
         showImmersive(

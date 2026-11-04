@@ -40,7 +40,15 @@ class AndroidMediaEngine(
     /** Off in tests that check the pixels of the fallback: Robolectric's region decoder returns empty bitmaps. */
     private val regionDecoding: Boolean = true,
 ) : MediaEngine {
-    override fun probe(file: File): ImageInfo {
+    override fun probe(file: File): ImageInfo =
+        try {
+            probeWithinLimits(file)
+        } catch (e: OutOfMemoryError) {
+            // A valid photo that is only too big for the heap is not damaged.
+            throw ImageException(SkipReason.TOO_LARGE, "Out of memory while checking")
+        }
+
+    private fun probeWithinLimits(file: File): ImageInfo {
         val format = ImageFormats.detect(file) ?: throw ImageException(SkipReason.CORRUPT, "No known image format")
         // BitmapFactory decodes HEIC only from API 28.
         if (format == ImageFormat.HEIF && sdkInt < HEIF_MIN_SDK) throw ImageException(SkipReason.UNSUPPORTED, "HEIC only from Android 9")
@@ -48,11 +56,12 @@ class AndroidMediaEngine(
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Not decodable")
         }
+        MediaEngine.checkLimits(bounds.outWidth, bounds.outHeight)
         // Probe decode heavily downscaled: detects damaged files and missing decoders without much memory.
         val probe =
             BitmapFactory.decodeFile(
                 file.path,
-                BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, PROBE_EDGE, PROBE_EDGE) },
+                BitmapFactory.Options().apply { inSampleSize = probeSampleSize(bounds.outWidth, bounds.outHeight) },
             ) ?: throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Not decodable")
         probe.recycle()
         val exif = exif(file)
@@ -70,6 +79,22 @@ class AndroidMediaEngine(
     override fun readMetadata(file: File): ImageMetadata = exif(file)?.let { ImageMetadata(gps = gps(it)) } ?: ImageMetadata.NONE
 
     override fun render(
+        source: File,
+        target: File,
+        width: Int,
+        height: Int,
+        region: Region,
+        quality: Int,
+    ) {
+        try {
+            renderDecoded(source, target, width, height, region, quality)
+        } catch (e: OutOfMemoryError) {
+            // Fails this rendering only; the photo stays in the library.
+            throw ImageException(SkipReason.CORRUPT, "Out of memory while rendering")
+        }
+    }
+
+    private fun renderDecoded(
         source: File,
         target: File,
         width: Int,
@@ -184,7 +209,6 @@ class AndroidMediaEngine(
 
     companion object {
         private const val HEIF_MIN_SDK = 28
-        private const val PROBE_EDGE = 64
 
         /**
          * [region] in whole pixels of an image of [width]×[height]: the corner rounded to the nearest pixel and the size
@@ -222,6 +246,20 @@ class AndroidMediaEngine(
 
         /** 32 MB as ARGB_8888, the size of a 4K screen. */
         const val MAX_FALLBACK_PIXELS = 8_000_000L
+
+        /**
+         * Sample size of the probe decode: the smallest power of two that brings [width]×[height] to at most
+         * [MediaEngine.PROBE_PIXELS]. From the area, not the short edge, so a strip of 1,000,000×127 is not decoded
+         * at full width.
+         */
+        fun probeSampleSize(
+            width: Int,
+            height: Int,
+        ): Int {
+            var sample = 1
+            while ((width / sample).toLong() * (height / sample) > MediaEngine.PROBE_PIXELS) sample *= 2
+            return sample
+        }
 
         /** Largest power of two with which the image still stays at least [reqW]×[reqH] in size. */
         fun sampleSize(

@@ -108,7 +108,10 @@ class ClientRegistry(
         /** Written first; takes effect only if that worked, otherwise nothing changes and the error is thrown. */
         BEFORE_PUBLISH,
 
-        /** Takes effect first (a revoked token must not stay valid); a failed write is retried by the store. */
+        /**
+         * Takes effect first (a revoked token must not stay valid) and is stored with [JsonStore.saveCritical], so that
+         * it holds across a restart even on a full disk (spec `admin-access`, "Manage tokens").
+         */
         AFTER_PUBLISH,
     }
 
@@ -137,11 +140,12 @@ class ClientRegistry(
 
             Persist.AFTER_PUBLISH -> {
                 _clients.value = clients
-                store.save(StoredClients(clients))
                 try {
-                    kotlinx.coroutines.runBlocking { store.flush() }
+                    // Shorter content only, so on a full disk it is written in place or the file goes (fail-closed).
+                    kotlinx.coroutines.runBlocking { store.saveCritical(StoredClients(clients)) }
                 } catch (e: Exception) {
-                    // Stays queued and is retried by the store's writer, which logs the failure.
+                    // Queued and retried by the store's writer, which logs the failure.
+                    store.save(StoredClients(clients))
                 }
             }
         }

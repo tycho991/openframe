@@ -8,11 +8,16 @@
     <string name="empty_title">No photos yet</string>
     <string name="empty_body">Open %1$s in a browser to upload photos, or copy them over USB into the folder %2$s.</string>
     <string name="empty_no_network">No network. Copy photos over USB into the folder %1$s.</string>
+    <string name="empty_port_taken">The admin page is not reachable because another app uses its port. Copy photos over USB into the folder %1$s.</string>
+    <string name="empty_body_internal">Open %1$s in a browser to upload photos. This frame has no folder for copying photos over USB.</string>
+    <string name="empty_no_network_internal">No network. Photos come only through the admin page, which needs a network.</string>
+    <string name="empty_port_taken_internal">The admin page is not reachable because another app uses its port. Photos come only through the admin page.</string>
     <string name="qr_scan">Scan with your phone</string>
     <string name="code_locked">Code locked</string>
     <string name="pairing_code">Pairing code</string>
     <string name="hint_address">Admin page</string>
     <string name="hint_no_network">No network</string>
+    <string name="hint_port_taken">Admin page not reachable: port taken</string>
     <string name="hint_pause">Pause</string>
     <string name="hint_resume">Resume</string>
     <string name="hint_local_only">Local only: not reachable from the network</string>

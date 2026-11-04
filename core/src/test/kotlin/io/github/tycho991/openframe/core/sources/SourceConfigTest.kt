@@ -66,6 +66,8 @@ class SourceConfigTest {
         val broken = SourceConfigStore(JsonStore(File(dir, "sources.json"), StoredSources.serializer(), TestScope(), log))
         assertEquals(SourceConfigStore.Loaded.UNREADABLE, broken.load())
         assertEquals(emptyList<StoredSource>(), broken.sources.value)
+        assertEquals("{ broken", File(dir, "sources.json").readText(), "the file stays in place")
+        assertEquals(listOf("sources.json"), dir.list()!!.filter { it.startsWith("sources.json") })
     }
 
     @Test

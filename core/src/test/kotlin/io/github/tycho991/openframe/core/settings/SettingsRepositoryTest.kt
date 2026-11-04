@@ -44,6 +44,55 @@ class SettingsRepositoryTest {
         assertEquals(1000, settings.cacheBudgetMb)
     }
 
+    private fun backedUpRepo(): SettingsRepository =
+        SettingsRepository(JsonStore(file, StoredSettings.serializer(), TestScope(), log, backupOnLoad = true), "PFF_1024", log)
+            .also { it.load() }
+
+    private fun brokenCopies() = dir.list().orEmpty().filter { it.startsWith("settings.json.broken-") }
+
+    /** Spec `admin-access`: Local-only mode › Damaged settings file; `frame-settings`: Durable, atomic storage. */
+    @Test
+    fun `A damaged settings file with a copy of the last start keeps its values with local-only mode on`() {
+        runBlocking {
+            backedUpRepo().apply {
+                patch(json("""{"name":"Hallway","intervalSeconds":60}"""))
+                flush()
+            }
+        }
+        assertEquals(false, backedUpRepo().localOnly.value, "the start writes the copy")
+        assertTrue(File(dir, "settings.json.bak").isFile)
+        file.writeText("{ damaged")
+
+        val repo = backedUpRepo()
+        assertEquals("Hallway", repo.settings.value.name)
+        assertEquals(60, repo.settings.value.intervalSeconds)
+        assertTrue(repo.localOnly.value)
+        runBlocking { repo.flush() }
+        assertEquals("{ damaged", file.readText(), "neither renamed nor rewritten")
+        assertEquals(emptyList<String>(), brokenCopies())
+
+        repo.patch(json("""{"intervalSeconds":90}"""))
+        runBlocking { repo.flush() }
+        assertEquals(1, brokenCopies().size)
+        assertEquals(90, backedUpRepo().settings.value.intervalSeconds)
+    }
+
+    @Test
+    fun `A damaged settings file without a copy gives defaults with local-only mode on`() {
+        file.writeText("""{"values":{"name":"Hallway"},"localOnly":false,"version":3 damaged""")
+        val repo = backedUpRepo()
+        assertEquals(Settings.defaults("PFF_1024"), repo.settings.value)
+        assertTrue(repo.localOnly.value)
+        runBlocking { repo.flush() }
+        assertTrue(file.readText().endsWith("damaged"))
+
+        // Turning it off on the frame writes the file and keeps the damaged one.
+        repo.setLocalOnly(false)
+        runBlocking { repo.flush() }
+        assertEquals(1, brokenCopies().size)
+        assertEquals(false, backedUpRepo().localOnly.value)
+    }
+
     @Test
     fun `Update of a frame in fill`() {
         // Stored by the version before `auto`, which writes every value.

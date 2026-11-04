@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -61,12 +62,118 @@ class JsonStoreTest {
             scope.cancel()
         }
 
+    private fun brokenCopies() =
+        dir
+            .list()
+            .orEmpty()
+            .filter { it.startsWith("doc.json.broken-") }
+            .sorted()
+
     @Test
-    fun `Damaged file is set aside`() {
-        val file = File(dir, "doc.json").apply { writeText("{broken") }
-        assertNull(JsonStore(file, Doc.serializer(), TestScope(), log).load())
-        assertFalse(file.exists())
-        assertEquals("{broken", File(dir, "doc.json.broken").readText())
+    fun `A read error renames nothing, and the next start reads the file`() =
+        runBlocking {
+            assumeFalse(System.getProperty("user.name") == "root", "root reads every file")
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            JsonStore(file, Doc.serializer(), scope, log).saveNow(Doc(5))
+            file.setReadable(false)
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            assertNull(store.load())
+            assertTrue(store.unreadable)
+            file.setReadable(true)
+            assertEquals(listOf("doc.json"), dir.list()!!.toList())
+            assertEquals(Doc(5), JsonStore(file, Doc.serializer(), scope, log).load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `A damaged file stays until the first write keeps it as a broken copy`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json").apply { writeText("{broken") }
+            val store = JsonStore(file, Doc.serializer(), scope, log)
+            assertNull(store.load())
+            assertEquals("{broken", file.readText())
+            assertEquals(emptyList<String>(), brokenCopies())
+
+            store.saveNow(Doc(1))
+            assertFalse(store.unreadable)
+            assertEquals(Doc(1), JsonStore(file, Doc.serializer(), scope, log).load())
+            assertEquals("{broken", File(dir, brokenCopies().single()).readText())
+            store.saveNow(Doc(2))
+            assertEquals(1, brokenCopies().size, "only the first write keeps a copy")
+            scope.cancel()
+        }
+
+    @Test
+    fun `Four incidents leave the three newest broken copies, and an old broken file stays`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            val old = File(dir, "doc.json.broken").apply { writeText("of an earlier build") }
+            for (n in 1..4) {
+                file.writeText("{broken $n")
+                val store = JsonStore(file, Doc.serializer(), scope, log)
+                assertNull(store.load())
+                store.saveNow(Doc(n))
+            }
+            assertEquals(JsonStore.KEPT_BROKEN, brokenCopies().size)
+            assertEquals(setOf("{broken 2", "{broken 3", "{broken 4"), brokenCopies().map { File(dir, it).readText() }.toSet())
+            assertEquals("of an earlier build", old.readText())
+            scope.cancel()
+        }
+
+    @Test
+    fun `A damaged file falls back to the copy of the last start`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            JsonStore(file, Doc.serializer(), scope, log, backupOnLoad = true).saveNow(Doc(3, "kept"))
+            assertEquals(Doc(3, "kept"), JsonStore(file, Doc.serializer(), scope, log, backupOnLoad = true).load())
+            assertTrue(File(dir, "doc.json.bak").isFile)
+
+            file.writeText("{broken")
+            val store = JsonStore(file, Doc.serializer(), scope, log, backupOnLoad = true)
+            assertEquals(Doc(3, "kept"), store.load())
+            assertTrue(store.unreadable)
+            assertEquals("{broken", file.readText())
+            scope.cancel()
+        }
+
+    @Test
+    fun `Without backupOnLoad there is no copy and no fallback`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            JsonStore(file, Doc.serializer(), scope, log).saveNow(Doc(3))
+            assertEquals(Doc(3), JsonStore(file, Doc.serializer(), scope, log).load())
+            assertFalse(File(dir, "doc.json.bak").exists())
+            File(dir, "doc.json.bak").writeText(StoreJson.encodeToString(Doc.serializer(), Doc(9)))
+            file.writeText("{broken")
+            assertNull(JsonStore(file, Doc.serializer(), scope, log).load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `A failing copy does not make load throw`() =
+        runBlocking {
+            val scope = TestScope()
+            val file = File(dir, "doc.json")
+            JsonStore(file, Doc.serializer(), scope, log).saveNow(Doc(4))
+            File(dir, "doc.json.bak.tmp").mkdir()
+            assertEquals(Doc(4), JsonStore(file, Doc.serializer(), scope, log, backupOnLoad = true).load())
+            scope.cancel()
+        }
+
+    @Test
+    fun `A format error is logged with class and offset but quotes nothing of the file`() {
+        val logged = AppLog(TestClock())
+        val file = File(dir, "doc.json").apply { writeText("""{"n":1,"text":"Secret-Pw-42" oops}""") }
+        assertNull(JsonStore(file, Doc.serializer(), TestScope(), logged).load())
+        val entry = logged.recent(10).single { "doc.json" in it.message }
+        assertTrue("offset" in entry.message, entry.message)
+        assertFalse("Secret-Pw-42" in entry.message, entry.message)
+        assertFalse("\tat " in entry.message, "no stack trace")
     }
 
     @Test
@@ -142,5 +249,16 @@ class JsonStoreTest {
         scope.runCurrent()
         assertEquals(Doc(2), store.load())
         scope.cancel()
+    }
+
+    @Test
+    fun `A failed atomic write leaves no temporary file`() {
+        val file = File(dir, "doc.json")
+        // A directory with content in the place of the target: the rename fails after the temporary file is complete.
+        File(file, "inside").apply { parentFile.mkdirs() }.writeText("x")
+        assertThrows(IOException::class.java) { AtomicFile(file).writeText("{}") }
+        assertFalse(File(dir, "doc.json.tmp").exists())
+        assertThrows(IllegalStateException::class.java) { AtomicFile(File(dir, "other.json")).writeText("{}") { error("refused") } }
+        assertFalse(File(dir, "other.json.tmp").exists())
     }
 }

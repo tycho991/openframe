@@ -10,7 +10,10 @@ data class FrameIdentity(
     val id: String,
 ) {
     companion object {
-        /** Loads the ID or, on first start, creates a random one and stores it immediately. */
+        /**
+         * Loads the ID or, on first start, creates a random one and stores it immediately. If that fails, for example
+         * on a full disk, the ID is queued for writing instead, so the start goes on.
+         */
         suspend fun loadOrCreate(
             store: JsonStore<FrameIdentity>,
             random: SecureRandom = SecureRandom(),
@@ -18,7 +21,11 @@ data class FrameIdentity(
             store.load()?.let { return it }
             val bytes = ByteArray(16).also(random::nextBytes)
             val identity = FrameIdentity(bytes.joinToString("") { "%02x".format(it) })
-            store.saveNow(identity)
+            try {
+                store.saveNow(identity)
+            } catch (e: Exception) {
+                store.save(identity)
+            }
             return identity
         }
     }

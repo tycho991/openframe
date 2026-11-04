@@ -55,15 +55,27 @@ data class GeoPoint(
     }
 }
 
-/** Why a file with an image extension cannot be accepted. */
+/**
+ * Why a file with an image extension cannot be accepted. Reasons that are not [legacy] are stored as [CORRUPT] with
+ * a detail, so that an older build still reads the index (see `SkippedFile`).
+ */
 enum class SkipReason(
     val apiName: String,
+    val legacy: Boolean = false,
 ) {
     /** Format cannot be decoded on this device, for example HEIC before API 28. */
-    UNSUPPORTED("unsupported"),
+    UNSUPPORTED("unsupported", legacy = true),
 
     /** File damaged or not an image. */
-    CORRUPT("corrupt"),
+    CORRUPT("corrupt", legacy = true),
+
+    /** Over [MediaEngine.MAX_PIXELS] or with an aspect ratio over [MediaEngine.MAX_ASPECT]:1, or too big for the heap. */
+    TOO_LARGE("too_large"),
+    ;
+
+    companion object {
+        fun ofApiName(name: String): SkipReason? = entries.firstOrNull { it.apiName == name }
+    }
 }
 
 class ImageException(
@@ -73,12 +85,18 @@ class ImageException(
 ) : Exception(message, cause)
 
 /**
- * Image operations of the platform. In :android through `BitmapFactory`, in tests
- * as a JVM fake. All methods block and run on the render worker.
+ * Image operations of the platform. In :android through `BitmapFactory`, in tests as a JVM fake. All methods block,
+ * and they are called from several threads at once: the render worker, scans, syncs, the metadata backfill and
+ * uploads.
+ *
+ * Only [ImageException] and [java.io.IOException] are thrown. An image over [MAX_PIXELS] pixels or with an aspect
+ * ratio over [MAX_ASPECT]:1 is rejected as [SkipReason.TOO_LARGE] after reading its bounds (spec `photo-library`,
+ * "Image size limits"); so is one whose probe runs out of memory, while running out of memory in [render] fails that
+ * rendering as [SkipReason.CORRUPT].
  */
 interface MediaEngine {
     /**
-     * Reads format, dimensions and capture date and checks by a probe decode that
+     * Reads format, dimensions and capture date and checks by a probe decode of at most about [PROBE_PIXELS] that
      * the file is decodable. Throws [ImageException].
      */
     fun probe(file: File): ImageInfo
@@ -104,6 +122,26 @@ interface MediaEngine {
 
     companion object {
         const val JPEG_QUALITY = 85
+
+        /** 100 megapixels: a 48 MP photo passes, a 200 MP one does not. */
+        const val MAX_PIXELS = 100_000_000L
+        const val MAX_ASPECT = 32
+
+        /** About what a probe decodes at most. */
+        const val PROBE_PIXELS = 1_000_000L
+
+        /** Throws [SkipReason.TOO_LARGE] for an image of [width]×[height] over the limits. */
+        fun checkLimits(
+            width: Int,
+            height: Int,
+        ) {
+            val long = maxOf(width, height).toLong()
+            val short = minOf(width, height).toLong()
+            if (width.toLong() * height > MAX_PIXELS) {
+                throw ImageException(SkipReason.TOO_LARGE, "$width×$height is over ${MAX_PIXELS / 1_000_000} megapixels")
+            }
+            if (long > short * MAX_ASPECT) throw ImageException(SkipReason.TOO_LARGE, "$width×$height is over $MAX_ASPECT:1")
+        }
     }
 }
 

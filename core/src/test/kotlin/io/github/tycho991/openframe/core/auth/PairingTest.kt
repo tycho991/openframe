@@ -104,6 +104,28 @@ class PairingTest {
         assertNull(pairing.display.value.code)
     }
 
+    /** Spec `admin-access`: Device names without control characters; `kiosk-host`: Diagnostics. */
+    @Test
+    fun `Name with a carriage return`() {
+        val res = pair(requestCode(), "Tablet\\rX")
+        assertEquals("Tablet X", ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body()).client.name)
+        assertEquals(listOf("Tablet X"), clients.clients.value.map { it.name })
+        assertEquals(listOf("Paired: Tablet X"), log.recent(100).filter { it.message.startsWith("Paired") }.map { it.message })
+    }
+
+    @Test
+    fun `Pairing with only control characters`() {
+        val ua = "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0"
+        val res = pair(requestCode(), "\\r\\n\\u0007", ua)
+        assertEquals(201, res.statusCode())
+        assertEquals(
+            DeviceName.fromUserAgent(ua),
+            clients.clients.value
+                .single()
+                .name,
+        )
+    }
+
     @Test
     fun `Code usable only once`() {
         val code = requestCode()

@@ -245,8 +245,12 @@ paths:
       summary: Upload one or more files, optionally into an album.
       description: |
         Streamed to disk. If the request contains a file without a supported
-        format, nothing is stored (415). If less than 100 MB would remain free
-        after the upload, nothing is stored (507). An album path longer than
+        format, nothing is stored (415, `unsupported_format`); the same holds for an
+        image over 100 megapixels or with an aspect ratio over 32:1 (415,
+        `image_too_large`). If less than 100 MB would remain free after the upload,
+        nothing is stored (507). While the photo folder is unavailable, for example
+        because the storage is not mounted, nothing is stored (503,
+        `storage_unavailable`). An album path longer than
         255 characters after sanitizing is refused with 400 and the error code
         `invalid_album`, naming the field `album`.
       requestBody:
@@ -277,6 +281,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "415": { $ref: "#/components/responses/UnsupportedMedia" }
+        "503": { $ref: "#/components/responses/Unavailable" }
         "507": { $ref: "#/components/responses/InsufficientStorage" }
 
   /photos:batch:
@@ -715,7 +720,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     UnsupportedMedia:
-      description: Unsupported format.
+      description: "Unsupported format (`unsupported_format`) or an image over the size limits (`image_too_large`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -728,6 +733,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     BadGateway:
       description: "The frame could not talk to the server of a source (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: "The frame cannot do this right now, for example because the photo folder is unavailable (`storage_unavailable`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -907,7 +917,10 @@ components:
         deviceName:
           type: string
           maxLength: 64
-          description: If the name is missing, it is derived from the user agent.
+          description: |
+            Control characters become a space, then leading and trailing whitespace is removed and the
+            name is cut to 64 characters. If the name is missing or empty after this, it is derived from
+            the user agent.
 
     PairingResponse:
       type: object
@@ -937,7 +950,7 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-          description: Leading and trailing whitespace is removed.
+          description: Control characters become a space, then leading and trailing whitespace is removed; the length applies after this.
 
     Invite:
       type: object
@@ -1068,7 +1081,11 @@ components:
         [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, caption,
          language, cacheBudgetMb, displaySchedule]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64 }
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Control characters become a space when the name is set, then leading and trailing whitespace is removed; the length applies after this.
         intervalSeconds: { type: integer, minimum: 5, maximum: 86400 }
         order: { $ref: "#/components/schemas/Order" }
         transition: { $ref: "#/components/schemas/Transition" }
@@ -1279,8 +1296,8 @@ components:
         path: { type: string }
         reason:
           type: string
-          enum: [unsupported, corrupt]
-          description: "`unsupported`: format cannot be decoded on this device; `corrupt`: file damaged."
+          enum: [unsupported, corrupt, too_large]
+          description: "`unsupported`: format cannot be decoded on this device; `corrupt`: file damaged; `too_large`: over 100 megapixels or an aspect ratio over 32:1."
         fileSize: { type: integer }
         modifiedAt: { type: string, format: date-time }
 

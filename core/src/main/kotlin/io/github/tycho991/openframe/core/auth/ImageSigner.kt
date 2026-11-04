@@ -35,17 +35,40 @@ class ImageSigner(
     /** One initialized HMAC per thread and key, because a photo list signs a hundred URLs at once. */
     private val macs = ThreadLocal<Pair<ByteArray, Mac>>()
 
+    /**
+     * Loads the key, or creates a new one at the first start or when `secret.json` cannot be read. A new key that
+     * cannot be written at once, for example on a full disk, is queued for writing, so the start goes on.
+     */
+    @Synchronized
     fun load() {
-        val stored = store.load()
-        if (stored == null) rotate() else key = Base64.getUrlDecoder().decode(stored.imageKey)
+        val stored = store.load()?.let { runCatching { Base64.getUrlDecoder().decode(it.imageKey) }.getOrNull() }
+        if (stored != null) {
+            key = stored
+            return
+        }
+        key = ByteArray(KEY_BYTES).also(random::nextBytes)
+        try {
+            runBlocking { store.saveNow(stored()) }
+        } catch (e: Exception) {
+            store.save(stored())
+        }
     }
 
-    /** New key: all signatures issued so far become invalid. */
+    /**
+     * New key: all signatures issued so far become invalid at once. Stored with [JsonStore.saveCritical], so that no
+     * earlier signature is valid after a restart, even on a full disk; if even that fails, the key is queued.
+     */
     @Synchronized
     fun rotate() {
         key = ByteArray(KEY_BYTES).also(random::nextBytes)
-        runBlocking { store.saveNow(StoredSecret(Base64.getUrlEncoder().withoutPadding().encodeToString(key))) }
+        try {
+            runBlocking { store.saveCritical(stored()) }
+        } catch (e: Exception) {
+            store.save(stored())
+        }
     }
+
+    private fun stored() = StoredSecret(Base64.getUrlEncoder().withoutPadding().encodeToString(key))
 
     fun sign(photoId: String): String {
         val nowSeconds = clock.millis() / 1000

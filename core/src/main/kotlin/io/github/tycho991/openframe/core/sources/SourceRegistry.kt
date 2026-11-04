@@ -49,10 +49,12 @@ class SourceRegistry(
 
     /**
      * Starts the schedules of the stored sources. Photos, skipped files and originals of a source that is not stored any
-     * more (its configuration was lost) go first: no source would sync, render or remove them.
+     * more (its configuration was lost) go first: no source would sync, render or remove them. Not with
+     * [removeOrphans] `false`, for an unreadable `sources.json` (spec `remote-sources`, "Photos kept when the sources
+     * cannot be read"): its sources are not lost, only not readable now.
      */
-    fun start() {
-        removeOrphans()
+    fun start(removeOrphans: Boolean = true) {
+        if (removeOrphans) removeOrphans()
         for (config in configs.sources.value) launch(config)
     }
 

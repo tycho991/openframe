@@ -310,7 +310,10 @@ class RenderCache(
                 job.result.complete(target)
             } catch (e: Throwable) {
                 log.w(TAG, "Rendering of ${job.entry.path} failed", e)
-                job.result.completeExceptionally(e)
+                // An Error such as OutOfMemoryError would end whoever awaits the result: the slideshow or a request.
+                job.result.completeExceptionally(
+                    if (e is Exception) e else RenderFailedException("Rendering of ${job.entry.path} failed", e),
+                )
             } finally {
                 synchronized(inFlight) { inFlight.remove(job.key) }
             }
@@ -350,3 +353,9 @@ class RenderCache(
         const val WORKER_STOP_TIMEOUT_MS = 10_000L
     }
 }
+
+/** A rendering that failed with an [Error], for example out of memory, passed on as an ordinary exception. */
+class RenderFailedException(
+    message: String,
+    cause: Throwable,
+) : Exception(message, cause)

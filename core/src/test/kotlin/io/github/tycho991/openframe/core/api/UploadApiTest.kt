@@ -238,4 +238,53 @@ class UploadApiTest {
                 ).statusCode(),
         )
     }
+
+    /** Spec `photo-library`: Image size limits › Upload over the limit. */
+    @Test
+    fun `Upload over the limit`() {
+        val res = frame.upload(null, "a.jpg" to jpeg, "huge.png" to Fixtures.pngOfSize(12_000, 10_000))
+        assertEquals(415, res.statusCode())
+        assertEquals(
+            "image_too_large",
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["code"]!!
+                .jsonPrimitive.content,
+        )
+        assertEquals(emptyList<String>(), files(), "nothing stored")
+        assertEquals(415, frame.upload(null, "strip.png" to Fixtures.pngOfSize(500_000, 127)).statusCode())
+    }
+
+    /** Spec `photo-library`: Photo folder kept › Upload while the storage is unavailable. */
+    @Test
+    fun `Upload while the storage is unavailable`() {
+        TestFrame(File(dir, "unmounted"), platform = FakePlatform(mounted = false)).use { unmounted ->
+            val res = unmounted.upload(null, "a.jpg" to jpeg)
+            assertEquals(503, res.statusCode())
+            assertEquals(
+                "storage_unavailable",
+                Json
+                    .parseToJsonElement(res.body())
+                    .jsonObject["error"]!!
+                    .jsonObject["code"]!!
+                    .jsonPrimitive.content,
+            )
+            assertFalse(File(unmounted.photos, ".upload").exists(), "nothing stored, not even the staging folder")
+        }
+    }
+
+    /** Spec `photo-library`: Partial uploads after a crash. */
+    @Test
+    fun `Partial uploads of an interrupted run are gone after the start`() {
+        val other = File(dir, "crashed")
+        val part =
+            File(other, "photos/.upload/1234.part").apply {
+                parentFile.mkdirs()
+                writeBytes(ByteArray(100))
+            }
+        TestFrame(other).use {
+            assertFalse(part.exists())
+        }
+    }
 }

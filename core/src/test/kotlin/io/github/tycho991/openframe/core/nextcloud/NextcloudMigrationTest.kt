@@ -131,15 +131,15 @@ class NextcloudMigrationTest {
     }
 
     @Test
-    fun `A sources json that cannot be read is not replaced by a second migration`() {
+    fun `A sources json that cannot be read stays in place and is not replaced by a second migration`() {
         oldFrame()
         TestFrame(dir, nextcloudClients = clients).close()
         File(state, "sources.json").writeText("{ not json")
         TestFrame(dir, nextcloudClients = clients).use { frame ->
-            assertEquals(emptyList<Any>(), frame.sources(), "the lost sources are not replaced by the source of 0.1.0")
-            assertTrue(File(state, "sources.json.broken").isFile, "the unreadable file is set aside")
-            assertEquals(emptyList<Any>(), frame.photos(), "photos of sources that are not stored any more go")
-            assertFalse(File(cache, "sources/nextcloud").exists())
+            assertEquals(emptyList<Any>(), frame.sources(), "the unreadable sources are not replaced by the source of 0.1.0")
+            assertEquals("{ not json", File(state, "sources.json").readText(), "the unreadable file stays in place")
+            assertEquals(listOf(photoId to true), frame.photos().map { it.id to it.hidden }, "the photos stay (spec remote-sources)")
+            assertTrue(File(cache, "sources/nextcloud/$photoId.jpg").isFile, "and their originals")
         }
     }
 
