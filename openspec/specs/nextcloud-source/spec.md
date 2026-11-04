@@ -35,6 +35,10 @@ The app password, the password of a share and the token of a share link SHALL be
 - **WHEN** a sync fails because of wrong credentials or a wrong share password
 - **THEN** the error in the status and in the log contains no password, no share token and no authorization header
 
+#### Scenario: Unreadable list of sources
+- **WHEN** the stored list of sources is damaged so that it cannot be read at start
+- **THEN** the log entry names the file and the kind and position of the error, but quotes nothing from the file, so no password and no share token
+
 ### Requirement: Connect with a share link
 The frame SHALL accept the link of a Nextcloud folder share as a source without an account: an `http` or `https` address that ends in `/s/<token>`, also behind `/index.php` or in a sub-path. It SHALL read the share once before storing it. A link that is already a source SHALL be refused with 409 and the code `source_exists`.
 
