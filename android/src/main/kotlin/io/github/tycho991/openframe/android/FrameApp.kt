@@ -14,6 +14,7 @@ import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.health.HealthState
+import io.github.tycho991.openframe.core.health.RunEnd
 import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.library.PhotoRoot
 import io.github.tycho991.openframe.core.log.LogLevel
@@ -116,7 +117,8 @@ class FrameApp : Application() {
 
     /**
      * What [onCreate] does in the process named [processName]. In the app process the crash handler comes first, then
-     * the journal records the start, so that even a crash right after it counts.
+     * the journal records the start, so that even a crash right after it counts. After an unexplained end the display
+     * restart is scheduled here, because no crash handler ran: the system often brings back only the service.
      */
     internal fun start(processName: String) {
         if (processName.endsWith(DECODER_PROCESS)) {
@@ -130,6 +132,13 @@ class FrameApp : Application() {
             }),
         )
         startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId(), installId())
+        restartDelayAfter(startState)?.let { delayMs ->
+            try {
+                scheduleRestart(this, delayMs)
+            } catch (e: Exception) {
+                Log.w("openframe/app", "Scheduling the display after an unexplained end failed", e)
+            }
+        }
     }
 
     /** `null` where the kernel does not let the app read it. */
@@ -194,16 +203,38 @@ class FrameApp : Application() {
             }
         }
 
+        /**
+         * The delay of the display restart at a start after [state]'s previous run, or `null` if none is needed. Only
+         * after an unexplained end: a Java crash scheduled its restart in the [CrashHandler] already, and the other
+         * ends are no failure. The delay grows as after a Java crash, the end is counted in `recentEarlyEnds` already.
+         */
+        internal fun restartDelayAfter(state: HealthState): Long? =
+            if (state.previousEnd == RunEnd.DIED) CrashHandler.restartDelayMs(state.recentEarlyEnds - 1) else null
+
         fun scheduleRestart(
             context: Context,
             delayMs: Long,
         ) {
-            val intent = Intent(context, DisplayActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val flags = PendingIntent.FLAG_CANCEL_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
-            val pending = PendingIntent.getActivity(context, 0, intent, flags)
+            val pending = restartIntent(context, PendingIntent.FLAG_CANCEL_CURRENT)!!
             val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             // Time since boot: the clock of some devices is set only after the start.
             alarms.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + delayMs, pending)
+        }
+
+        /** Withdraws a scheduled display restart: the display is there, and a late one could cover another screen. */
+        fun cancelRestart(context: Context) {
+            val pending = restartIntent(context, PendingIntent.FLAG_NO_CREATE) ?: return
+            (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(pending)
+            pending.cancel()
+        }
+
+        private fun restartIntent(
+            context: Context,
+            flag: Int,
+        ): PendingIntent? {
+            val intent = Intent(context, DisplayActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val flags = flag or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
+            return PendingIntent.getActivity(context, 0, intent, flags)
         }
     }
 }

@@ -3,15 +3,18 @@ package io.github.tycho991.openframe.android
 import android.app.AlarmManager
 import android.content.Context
 import android.os.SystemClock
+import io.github.tycho991.openframe.core.health.HealthState
 import io.github.tycho991.openframe.core.health.RunEnd
 import io.github.tycho991.openframe.core.health.RunJournal
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
@@ -89,6 +92,35 @@ class SelfHealingAlarmsTest {
         assertEquals(listOf(5_000L, 5_000L, 30_000L, 120_000L, 600_000L, 600_000L), (0..5).map { CrashHandler.restartDelayMs(it) })
         CrashHandler(context, journal(), { 2 }, log = { _, _ -> }, kill = {}).uncaughtException(Thread.currentThread(), RuntimeException())
         assertRestartIn(30_000L)
+    }
+
+    /** Spec `kiosk-host`: Self-healing › Display after an unexplained end. */
+    @Test
+    fun `After an unexplained end the start schedules the display, after a growing delay from the third`() {
+        assertEquals(5_000L, FrameApp.restartDelayAfter(HealthState(previousEnd = RunEnd.DIED, recentEarlyEnds = 0)))
+        assertEquals(5_000L, FrameApp.restartDelayAfter(HealthState(previousEnd = RunEnd.DIED, recentEarlyEnds = 2)))
+        assertEquals(30_000L, FrameApp.restartDelayAfter(HealthState(previousEnd = RunEnd.DIED, recentEarlyEnds = 3)))
+        assertEquals(10 * 60_000L, FrameApp.restartDelayAfter(HealthState(previousEnd = RunEnd.DIED, recentEarlyEnds = 7)))
+        for (end in RunEnd.values().filter { it != RunEnd.DIED }) {
+            assertNull("$end", FrameApp.restartDelayAfter(HealthState(previousEnd = end, recentEarlyEnds = 3)))
+        }
+
+        // Robolectric started the app process once; a second start without a recorded end is an unexplained end.
+        val app = RuntimeEnvironment.getApplication() as FrameApp
+        assertNull(nextAlarm())
+        app.start("io.github.tycho991.openframe")
+        assertRestartIn(FrameApp.RESTART_DELAY_MS)
+        FrameApp.cancelRestart(context)
+        assertNull("it was the restart of the display", nextAlarm())
+    }
+
+    @Test
+    fun `The display withdraws a waiting restart when it comes back`() {
+        FrameApp.scheduleRestart(context, 30_000L)
+        assertNotNull(nextAlarm())
+        Robolectric.buildActivity(DisplayActivity::class.java).create()
+        assertNull(nextAlarm())
+        FrameApp.cancelRestart(context)
     }
 
     @Test
