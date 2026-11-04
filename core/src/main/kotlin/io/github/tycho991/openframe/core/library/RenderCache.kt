@@ -77,7 +77,7 @@ class RenderTarget(
     val size: PixelSize,
     val region: Region,
     val name: String,
-    /** [Presentation.key] of a display size, `null` for the uncropped sizes. */
+    /** [RenderCache.displayKey] of a display size, `null` for the uncropped sizes. */
     val key: String? = null,
 )
 
@@ -151,6 +151,10 @@ class RenderCache(
     /**
      * Thumbnail and full size are uncropped and named `id-v{version}-{w}x{h}.jpg`. The display size is the window of
      * [presentation], named `id-v{version}-p{key}.jpg`, so a new section, fill mode or format gives a new file.
+     *
+     * The renderings live in the folder [FOLDER], which carries the format [FORMAT]. Raise [FORMAT] with every change
+     * to `MediaEngine.render`, to the presentation or to the JPEG quality: an update then starts with an empty folder,
+     * and the display key, and with it the image URL that browsers keep for a year, changes as well.
      */
     fun target(
         entry: PhotoEntry,
@@ -176,7 +180,7 @@ class RenderCache(
                     p.output,
                     Region(p.x, p.y, p.width, p.height),
                     "$prefix$DISPLAY_MARK${p.key}.jpg",
-                    p.key,
+                    displayKey(p),
                 )
             }
         }
@@ -356,12 +360,25 @@ class RenderCache(
         }
     }
 
-    private companion object {
-        const val TAG = "render"
+    companion object {
+        /** The format of the renderings; see [target]. */
+        const val FORMAT = "r1"
+
+        /** The folder of the renderings in the cache, `renders-r1`. */
+        const val FOLDER = "renders-$FORMAT"
+
+        /** The key `p` of a display URL: the format and [Presentation.key]. */
+        fun displayKey(presentation: Presentation): String = "$FORMAT-${presentation.key}"
+
+        /** Folders of renderings in another format than [FORMAT], or of the time before it, in [cache]. */
+        fun staleFolders(cache: File): List<File> =
+            cache.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith("renders") && it.name != FOLDER }
+
+        private const val TAG = "render"
 
         /** Starts the key in the name of a display size; thumbnail and full size start with a digit there. */
-        const val DISPLAY_MARK = "p"
-        const val WORKER_STOP_TIMEOUT_MS = 10_000L
+        private const val DISPLAY_MARK = "p"
+        private const val WORKER_STOP_TIMEOUT_MS = 10_000L
     }
 }
 

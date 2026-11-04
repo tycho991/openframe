@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.api
 import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
+import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestFrame
 import io.github.tycho991.openframe.core.testing.waitFor
@@ -352,6 +353,31 @@ class LibraryApiTest {
         assertFalse(old.header("cache-control")!!.contains("immutable"))
     }
 
+    /** Design decision 14 of `app-auto-update`: the render key `p` carries the format, so a new format gives a new URL. */
+    @Test
+    fun `The display URL carries the render format`() {
+        put("a.jpg")
+        frame.scan()
+        val url =
+            page()
+                .items
+                .single()
+                .urls.display
+        val p = url.substringAfter("&p=").substringBefore('&')
+        assertTrue(p.startsWith("${RenderCache.FORMAT}-"), p)
+        assertTrue(
+            frame.http
+                .requestBytes("GET", url)
+                .header("cache-control")!!
+                .contains("immutable"),
+        )
+        // The URL of a frame before this format, with the same window: no longer the current one.
+        val before = url.replace("&p=$p", "&p=${p.removePrefix("${RenderCache.FORMAT}-")}")
+        val old = frame.http.requestBytes("GET", before)
+        assertEquals(200, old.statusCode())
+        assertFalse(old.header("cache-control")!!.contains("immutable"))
+    }
+
     @Test
     fun `Full size is the uncropped photo`() {
         put("a.jpg")
@@ -624,11 +650,11 @@ class LibraryApiTest {
         frame.scan()
         val id = id("holiday/a.jpg")
         frame.get("/api/v1/photos/$id/image?size=thumb")
-        assertTrue(File(frame.dirs.cache, "renders").list()!!.isNotEmpty())
+        assertTrue(File(frame.dirs.cache, RenderCache.FOLDER).list()!!.isNotEmpty())
         assertEquals(204, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
         assertFalse(File(frame.photos, "holiday/a.jpg").exists())
         assertEquals(0, page().total)
-        assertEquals(0, File(frame.dirs.cache, "renders").list()!!.size, "rendered sizes removed")
+        assertEquals(0, File(frame.dirs.cache, RenderCache.FOLDER).list()!!.size, "rendered sizes removed")
         assertTrue(frame.notified.any { it.name == "a.jpg" }, "reported to the MediaStore")
         assertEquals(404, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
     }

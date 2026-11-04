@@ -207,7 +207,7 @@ class FrameCore(
     val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock)
     val cache: RenderCache =
         RenderCache(
-            File(dirs.cache, "renders"),
+            File(dirs.cache, RenderCache.FOLDER),
             engine,
             SourceOriginals(localSource, sources)::fileOf,
             { RenderSizes.screen(platform.screenWidth, platform.screenHeight, settings.settings.value.orientation) },
@@ -310,6 +310,13 @@ class FrameCore(
         if (loadedSources == SourceConfigStore.Loaded.MISSING) migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         library.removePartialUploads()
+        // Renderings of an older format, after an update; on the core's scope, there may be thousands of files.
+        scope.launch {
+            RenderCache.staleFolders(dirs.cache).forEach { stale ->
+                log.i(TAG, "Renderings of an older format deleted (${stale.name})")
+                stale.deleteRecursively()
+            }
+        }
         registerRoutes()
         val safe = health.safe
         // Safe mode (spec `kiosk-host`, "Safe mode after repeated crashes"): no slideshow, scan, sync, backfill or

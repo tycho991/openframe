@@ -14,6 +14,7 @@ import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.Presentation
+import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.PlatformInfo
@@ -201,7 +202,7 @@ fun Router.libraryRoutes(
         presentation: Presentation = library.cache.presentation(entry),
     ): ImageUrlsDto {
         val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id)}"
-        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${presentation.key}", "$base&size=full")
+        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${RenderCache.displayKey(presentation)}", "$base&size=full")
     }
 
     fun dto(

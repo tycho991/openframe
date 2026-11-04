@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core
 
 import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.library.PhotoEntry
+import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.platform.AssetSource
@@ -206,6 +207,35 @@ class FrameCoreTest {
             assertEquals("http://192.168.100.215:$port/", frame.core.adminUrl())
             clock.advance(java.time.Duration.ofSeconds(6))
             assertEquals("http://10.0.0.5:$port/", frame.core.adminUrl())
+        }
+    }
+
+    /** Design decision 14 of `app-auto-update`: renderings of an older format go at the start, not in the constructor. */
+    @Test
+    fun `Renderings of an older format are deleted at the start`() {
+        val old = File(dir, "cache/renders").apply { mkdirs() }
+        File(old, "abc-v1-p1024x600_0_0_10000_10000.jpg").writeText("old")
+        Fixtures.copy("landscape.jpg", File(File(dir, "photos"), "a.jpg"))
+        val core =
+            FrameCore(
+                FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos")),
+                FakePlatform(),
+                JvmMediaEngine(),
+                AssetSource { null },
+                MediaStoreNotifier.None,
+                port = 0,
+                bindLoopback = true,
+            )
+        try {
+            assertTrue(old.isDirectory, "the constructor deletes nothing")
+            runBlocking { core.start() }
+            waitFor(message = "old folder deleted") { !old.exists() }
+            waitFor { core.slideshow.state.value is SlideState.Showing }
+            val folder = File(dir, "cache/${RenderCache.FOLDER}")
+            assertEquals("renders-r1", folder.name)
+            waitFor(message = "rendered into the new folder") { folder.list().orEmpty().any { it.endsWith(".jpg") } }
+        } finally {
+            runBlocking { core.stop() }
         }
     }
 

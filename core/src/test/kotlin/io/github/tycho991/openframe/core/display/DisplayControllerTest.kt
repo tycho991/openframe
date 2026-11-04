@@ -748,4 +748,97 @@ class DisplayControllerTest {
         minutes(1)
         assertFalse(power.screenOn, "tried again at the next evaluation")
     }
+
+    // Display awake during the installation dialog (spec `app-update`, design decision 8 of `app-auto-update`)
+
+    /** Starts at 23:00 with the display off by the schedule, then the update asks for it with a hold of 10 minutes. */
+    private fun dialogAtNight(): Long {
+        clock.instant = Instant.parse("2026-10-21T23:00:00Z")
+        start()
+        minutes(6)
+        assertFalse(power.screenOn)
+        val until = clock.monotonic + Duration.ofMinutes(10).toMillis()
+        controller.wake()
+        controller.hold(until)
+        scope.runCurrent()
+        return until
+    }
+
+    /** Spec `app-update`: Installation on request of a client › Display off at night. */
+    @Test
+    fun `Display off at night, woken and held for the dialog`() {
+        dialogAtNight()
+        assertTrue(power.screenOn)
+        assertEquals(listOf("off", "on"), power.calls)
+        assertTrue(power.keptOn)
+        assertEquals(listOf(Duration.ofMinutes(10).toMillis()), power.keepOnTimeouts)
+        assertEquals(DisplayCause.WAKE, state.cause)
+        // Longer than the 5 minutes after waking.
+        minutes(9)
+        assertTrue(power.screenOn)
+        controller.release()
+        scope.runCurrent()
+        assertFalse(power.keptOn)
+        minutes(4)
+        assertTrue(power.screenOn)
+        advance(Duration.ofSeconds(90))
+        assertFalse(power.screenOn, "off again after the minutes after waking")
+        assertEquals(listOf("off", "on", "off"), power.calls)
+    }
+
+    /** Spec `app-update`: Display awake during the installation dialog: the hold ends by itself at its deadline. */
+    @Test
+    fun `A hold ends at its deadline`() {
+        dialogAtNight()
+        minutes(10)
+        assertFalse(power.keptOn)
+        assertTrue(power.screenOn)
+        minutes(5)
+        assertFalse(power.screenOn)
+    }
+
+    @Test
+    fun `A screen switched off during the hold is no manual off and stays off after the release`() {
+        dialogAtNight()
+        minutes(2)
+        power.powerButton()
+        scope.runCurrent()
+        assertTrue(logged("Display switched off during the installation dialog").isNotEmpty())
+        assertTrue(logged("Display switched off by hand").isEmpty())
+        minutes(2)
+        controller.release()
+        scope.runCurrent()
+        minutes(10)
+        assertFalse(power.screenOn)
+        assertEquals(listOf("off", "on"), power.calls, "nothing switched it on again, nothing had to switch it off")
+    }
+
+    @Test
+    fun `A hold by day keeps the screen awake without switching anything`() {
+        start()
+        controller.wake()
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis())
+        scope.runCurrent()
+        assertTrue(power.keptOn)
+        assertEquals(DisplayCause.SCHEDULE, state.cause)
+        controller.release()
+        scope.runCurrent()
+        assertFalse(power.keptOn)
+        minutes(30)
+        assertTrue(power.screenOn)
+        assertEquals(emptyList<String>(), power.calls.filter { it == "off" })
+    }
+
+    @Test
+    fun `Without device administration the hold still keeps the screen on`() {
+        power.setAvailable(false)
+        start()
+        controller.wake()
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis())
+        scope.runCurrent()
+        assertTrue(power.keptOn)
+        controller.release()
+        scope.runCurrent()
+        assertFalse(power.keptOn)
+    }
 }

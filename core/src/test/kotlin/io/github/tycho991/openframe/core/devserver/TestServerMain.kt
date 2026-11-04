@@ -12,8 +12,10 @@ import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.sources.FakeRemoteFolder
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.testing.FakeAppInstaller
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.FakePlatform
+import io.github.tycho991.openframe.core.testing.FakeReleaseSource
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import kotlinx.coroutines.runBlocking
@@ -46,6 +48,10 @@ object TestServerMain {
 
     /** The display, with device administration active; steered through the control port. */
     private var displayPower = FakeDisplayPower()
+
+    /** GitHub's releases and Android's installer, in memory; steered through the control port. */
+    private val releases = FakeReleaseSource()
+    private val installer = FakeAppInstaller()
     private lateinit var dataDir: File
 
     /** Held as long as the server runs, see [main]. */
@@ -160,7 +166,7 @@ object TestServerMain {
                 // With the separator, so that a neighbouring folder such as `dist-old` is not inside.
                 File(dist, path).takeIf { it.isFile && it.canonicalPath.startsWith(dist.canonicalPath + File.separator) }?.inputStream()
             }
-        val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"))
+        val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"), File(dataDir, "update"))
         nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
         displayPower = FakeDisplayPower()
         core =
@@ -179,7 +185,10 @@ object TestServerMain {
                 health = health,
                 // "Start normally" as a restart in normal mode; on a thread of its own, the request comes from the core.
                 processControl = { Thread { synchronized(TestServerMain) { restartCore(Health.normal()) } }.start() },
+                installer = installer,
+                releases = releases,
             )
+        installer.onResult = core.update::onInstallResult
         runBlocking { core.start() }
     }
 
