@@ -1,4 +1,5 @@
 import { ApiError, createApi, localTokenStore, type Client, type Info } from "./api/client";
+import { hasUnsavedInput, reloadAction } from "./update";
 
 export const tokens = localTokenStore();
 
@@ -18,6 +19,10 @@ class Session {
   linkError = $state<"expired" | "invalid" | "network" | null>(null);
   /** The device that was just paired through a link, for "Paired as …" once. */
   pairedAs = $state<Client | null>(null);
+  /** The version the frame runs, from the state. */
+  appVersion = $state<string | null>(null);
+  /** The frame updated itself to this version and the interface did not reload: a notice offers it. */
+  reloadVersion = $state<string | null>(null);
 }
 
 export const session = new Session();
@@ -62,6 +67,36 @@ export async function redeemPairingLink(secret: string): Promise<void> {
 
 export const STATE_POLL_MS = 10_000;
 
+const RELOADED_KEY = "openframe.reloadedFor";
+
+/** Reloads, or offers to, when the frame runs another version than the interface was built as. */
+function checkVersion(reported: string): void {
+  let reloadedFor: string | null;
+  try {
+    reloadedFor = sessionStorage.getItem(RELOADED_KEY);
+  } catch {
+    // Without storage a reload could repeat; the notice is offered instead.
+    reloadedFor = reported;
+  }
+  const action = reloadAction(__APP_VERSION__, reported, {
+    dev: import.meta.env.DEV,
+    unsaved: hasUnsavedInput(),
+    reloadedFor,
+  });
+  if (action === "none") {
+    session.reloadVersion = null;
+  } else if (action === "notice") {
+    session.reloadVersion = reported;
+  } else {
+    try {
+      sessionStorage.setItem(RELOADED_KEY, reported);
+    } catch {
+      // See above.
+    }
+    location.reload();
+  }
+}
+
 /** Reads the versions and the transition fallback from the frame now. */
 export async function refreshState(): Promise<void> {
   try {
@@ -70,6 +105,8 @@ export async function refreshState(): Promise<void> {
     session.settingsVersion = s.settingsVersion;
     session.transitionFallback = s.transitionFallback;
     session.safeMode = s.safeMode;
+    session.appVersion = s.appVersion;
+    checkVersion(s.appVersion);
   } catch {
     // Frame briefly unreachable: try again next time.
   }

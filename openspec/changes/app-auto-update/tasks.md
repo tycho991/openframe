@@ -30,18 +30,18 @@
 
 ## 4. Web UI
 
-- [ ] 4.1 API client functions `update()`, `checkUpdate()` and `installUpdate()`; typed code maps for `UpdateError` and `InstallRefusal` in `errorCodes.ts` with texts in `en.json` and `de.json`; total `t()` and `format()`; fallbacks in the enum mappings (design decision 12). Verify: Vitest for the client calls and that `t(undefined)` does not throw; `npm run typecheck` fails when one code's text is removed for a moment.
-- [ ] 4.2 The "Software" section and the `autoUpdateCheck` switch with its help text, and the reload in `startStatePolling` from `State.appVersion` and the embedded version (design decision 12). Verify: `npm run lint`, `npm run typecheck`, `npm test`.
-- [ ] 4.3 `TestServerMain`: fake release source and `FakeAppInstaller` behind control commands (design decision 16); the server reports the version from `version.txt`. Verify: the control commands are listed in the README's test-server section.
-- [ ] 4.4 e2e for `web-admin` › Software update in the interface (ready; check now; own build), › Release notes as plain text, › Installing explained in the interface (request sent; not allowed), › Reload after a frame update (version change in the fake reloads on the photo page as well; with an unsaved comment a notice) and › Unknown values from the frame. Verify: `npm run e2e` is green in all three browsers.
+- [x] 4.1 API client functions `update()`, `checkUpdate()` and `installUpdate()`; typed code maps for `UpdateError` and `InstallRefusal` in `errorCodes.ts` with texts in `en.json` and `de.json`; total `t()` and `format()`; fallbacks in the enum mappings (design decision 12). Verify: Vitest for the client calls and that `t(undefined)` does not throw; `npm run typecheck` fails when one code's text is removed for a moment.
+- [x] 4.2 The "Software" section and the `autoUpdateCheck` switch with its help text, and the reload in `startStatePolling` from `State.appVersion` and the embedded version (design decision 12). Verify: `npm run lint`, `npm run typecheck`, `npm test`.
+- [x] 4.3 `TestServerMain`: fake release source and `FakeAppInstaller` behind control commands (design decision 16); the server reports the version from `version.txt`. Verify: the control commands are listed in the README's test-server section.
+- [x] 4.4 e2e for `web-admin` › Software update in the interface (ready; check now; own build), › Release notes as plain text, › Installing explained in the interface (request sent; not allowed), › Reload after a frame update (version change in the fake reloads on the photo page as well; with an unsaved comment a notice) and › Unknown values from the frame. Verify: `npm run e2e` is green in all three browsers.
 
 ## 5. Docs
 
-- [ ] 5.1 `README.md`: "Updates" and the update check in "Privacy" (design decision 15). Verify: the README names `api.github.com`, `release-assets.githubusercontent.com`, `autoUpdateCheck` and that "local only" does not stop the check; a Vitest catalogue test finds the help text of the switch in both languages.
+- [x] 5.1 `README.md`: "Updates" and the update check in "Privacy" (design decision 15). Verify: the README names `api.github.com`, `release-assets.githubusercontent.com`, `autoUpdateCheck` and that "local only" does not stop the check; a Vitest catalogue test finds the help text of the switch in both languages.
 
 ## 6. Devices and first release (each device change only with the owner's consent at that moment)
 
-- [ ] 6.1 Rows in `../openframe-private/DEVICE_TEST.md` under "App update", each with its `capability › Requirement › Scenario` reference: dialog confirmed and cancelled on the Lenovo and the Frameo (`app-update` › Installation dialog); unanswered, including whether the Frameo ends openframe when the installer opens and what is left on the screen after the session is discarded (› Unanswered dialog, › Installation is a planned end); a request at night with the hold (› Installation on request of a client › Display off at night); the hold with a short screen timeout (› Display awake during the installation dialog); unknown sources, read with `settings get secure install_non_market_apps` (› Installation not allowed); restart and the HOME log line (`kiosk-host` › Restart after an update); a foreign or not higher APK (› Verification before offering); check and download over TLS (› Source of updates); the fix of a crashing build from safe mode (› Updates in safe mode). Verify: every row names its scenario, and the scenarios exist in this change's specs.
+- [x] 6.1 Rows in `../openframe-private/DEVICE_TEST.md` under "App update", each with its `capability › Requirement › Scenario` reference: dialog confirmed and cancelled on the Lenovo and the Frameo (`app-update` › Installation dialog); unanswered, including whether the Frameo ends openframe when the installer opens and what is left on the screen after the session is discarded (› Unanswered dialog, › Installation is a planned end); a request at night with the hold (› Installation on request of a client › Display off at night); the hold with a short screen timeout (› Display awake during the installation dialog); unknown sources, read with `settings get secure install_non_market_apps` (› Installation not allowed); restart and the HOME log line (`kiosk-host` › Restart after an update); a foreign or not higher APK (› Verification before offering); check and download over TLS (› Source of updates); the fix of a crashing build from safe mode (› Updates in safe mode). Verify: every row names its scenario, and the scenarios exist in this change's specs.
 - [ ] 6.2 Read-only, before any install: the certificate of the installed openframe on each frame against the pinned fingerprint (migration plan step 2). Verify: the result per frame is recorded in `../openframe-private`; a different key is reported to the owner before anything else happens.
 - [ ] 6.3 After the merge and the release (migration plan step 3), install it by hand on the Lenovo and the Frameo, each only after the owner agreed. Verify: `GET /info` reports the release on both frames, pairings and library are kept.
 - [ ] 6.4 Regression round on both frames before the next release (migration plan step 5). Verify: results with date, device and scenario references in `../openframe-private`.
@@ -49,7 +49,7 @@
 
 ## 7. Integration
 
-- [ ] 7.1 `openspec validate app-auto-update --strict`. Verify: exit 0 without warnings.
+- [x] 7.1 `openspec validate app-auto-update --strict`. Verify: exit 0 without warnings.
 
 ## Workflow follow-up
 

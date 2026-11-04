@@ -46,12 +46,14 @@ interface ReleaseSource {
 class GithubReleases(
     private val baseUrl: String = "https://api.github.com",
     private val repository: String = "tycho991/openframe",
-    trust: X509TrustManager = TrustAnchors.trustManager(TrustAnchors.forUpdates()),
+    /** `null` for the platform and [TrustAnchors.forUpdates]. */
+    private val trust: X509TrustManager? = null,
 ) : ReleaseSource {
     private val untrusted = AtomicReference<String?>(null)
-    private val recording = RecordingTrustManager(trust) { untrusted.set(it) }
 
-    private val client =
+    // On first use: the core is created on Android's main thread, and building the trust store reads certificates.
+    private val client by lazy {
+        val recording = RecordingTrustManager(trust ?: TrustAnchors.trustManager(TrustAnchors.forUpdates())) { untrusted.set(it) }
         OkHttpClient
             .Builder()
             .sslSocketFactory(TrustAnchors.socketFactory(recording), recording)
@@ -65,6 +67,7 @@ class GithubReleases(
                 if (!url.isHttps) throw NotHttpsException(url.host)
                 chain.proceed(chain.request())
             }.build()
+    }
 
     override fun latest(etag: String?): FetchedRelease? {
         val request =

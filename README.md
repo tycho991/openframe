@@ -65,6 +65,32 @@ the debug build on a frame you control, and once releases exist, never install i
 openframe has its own package ID, so it can be installed next to another kiosk app. To have it appear by itself
 after a restart, choose it as the home screen (HOME) in the Android settings.
 
+## Updates
+
+A frame running an official release finds new versions by itself. Builds signed with another key never look for
+updates; the web UI says so.
+
+- **When.** With "Check for updates automatically" on (setting `autoUpdateCheck`, on by default), the frame asks
+  GitHub for the latest release 3 minutes after it starts, at the earliest 6 hours after the last check, then every
+  6 hours, and only once its clock is set. After a failure it tries again after 15 minutes, 1 hour, then every
+  6 hours, earlier when the network comes back. "Check now" in the settings asks at once, also with the switch off.
+- **Which hosts.** `api.github.com` for the latest release, then `github.com` and
+  `release-assets.githubusercontent.com` for the APK, all over https and without credentials. They see the frame's
+  public IP address, the time and the User-Agent `openframe`. "Local only" limits the frame's own server, not this
+  outgoing check; switch `autoUpdateCheck` off to stop it.
+- **Verification.** The frame downloads the APK into its own storage and checks the release's SHA-256, the ZIP
+  structure, the package ID, a higher version code, that it is no debug build, and that it is signed with the same key
+  as the installed app. Only then is it offered.
+- **Installing.** The frame never installs by itself. A tap on the frame names a ready update, the device menu (a
+  3-second press in a corner) offers "Install update", and "Install on the frame" in the web UI asks the frame to open
+  Android's installation dialog, which someone has to confirm on the frame. The display stays on while the dialog is
+  open, at most 10 minutes. Android must allow openframe to install apps: up to Android 7 the setting "Unknown
+  sources" under Security, which applies to the whole device and can be turned off again after the update; from
+  Android 8 "Install unknown apps" for openframe under Apps › Special access.
+- **Rescue.** If an update breaks a frame so that its server no longer starts, install the next release (or the one
+  before, if it can read the stored data) over `adb install -r openframe-X.Y.Z.apk`. A release that crashes repeatedly
+  sends the frame into safe mode, which still checks for and installs a fixed release.
+
 ### First pairing
 
 1. Without photos the frame shows the address of the admin interface, for
@@ -93,9 +119,9 @@ reservation) in the router. On an iPhone, a web app added to the home screen
 has storage of its own and is not paired, even if Safari is. It has no address
 bar, so links do not reach it: pair it with the code ("Show code on frame").
 
-On the frame itself: a tap shows name, address, code, QR code and pause. Swiping pages
+On the frame itself: a tap shows name, address, code, QR code and pause, and a ready update. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
-with "local only", the display schedule, "Unpair all devices" and info.
+with "local only", the display schedule, "Unpair all devices", a ready update and info.
 
 ## Display off at night
 
@@ -231,8 +257,9 @@ openframe is made for a home network you trust. Read this before you install it.
 ## Privacy
 
 openframe has no telemetry and no account of its own. The frame connects only to the sources you configure (your
-Nextcloud server); place names are looked up offline in data shipped with the app. The web UI loads nothing from
-outside the frame.
+Nextcloud server) and, for updates, to GitHub (see "Updates"; switch `autoUpdateCheck` off to stop it, "local only"
+does not); place names are looked up offline in data shipped with the app. The web UI loads nothing from outside the
+frame.
 
 ## Licence
 
@@ -263,6 +290,19 @@ stops; a second server on the same port refuses to start instead of emptying it,
 and `./gradlew clean` removes what a killed server left behind. Its control
 port accepts only GET requests with the header `x-openframe-control: 1`, for
 example `curl -H 'x-openframe-control: 1' http://127.0.0.1:8091/code`.
+
+The test server reports the version of `version.txt`. Its fake GitHub and installer are steered with these control
+commands:
+
+| Command | Effect |
+| --- | --- |
+| `/update/publish?version=0.4.0&notes=…` | publishes a release with an APK; `apk=0` without one |
+| `/update/fail?code=update_unreachable` | GitHub fails with that code; without `code` it answers again |
+| `/update/installed?version=9.9.9` | the frame runs another version from now on |
+| `/update/answer?result=confirmed` | answers the open installation dialog: `confirmed`, `cancelled` or `failed` |
+| `/update/allowed?on=0` | Android allows openframe to install apps (`1`) or not (`0`) |
+| `/update/official?on=0` | an official build (`1`) or one signed with another key (`0`); the core restarts |
+| `/update/phase` | the phase of the update, e.g. `ready` |
 
 `npm run e2e` starts its own test server on `OPENFRAME_E2E_PORT` (default 8090)
 and `OPENFRAME_E2E_CONTROL_PORT` (default: the next port). If the port is busy,

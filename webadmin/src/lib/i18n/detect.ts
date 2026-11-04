@@ -12,7 +12,8 @@ export function detectLanguage(preferred: readonly string[]): Lang {
 }
 
 /** Replaces `{name}` in [template] with the values from [params]. */
-export function format(template: string, params: Record<string, string | number> = {}): string {
+export function format(template: string | undefined, params: Record<string, string | number> = {}): string {
+  if (template === undefined) return "";
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in params ? String(params[key]) : match,
   );

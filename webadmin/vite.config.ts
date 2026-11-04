@@ -1,11 +1,19 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
+
+// The version the interface was built as; it reloads itself when the frame reports another (design decision 12 of
+// app-auto-update).
+const version = (
+  JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string }
+).version;
 
 // For `npm run dev`: API calls go to a frame or to the :core test server.
 const frame = process.env.OPENFRAME_URL ?? "http://127.0.0.1:8090";
 
 export default defineConfig({
   plugins: [svelte()],
+  define: { __APP_VERSION__: JSON.stringify(version) },
   server: {
     proxy: {
       "/api": {

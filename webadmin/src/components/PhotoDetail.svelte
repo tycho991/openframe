@@ -4,7 +4,8 @@
   import { ApiError, type Crop, type Photo, type Settings } from "../lib/api/client";
   import { commentLength, commentPatch, coordinates, MAX_COMMENT_LENGTH } from "../lib/comments";
   import { errorText } from "../lib/i18n/errors";
-  import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
+  import { i18n, t, tOr } from "../lib/i18n/i18n.svelte";
+  import { markUnsaved } from "../lib/update";
   import { screenFor, shownArea } from "../lib/presentation";
   import { session } from "../lib/session.svelte";
   import { viewport } from "../lib/viewport.svelte";
@@ -54,6 +55,12 @@
   });
   const commentUsed = $derived(commentLength(comment));
   const commentChanged = $derived(comment !== (photo.comment ?? ""));
+
+  // A reload after a frame update would lose the comment being typed.
+  $effect(() => {
+    markUnsaved("comment", commentChanged);
+    return () => markUnsaved("comment", false);
+  });
 
   async function saveComment(event: SubmitEvent) {
     event.preventDefault();
@@ -157,7 +164,7 @@
           {photo.crop
             ? t("section.own")
             : t("section.automaticFrom", {
-                mode: t(`settings.fillMode.${settings?.fillMode ?? "auto"}` as Key),
+                mode: tOr(`settings.fillMode.${settings?.fillMode ?? "auto"}`, settings?.fillMode ?? "auto"),
               })}
         </dd>
       </dl>
