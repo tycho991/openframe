@@ -6,6 +6,7 @@ import io.github.tycho991.openframe.core.library.PhotoSource
 import io.github.tycho991.openframe.core.library.ScanResult
 import io.github.tycho991.openframe.core.library.SkippedFile
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -97,7 +98,13 @@ class RemoteSource(
             for (file in listing) {
                 currentCoroutineContext().ensureActive()
                 if (!needsDownload(file, known[file.path], skippedKnown[file.path], budget)) continue
-                results[file.path] = fetch(remote, file, known[file.path])
+                val result = fetch(remote, file, known[file.path])
+                if (result.exceptionOrNull() is DecoderUnavailableException) {
+                    // Says nothing about the file, which is downloaded again at the next sync.
+                    log.w(TAG, "The decoder is not available; the remaining files of $id are checked at the next sync")
+                    break
+                }
+                results[file.path] = result
                 originals.trim(budget)
             }
         } catch (e: SourceException) {

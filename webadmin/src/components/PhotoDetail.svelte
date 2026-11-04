@@ -9,6 +9,7 @@
   import { session } from "../lib/session.svelte";
   import { viewport } from "../lib/viewport.svelte";
   import Icon from "./Icon.svelte";
+  import QuarantinedPlaceholder from "./QuarantinedPlaceholder.svelte";
   import SectionEditor from "./SectionEditor.svelte";
 
   interface Props {
@@ -21,9 +22,12 @@
     onsavecrop: (photo: Photo, crop: Crop | null) => Promise<void>;
     /** Saves the comment, `null` removes it; an error is thrown back to the field. */
     onsavecomment: (photo: Photo, comment: string | null) => Promise<Photo>;
+    /** Tries a quarantined photo again. */
+    onretry: (photo: Photo) => void;
   }
 
-  let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop, onsavecomment }: Props = $props();
+  let { photo, settings, onclose, ontogglehidden, ondelete, onsavecrop, onsavecomment, onretry }: Props =
+    $props();
   let dialog = $state<HTMLDialogElement>();
   let panel = $state<HTMLElement>();
   let editing = $state(false);
@@ -111,7 +115,9 @@
     <h2>{photo.path.split("/").at(-1)}</h2>
   </header>
   <div class="layout">
-    {#if screen && area}
+    {#if photo.quarantined}
+      <QuarantinedPlaceholder name={photo.path} detailed />
+    {:else if screen && area}
       <div
         class="frame"
         style:aspect-ratio="{screen.width} / {screen.height}"
@@ -177,9 +183,13 @@
         {#if commentError}<span class="error" role="alert">{commentError}</span>{/if}
       </form>
       <div class="actions">
-        <button type="button" disabled={!screen || !settings} onclick={() => (editing = true)}
-          >{t("section.choose")}</button
-        >
+        {#if photo.quarantined}
+          <button type="button" onclick={() => onretry(photo)}>{t("photos.retry")}</button>
+        {:else}
+          <button type="button" disabled={!screen || !settings} onclick={() => (editing = true)}
+            >{t("section.choose")}</button
+          >
+        {/if}
         <button type="button" onclick={() => ontogglehidden(photo)}
           >{photo.hidden ? t("photos.show") : t("photos.hide")}</button
         >

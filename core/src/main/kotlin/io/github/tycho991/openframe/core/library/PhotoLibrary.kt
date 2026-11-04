@@ -4,6 +4,7 @@ import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.MultipartReader
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
@@ -147,7 +148,10 @@ class PhotoLibrary(
             engine.probe(s.tmp)
         } catch (e: ImageException) {
             if (e.reason == SkipReason.TOO_LARGE) throw HttpException(415, "image_too_large", "${s.name} is too large: ${e.message}")
+            if (e.reason == SkipReason.CRASHED) log.w(TAG, "Upload of ${s.name} refused: it made the decoder crash")
             throw unsupported(s.name)
+        } catch (e: DecoderUnavailableException) {
+            throw HttpException(503, "decoder_unavailable", "The decoder is not available; try again later")
         }
     }
 

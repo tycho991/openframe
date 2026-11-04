@@ -50,6 +50,12 @@
                 android:value="Digital photo frame: local web server for managing photos in the home network" />
         </service>
 
+        <!-- Decoding of photos in a process of its own: a native crash there ends neither display nor server. -->
+        <service
+            android:name=".android.DecoderService"
+            android:exported="false"
+            android:process=":decode" />
+
         <receiver
             android:name=".android.BootReceiver"
             android:exported="true">

@@ -182,6 +182,15 @@
     return updated;
   }
 
+  /** Tries a quarantined photo again: the frame renders it at the next request (spec "Quarantined photos"). */
+  async function retry(photo: Photo) {
+    await guard(async () => {
+      const updated = await api.patchPhoto(photo.id, { quarantined: false });
+      pages.replace(updated);
+      detail = updated;
+    });
+  }
+
   function onDrop(event: DragEvent) {
     event.preventDefault();
     dragging = false;
@@ -292,6 +301,7 @@
     ondelete={(p) => askDelete([p.id], true)}
     onsavecrop={saveCrop}
     onsavecomment={saveComment}
+    onretry={retry}
   />
 {/if}
 

@@ -21,6 +21,9 @@ import java.io.File
 /**
  * Holds the process's one [FrameCore]. It is started by the
  * [FrameService], the display gets it through its binder.
+ *
+ * In the decoder process `:decode` ([DecoderService]) it creates no core and no alarms; it only ends that process on
+ * a crash.
  */
 class FrameApp : Application() {
     /** Switching the display; the [FrameService] reports screen events to it, device administration its changes. */
@@ -29,25 +32,29 @@ class FrameApp : Application() {
     /** The network; the [FrameService] reports its network callbacks to it. */
     val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
 
-    val core: FrameCore by lazy {
-        val state = File(filesDir, "state")
-        val dirs =
-            FrameDirs(
-                state = state,
-                cache = cacheDir,
-                photos = photoFolder(File(state, "storage.json")),
+    /** The decoder process, bound by the core's first decoding. */
+    internal val decoder: RemoteMediaEngine by lazy { RemoteMediaEngine(ServiceDecoderConnector(this)) }
+
+    private val coreHolder =
+        lazy {
+            val state = File(filesDir, "state")
+            val dirs =
+                FrameDirs(
+                    state = state,
+                    cache = cacheDir,
+                    photos = photoFolder(File(state, "storage.json")),
+                )
+            FrameCore(
+                dirs = dirs,
+                platform = AndroidPlatformInfo(this),
+                engine = decoder,
+                assets = ApkAssets(this),
+                notifier = AndroidMediaStoreNotifier(this),
+                logSinks = listOf(LogcatSink),
+                displayPower = displayPower,
+                networkLink = networkLink,
             )
-        FrameCore(
-            dirs = dirs,
-            platform = AndroidPlatformInfo(this),
-            engine = AndroidMediaEngine(),
-            assets = ApkAssets(this),
-            notifier = AndroidMediaStoreNotifier(this),
-            logSinks = listOf(LogcatSink),
-            displayPower = displayPower,
-            networkLink = networkLink,
-        )
-    }
+        }
 
     /**
      * The stored photo folder, or the external one, which is stored then (spec `photo-library`, "Photo folder kept").
@@ -89,9 +96,38 @@ class FrameApp : Application() {
         }
     }
 
+    val core: FrameCore by coreHolder
+
+    /** Whether the core exists, for tests of the decoder process. */
+    internal val coreCreated: Boolean get() = coreHolder.isInitialized()
+
     override fun onCreate() {
         super.onCreate()
-        installCrashHandler()
+        start(processName())
+    }
+
+    /** What [onCreate] does in the process named [processName]. */
+    internal fun start(processName: String) {
+        if (processName.endsWith(DECODER_PROCESS)) installDecoderCrashHandler() else installCrashHandler()
+    }
+
+    /** From `/proc/self/cmdline`: `Application.getProcessName` exists only from API 28. */
+    private fun processName(): String =
+        try {
+            File("/proc/self/cmdline").readText().substringBefore('\u0000').trim()
+        } catch (e: Exception) {
+            ""
+        }
+
+    /**
+     * The decoder process only writes to Logcat and ends: the default handler could keep it alive behind an error
+     * dialog on the Frameo, and the app process binds a new decoder anyway.
+     */
+    private fun installDecoderCrashHandler() {
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            Log.e("AndroidRuntime", "FATAL EXCEPTION in the decoder: ${thread.name}, PID: ${Process.myPid()}", error)
+            Process.killProcess(Process.myPid())
+        }
     }
 
     /**
@@ -118,6 +154,7 @@ class FrameApp : Application() {
 
     companion object {
         const val RESTART_DELAY_MS = 5_000L
+        const val DECODER_PROCESS = ":decode"
 
         fun scheduleRestart(
             context: Context,

@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
 import io.github.tycho991.openframe.core.platform.ImageInfo
@@ -77,7 +78,13 @@ class LocalPhotoSource(
             if (entry != null && entry.fileSize == size && entry.modifiedMs == mtime) continue
             val skip = skippedKnown[path]
             if (skip != null && skip.fileSize == size && skip.modifiedMs == mtime) continue
-            probed[path] = runCatching { read(path, file, previous = entry) }
+            val result = runCatching { read(path, file, previous = entry) }
+            if (result.exceptionOrNull() is DecoderUnavailableException) {
+                // Says nothing about the file; every further file would wait for the decoder as well.
+                log.w(TAG, "The decoder is not available; the remaining files are checked at the next scan")
+                break
+            }
+            probed[path] = result
         }
 
         return index

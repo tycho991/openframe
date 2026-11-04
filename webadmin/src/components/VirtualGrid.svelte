@@ -1,4 +1,5 @@
 <script lang="ts">
+  import QuarantinedPlaceholder from "./QuarantinedPlaceholder.svelte";
   import { tick } from "svelte";
   import type { Photo } from "../lib/api/client";
   import { gridLayout } from "../lib/grid";
@@ -89,13 +90,17 @@
       aria-pressed={selecting ? selected.has(photo.id) : undefined}
       onclick={() => (selecting ? ontoggle(photo) : onopen(photo))}
     >
-      <img
-        src={photo.urls.thumb}
-        alt={photo.path}
-        loading="lazy"
-        decoding="async"
-        onerror={() => onimageerror(photo)}
-      />
+      {#if photo.quarantined}
+        <QuarantinedPlaceholder name={photo.path} />
+      {:else}
+        <img
+          src={photo.urls.thumb}
+          alt={photo.path}
+          loading="lazy"
+          decoding="async"
+          onerror={() => onimageerror(photo)}
+        />
+      {/if}
       {#if !photo.visible}<span class="badge">{t("photos.hiddenBadge")}</span>{/if}
       {#if selecting}<span class="check" aria-hidden="true"
           >{#if selected.has(photo.id)}<Icon name="check" size={18} />{/if}</span

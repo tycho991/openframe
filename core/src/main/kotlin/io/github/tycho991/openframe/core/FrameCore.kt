@@ -189,6 +189,7 @@ class FrameCore(
             { settings.settings.value.fillMode },
             { settings.settings.value.cacheBudgetMb * 1024L * 1024L },
             log,
+            onCrashed = ::quarantine,
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
 
@@ -369,6 +370,14 @@ class FrameCore(
                 log.e(TAG, "Revoking all pairings failed", e)
             }
         }
+
+    /** Quarantines the version of [entry] whose rendering crashed the decoder, unless the file changed meanwhile. */
+    private fun quarantine(entry: PhotoEntry) {
+        index.edit { edit ->
+            val current = edit.get(entry.id) ?: return@edit
+            if (current.version == entry.version) edit.put(current.copy(quarantinedVersion = entry.version))
+        }
+    }
 
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {

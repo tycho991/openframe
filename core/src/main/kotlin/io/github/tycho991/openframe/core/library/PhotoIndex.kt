@@ -41,7 +41,15 @@ data class PhotoEntry(
      * an index of a build that did not read the GPS position, which [MetadataBackfill] then reads once.
      */
     val metadataVersion: Int = 0,
+    /**
+     * The [version] whose rendering crashed the decoder (spec `photo-library`, "Quarantined photos"); `null` if none.
+     * Older builds ignore it. A new version of the file no longer matches, which lifts the quarantine.
+     */
+    val quarantinedVersion: Int? = null,
 ) {
+    /** This version is never rendered or shown; see [quarantinedVersion]. */
+    val quarantined: Boolean get() = quarantinedVersion == version
+
     /** The folder path below the source's folder, `null` for photos directly in it. */
     val album: String? get() = AlbumPaths.parent(path)
 
@@ -205,8 +213,8 @@ data class StoredIndex(
 class Album(
     val name: String,
     val count: Int,
-    /** The newest photo of the branch, the cover image. */
-    val newest: PhotoEntry,
+    /** The newest photo of the branch that is not quarantined, the cover image; `null` if all are. */
+    val newest: PhotoEntry?,
     /** Effective state, by its own setting or inherited. */
     val hidden: Boolean,
     /** A sub-album with a setting of its own, which differs from its parent's state by the invariant of [LibraryEdit.setAlbumHidden]. */
@@ -238,6 +246,7 @@ class Library(
             val album = photo.album ?: continue
             for (path in AlbumPaths.withAncestors(album)) {
                 counts[path] = (counts[path] ?: 0) + 1
+                if (photo.quarantined) continue
                 val current = newest[path]
                 if (current == null || DATE_ORDER.compare(photo, current) > 0) newest[path] = photo
             }
@@ -246,7 +255,7 @@ class Library(
             Album(
                 name = path,
                 count = counts.getValue(path),
-                newest = newest.getValue(path),
+                newest = newest[path],
                 hidden = AlbumPaths.isHidden(albumStates, path),
                 overridesParent = path in albumStates && AlbumPaths.parent(path) != null,
             )
@@ -259,8 +268,11 @@ class Library(
     /** All photos by path ascending. */
     val byName: List<PhotoEntry> by lazy { photos.values.sortedWith(NAME_ORDER) }
 
-    /** The photos visible to the slideshow by capture date. */
-    val visible: List<PhotoEntry> by lazy { byDate.filter(::isVisible) }
+    /**
+     * The photos the slideshow shows, by capture date: visible and not quarantined. [isVisible] leaves quarantine
+     * out, so that the API does not report a quarantined photo as hidden.
+     */
+    val visible: List<PhotoEntry> by lazy { byDate.filter { isVisible(it) && !it.quarantined } }
 
     companion object {
         val EMPTY = Library(emptyMap(), emptyMap(), emptyList(), 0)

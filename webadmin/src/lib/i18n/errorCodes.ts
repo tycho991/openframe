@@ -8,6 +8,7 @@ export const skipReasonKeys: Record<SkippedFile["reason"], Key> = {
   unsupported: "skipped.unsupported",
   corrupt: "skipped.corrupt",
   too_large: "skipped.too_large",
+  crashed: "skipped.crashed",
 };
 
 /**
@@ -28,6 +29,7 @@ export const errorKeys: Record<string, Key> = {
   insufficient_storage: "error.insufficient_storage",
   image_too_large: "error.image_too_large",
   storage_unavailable: "error.storage_unavailable",
+  decoder_unavailable: "error.decoder_unavailable",
   delete_failed: "error.delete_failed",
   move_failed: "error.move_failed",
   render_failed: "error.render_failed",

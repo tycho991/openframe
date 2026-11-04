@@ -55,6 +55,9 @@ export const usb = (fixture: string, to: string, { scan = true } = {}) =>
 
 export const many = (n: number) => control(`/many?n=${n}`);
 
+/** A local photo as if its rendering had crashed the decoder; returns its ID. */
+export const quarantine = (path: string) => control(`/quarantine?path=${encodeURIComponent(path)}`);
+
 /** The caption the frame shows over the photo on screen: its line and its place, `""` without one. */
 export async function frameCaption(): Promise<{ line: string; place: string }> {
   const [line, place] = (await control("/caption")).split("\n");

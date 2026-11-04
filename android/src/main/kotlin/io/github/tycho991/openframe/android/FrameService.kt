@@ -40,7 +40,7 @@ class FrameService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var debugReceiver: BroadcastReceiver? = null
+    private var debugReceivers: List<BroadcastReceiver> = emptyList()
     private var screenReceiver: BroadcastReceiver? = null
 
     override fun onCreate() {
@@ -66,7 +66,7 @@ class FrameService : Service() {
 
     override fun onDestroy() {
         networkCallback?.let { (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) }
-        debugReceiver?.let(::unregisterReceiver)
+        debugReceivers.forEach(::unregisterReceiver)
         screenReceiver?.let(::unregisterReceiver)
         wakeLock?.takeIf { it.isHeld }?.release()
         wifiLock?.takeIf { it.isHeld }?.release()
@@ -176,19 +176,34 @@ class FrameService : Service() {
         screenReceiver = receiver
     }
 
-    /**
-     * Debug builds only: `adb shell am broadcast -a io.github.tycho991.openframe.DEBUG_CRASH`
-     * triggers a crash to check the self-healing.
-     */
     private fun registerDebugCommands() {
-        debugReceiver =
-            DebugCommands.register(this, ACTION_DEBUG_CRASH) {
-                main.post { throw IllegalStateException("Crash on request (DEBUG_CRASH)") }
-            }
+        debugReceivers = registerDebugCommands(this, main) { (application as FrameApp).decoder.crashNextRender() }
     }
 
     companion object {
         const val ACTION_DEBUG_CRASH = "io.github.tycho991.openframe.DEBUG_CRASH"
+        const val ACTION_DEBUG_DECODE_CRASH = "io.github.tycho991.openframe.DEBUG_DECODE_CRASH"
+
+        /**
+         * Debug builds only, through [DebugCommands]: `adb shell am broadcast -a io.github.tycho991.openframe.DEBUG_CRASH`
+         * crashes the app process to check the self-healing; `…DEBUG_DECODE_CRASH` makes the decoder process crash at
+         * its next render, to check the quarantine. Returns the receivers, none in a release build.
+         */
+        internal fun registerDebugCommands(
+            context: Context,
+            main: Handler,
+            crashDecoder: () -> Unit,
+        ): List<BroadcastReceiver> =
+            listOfNotNull(
+                DebugCommands.register(context, ACTION_DEBUG_CRASH) {
+                    main.post { throw IllegalStateException("Crash on request (DEBUG_CRASH)") }
+                },
+                DebugCommands.register(context, ACTION_DEBUG_DECODE_CRASH) {
+                    // Binding may wait for the decoder: not on the main thread.
+                    Thread({ runCatching(crashDecoder) }, "debug-decode-crash").start()
+                },
+            )
+
         private const val TAG = "service"
         private const val CHANNEL = "server"
         private const val NOTIFICATION_ID = 1

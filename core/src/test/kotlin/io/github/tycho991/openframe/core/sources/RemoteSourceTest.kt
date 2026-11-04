@@ -6,6 +6,8 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.ScanResult
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
+import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.SkipReason
@@ -494,5 +496,42 @@ class RemoteSourceTest {
             index.library.value.skipped
                 .map { it.path to it.reason },
         )
+    }
+
+    /** Spec `photo-library`: Skipped after a decoder crash. */
+    @Test
+    fun `A file that crashes the decoder is skipped as crashed and not downloaded again`() {
+        engine.probeFailure = {
+            if (it.name.contains(PhotoEntry.idFor("nextcloud", "b.jpg"))) ImageException(SkipReason.CRASHED, "died") else null
+        }
+        remote.put("a.jpg", jpg(), "e1")
+        remote.put("b.jpg", jpg(), "e2")
+        sync()
+        val skip =
+            index.library.value.skipped
+                .single()
+        assertEquals("b.jpg" to SkipReason.CRASHED, skip.path to skip.reason)
+        val listed = remote.list(true).single { it.path == "b.jpg" }
+        assertEquals(listed.size to listed.modifiedMs, skip.fileSize to skip.modifiedMs, "size and time from the listing")
+        remote.downloads.clear()
+        sync()
+        assertEquals(emptyList<String>(), remote.downloads, "not downloaded again")
+    }
+
+    /** Spec `kiosk-host`: Decoding in a separate process › Decoder cannot be started. */
+    @Test
+    fun `A decoder that cannot be started leaves no skip entry, and the next sync adds the files`() {
+        engine.probeFailure = { DecoderUnavailableException("not bound") }
+        remote.put("a.jpg", jpg(), "e1")
+        remote.put("b.jpg", jpg(), "e2")
+        val result = sync()
+        assertEquals(0, result.skipped)
+        assertEquals(emptyList<Any>(), index.library.value.skipped)
+        assertEquals(emptyMap<String, PhotoEntry>(), photos())
+        assertEquals(listOf("a.jpg"), remote.downloads, "the sync stops at the first file")
+
+        engine.probeFailure = { null }
+        sync()
+        assertEquals(setOf("a.jpg", "b.jpg"), photos().keys)
     }
 }
