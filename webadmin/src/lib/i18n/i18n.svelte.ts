@@ -41,8 +41,23 @@ class I18n {
 
 export const i18n = new I18n();
 
-export function t(key: Key, params?: Record<string, string | number>): string {
+/** The text of [key]; an unknown key gives the key itself, `undefined` an empty text, so a view never breaks. */
+export function t(key: Key | undefined, params?: Record<string, string | number>): string {
+  if (key === undefined) return "";
   return format(catalogs[i18n.lang][key] ?? key, params);
+}
+
+/** Whether the catalogs have a text for [key]. */
+export function hasText(key: string): key is Key {
+  return key in catalogs[i18n.lang];
+}
+
+/**
+ * The text of [key], or [raw] itself when there is none: a phase, code or enum value from a newer frame shows as
+ * its raw value (spec web-admin, "Unknown values from the frame").
+ */
+export function tOr(key: string, raw: string, params?: Record<string, string | number>): string {
+  return hasText(key) ? t(key, params) : raw;
 }
 
 /** Singular for exactly one, otherwise plural with `{n}`. */

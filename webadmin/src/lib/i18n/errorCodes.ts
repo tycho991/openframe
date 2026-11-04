@@ -1,4 +1,4 @@
-import type { SkippedFile } from "../api/client";
+import type { InstallRefusal, SkippedFile, UpdateError } from "../api/client";
 import type de from "./de.json";
 
 type Key = keyof typeof de;
@@ -9,6 +9,32 @@ export const skipReasonKeys: Record<SkippedFile["reason"], Key> = {
   corrupt: "skipped.corrupt",
   too_large: "skipped.too_large",
   crashed: "skipped.crashed",
+};
+
+/** The text of every error code of the update state; a code the contract gains without a text fails the type check. */
+export const updateErrorKeys: Record<UpdateError["code"], Key> = {
+  update_unreachable: "update.error.update_unreachable",
+  update_rate_limited: "update.error.update_rate_limited",
+  update_not_found: "update.error.update_not_found",
+  update_no_apk: "update.error.update_no_apk",
+  update_no_checksum: "update.error.update_no_checksum",
+  update_checksum: "update.error.update_checksum",
+  update_invalid_apk: "update.error.update_invalid_apk",
+  update_signature: "update.error.update_signature",
+  update_storage: "update.error.update_storage",
+  update_tls: "update.error.update_tls",
+  update_failed: "update.error.update_failed",
+  install_cancelled: "update.error.install_cancelled",
+  install_unanswered: "update.error.install_unanswered",
+  install_failed: "update.error.install_failed",
+};
+
+/** The text of every refusal of an installation request, as for [updateErrorKeys]. */
+export const installRefusalKeys: Record<InstallRefusal["error"]["code"], Key> = {
+  update_not_ready: "error.update_not_ready",
+  install_not_allowed: "error.install_not_allowed",
+  install_in_progress: "error.install_in_progress",
+  install_cooldown: "error.install_cooldown",
 };
 
 /**
@@ -50,4 +76,5 @@ export const errorKeys: Record<string, Key> = {
   share_password_required: "error.share_password_required",
   share_password_wrong: "error.share_password_wrong",
   display_unavailable: "error.display_unavailable",
+  ...installRefusalKeys,
 };

@@ -14,6 +14,7 @@ import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.Presentation
+import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.PlatformInfo
@@ -140,6 +141,8 @@ data class StateDto(
     val settingsVersion: Long,
     val transitionFallback: Boolean,
     val safeMode: Boolean,
+    /** The installed version, so that the web UI sees on every page that the frame updated itself. */
+    val appVersion: String,
 )
 
 /** Position in a sorted list: key of the last entry of the previous page. */
@@ -199,7 +202,7 @@ fun Router.libraryRoutes(
         presentation: Presentation = library.cache.presentation(entry),
     ): ImageUrlsDto {
         val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id)}"
-        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${presentation.key}", "$base&size=full")
+        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${RenderCache.displayKey(presentation)}", "$base&size=full")
     }
 
     fun dto(
@@ -393,7 +396,7 @@ fun Router.libraryRoutes(
     get("/api/v1/state") {
         HttpResponse.json(
             StateDto.serializer(),
-            StateDto(index.library.value.version, settings.version.value, transitions.cut.value, safeMode()),
+            StateDto(index.library.value.version, settings.version.value, transitions.cut.value, safeMode(), platform.appVersion),
         )
     }
 }

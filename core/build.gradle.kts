@@ -45,6 +45,10 @@ tasks.test {
     val presentationCases = rootProject.layout.projectDirectory.file("api/fixtures/presentation-cases.json")
     inputs.file(presentationCases).withPropertyName("presentationCases")
     systemProperty("openframe.presentationCases", presentationCases.asFile.absolutePath)
+    // The pinned certificate of the release workflow, which `OfficialCertificate` must equal.
+    val releaseWorkflow = rootProject.layout.projectDirectory.file(".github/workflows/release-please.yml")
+    inputs.file(releaseWorkflow).withPropertyName("releaseWorkflow")
+    systemProperty("openframe.releaseWorkflow", releaseWorkflow.asFile.absolutePath)
     // Lets tests send their own `Host` header, e.g. for invitation links.
     systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
 }

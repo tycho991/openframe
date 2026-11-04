@@ -166,3 +166,22 @@ export async function apiAsBrowser<T>(
     { p: pathAndQuery, method, body },
   ) as Promise<T>;
 }
+
+/** A release of openframe on the fake GitHub; `apk: false` publishes it without an APK. */
+export const publishRelease = (version: string, { notes = "", apk = true } = {}) =>
+  control(
+    `/update/publish?version=${version}${notes ? `&notes=${encodeURIComponent(notes)}` : ""}${apk ? "" : "&apk=0"}`,
+  );
+
+/** The frame runs [version] from now on, as after an update. */
+export const installedVersion = (version: string) => control(`/update/installed?version=${version}`);
+
+/** Someone answers the installation dialog on the frame. */
+export const answerInstallDialog = (result: "confirmed" | "cancelled" | "failed") =>
+  control(`/update/answer?result=${result}`);
+
+/** Android allows openframe to install apps, or not. */
+export const installAllowed = (on: boolean) => control(`/update/allowed?on=${on ? 1 : 0}`);
+
+/** The frame runs an official build, or one signed with another key; the frame restarts. */
+export const officialBuild = (on: boolean) => control(`/update/official?on=${on ? 1 : 0}`);

@@ -7,6 +7,8 @@ build/
 local.properties
 .kotlin/
 *.apk
+# The updater's test APKs, built by scripts/generate-test-fixtures.py.
+!core/src/test/resources/fixtures/update-*.apk
 
 # Web UI
 node_modules/
@@ -27,6 +29,8 @@ keystore.properties
 *.pem
 !core/src/main/resources/trust/*.pem
 !core/src/test/resources/tls/*.pem
+# Recorded public certificate chains of GitHub for the update client's chain test.
+!core/src/test/resources/update/chain-*.pem
 .env*
 CLAUDE.local.md
 

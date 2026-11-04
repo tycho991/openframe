@@ -10,6 +10,19 @@ import java.util.zip.Deflater
 object Fixtures {
     fun file(name: String): File = File(requireNotNull(javaClass.getResource("/fixtures/$name")) { "Fixture $name is missing" }.toURI())
 
+    /**
+     * The signed test APK (`update-0.4.0.apk`) with [comment] as its archive comment: a valid archive whose bytes, and so
+     * whose checksum, differ for each comment.
+     */
+    fun apk(comment: String): ByteArray {
+        val bytes = file("update-0.4.0.apk").readBytes()
+        val text = comment.toByteArray()
+        // The end-of-central-directory record is the last 22 bytes; its last two give the comment's length.
+        bytes[bytes.size - 2] = (text.size and 0xFF).toByte()
+        bytes[bytes.size - 1] = (text.size shr 8).toByte()
+        return bytes + text
+    }
+
     /** Copies the fixture [name] to [target] and creates folders. */
     fun copy(
         name: String,

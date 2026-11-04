@@ -19,8 +19,10 @@ import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.library.PhotoRoot
 import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.log.LogSink
+import io.github.tycho991.openframe.core.platform.Clock
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.Instant
 
 /**
  * Holds the process's one [FrameCore]. It is started by the
@@ -39,35 +41,43 @@ class FrameApp : Application() {
     /** The decoder process, bound by the core's first decoding. */
     internal val decoder: RemoteMediaEngine by lazy { RemoteMediaEngine(ServiceDecoderConnector(this)) }
 
-    private val coreHolder =
-        lazy {
-            val state = File(filesDir, "state")
-            val dirs =
-                FrameDirs(
-                    state = state,
-                    cache = cacheDir,
-                    photos = photoFolder(File(state, "storage.json")),
-                )
-            FrameCore(
-                dirs = dirs,
-                platform = AndroidPlatformInfo(this),
-                engine = decoder,
-                assets = ApkAssets(this),
-                notifier = AndroidMediaStoreNotifier(this),
-                logSinks = listOf(LogcatSink),
-                displayPower = displayPower,
-                networkLink = networkLink,
-                health = health,
-                processControl = AndroidProcessControl(this) { health },
+    /** Builds the core; a test may put in a lighter one before anything asks for [core]. */
+    internal var coreFactory: () -> FrameCore = {
+        val state = File(filesDir, "state")
+        val dirs =
+            FrameDirs(
+                state = state,
+                cache = cacheDir,
+                photos = photoFolder(File(state, "storage.json")),
+                updates = File(filesDir, "update"),
             )
-        }
+        FrameCore(
+            dirs = dirs,
+            platform = AndroidPlatformInfo(this),
+            engine = decoder,
+            assets = ApkAssets(this),
+            notifier = AndroidMediaStoreNotifier(this),
+            clock = AndroidClock,
+            logSinks = listOf(LogcatSink),
+            displayPower = displayPower,
+            networkLink = networkLink,
+            health = health,
+            processControl = AndroidProcessControl(this) { health },
+            installer = AndroidAppInstaller(this),
+        )
+    }
+
+    private val coreHolder = lazy { coreFactory() }
 
     /** The run journal of the app process (`state/health/runs.json`), started in [onCreate] before the core exists. */
     internal val journal: RunJournal by lazy { RunJournal(File(filesDir, "state/health/runs.json")) }
 
     @Volatile private var startState = HealthState()
 
-    private val healthHolder = lazy { Health(journal, startState, SystemClock::elapsedRealtime) }
+    /** The `boot_id` the journal read at the start of this process. */
+    @Volatile private var bootId: String? = null
+
+    private val healthHolder = lazy { Health(journal, startState, bootId) { SystemClock.elapsedRealtime() } }
 
     /** What the journal decided at the start of this process: normal or safe mode. */
     val health: Health by healthHolder
@@ -102,7 +112,10 @@ class FrameApp : Application() {
     /** Starts the core exactly once per process. */
     fun startCore() {
         if (!coreStarted.compareAndSet(false, true)) return
-        appScope.launch { startLogged({ core.start() }) { e -> core.log.e("app", "Starting the core failed", e) } }
+        appScope.launch {
+            startLogged({ core.start() }) { e -> core.log.e("app", "Starting the core failed", e) }
+            BootReceiver.logHome(this@FrameApp)
+        }
     }
 
     val core: FrameCore by coreHolder
@@ -131,7 +144,8 @@ class FrameApp : Application() {
                 if (coreCreated) core.log.e("crash", "Crash in ${thread.name}", error)
             }),
         )
-        startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId(), installId())
+        bootId = bootId()
+        startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId, installId())
         restartDelayAfter(startState)?.let { delayMs ->
             try {
                 scheduleRestart(this, delayMs)
@@ -237,6 +251,16 @@ class FrameApp : Application() {
             return PendingIntent.getActivity(context, 0, intent, flags)
         }
     }
+}
+
+/**
+ * The system clock with the device's uptime from `SystemClock`, which counts on across restarts of the app; the
+ * updater compares it with the `boot_id` (design decision 6 of `app-auto-update`).
+ */
+internal object AndroidClock : Clock {
+    override fun now(): Instant = Instant.now()
+
+    override fun elapsedRealtimeMillis(): Long = SystemClock.elapsedRealtime()
 }
 
 /** Log to Logcat as well. */

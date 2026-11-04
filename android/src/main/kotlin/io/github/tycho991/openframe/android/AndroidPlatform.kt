@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.android
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.res.Resources
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
@@ -34,6 +35,19 @@ class AndroidPlatformInfo(
 
     override val appVersion: String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+
+    override val appVersionCode: Long? =
+        runCatching {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= 28) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        }.getOrNull()
+
+    override val appDebuggable: Boolean = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     private val natural: Pair<Int, Int> by lazy { naturalSize() }
 

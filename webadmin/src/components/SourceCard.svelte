@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { ApiError, type Source, type SourceKind, type SourceSettings } from "../lib/api/client";
   import { errorText } from "../lib/i18n/errors";
-  import { i18n, t } from "../lib/i18n/i18n.svelte";
+  import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
   import { settingsPatch, sourceRanges, statusLine } from "../lib/sources";
   import { api } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -103,7 +103,12 @@
 <section class="card source" aria-labelledby="{prefix}-name">
   <div class="head">
     <h2 id="{prefix}-name">{source.settings.name}</h2>
-    <span class="muted">{t(kindKeys[source.kind])}</span>
+    <!-- A kind from a newer frame shows as itself. -->
+    <span class="muted"
+      >{(kindKeys as Record<string, Key | undefined>)[source.kind]
+        ? t(kindKeys[source.kind])
+        : source.kind}</span
+    >
   </div>
   <p class="muted">
     {source.user

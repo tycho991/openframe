@@ -83,6 +83,10 @@ object SettingsPatch {
                     s = s.copy(displaySchedule = applyDisplaySchedule(s.displaySchedule, value, errors))
                 }
 
+                "autoUpdateCheck" -> {
+                    bool(value, key, errors)?.let { s = s.copy(autoUpdateCheck = it) }
+                }
+
                 else -> {
                     errors[key] = "Unknown field"
                 }

@@ -159,6 +159,8 @@ data class Settings(
     val language: FrameLanguage = FrameLanguage.AUTO,
     val cacheBudgetMb: Int = 1000,
     val displaySchedule: DisplayScheduleSettings = DisplayScheduleSettings(),
+    /** The frame checks GitHub for a new version by itself (spec `app-update`, "Automatic check"). */
+    val autoUpdateCheck: Boolean = true,
 ) {
     companion object {
         const val NAME_MAX_LENGTH = 64

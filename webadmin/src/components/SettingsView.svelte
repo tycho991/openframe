@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ApiError, type DisplayState, type Settings } from "../lib/api/client";
-  import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
+  import { ApiError, type DisplayState, type Settings, type UpdateState } from "../lib/api/client";
+  import { i18n, t, tOr, type Key } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
   import { api, refreshState, session } from "../lib/session.svelte";
+  import { markUnsaved, updatePollMs } from "../lib/update";
 
   let saved = $state<Settings | null>(null);
   let form = $state<Settings | null>(null);
@@ -13,6 +14,12 @@
   let switching = $state(false);
 
   const dirty = $derived(form !== null && saved !== null && JSON.stringify(form) !== JSON.stringify(saved));
+
+  // A reload after a frame update would lose changes that are not saved.
+  $effect(() => {
+    markUnsaved("settings", dirty);
+    return () => markUnsaved("settings", false);
+  });
 
   const ranges: Record<string, [number, number]> = {
     intervalSeconds: [5, 86400],
@@ -65,19 +72,88 @@
 
   const displayText = $derived.by(() => {
     if (!display) return "";
-    const key = {
-      schedule: display.on ? "display.onSchedule" : "display.offSchedule",
-      manual: display.on ? "display.onManual" : "display.offManual",
-      wake: "display.onWake",
-      none: display.on ? "display.on" : "display.off",
-    }[display.cause] as Key;
-    if (!display.nextChange) return t(key);
+    const key = (
+      {
+        schedule: display.on ? "display.onSchedule" : "display.offSchedule",
+        manual: display.on ? "display.onManual" : "display.offManual",
+        wake: "display.onWake",
+        none: display.on ? "display.on" : "display.off",
+      } as Record<string, Key>
+    )[display.cause];
+    // A cause from a newer frame shows as itself.
+    const state = key ? t(key) : display.cause;
+    if (!display.nextChange) return state;
     const time = new Date(display.nextChange).toLocaleString(i18n.lang, {
       weekday: "short",
       hour: "2-digit",
       minute: "2-digit",
     });
-    return t("display.until", { state: t(key), time });
+    return t("display.until", { state, time });
+  });
+
+  // Software (spec web-admin, "Software update in the interface"; design decision 12 of app-auto-update).
+  let update = $state<UpdateState | null>(null);
+  let updateError = $state<string | null>(null);
+  let installRequested = $state(false);
+  let updateBusy = $state(false);
+  /** The frame stopped answering while its installation dialog was open: it restarts with the new version. */
+  let restarting = $state(false);
+
+  async function loadUpdate() {
+    try {
+      const next = await api.update();
+      if (next.phase !== "installing") installRequested = false;
+      update = next;
+      restarting = false;
+    } catch (e) {
+      if (update?.phase === "installing" && !(e instanceof ApiError)) restarting = true;
+    }
+  }
+
+  $effect(() => {
+    const ms = updatePollMs(update?.phase);
+    const timer = setTimeout(() => void loadUpdate(), ms);
+    return () => clearTimeout(timer);
+  });
+  $effect(() => {
+    void loadUpdate();
+  });
+
+  async function checkUpdate() {
+    updateBusy = true;
+    updateError = null;
+    try {
+      update = await api.checkUpdate();
+    } catch (e) {
+      updateError = errorText(e);
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function installUpdate() {
+    updateBusy = true;
+    updateError = null;
+    try {
+      update = await api.installUpdate();
+      installRequested = true;
+    } catch (e) {
+      updateError = errorText(e);
+      void loadUpdate();
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  function when(iso: string | null | undefined): string {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString(i18n.lang, { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  const phaseText = $derived.by(() => {
+    if (!update) return "";
+    if (restarting) return t("update.restarting");
+    return tOr(`update.phase.${update.phase}`, update.phase, { version: update.latest?.version ?? "" });
   });
 
   async function load() {
@@ -151,8 +227,9 @@
       form.transitionDurationMs === saved.transitionDurationMs,
   );
 
+  /** The text of an enum value; a value from a newer frame shows as itself. */
   function option(prefix: string, value: string) {
-    return t(`${prefix}.${value}` as Key);
+    return tOr(`${prefix}.${value}`, value);
   }
 </script>
 
@@ -395,6 +472,84 @@
       <p class="hint muted">{t("settings.localOnlyHint")}</p>
     </fieldset>
 
+    <fieldset class="card">
+      <legend>{t("settings.section.software")}</legend>
+      {#if update}
+        <dl class="versions">
+          <dt>{t("update.installed")}</dt>
+          <dd>{update.installedVersion}</dd>
+          {#if update.latest}
+            <dt>{t("update.latest")}</dt>
+            <dd>
+              {update.latest.publishedAt
+                ? t("update.published", {
+                    version: update.latest.version,
+                    date: when(update.latest.publishedAt),
+                  })
+                : update.latest.version}
+            </dd>
+          {/if}
+        </dl>
+        <p class="phase" aria-live="polite">{phaseText}</p>
+        {#if update.phase !== "unsupported"}
+          <p class="hint">
+            {update.lastCheck
+              ? t("update.lastCheck", {
+                  time: when(update.lastCheck.at),
+                  result: tOr(`update.result.${update.lastCheck.result}`, update.lastCheck.result),
+                })
+              : t("update.neverChecked")}
+          </p>
+          {#if update.error && update.phase !== "installing" && !restarting}
+            <p class="error">{tOr(`update.error.${update.error.code}`, update.error.code)}</p>
+          {/if}
+          {#if update.latest?.notes}
+            <!-- Plain text, never HTML or Markdown (spec web-admin, "Release notes as plain text"). -->
+            <div class="notes">
+              <span class="notes-title">{t("update.notes")}</span>
+              <p class="notes-text">{update.latest.notes}</p>
+            </div>
+          {/if}
+          <div class="update-actions">
+            <button
+              type="button"
+              onclick={checkUpdate}
+              disabled={updateBusy || update.phase === "checking" || update.phase === "downloading"}
+              >{t("update.check")}</button
+            >
+            {#if update.phase === "ready"}
+              <button
+                type="button"
+                class="primary"
+                onclick={installUpdate}
+                disabled={updateBusy || !update.installAllowed}
+                aria-describedby="s-install-hint">{t("update.install")}</button
+              >
+            {/if}
+          </div>
+          {#if update.phase === "ready"}
+            <p class="hint" id="s-install-hint">
+              {update.installAllowed ? t("update.installHint") : t("update.notAllowed")}
+            </p>
+          {/if}
+          {#if installRequested && update.phase === "installing"}<p role="status">
+              {t("update.requested")}
+            </p>{/if}
+          {#if updateError}<p class="error" role="alert">{updateError}</p>{/if}
+        {/if}
+      {/if}
+      <label class="check">
+        <input
+          type="checkbox"
+          bind:checked={form.autoUpdateCheck}
+          aria-invalid={!!errors.autoUpdateCheck}
+          aria-describedby="s-auto-update-hint"
+        />
+        <span>{t("settings.autoUpdateCheck")}</span>
+      </label>
+      <span class="hint" id="s-auto-update-hint">{t("settings.autoUpdateCheckHint")}</span>
+    </fieldset>
+
     <div class="actions">
       {#if status === "saved"}<span role="status" class="saved">{t("common.saved")}</span>{/if}
       <button type="submit" class="primary" disabled={!dirty || status === "saving"}
@@ -455,6 +610,38 @@
   .place {
     display: grid;
     gap: 4px;
+  }
+  .versions {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    margin: 0;
+  }
+  .versions dd {
+    margin: 0;
+    font-weight: 600;
+  }
+  .phase {
+    margin: 0;
+    font-weight: 600;
+  }
+  .notes {
+    display: grid;
+    gap: 4px;
+  }
+  .notes-title {
+    font-size: var(--text-small);
+    font-weight: 600;
+  }
+  .notes-text {
+    margin: 0;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  .update-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
   }
   .times {
     display: grid;

@@ -13,11 +13,13 @@ import kotlinx.coroutines.flow.asStateFlow
  *   for [plannedExit]'s `validForMs`; [cancelPlannedExit] withdraws it on cancel, failure or abandon.
  *
  * [elapsedMs] is the device's uptime (`SystemClock.elapsedRealtime` on Android), which the journal compares across
- * runs.
+ * runs. [bootId] is the `boot_id` the journal read at the start, `null` where the kernel does not let the app read it;
+ * a stored uptime counts only while it is the same.
  */
 class Health(
     private val journal: RunJournal,
     initial: HealthState,
+    val bootId: String? = null,
     private val elapsedMs: () -> Long,
 ) {
     private val _state = MutableStateFlow(initial)
@@ -51,14 +53,13 @@ class Health(
 
     companion object {
         /** A run in normal mode with a journal in memory only, for tests and the test server. */
-        fun normal(): Health = Health(RunJournal(null), HealthState(), { 0L })
+        fun normal(bootId: String? = null): Health = Health(RunJournal(null), HealthState(bootIdReadable = bootId != null), bootId) { 0L }
 
         /** A run in safe mode with a journal in memory only, for tests and the test server. */
         fun safe(sinceMs: Long): Health =
             Health(
                 RunJournal(null).also { it.forceSafe(sinceMs) },
                 HealthState(HealthMode.SAFE, SafeMode(sinceMs, "test"), RunJournal.EARLY_ENDS_FOR_SAFE_MODE),
-                { 0L },
-            )
+            ) { 0L }
     }
 }

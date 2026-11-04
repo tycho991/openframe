@@ -9,13 +9,20 @@ import io.github.tycho991.openframe.core.nextcloud.FakeClients
 import io.github.tycho991.openframe.core.nextcloud.FakeLoginFlow
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
+import io.github.tycho991.openframe.core.platform.InstallResult
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.sources.FakeRemoteFolder
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.testing.FakeAppInstaller
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.FakePlatform
+import io.github.tycho991.openframe.core.testing.FakeReleaseSource
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
+import io.github.tycho991.openframe.core.update.OfficialCertificate
+import io.github.tycho991.openframe.core.update.UpdateErrorCode
+import io.github.tycho991.openframe.core.update.UpdateException
+import io.github.tycho991.openframe.core.update.Versions
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.RandomAccessFile
@@ -46,6 +53,22 @@ object TestServerMain {
 
     /** The display, with device administration active; steered through the control port. */
     private var displayPower = FakeDisplayPower()
+
+    /**
+     * GitHub's releases and Android's installer, in memory; steered through the control port. They outlive a restart
+     * of the core, as GitHub and Android's sessions outlive the app, and are new after a reset.
+     */
+    private var releases = FakeReleaseSource()
+    private var installer = FakeAppInstaller()
+
+    /** The device; it reports the version of `version.txt`, so that the web UI built from it sees no update. */
+    private var platform = platformOfVersionTxt()
+
+    private fun platformOfVersionTxt(): FakePlatform {
+        val version = File("version.txt").takeIf { it.isFile }?.readText()?.trim() ?: "0.1.0"
+        return FakePlatform(appVersion = version, appVersionCode = Versions.code(version))
+    }
+
     private lateinit var dataDir: File
 
     /** Held as long as the server runs, see [main]. */
@@ -160,13 +183,13 @@ object TestServerMain {
                 // With the separator, so that a neighbouring folder such as `dist-old` is not inside.
                 File(dist, path).takeIf { it.isFile && it.canonicalPath.startsWith(dist.canonicalPath + File.separator) }?.inputStream()
             }
-        val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"))
+        val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"), File(dataDir, "update"))
         nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
         displayPower = FakeDisplayPower()
         core =
             FrameCore(
                 dirs,
-                FakePlatform(),
+                platform,
                 JvmMediaEngine(supportsHeic = false),
                 assets,
                 MediaStoreNotifier.None,
@@ -179,13 +202,19 @@ object TestServerMain {
                 health = health,
                 // "Start normally" as a restart in normal mode; on a thread of its own, the request comes from the core.
                 processControl = { Thread { synchronized(TestServerMain) { restartCore(Health.normal()) } }.start() },
+                installer = installer,
+                releases = releases,
             )
+        installer.onResult = core.update::onInstallResult
         runBlocking { core.start() }
     }
 
     private fun reset() {
         runBlocking { core.stop() }
         TestServerClock.offset = Duration.ZERO
+        releases = FakeReleaseSource()
+        installer = FakeAppInstaller()
+        platform = platformOfVersionTxt()
         dataDir.deleteRecursively()
         dataDir.mkdirs()
         startCore()
@@ -354,6 +383,77 @@ object TestServerMain {
                         "/display/power" -> {
                             displayPower.powerButton()
                             ok(if (displayPower.screenOn) "on" else "off")
+                        }
+
+                        // A release on GitHub: `/update/publish?version=0.4.0&notes=…`, `apk=0` for one without an APK.
+                        "/update/publish" -> {
+                            val version = q.getValue("version")
+                            releases.publish(version, notes = q["notes"] ?: "Fixes for $version")
+                            if (q["apk"] == "0") releases.release = releases.release!!.copy(assets = emptyList())
+                            ok("published $version")
+                        }
+
+                        // GitHub fails with a code of the update state, e.g. `/update/fail?code=update_unreachable`;
+                        // without a code it answers again.
+                        "/update/fail" -> {
+                            releases.failure =
+                                q["code"]?.let { code ->
+                                    UpdateException(UpdateErrorCode.entries.single { it.api == code }, "Fake failure: $code")
+                                }
+                            ok("fail ${q["code"]}")
+                        }
+
+                        // The installed version changes without a restart, e.g. `/update/installed?version=9.9.9`.
+                        "/update/installed" -> {
+                            val version = q.getValue("version")
+                            platform.appVersion = version
+                            platform.appVersionCode = Versions.code(version)
+                            ok("installed $version")
+                        }
+
+                        // Someone answers the installation dialog on the frame: `result=confirmed`, `cancelled` or
+                        // `failed`. Confirmed, Android replaces the app: the ready version is installed and the core
+                        // starts again.
+                        "/update/answer" -> {
+                            val session = installer.openSession()
+                            when (q.getValue("result")) {
+                                "confirmed" -> {
+                                    val version = core.update.state.value.readyVersion ?: error("No dialog open")
+                                    installer.answer(session, InstallResult.Success)
+                                    runBlocking { core.stop() }
+                                    platform.appVersion = version
+                                    platform.appVersionCode = Versions.code(version)
+                                    startCore()
+                                }
+
+                                "cancelled" -> {
+                                    installer.answer(session, InstallResult.Cancelled)
+                                }
+
+                                else -> {
+                                    installer.answer(session, InstallResult.Failed("INSTALL_FAILED_INTERNAL_ERROR"))
+                                }
+                            }
+                            ok("answered ${q["result"]}")
+                        }
+
+                        // Android allows openframe to install apps (`on=1`) or not (`on=0`).
+                        "/update/allowed" -> {
+                            installer.allowed = q["on"] == "1"
+                            ok("allowed ${q["on"]}")
+                        }
+
+                        // The app is signed with the official certificate (`on=1`) or with another (`on=0`); the
+                        // core starts again, because it reads the certificate at the start.
+                        "/update/official" -> {
+                            installer.certificate = if (q["on"] == "1") OfficialCertificate.SHA256 else "00".repeat(32)
+                            restartCore(Health.normal())
+                            ok("official ${q["on"]}")
+                        }
+
+                        // The phase of the update, e.g. to wait for a download.
+                        "/update/phase" -> {
+                            ok(core.update.state.value.phase.api)
                         }
 
                         // The display measured that its GPU is too slow to fade: the frame changes photos instantly.

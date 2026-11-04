@@ -18,6 +18,12 @@ interface Clock {
     /** Milliseconds that a change of the wall clock does not move, for timers. Only differences are meaningful. */
     fun monotonicMillis(): Long = java.lang.System.nanoTime() / 1_000_000
 
+    /**
+     * Milliseconds since the device started, also across restarts of the app (`SystemClock.elapsedRealtime` on
+     * Android). A stored value is compared only with the `boot_id` it was stored with; on the JVM it is [monotonicMillis].
+     */
+    fun elapsedRealtimeMillis(): Long = monotonicMillis()
+
     object System : Clock {
         override fun now(): Instant = Instant.now()
     }
@@ -28,6 +34,12 @@ interface PlatformInfo {
     val model: String
     val androidVersion: String
     val appVersion: String
+
+    /** The installed version code, `null` if the system does not tell it; updates are offered only with it. */
+    val appVersionCode: Long? get() = null
+
+    /** The installed app is a debug build. */
+    val appDebuggable: Boolean get() = false
 
     /** Resolution in the device's natural orientation, without system bars. */
     val screenWidth: Int
@@ -71,6 +83,15 @@ interface DisplayPower {
     fun turnOff(): Boolean
 
     fun turnOn()
+
+    /**
+     * Keeps the screen on against the system's screen timeout while [on], at most for [timeoutMs], without switching
+     * it on (spec `app-update`, "Display awake during the installation dialog"). Works without device administration.
+     */
+    fun keepOn(
+        on: Boolean,
+        timeoutMs: Long,
+    ) {}
 
     fun setListener(listener: Listener)
 

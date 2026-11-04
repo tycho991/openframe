@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Generates the test images under core/src/test/resources/fixtures (needs Pillow).
 # Usage: python3 scripts/generate-test-fixtures.py core/src/test/resources/fixtures
+# With ANDROID_HOME set it also builds the APKs for the updater (needs the build tools and keytool).
 import sys, os
 from PIL import Image, ImageDraw
 from PIL.TiffImagePlugin import IFDRational
@@ -47,3 +48,43 @@ open(f"{out}/broken.jpg", "wb").write(good[:300])
 # HEIF header without image data: "unsupported" on devices without a decoder
 open(f"{out}/photo.heic", "wb").write(bytes.fromhex("0000001866747970686569630000000068656963") + b"mif1" + b"\0" * 200)
 open(f"{out}/note.txt", "w").write("not an image\n")
+
+# APKs for the updater (spec `app-update`, Verification before offering), only with the Android SDK in ANDROID_HOME:
+# a minimal openframe 0.4.0 signed with v1 and v2 by a throwaway key, the same archive with DEX bytes in front of it as
+# in "Janus" (CVE-2017-13156, offsets moved so that the archive itself stays valid), and one with data appended.
+import glob, shutil, struct, subprocess, tempfile
+def apks(out, sdk):
+    tools = sorted(glob.glob(f"{sdk}/build-tools/*/"))[-1]
+    android_jar = sorted(glob.glob(f"{sdk}/platforms/android-*/android.jar"))[0]
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest = f"{tmp}/AndroidManifest.xml"
+        open(manifest, "w").write(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.tycho991.openframe"'
+            ' android:versionCode="400" android:versionName="0.4.0"><uses-sdk android:minSdkVersion="21"/>'
+            '<application android:label="openframe"/></manifest>')
+        unsigned = f"{tmp}/unsigned.apk"
+        subprocess.run([f"{tools}aapt2", "link", "-o", unsigned, "-I", android_jar, "--manifest", manifest], check=True)
+        keystore = f"{tmp}/test.p12"
+        subprocess.run(["keytool", "-genkeypair", "-keystore", keystore, "-storetype", "PKCS12", "-storepass", "openframe",
+                        "-alias", "test", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+                        "-dname", "CN=openframe test"], check=True, capture_output=True)
+        signed = f"{out}/update-0.4.0.apk"
+        subprocess.run([f"{tools}apksigner", "sign", "--ks", keystore, "--ks-pass", "pass:openframe", "--v1-signing-enabled",
+                        "true", "--v2-signing-enabled", "true", "--out", signed, unsigned], check=True)
+        for f in glob.glob(f"{out}/*.idsig"): os.remove(f)
+    data = open(signed, "rb").read()
+    open(f"{out}/update-appended.apk", "wb").write(data + b"appended after the end of the archive")
+    # DEX header in front; the offsets of the central directory and of every entry move by its length.
+    dex = b"dex\n035\0" + bytes(104)
+    end = data.rindex(b"PK\x05\x06")
+    entries, cd_size, cd_offset = struct.unpack_from("<HII", data, end + 10)
+    moved = bytearray(data)
+    pos = cd_offset
+    for _ in range(entries):
+        struct.pack_into("<I", moved, pos + 42, struct.unpack_from("<I", data, pos + 42)[0] + len(dex))
+        n, m, k = struct.unpack_from("<HHH", data, pos + 28)
+        pos += 46 + n + m + k
+    struct.pack_into("<I", moved, end + 16, cd_offset + len(dex))
+    open(f"{out}/update-janus.apk", "wb").write(dex + bytes(moved))
+if os.environ.get("ANDROID_HOME"):
+    apks(out, os.environ["ANDROID_HOME"])

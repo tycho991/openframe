@@ -22,6 +22,14 @@ class FakeDisplayPower(
 
     private var listener: DisplayPower.Listener? = null
 
+    /** The screen is kept on against the system's timeout, as with the screen wake lock during the installation dialog. */
+    @Volatile
+    var keptOn = false
+        private set
+
+    /** The timeouts of every [keepOn] with `true`, in order. */
+    val keepOnTimeouts = mutableListOf<Long>()
+
     /** Thrown by the next switch, as a firmware that refuses the wake lock or the lock call would. */
     var failNextSwitch: RuntimeException? = null
 
@@ -44,6 +52,14 @@ class FakeDisplayPower(
         calls += "on"
         failIfAsked()
         screen(true)
+    }
+
+    override fun keepOn(
+        on: Boolean,
+        timeoutMs: Long,
+    ) {
+        keptOn = on
+        if (on) keepOnTimeouts += timeoutMs
     }
 
     override fun setListener(listener: DisplayPower.Listener) {
