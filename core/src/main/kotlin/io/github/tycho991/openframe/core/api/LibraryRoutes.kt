@@ -140,6 +140,8 @@ data class StateDto(
     val settingsVersion: Long,
     val transitionFallback: Boolean,
     val safeMode: Boolean,
+    /** The installed version, so that the web UI sees on every page that the frame updated itself. */
+    val appVersion: String,
 )
 
 /** Position in a sorted list: key of the last entry of the previous page. */
@@ -393,7 +395,7 @@ fun Router.libraryRoutes(
     get("/api/v1/state") {
         HttpResponse.json(
             StateDto.serializer(),
-            StateDto(index.library.value.version, settings.version.value, transitions.cut.value, safeMode()),
+            StateDto(index.library.value.version, settings.version.value, transitions.cut.value, safeMode(), platform.appVersion),
         )
     }
 }

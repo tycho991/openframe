@@ -5,12 +5,14 @@ import io.github.tycho991.openframe.core.FrameDirs
 import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.nextcloud.NextcloudClients
+import io.github.tycho991.openframe.core.platform.AppInstaller
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
 import io.github.tycho991.openframe.core.platform.ProcessControl
+import io.github.tycho991.openframe.core.update.ReleaseSource
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -30,6 +32,9 @@ class TestFrame(
     health: Health = Health.normal(),
     processControl: ProcessControl = ProcessControl.None,
     stableAfterMs: Long = RunJournal.STABLE_AFTER_MS,
+    /** A [FakeAppInstaller] gets its results wired to this frame's updater. */
+    installer: AppInstaller = AppInstaller.None,
+    releases: ReleaseSource = FakeReleaseSource(),
 ) : AutoCloseable {
     val dirs = FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"))
     val notified = CopyOnWriteArrayList<File>()
@@ -53,7 +58,10 @@ class TestFrame(
             health = health,
             processControl = processControl,
             stableAfterMs = stableAfterMs,
+            installer = installer,
+            releases = releases,
         ).also {
+            (installer as? FakeAppInstaller)?.onResult = it.update::onInstallResult
             runBlocking { it.start() }
         }
     val http = TestHttp("http://127.0.0.1:${core.server.boundPort}")

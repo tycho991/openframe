@@ -41,6 +41,8 @@ tags:
     description: Remote sources of photos (a Nextcloud account or share link), read only.
   - name: display
     description: State of the display and the manual switch.
+  - name: update
+    description: Updates of the app from the releases on GitHub.
 
 paths:
   /info:
@@ -672,6 +674,58 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /update:
+    get:
+      tags: [update]
+      operationId: getUpdate
+      summary: Installed and latest version, and the state of check, download and installation.
+      responses:
+        "200":
+          description: The update state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /update/check:
+    post:
+      tags: [update]
+      operationId: checkUpdate
+      summary: Check for an update now.
+      description: >-
+        Starts a check, also while automatic checks are off. While a check or download runs, within 60 seconds of the
+        last check, or before a rate limit of GitHub resets, no check starts; the answer is the current state then.
+      responses:
+        "202":
+          description: The update state after the request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /update/install:
+    post:
+      tags: [update]
+      operationId: installUpdate
+      summary: Open the installation dialog for the ready update on the frame.
+      description: >-
+        The update installs only after someone confirms Android's dialog on the frame. An accepted request wakes the
+        display and keeps it on while the dialog is open, at most 10 minutes.
+      responses:
+        "202":
+          description: The dialog is being opened; `phase` is `installing`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The installation was refused; the code says why.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstallRefusal" }
+
   /logs:
     get:
       tags: [diagnostics]
@@ -1103,7 +1157,7 @@ components:
       additionalProperties: false
       required:
         [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, caption,
-         language, cacheBudgetMb, displaySchedule]
+         language, cacheBudgetMb, displaySchedule, autoUpdateCheck]
       properties:
         name:
           type: string
@@ -1121,6 +1175,9 @@ components:
         language: { $ref: "#/components/schemas/FrameLanguage" }
         cacheBudgetMb: { type: integer, minimum: 100, maximum: 10000 }
         displaySchedule: { $ref: "#/components/schemas/DisplaySchedule" }
+        autoUpdateCheck:
+          type: boolean
+          description: The frame checks GitHub for a new version by itself, every 6 hours.
 
     SettingsPatch:
       type: object
@@ -1163,6 +1220,7 @@ components:
                 "on": { type: string }
                 "off": { type: string }
             wakeMinutes: { type: integer }
+        autoUpdateCheck: { type: boolean }
 
     ImageUrls:
       type: object
@@ -1379,7 +1437,7 @@ components:
     State:
       type: object
       additionalProperties: false
-      required: [libraryVersion, settingsVersion, transitionFallback, safeMode]
+      required: [libraryVersion, settingsVersion, transitionFallback, safeMode, appVersion]
       properties:
         libraryVersion: { type: integer }
         settingsVersion: { type: integer }
@@ -1393,6 +1451,9 @@ components:
           description: >-
             The frame started in safe mode after repeated crashes: photos, sources and image work rest, the rest of
             the API works. `POST /safe-mode/exit` starts it normally.
+        appVersion:
+          type: string
+          description: The installed version of the app; it changes when the frame updated itself.
 
     LogEntry:
       type: object
@@ -1412,3 +1473,82 @@ components:
         entries:
           type: array
           items: { $ref: "#/components/schemas/LogEntry" }
+
+    UpdatePhase:
+      type: string
+      enum: [idle, checking, downloading, ready, installing, unsupported]
+      description: >-
+        `ready`: an update is downloaded and verified; `installing`: the installation dialog is open on the frame;
+        `unsupported`: the installed app is not an official build, and the frame does not look for updates.
+
+    UpdateError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            [update_unreachable, update_rate_limited, update_not_found, update_no_apk, update_no_checksum,
+             update_checksum, update_invalid_apk, update_signature, update_storage, update_tls, update_failed,
+             install_cancelled, install_unanswered, install_failed]
+        message: { type: string }
+
+    InstallRefusal:
+      type: object
+      additionalProperties: false
+      required: [error]
+      description: The `Error` envelope with the refusal codes of an installation request.
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [update_not_ready, install_not_allowed, install_in_progress, install_cooldown]
+            message: { type: string }
+
+    Release:
+      type: object
+      additionalProperties: false
+      required: [version, notes, publishedAt]
+      properties:
+        version: { type: string }
+        notes: { type: string, description: "The release notes as plain text, never to be rendered as HTML." }
+        publishedAt: { type: [string, "null"], format: date-time }
+
+    UpdateCheck:
+      type: object
+      additionalProperties: false
+      required: [at, result]
+      properties:
+        at: { type: string, format: date-time }
+        result: { type: string, enum: [up_to_date, update_found, failed] }
+
+    UpdateState:
+      type: object
+      additionalProperties: false
+      required: [installedVersion, phase, latest, lastCheck, error, installAllowed]
+      properties:
+        installedVersion: { type: string }
+        phase: { $ref: "#/components/schemas/UpdatePhase" }
+        latest:
+          description: The latest release the last successful check found, also when it is not newer; `null` before one was found.
+          oneOf:
+            - $ref: "#/components/schemas/Release"
+            - type: "null"
+        lastCheck:
+          description: Time and result of the last check; `null` before the first.
+          oneOf:
+            - $ref: "#/components/schemas/UpdateCheck"
+            - type: "null"
+        error:
+          description: The last error of check, download or installation; `null` after a success.
+          oneOf:
+            - $ref: "#/components/schemas/UpdateError"
+            - type: "null"
+        installAllowed:
+          type: boolean
+          description: Android allows openframe to install apps (apps from unknown sources).

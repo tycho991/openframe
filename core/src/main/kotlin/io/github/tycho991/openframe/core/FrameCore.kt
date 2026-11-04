@@ -8,6 +8,7 @@ import io.github.tycho991.openframe.core.api.libraryRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
 import io.github.tycho991.openframe.core.api.sourcesRoutes
+import io.github.tycho991.openframe.core.api.updateRoutes
 import io.github.tycho991.openframe.core.auth.AccessControl
 import io.github.tycho991.openframe.core.auth.ClientRegistry
 import io.github.tycho991.openframe.core.auth.ImageSigner
@@ -43,6 +44,7 @@ import io.github.tycho991.openframe.core.nextcloud.NextcloudMigration
 import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
 import io.github.tycho991.openframe.core.places.PlaceIndex
+import io.github.tycho991.openframe.core.platform.AppInstaller
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
@@ -67,6 +69,10 @@ import io.github.tycho991.openframe.core.sources.StoredSources
 import io.github.tycho991.openframe.core.sources.StoredSyncResults
 import io.github.tycho991.openframe.core.sources.SyncResultStore
 import io.github.tycho991.openframe.core.store.JsonStore
+import io.github.tycho991.openframe.core.update.GithubReleases
+import io.github.tycho991.openframe.core.update.ReleaseSource
+import io.github.tycho991.openframe.core.update.StoredUpdate
+import io.github.tycho991.openframe.core.update.UpdateManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -93,11 +99,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.Duration
 
-/** The frame's folders: state, cache and the photo folder reachable over USB. */
+/**
+ * The frame's folders: state, cache, the photo folder reachable over USB, and the folder of a downloaded update, which
+ * is no cache, so that Android does not clear it and a ready update survives restarts.
+ */
 data class FrameDirs(
     val state: File,
     val cache: File,
     val photos: File,
+    val updates: File = File(state.absoluteFile.parentFile, "update"),
 )
 
 /**
@@ -133,6 +143,10 @@ class FrameCore(
     private val processControl: ProcessControl = ProcessControl.None,
     /** How long a run in normal mode lasts before it counts as stable. */
     private val stableAfterMs: Long = RunJournal.STABLE_AFTER_MS,
+    /** Installing new versions of the app; a device without it never looks for updates (spec `app-update`). */
+    installer: AppInstaller = AppInstaller.None,
+    /** Where updates come from: GitHub unless a test or the test server hands in a fake. */
+    releases: ReleaseSource? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -204,6 +218,21 @@ class FrameCore(
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
 
+    /** Updates of the app from GitHub's releases (spec `app-update`). Android reports installation results here. */
+    val update =
+        UpdateManager(
+            scope,
+            JsonStore(File(dirs.state, "update.json"), StoredUpdate.serializer(), scope, log),
+            releases ?: GithubReleases(),
+            installer,
+            platform,
+            health,
+            settings.settings,
+            dirs.updates,
+            clock,
+            log,
+        )
+
     /** Place names of photo positions, offline; loads its data on the first lookup. */
     val places = PlaceIndex(log)
 
@@ -264,7 +293,11 @@ class FrameCore(
 
     /** Loads everything, starts the background work and the server. */
     suspend fun start() {
-        log.i(TAG, "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion}")
+        val build = if (platform.appDebuggable) "debug" else "release"
+        log.i(
+            TAG,
+            "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion} (${platform.appVersionCode ?: "?"}, $build)",
+        )
         logHealth()
         settings.load()
         transitions.load()
@@ -291,6 +324,22 @@ class FrameCore(
                 .collect(slideshow::setResting)
         }
         scope.launch { settings.settings.collect(transitions::onSettings) }
+        // While the installation dialog is open, the display is on and stays on (design decision 8 of app-auto-update).
+        scope.launch {
+            update.state
+                .map { it.installUntilMono }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { until ->
+                    if (until != null) {
+                        display.wake()
+                        display.hold(until)
+                    } else {
+                        display.release()
+                    }
+                }
+        }
+        update.start()
         sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE, launch = !safe)
         _ready.value = true
         if (!safe) {
@@ -447,6 +496,7 @@ class FrameCore(
     fun onNetworkChanged() {
         lanAddressCache = null
         if (!health.safe) sources.networkChanged()
+        update.networkChanged()
         // Bound to loopback, local-only mode does not care about the network, unless it could not bind at all.
         if (!settings.localOnly.value || server.state.value is ServerState.Failed) requestBind()
     }
@@ -473,6 +523,7 @@ class FrameCore(
         index.flush()
         sourceConfigs.flush()
         syncResults.flush()
+        update.flush()
         scope.cancel()
     }
 
@@ -484,6 +535,7 @@ class FrameCore(
         router.sourcesRoutes(sources, nextcloud, health::safe)
         router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
+        router.updateRoutes(update, clients)
         router.diagnosticsRoutes(log)
     }
 

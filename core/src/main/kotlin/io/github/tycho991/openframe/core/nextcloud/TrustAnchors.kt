@@ -19,9 +19,21 @@ import javax.net.ssl.X509TrustManager
 object TrustAnchors {
     private val FILES = listOf("isrg-root-x1.pem", "sectigo-root-e46.pem", "usertrust-ecc.pem")
 
+    /**
+     * Roots that only the update client trusts in addition (design decision 2 of `app-auto-update`): ISRG Root X2 and
+     * Let's Encrypt's roots YE and YR, so that a move of GitHub or its asset host to one of them cannot lock out the
+     * update that would bring the new root.
+     */
+    private val UPDATE_FILES = listOf("isrg-root-x2.pem", "isrg-root-ye.pem", "isrg-root-yr.pem")
+
     /** The root certificates delivered with the app. */
-    fun delivered(): List<X509Certificate> =
-        FILES.map { name ->
+    fun delivered(): List<X509Certificate> = load(FILES)
+
+    /** [delivered] and the extra roots of the update client, for [trustManager]. */
+    fun forUpdates(): List<X509Certificate> = delivered() + load(UPDATE_FILES)
+
+    private fun load(files: List<String>): List<X509Certificate> =
+        files.map { name ->
             val stream = TrustAnchors::class.java.getResourceAsStream("/trust/$name") ?: error("Trust anchor $name is missing")
             stream.use(::parse)
         }

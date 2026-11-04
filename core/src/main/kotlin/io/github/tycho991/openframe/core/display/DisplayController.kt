@@ -62,6 +62,14 @@ class DisplayController(
 
         data object ScheduleChanged : Event
 
+        data object Wake : Event
+
+        data class Hold(
+            val untilMono: Long,
+        ) : Event
+
+        data object Release : Event
+
         class Manual(
             val on: Boolean,
             val reply: CompletableDeferred<DisplayState>,
@@ -102,6 +110,9 @@ class DisplayController(
     private var lostAt: Long? = null
     private var lastRequest: Long? = null
 
+    /** The end of a hold for the installation dialog on the monotonic clock, `null` without one. */
+    private var holdUntil: Long? = null
+
     /** The end of the current dark wake, `null` outside one. */
     private var darkUntil: Long? = null
     private var lastDarkEnd: Long? = null
@@ -141,6 +152,30 @@ class DisplayController(
         if (last != null && now - last < TOUCH_THROTTLE_MS) return
         lastTouch = now
         events.trySend(Event.Touch)
+    }
+
+    /**
+     * Wakes the display as the power button does (design decision 8 of `app-auto-update`): on, also without device
+     * administration; a manual off ends, and in an off period it stays on for the minutes after waking.
+     */
+    fun wake() {
+        events.trySend(Event.Wake)
+    }
+
+    /**
+     * Keeps the display on until [untilMono] (monotonic): in an off period the waking lasts at least that long, a
+     * screen-off meanwhile is no manual off, and the system's screen timeout is held off by [DisplayPower.keepOn].
+     */
+    fun hold(untilMono: Long) {
+        events.trySend(Event.Hold(untilMono))
+    }
+
+    /**
+     * Ends a [hold]: in an off period the display stays on for the minutes after waking. The decision the frame acted
+     * on stays, so a display that someone switched off during the hold is not switched on again.
+     */
+    fun release() {
+        events.trySend(Event.Release)
     }
 
     /** The manual switch. The caller checks [available] first. Answers with the state after switching. */
@@ -206,6 +241,22 @@ class DisplayController(
             is Event.Manual -> {
                 manual(event.on)
             }
+
+            Event.Wake -> {
+                if (darkUntil != null) endDark("woken", switchOff = false)
+                power.turnOn()
+                woken()
+            }
+
+            is Event.Hold -> {
+                log.i(TAG, "Display held on for the installation dialog")
+                holdUntil = event.untilMono
+                power.keepOn(true, (event.untilMono - clock.monotonicMillis()).coerceAtLeast(0))
+            }
+
+            Event.Release -> {
+                endHold()
+            }
         }
         val available = power.available
         if (available && !wasAvailable) grace()
@@ -240,6 +291,9 @@ class DisplayController(
         }
         if (on && applied == false) {
             woken()
+        } else if (!on && applied == true && holdUntil != null) {
+            // During the installation dialog: no manual off, and nothing switches it on again.
+            log.i(TAG, "Display switched off during the installation dialog")
         } else if (!on && applied == true) {
             // Switched off by hand (the power button or another app): it stays off until the next switching time.
             log.i(TAG, "Display switched off by hand")
@@ -256,6 +310,15 @@ class DisplayController(
         override = null
         val d = decide()
         if (d.on == false && d.cause == DisplayCause.SCHEDULE) wakeUntil = clock.monotonicMillis() + wakeMillis()
+    }
+
+    private fun endHold() {
+        if (holdUntil == null) return
+        log.i(TAG, "Display hold ended")
+        holdUntil = null
+        power.keepOn(false, 0)
+        val d = decide()
+        if (d.period?.on == false && power.available) wakeUntil = clock.monotonicMillis() + wakeMillis()
     }
 
     private fun manual(on: Boolean) {
@@ -284,6 +347,9 @@ class DisplayController(
         checkClock()
         val available = power.available
         val mono = clock.monotonicMillis()
+        holdUntil?.let { if (it <= mono) endHold() }
+        // During a hold the waking lasts at least until its end.
+        holdUntil?.let { until -> wakeUntil = maxOf(wakeUntil ?: until, until) }
         wakeUntil?.let { if (it <= mono) wakeUntil = null }
         val d = decide()
         if (override != null && d.cause != DisplayCause.MANUAL) override = null

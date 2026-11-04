@@ -88,6 +88,44 @@ class SettingsRoutesTest {
         assertEquals(true, ApiJson.decodeFromString(Settings.serializer(), ok.body()).caption.place)
     }
 
+    /** Spec `frame-settings`: Frame settings › Read frame settings. */
+    @Test
+    fun `Automatic update checks are read and switched`() {
+        val read = Json.parseToJsonElement(http.get("/api/v1/settings", auth.header).body()).jsonObject
+        assertEquals("true", read["autoUpdateCheck"].toString())
+        val res = http.request("PATCH", "/api/v1/settings", """{"autoUpdateCheck":false}""", auth.header)
+        assertEquals(200, res.statusCode())
+        assertFalse(repo.settings.value.autoUpdateCheck)
+    }
+
+    /** Spec `frame-settings`: Frame settings › Update from a version without the switch. */
+    @Test
+    fun `Stored settings without the switch turn automatic update checks on`() {
+        File(dir, "s.json").writeText("""{"values":{"name":"Hallway","intervalSeconds":60,"cacheBudgetMb":500},"version":4}""")
+        val res = http.get("/api/v1/settings", auth.header)
+        assertEquals(200, res.statusCode())
+        val settings = ApiJson.decodeFromString(Settings.serializer(), res.body())
+        assertEquals(true, settings.autoUpdateCheck)
+        assertEquals("Hallway", settings.name)
+        assertEquals(60, settings.intervalSeconds)
+        assertEquals(500, settings.cacheBudgetMb)
+        assertEquals(4, repo.version.value)
+    }
+
+    @Test
+    fun `A string for automatic update checks names its field`() {
+        val res = http.request("PATCH", "/api/v1/settings", """{"autoUpdateCheck":"yes"}""", auth.header)
+        assertEquals(400, res.statusCode())
+        val fields =
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["fields"]!!
+                .jsonObject
+        assertEquals(setOf("autoUpdateCheck"), fields.keys)
+        assertEquals(true, repo.settings.value.autoUpdateCheck)
+    }
+
     @Test
     fun `Via the API`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"localOnly":false}""", auth.header)
