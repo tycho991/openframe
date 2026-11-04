@@ -180,6 +180,9 @@ class DisplayActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { setHintVisible(false) }
         }
         FrameService.start(this)
+        // The display is back, by the system, the user or the restart itself: a restart still waiting would only bring it
+        // to the front later, maybe over the device administration or an installation.
+        FrameApp.cancelRestart(this)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

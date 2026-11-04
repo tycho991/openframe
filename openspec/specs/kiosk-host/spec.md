@@ -61,7 +61,7 @@ The server SHALL run in a foreground service so that it stays reachable while th
 - **THEN** the server answers again within 40 seconds without any interaction, and the display returns when the Home button is pressed
 
 ### Requirement: Self-healing
-If the display or the server crashes, the app SHALL restart itself within 30 seconds, unless it starts in safe mode. From the third early end in a row, the display restart after a Java crash SHALL come only after a growing delay (30 s, 2 min, then 10 min); the server SHALL come back independently of it. At each start the app SHALL log how the previous run ended: Java crash with its cause, unexplained end, device restart, new installation or planned end.
+If the display or the server crashes, the app SHALL restart itself within 30 seconds, unless it starts in safe mode. From the third early end in a row, the display restart after a Java crash or an unexplained end SHALL come only after a growing delay (30 s, 2 min, then 10 min); the server SHALL come back independently of it. At each start the app SHALL log how the previous run ended: Java crash with its cause, unexplained end, device restart, new installation or planned end.
 
 #### Scenario: Display crash
 - **WHEN** the display is terminated because of an error
@@ -70,6 +70,10 @@ If the display or the server crashes, the app SHALL restart itself within 30 sec
 #### Scenario: Unexplained end in the log
 - **WHEN** the app process is killed without a Java crash, for example by a native crash or by the system
 - **THEN** after the restart the log contains an entry saying that the previous run ended unexplained
+
+#### Scenario: Display after an unexplained end
+- **WHEN** the app process is killed without a Java crash and the system brings back only the server
+- **THEN** the display comes back on its own, from the third early end in a row after the growing delay
 
 #### Scenario: Repeated early ends
 - **WHEN** the app ends by a Java crash for the third time in a row, each time less than 10 minutes after its start
