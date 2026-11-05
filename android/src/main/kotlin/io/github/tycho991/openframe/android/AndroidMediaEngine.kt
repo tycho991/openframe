@@ -62,7 +62,7 @@ class AndroidMediaEngine(
             BitmapFactory.decodeFile(
                 file.path,
                 BitmapFactory.Options().apply { inSampleSize = probeSampleSize(bounds.outWidth, bounds.outHeight) },
-            ) ?: throw ImageException(if (format == ImageFormat.HEIF) SkipReason.UNSUPPORTED else SkipReason.CORRUPT, "Not decodable")
+            ) ?: throw probeFailure(format, format == ImageFormat.JPEG && ImageFormats.isProgressiveJpeg(file))
         probe.recycle()
         val exif = exif(file)
         val orientation = exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) ?: 1
@@ -243,6 +243,22 @@ class AndroidMediaEngine(
             while ((width / sample).toLong() * (height / sample) > MAX_FALLBACK_PIXELS) sample *= 2
             return sample
         }
+
+        /**
+         * Why the probe decode of a file whose bounds were readable failed. Android 5 cannot decode a progressive JPEG
+         * from about 4800×3000 at any sample size, because libjpeg keeps all its coefficients within a memory cap of
+         * the platform: the file is intact, only not decodable on this device. A damaged progressive JPEG
+         * is reported the same way.
+         */
+        fun probeFailure(
+            format: ImageFormat,
+            progressiveJpeg: Boolean,
+        ): ImageException =
+            when {
+                format == ImageFormat.HEIF -> ImageException(SkipReason.UNSUPPORTED, "Not decodable")
+                progressiveJpeg -> ImageException(SkipReason.UNSUPPORTED, "Progressive JPEG not decodable on this device")
+                else -> ImageException(SkipReason.CORRUPT, "Not decodable")
+            }
 
         /** 32 MB as ARGB_8888, the size of a 4K screen. */
         const val MAX_FALLBACK_PIXELS = 8_000_000L

@@ -261,6 +261,15 @@ class AndroidMediaEngineTest {
         return File(tmp.root, "${width}x$height.png").apply { writeBytes(out.toByteArray()) }
     }
 
+    /** Spec `photo-library`: Supported formats › Large progressive JPEG on an old device. */
+    @Test
+    fun aFailedProbeOfAProgressiveJpegIsNotSupportedNotDamaged() {
+        assertEquals(SkipReason.UNSUPPORTED, AndroidMediaEngine.probeFailure(ImageFormat.JPEG, progressiveJpeg = true).reason)
+        assertEquals(SkipReason.CORRUPT, AndroidMediaEngine.probeFailure(ImageFormat.JPEG, progressiveJpeg = false).reason)
+        assertEquals(SkipReason.UNSUPPORTED, AndroidMediaEngine.probeFailure(ImageFormat.HEIF, progressiveJpeg = false).reason)
+        assertEquals(SkipReason.CORRUPT, AndroidMediaEngine.probeFailure(ImageFormat.PNG, progressiveJpeg = false).reason)
+    }
+
     /** Spec `photo-library`: Image size limits. */
     @Test
     fun probeDecodesAboutOneMegapixelAndRejectsImagesOverTheLimits() {
