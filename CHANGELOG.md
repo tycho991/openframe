@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/tycho991/openframe/compare/v0.4.1...v0.4.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **android:** skip large progressive JPEGs on Android 5 as not supported ([#55](https://github.com/tycho991/openframe/issues/55)) ([252d7e6](https://github.com/tycho991/openframe/commit/252d7e6e2bb109083b6b8ff6e7ced3eb18ff065c))
+
 ## [0.4.1](https://github.com/tycho991/openframe/compare/v0.4.0...v0.4.1) (2026-11-05)
 
 
