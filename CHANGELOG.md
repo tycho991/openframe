@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/tycho991/openframe/compare/v0.4.0...v0.4.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* derive the update e2e versions from version.txt ([#51](https://github.com/tycho991/openframe/issues/51)) ([a58a050](https://github.com/tycho991/openframe/commit/a58a0507f5ec89f5a689c3b92b096e0b0738e8b5))
+
 ## [0.4.0](https://github.com/tycho991/openframe/compare/v0.3.0...v0.4.0) (2026-11-04)
 
 
