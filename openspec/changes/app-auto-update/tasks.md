@@ -45,7 +45,7 @@
 - [x] 6.2 Read-only, before any install: the certificate of the installed openframe on each frame against the pinned fingerprint (migration plan step 2). Verify: the result per frame is recorded in `../openframe-private`; a different key is reported to the owner before anything else happens.
 - [x] 6.3 After the merge and the release (migration plan step 3), install it by hand on the Lenovo and the Frameo, each only after the owner agreed. Verify: `GET /info` reports the release on both frames, pairings and library are kept.
 - [x] 6.4 Regression round on both frames before the next release (migration plan step 5). Verify: results with date, device and scenario references in `../openframe-private`.
-- [ ] 6.5 With the next release, run the rows of 6.1 on both frames. Verify: results with date and device in the rows.
+- [x] 6.5 With the next release, run the rows of 6.1 on both frames. Verify: results with date and device in the rows.
 
 ## 7. Integration
 
