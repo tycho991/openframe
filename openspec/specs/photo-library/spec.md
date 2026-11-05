@@ -16,6 +16,10 @@ The library SHALL accept JPEG, PNG, WebP and GIF. GIF SHALL be taken over as a s
 - **WHEN** a HEIC file lies in the folder on a device with Android 6
 - **THEN** it is not added to the index and appears in the list of skipped files with the reason "not supported"
 
+#### Scenario: Large progressive JPEG on an old device
+- **WHEN** a progressive JPEG of 4800 × 3000 pixels lies in the folder on a device with Android 5, whose decoder cannot decode it at any sample size
+- **THEN** it appears in the list of skipped files with the reason "not supported", not as a damaged file
+
 ### Requirement: Local photo folder
 The frame SHALL have a photo folder that is reachable over USB (MTP) without root. Subfolders SHALL be scanned. New, changed and removed files SHALL be in the index 30 seconds after the change at the latest. Files that the frame itself creates or deletes, for example through upload, SHALL afterwards also be visible correctly over USB. While the storage is unavailable, entries SHALL NOT be removed (see "Photo folder kept").
 

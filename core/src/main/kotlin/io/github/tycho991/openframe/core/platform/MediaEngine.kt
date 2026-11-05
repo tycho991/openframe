@@ -2,6 +2,9 @@ package io.github.tycho991.openframe.core.platform
 
 import io.github.tycho991.openframe.core.readFully
 import kotlinx.serialization.Serializable
+import java.io.BufferedInputStream
+import java.io.DataInputStream
+import java.io.EOFException
 import java.io.File
 import java.io.IOException
 import java.time.Instant
@@ -192,4 +195,47 @@ object ImageFormats {
             val n = input.readFully(header)
             detect(header.copyOf(n))
         }
+
+    /** The frame headers (SOF) of progressive JPEGs: Huffman and arithmetic, each also differential. */
+    private val PROGRESSIVE_SOF = setOf(0xC2, 0xC6, 0xCA, 0xCE)
+
+    /** All frame headers; `C4` (DHT), `C8` (JPG) and `CC` (DAC) share the range but are none. */
+    private val SOF = (0xC0..0xCF).toSet() - setOf(0xC4, 0xC8, 0xCC)
+
+    /**
+     * Whether [file] is a progressive JPEG: reads the marker segments up to the first frame header, not the image data.
+     * `false` for anything else, a damaged file included.
+     */
+    fun isProgressiveJpeg(file: File): Boolean =
+        DataInputStream(BufferedInputStream(file.inputStream())).use { input ->
+            try {
+                progressiveFrame(input)
+            } catch (e: EOFException) {
+                false
+            }
+        }
+
+    private fun progressiveFrame(input: DataInputStream): Boolean {
+        if (input.readUnsignedShort() != 0xFFD8) return false
+        while (true) {
+            if (input.readUnsignedByte() != 0xFF) return false
+            var marker = input.readUnsignedByte()
+            while (marker == 0xFF) marker = input.readUnsignedByte()
+            when {
+                marker in SOF -> return marker in PROGRESSIVE_SOF
+
+                // Start of scan or end of image before a frame header.
+                marker == 0xDA || marker == 0xD9 -> return false
+
+                // Markers without a length.
+                marker == 0x01 || marker in 0xD0..0xD7 -> continue
+            }
+            var left = input.readUnsignedShort() - 2
+            while (left > 0) {
+                val skipped = input.skipBytes(left)
+                if (skipped <= 0) return false
+                left -= skipped
+            }
+        }
+    }
 }

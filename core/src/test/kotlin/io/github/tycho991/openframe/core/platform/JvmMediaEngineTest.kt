@@ -12,7 +12,9 @@ import org.junit.jupiter.api.io.TempDir
 import java.awt.image.BufferedImage
 import java.io.File
 import java.time.Instant
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 
 class JvmMediaEngineTest {
     private val engine = JvmMediaEngine()
@@ -167,5 +169,27 @@ class JvmMediaEngineTest {
         assertNull(ImageFormats.detect(Fixtures.file("note.txt")))
         assertEquals(true, ImageFormats.hasImageExtension("Urlaub/IMG_1.JPEG"))
         assertEquals(false, ImageFormats.hasImageExtension("clip.mp4"))
+    }
+
+    /** Spec `photo-library`: Supported formats › Large progressive JPEG on an old device. */
+    @Test
+    fun `Progressive JPEGs are told apart by their frame header`() {
+        val image = BufferedImage(64, 40, BufferedImage.TYPE_INT_RGB)
+        val progressive = File(dir, "progressive.jpg")
+        val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+        ImageIO.createImageOutputStream(progressive).use { out ->
+            writer.output = out
+            val param = writer.defaultWriteParam.apply { progressiveMode = ImageWriteParam.MODE_DEFAULT }
+            writer.write(null, IIOImage(image, null, null), param)
+        }
+        writer.dispose()
+        assertEquals(true, ImageFormats.isProgressiveJpeg(progressive))
+        // Baseline with EXIF segments before the frame header.
+        assertEquals(false, ImageFormats.isProgressiveJpeg(Fixtures.file("landscape.jpg")))
+        assertEquals(false, ImageFormats.isProgressiveJpeg(Fixtures.file("image.png")))
+        assertEquals(false, ImageFormats.isProgressiveJpeg(Fixtures.file("note.txt")))
+        // Cut off before the frame header.
+        val cut = File(dir, "cut.jpg").apply { writeBytes(progressive.readBytes().copyOf(20)) }
+        assertEquals(false, ImageFormats.isProgressiveJpeg(cut))
     }
 }
