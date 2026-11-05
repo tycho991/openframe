@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   answerInstallDialog,
   installAllowed,
@@ -13,7 +15,10 @@ import {
 // Spec web-admin: Software update in the interface, Release notes as plain text, Installing explained in the
 // interface, Reload after a frame update, Unknown values from the frame (spec app-update; app-auto-update).
 
-const INSTALLED = "0.3.0";
+// The test server runs the version in version.txt, which every release raises; the update is the next minor version.
+const INSTALLED = readFileSync(path.resolve(import.meta.dirname, "../../version.txt"), "utf8").trim();
+const [major, minor] = INSTALLED.split(".").map(Number);
+const LATEST = `${major}.${minor + 1}.0`;
 
 test.beforeEach(async () => {
   await reset();
@@ -26,20 +31,20 @@ async function openSoftware(page: Page) {
   return section;
 }
 
-/** Publishes 0.4.0 and lets the frame find it through "Check now". */
+/** Publishes [LATEST] and lets the frame find it through "Check now". */
 async function readyUpdate(page: Page, notes = "Schneller Start") {
-  await publishRelease("0.4.0", { notes });
+  await publishRelease(LATEST, { notes });
   await pairInUi(page);
   const section = await openSoftware(page);
   await section.getByRole("button", { name: "Jetzt prüfen" }).click();
-  await expect(section.getByText("Version 0.4.0 ist bereit zur Installation.")).toBeVisible();
+  await expect(section.getByText(`Version ${LATEST} ist bereit zur Installation.`)).toBeVisible();
   return section;
 }
 
 test("Update ready: installed and latest version, the notes and Install on the frame", async ({ page }) => {
   const section = await readyUpdate(page);
   await expect(section.getByText(INSTALLED, { exact: true })).toBeVisible();
-  await expect(section.getByText(/^0\.4\.0, veröffentlicht am /)).toBeVisible();
+  await expect(section.getByText(`${LATEST}, veröffentlicht am`, { exact: false })).toBeVisible();
   await expect(section.getByText("Schneller Start")).toBeVisible();
   await expect(section.getByText(/^Letzte Prüfung: .*, Update gefunden$/)).toBeVisible();
   await expect(section.getByRole("button", { name: "Auf dem Rahmen installieren" })).toBeEnabled();
@@ -115,7 +120,7 @@ test("After the installation the interface reloads and shows the new version", a
   await answerInstallDialog("confirmed");
   await reloaded;
   const after = await openSoftware(page);
-  await expect(after.getByText("0.4.0", { exact: true })).toBeVisible();
+  await expect(after.getByText(LATEST, { exact: true })).toBeVisible();
 });
 
 test("A version change reloads on the photo page as well", async ({ page }) => {
