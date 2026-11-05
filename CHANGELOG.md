@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/tycho991/openframe/compare/v0.3.0...v0.4.0) (2026-11-04)
+
+
+### Features
+
+* install updates from GitHub releases ([#49](https://github.com/tycho991/openframe/issues/49)) ([6741357](https://github.com/tycho991/openframe/commit/6741357e21d75a8a07a531e8357c6471f33fc17d))
+
 ## [0.3.0](https://github.com/tycho991/openframe/compare/v0.2.3...v0.3.0) (2026-11-04)
 
 
