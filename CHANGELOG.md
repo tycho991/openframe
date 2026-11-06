@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.4](https://github.com/tycho991/openframe/compare/v0.4.3...v0.4.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **android:** keep the server running when the same network is reported again ([#61](https://github.com/tycho991/openframe/issues/61)) ([041f817](https://github.com/tycho991/openframe/commit/041f81785ad3e392214f7e958189029119f348fe))
+* **deps:** update app dependencies ([#64](https://github.com/tycho991/openframe/issues/64)) ([d42e435](https://github.com/tycho991/openframe/commit/d42e4351f19edde373ff17f4bb32f13133672ee1))
+
 ## [0.4.3](https://github.com/tycho991/openframe/compare/v0.4.2...v0.4.3) (2026-11-06)
 
 
