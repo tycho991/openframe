@@ -169,6 +169,10 @@ If nobody answers the installation dialog within 10 minutes, the frame SHALL dis
 - **WHEN** the device restarts while the dialog is open
 - **THEN** after the start no dialog is pending, the update is still ready, and the state reports `install_unanswered`
 
+#### Scenario: Request after an unanswered dialog
+- **WHEN** a dialog was left unanswered and someone asks for the installation again
+- **THEN** the dialog of the new request appears, not the discarded one, and confirming it installs the update
+
 ### Requirement: Display awake during the installation dialog
 While the installation dialog is open, the display SHALL stay on until it is answered or its deadline passes, also in an off period of the schedule and with a short screen timeout of the system. Afterwards the display SHALL follow the schedule again, with the minutes after waking as after the power button.
 

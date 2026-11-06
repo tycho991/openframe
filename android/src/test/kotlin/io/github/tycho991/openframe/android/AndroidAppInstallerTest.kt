@@ -163,7 +163,7 @@ class AndroidAppInstallerTest {
     }
 
     @Test
-    fun `Waiting for the user opens Android's dialog`() {
+    fun `Waiting for the user opens Android's dialog in a fresh task`() {
         val confirm = Intent("android.content.pm.action.CONFIRM_INSTALL")
         InstallStatusReceiver().onReceive(
             app,
@@ -175,6 +175,8 @@ class AndroidAppInstallerTest {
         val started = shadowOf(app).nextStartedActivity
         assertEquals("android.content.pm.action.CONFIRM_INSTALL", started.action)
         assertTrue(started.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        // The stale dialog of an abandoned session must not come back in its place.
+        assertTrue(started.flags and Intent.FLAG_ACTIVITY_CLEAR_TASK != 0)
     }
 
     @Test
