@@ -195,7 +195,9 @@ class InstallStatusReceiver : BroadcastReceiver() {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                     @Suppress("DEPRECATION")
                     val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
-                    context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    // A dialog of an abandoned session stays in the installer's task; without clearing it, Android
+                    // would bring that stale dialog back instead of this session's, and "Install" there crashes it.
+                    context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                     return
                 }
 
