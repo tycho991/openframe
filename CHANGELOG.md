@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/tycho991/openframe/compare/v0.4.2...v0.4.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* **android:** open a fresh installation dialog after an unanswered one ([#58](https://github.com/tycho991/openframe/issues/58)) ([1c7fe6b](https://github.com/tycho991/openframe/commit/1c7fe6b6058f63bd47deb48d4b9f64ac2d4e971f))
+
 ## [0.4.2](https://github.com/tycho991/openframe/compare/v0.4.1...v0.4.2) (2026-11-05)
 
 
