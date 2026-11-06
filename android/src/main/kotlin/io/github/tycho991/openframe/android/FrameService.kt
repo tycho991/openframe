@@ -119,7 +119,9 @@ class FrameService : Service() {
 
     /**
      * Rebind after a Wi-Fi change so that the server accepts on the new address. The core learns of losses through the
-     * [AndroidNetworkLink], to ask for the network while the display is off.
+     * [AndroidNetworkLink], to ask for the network while the display is off. A network reported available again without
+     * a loss in between changes nothing: rebinding would drop every open connection, and Android 5 reports that on every
+     * change of the network's score, several times a minute after roaming.
      */
     private fun watchNetwork() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -128,8 +130,8 @@ class FrameService : Service() {
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
+                    if (!link.available(network)) return
                     core.log.i(TAG, "Network available")
-                    link.available(network)
                     main.removeCallbacks(restart)
                     main.postDelayed(restart, NETWORK_SETTLE_MS)
                 }

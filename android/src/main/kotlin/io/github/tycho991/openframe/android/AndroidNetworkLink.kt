@@ -43,20 +43,25 @@ class AndroidNetworkLink(
         this.listener = listener
     }
 
-    /** From the `NetworkCallback` of the [FrameService]. */
-    fun available(network: Network) = update { networks.add(network) }
+    /**
+     * From the `NetworkCallback` of the [FrameService]. `true` only for a network that was not available yet: Android 5
+     * reports a network available again whenever its score changes, without losing it in between.
+     */
+    fun available(network: Network): Boolean = update { networks.add(network) }
 
-    fun lost(network: Network) = update { networks.remove(network) }
+    fun lost(network: Network): Boolean = update { networks.remove(network) }
 
-    private fun update(change: () -> Unit) {
-        val now =
+    /** Applies [change] and returns its result, whether the set of networks changed. */
+    private fun update(change: () -> Boolean): Boolean {
+        val (changed, now) =
             synchronized(networks) {
-                change()
-                networks.isNotEmpty()
+                change() to networks.isNotEmpty()
             }
-        if (now == connected) return
-        connected = now
-        listener?.connectionChanged()
+        if (now != connected) {
+            connected = now
+            listener?.connectionChanged()
+        }
+        return changed
     }
 
     private companion object {
