@@ -59,4 +59,18 @@ class AndroidNetworkLinkTest {
         assertTrue("still on Ethernet", link.connected)
         assertEquals(2, changes)
     }
+
+    @Test
+    fun `A network reported available again without a loss is not new`() {
+        val link = AndroidNetworkLink(context)
+        val wifiNetwork = ShadowNetwork.newInstance(100)
+        assertTrue(link.available(wifiNetwork))
+        // Android 5 repeats onAvailable whenever the network's score changes; the server must not rebind for that.
+        assertFalse(link.available(wifiNetwork))
+        assertFalse(link.available(wifiNetwork))
+        assertTrue(link.lost(wifiNetwork))
+        assertFalse("lost twice", link.lost(wifiNetwork))
+        assertTrue("back after a real loss", link.available(wifiNetwork))
+        assertTrue(link.connected)
+    }
 }

@@ -86,6 +86,10 @@ The slideshow SHALL keep running without a network. If Wi-Fi drops and comes bac
 - **WHEN** Wi-Fi is down for an hour
 - **THEN** the slideshow keeps running and once Wi-Fi returns the admin interface is reachable again
 
+#### Scenario: Same network reported again
+- **WHEN** Android reports the Wi-Fi the frame is on as available again without losing it, as Android 5 does after roaming
+- **THEN** the server keeps running and open connections of the admin interface stay open
+
 ### Requirement: Diagnostics
 The app SHALL keep a rotating log of limited size on the device. A paired client SHALL be able to fetch it through the API. A failure to write the log SHALL NOT end the app; the fetched log then contains the entries kept in memory. An error repeated with the same message SHALL appear once with its stack trace and afterwards at most every 10 minutes as one line with a counter. Control characters in entries SHALL be escaped.
 
