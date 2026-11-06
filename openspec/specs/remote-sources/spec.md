@@ -142,7 +142,7 @@ The user SHALL be able to remove a source. The frame SHALL then delete its store
 - **THEN** its credentials and photos are gone and the local photos and the other sources are untouched
 
 ### Requirement: Access to the sources
-All endpoints for sources SHALL require a valid token. The frame SHALL send requests only to the servers of its sources and, while a login is being set up, to the address given for it.
+All endpoints for sources SHALL require a valid token. For its sources, the frame SHALL send requests only to the servers of its sources and, while a login is being set up, to the address given for it. Requests for app updates are governed by `app-update`.
 
 #### Scenario: Without token
 - **WHEN** a client without a token lists the sources
