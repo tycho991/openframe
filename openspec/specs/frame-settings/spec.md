@@ -24,11 +24,15 @@ The display settings SHALL include at least: interval (5 s to 24 h, default 30 s
 - **THEN** the response contains all the display settings named above with their current values
 
 ### Requirement: Frame settings
-The settings SHALL also include: language on the frame (`auto` for the system language, `de`, `en`) for the clock's date and all texts on the frame, the frame's name, and the budget for cached image sizes (100 to 10,000 MB, default 1,000 MB). Local-only mode is not a setting of the API, see `admin-access`.
+The settings SHALL also include: language on the frame (`auto` for the system language, `de`, `en`) for the clock's date and all texts on the frame, the frame's name, the budget for cached image sizes (100 to 10,000 MB, default 1,000 MB), and automatic update checks on or off (default on, see `app-update`). Local-only mode is not a setting of the API, see `admin-access`.
 
 #### Scenario: Read frame settings
 - **WHEN** a paired client fetches the settings
-- **THEN** the response contains language, name and cache budget with their current values
+- **THEN** the response contains language, name, cache budget and automatic update checks with their current values
+
+#### Scenario: Update from a version without the switch
+- **WHEN** a frame with stored settings from before automatic update checks existed is updated
+- **THEN** automatic update checks are on and all other settings keep their values
 
 ### Requirement: Validation
 Changes to the settings SHALL be validated completely before they are stored. Invalid changes SHALL be rejected with 400 and an error entry per field. No setting SHALL be applied partially.
