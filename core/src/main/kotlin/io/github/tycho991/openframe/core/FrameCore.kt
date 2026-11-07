@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core
 
+import io.github.tycho991.openframe.core.api.PhotoDtos
 import io.github.tycho991.openframe.core.api.diagnosticsRoutes
 import io.github.tycho991.openframe.core.api.displayRoutes
 import io.github.tycho991.openframe.core.api.healthRoutes
@@ -7,6 +8,7 @@ import io.github.tycho991.openframe.core.api.infoRoutes
 import io.github.tycho991.openframe.core.api.libraryRoutes
 import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
+import io.github.tycho991.openframe.core.api.slideshowRoutes
 import io.github.tycho991.openframe.core.api.sourcesRoutes
 import io.github.tycho991.openframe.core.api.updateRoutes
 import io.github.tycho991.openframe.core.auth.AccessControl
@@ -538,10 +540,12 @@ class FrameCore(
         router.infoRoutes(identity, settings, platform)
         router.pairingRoutes(pairing, clients, ::adminUrl)
         router.settingsRoutes(settings)
-        router.libraryRoutes(library, settings, signer, transitions, places, platform, health::safe)
+        val photos = PhotoDtos(library, settings, signer, places, platform)
+        router.libraryRoutes(library, settings, photos, transitions, platform, health::safe)
         router.sourcesRoutes(sources, nextcloud, health::safe)
         router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
+        router.slideshowRoutes(slideshow, photos, health::safe)
         router.updateRoutes(update, clients)
         router.diagnosticsRoutes(log)
     }

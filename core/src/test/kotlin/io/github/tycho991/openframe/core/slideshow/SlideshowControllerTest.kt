@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
@@ -38,7 +39,13 @@ class SlideshowControllerTest {
         /** Part of the file names, so a new presentation gives new files. */
         var variant = ""
 
-        override fun ready(entry: PhotoEntry): File? = if (entry.id in readyIds) File(entry.path + variant) else null
+        /** [ready] throws, so that handling a step fails. */
+        var failing = false
+
+        override fun ready(entry: PhotoEntry): File? {
+            check(!failing) { "failing" }
+            return if (entry.id in readyIds) File(entry.path + variant) else null
+        }
 
         override suspend fun render(entry: PhotoEntry): File {
             demanded += entry.id
@@ -403,5 +410,79 @@ class SlideshowControllerTest {
             s.visible.value = emptyList()
             runCurrent()
             assertEquals(SlideState.Empty, s.controller.state.value)
+        }
+
+    // Spec `slideshow-display` › Operating the slideshow through the API: control() returns once the command took effect.
+
+    @Test
+    fun `Next photo from afar returns with the new photo and restarts the interval`() =
+        runTest {
+            val s = Setup(this, photos)
+            advanceTimeBy(20_000)
+            s.controller.control(SlideshowAction.NEXT)
+            assertEquals(photos[1], s.shown(), "already shown when control returns")
+            assertEquals(+1, (s.controller.state.value as SlideState.Showing).step)
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the interval starts over")
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[2], s.shown())
+            s.controller.control(SlideshowAction.PREVIOUS)
+            assertEquals(photos[1], s.shown())
+        }
+
+    @Test
+    fun `Pause and resume from afar return with the new pause state`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.control(SlideshowAction.PAUSE)
+            assertTrue(s.controller.paused.value)
+            s.controller.control(SlideshowAction.PAUSE)
+            assertTrue(s.controller.paused.value, "pause twice stays paused")
+            advanceTimeBy(10 * 60_000L)
+            runCurrent()
+            assertEquals(photos[0], s.shown())
+            s.controller.control(SlideshowAction.RESUME)
+            assertFalse(s.controller.paused.value)
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+        }
+
+    @Test
+    fun `Resume from afar while running keeps the interval`() =
+        runTest {
+            val s = Setup(this, photos)
+            advanceTimeBy(25_000)
+            s.controller.control(SlideshowAction.RESUME)
+            advanceTimeBy(5_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the change comes after 30 seconds, not 55")
+        }
+
+    @Test
+    fun `A step from afar while resting returns with the photo unchanged`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            s.controller.control(SlideshowAction.NEXT)
+            assertTrue(s.controller.resting.value)
+            assertEquals(photos[0], s.shown())
+            s.controller.control(SlideshowAction.PAUSE)
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "paused at night: the paused photo stays in the morning")
+        }
+
+    @Test
+    fun `control returns also when handling the command fails`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.images.failing = true
+            s.controller.control(SlideshowAction.NEXT)
+            s.images.failing = false
+            s.controller.control(SlideshowAction.NEXT)
+            assertTrue(s.shown() != photos[0], "the slideshow goes on after the error")
         }
 }
