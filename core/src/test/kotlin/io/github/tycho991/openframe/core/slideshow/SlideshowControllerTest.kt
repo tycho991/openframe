@@ -451,6 +451,17 @@ class SlideshowControllerTest {
         }
 
     @Test
+    fun `Resume from afar while running keeps the interval`() =
+        runTest {
+            val s = Setup(this, photos)
+            advanceTimeBy(25_000)
+            s.controller.control(SlideshowAction.RESUME)
+            advanceTimeBy(5_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the change comes after 30 seconds, not 55")
+        }
+
+    @Test
     fun `A step from afar while resting returns with the photo unchanged`() =
         runTest {
             val s = Setup(this, photos)

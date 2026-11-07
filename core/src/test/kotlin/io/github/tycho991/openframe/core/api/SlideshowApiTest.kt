@@ -3,11 +3,13 @@ package io.github.tycho991.openframe.core.api
 import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.library.RenderSize
 import io.github.tycho991.openframe.core.slideshow.SlideState
+import io.github.tycho991.openframe.core.slideshow.SlideshowAction
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.Res
 import io.github.tycho991.openframe.core.testing.TestFrame
 import io.github.tycho991.openframe.core.testing.waitFor
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -68,6 +70,9 @@ class SlideshowApiTest {
         assertEquals(200, send("PUT", "/api/v1/display", """{"on":true}""").statusCode())
         waitFor { !core.slideshow.resting.value }
     }
+
+    /** Returns once the slideshow has handled everything sent before, by a pause that changes nothing while paused. */
+    private fun TestFrame.handledSoFar() = runBlocking { core.slideshow.control(SlideshowAction.PAUSE) }
 
     private fun json(res: Res): JsonObject = Json.parseToJsonElement(res.body()).jsonObject
 
@@ -202,7 +207,7 @@ class SlideshowApiTest {
         // When the display comes on, the slideshow moves on once, as it does without the refused commands.
         f.displayOn()
         waitFor { f.shown().seq == before.seq + 1 }
-        Thread.sleep(200)
+        f.handledSoFar()
         assertEquals(before.seq + 1, f.shown().seq)
     }
 
@@ -216,7 +221,7 @@ class SlideshowApiTest {
         assertTrue(json(res).flag("paused"))
         assertTrue(json(res).flag("resting"))
         f.displayOn()
-        Thread.sleep(200)
+        f.handledSoFar()
         assertEquals(before.seq, f.shown().seq, "the paused photo stays on screen")
         assertEquals(before.photo.id, json(f.get("/api/v1/slideshow")).photoId())
     }

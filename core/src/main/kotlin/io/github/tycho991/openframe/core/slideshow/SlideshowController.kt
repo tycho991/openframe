@@ -170,15 +170,12 @@ class SlideshowController(
         }
         scope.launch {
             for (command in commands) {
-                val awaited = command as? Command.Awaited
                 try {
-                    handle(awaited?.command ?: command)
+                    handle(command)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
                     log.e(TAG, "Error in the slideshow", e)
-                } finally {
-                    awaited?.done?.complete(Unit)
                 }
             }
         }
@@ -253,8 +250,11 @@ class SlideshowController(
             }
 
             is Command.Pause -> {
-                _paused.value = command.paused ?: !_paused.value
-                if (_paused.value) timer?.cancel() else armTimer()
+                val paused = command.paused ?: !_paused.value
+                // A resume of a running slideshow must not start the interval over.
+                if (paused == _paused.value) return
+                _paused.value = paused
+                if (paused) timer?.cancel() else armTimer()
             }
 
             is Command.Undecodable -> {
@@ -273,7 +273,11 @@ class SlideshowController(
             }
 
             is Command.Awaited -> {
-                handle(command.command)
+                try {
+                    handle(command.command)
+                } finally {
+                    command.done.complete(Unit)
+                }
             }
         }
     }
