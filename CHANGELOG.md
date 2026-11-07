@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/tycho991/openframe/compare/v0.4.4...v0.5.0) (2026-11-07)
+
+
+### Features
+
+* add the slideshow control API ([#72](https://github.com/tycho991/openframe/issues/72)) ([55c046b](https://github.com/tycho991/openframe/commit/55c046bce8016d19a1dd7299ca2b4d1e9613f8e3))
+
 ## [0.4.4](https://github.com/tycho991/openframe/compare/v0.4.3...v0.4.4) (2026-11-06)
 
 
