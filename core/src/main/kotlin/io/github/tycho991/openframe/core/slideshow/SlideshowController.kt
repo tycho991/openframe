@@ -8,6 +8,7 @@ import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.settings.Order
 import io.github.tycho991.openframe.core.settings.Settings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -49,6 +50,16 @@ class CachedDisplayImages(
         entries: List<PhotoEntry>,
         priority: RenderPriority,
     ) = cache.prefetch(entries, priority)
+}
+
+/** A command from the API (spec `slideshow-display`, "Operating the slideshow through the API"). */
+enum class SlideshowAction(
+    val apiName: String,
+) {
+    NEXT("next"),
+    PREVIOUS("previous"),
+    PAUSE("pause"),
+    RESUME("resume"),
 }
 
 sealed interface SlideState {
@@ -114,6 +125,12 @@ class SlideshowController(
 
         /** Fill mode or orientation changed: every display size is a new one. */
         data object Presentation : Command
+
+        /** [command], and [done] completes once it has been handled, also if handling it failed. */
+        data class Awaited(
+            val command: Command,
+            val done: CompletableDeferred<Unit>,
+        ) : Command
     }
 
     private val playlist = Playlist(random)
@@ -153,12 +170,15 @@ class SlideshowController(
         }
         scope.launch {
             for (command in commands) {
+                val awaited = command as? Command.Awaited
                 try {
-                    handle(command)
+                    handle(awaited?.command ?: command)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
                     log.e(TAG, "Error in the slideshow", e)
+                } finally {
+                    awaited?.done?.complete(Unit)
                 }
             }
         }
@@ -180,6 +200,23 @@ class SlideshowController(
 
     fun togglePause() {
         commands.trySend(Command.Pause(null))
+    }
+
+    /**
+     * A command from the API: the same as the gestures and the hint, but returns only once the command has been
+     * handled, so that [state] and [paused] show its effect. A step while resting is ignored as from the display.
+     */
+    suspend fun control(action: SlideshowAction) {
+        val command =
+            when (action) {
+                SlideshowAction.NEXT -> Command.Step(+1, manual = true)
+                SlideshowAction.PREVIOUS -> Command.Step(-1, manual = true)
+                SlideshowAction.PAUSE -> Command.Pause(true)
+                SlideshowAction.RESUME -> Command.Pause(false)
+            }
+        val done = CompletableDeferred<Unit>()
+        commands.send(Command.Awaited(command, done))
+        done.await()
     }
 
     /** The display could not decode the file: log it and move on. */
@@ -233,6 +270,10 @@ class SlideshowController(
                     prefetchUpcoming()
                     showCurrentAgain()
                 }
+            }
+
+            is Command.Awaited -> {
+                handle(command.command)
             }
         }
     }

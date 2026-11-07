@@ -307,6 +307,7 @@
   "display.turnOn": "Display einschalten",
   "display.notAvailable": "Der Rahmen darf sein Display noch nicht ausschalten. Erlaube es einmal am Rahmen: Halte eine Ecke drei Sekunden gedrückt und wähle „Display-Zeitplan: nicht erlaubt“.",
   "error.display_unavailable": "Der Rahmen darf sein Display nicht ausschalten. Erlaube es im Gerätemenü am Rahmen.",
+  "error.display_off": "Das Display ist aus. Das Foto wechselt erst, wenn es wieder an ist.",
   "settings.section.software": "Software",
   "settings.autoUpdateCheck": "Automatisch nach Updates suchen",
   "settings.autoUpdateCheckHint": "Alle 6 Stunden fragt der Rahmen bei GitHub (api.github.com) nach dem neuesten Release von openframe. GitHub sieht dabei die öffentliche IP-Adresse des Rahmens. Der Modus „Nur lokal“ hält das nicht auf.",

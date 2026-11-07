@@ -307,6 +307,7 @@
   "display.turnOn": "Turn display on",
   "display.notAvailable": "The frame may not switch its display off yet. Allow it once on the frame: press a corner for three seconds and choose “Display schedule: not allowed”.",
   "error.display_unavailable": "The frame may not switch its display off. Allow it in the device menu on the frame.",
+  "error.display_off": "The display is off. The photo changes only when it is on again.",
   "settings.section.software": "Software",
   "settings.autoUpdateCheck": "Check for updates automatically",
   "settings.autoUpdateCheckHint": "Every 6 hours the frame asks GitHub (api.github.com) for the latest release of openframe. GitHub sees the frame's public IP address. Local-only mode does not stop this.",
