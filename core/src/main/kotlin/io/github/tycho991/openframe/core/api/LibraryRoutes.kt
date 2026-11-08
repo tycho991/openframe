@@ -1,7 +1,6 @@
 package io.github.tycho991.openframe.core.api
 
 import io.github.tycho991.openframe.core.ValidationException
-import io.github.tycho991.openframe.core.auth.ImageSigner
 import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpRequest
@@ -13,10 +12,7 @@ import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.Library
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoLibrary
-import io.github.tycho991.openframe.core.library.Presentation
-import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSize
-import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
@@ -183,9 +179,8 @@ private enum class Sort(
 fun Router.libraryRoutes(
     library: PhotoLibrary,
     settings: SettingsRepository,
-    signer: ImageSigner,
+    photos: PhotoDtos,
     transitions: TransitionGovernor,
-    places: PlaceIndex,
     platform: PlatformInfo,
     /** Safe mode: images and uploads answer 503 `safe_mode`, so that nothing decodes. */
     safeMode: () -> Boolean = { false },
@@ -194,53 +189,6 @@ fun Router.libraryRoutes(
 
     fun refuseInSafeMode() {
         if (safeMode()) throw safeModeRefusal()
-    }
-
-    // The display URL carries the key of the shown window, so it changes with section, fill mode and format.
-    fun urls(
-        entry: PhotoEntry,
-        presentation: Presentation = library.cache.presentation(entry),
-    ): ImageUrlsDto {
-        val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id)}"
-        return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${RenderCache.displayKey(presentation)}", "$base&size=full")
-    }
-
-    fun dto(
-        entry: PhotoEntry,
-        lib: Library,
-    ): PhotoDto {
-        val p = library.cache.presentation(entry)
-        return PhotoDto(
-            id = entry.id,
-            source = entry.source,
-            path = entry.path,
-            album = entry.album,
-            hidden = entry.hidden,
-            visible = lib.isVisible(entry),
-            quarantined = entry.quarantined,
-            width = entry.width,
-            height = entry.height,
-            takenAt = Instant.ofEpochMilli(entry.takenAtMs).toString(),
-            fileSize = entry.fileSize,
-            version = entry.version,
-            crop = entry.crop,
-            presentation = PresentationDto(p.x, p.y, p.width, p.height, p.zoom),
-            urls = urls(entry, p),
-            comment = entry.comment,
-            location =
-                entry.gps?.let {
-                    LocationDto(
-                        it.lat,
-                        it.lon,
-                        places.placeName(
-                            it.lat,
-                            it.lon,
-                            settings.settings.value.language
-                                .locale(platform),
-                        ),
-                    )
-                },
-        )
     }
 
     fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("No such photo")
@@ -286,14 +234,14 @@ fun Router.libraryRoutes(
             } else {
                 null
             }
-        HttpResponse.json(PhotoPageDto.serializer(), PhotoPageDto(page.map { dto(it, lib) }, filtered.size, next))
+        HttpResponse.json(PhotoPageDto.serializer(), PhotoPageDto(page.map { photos.dto(it, lib) }, filtered.size, next))
     }
 
     post("/api/v1/photos") { req ->
         refuseInSafeMode()
         val entries = library.upload(req)
         val lib = index.library.value
-        HttpResponse.json(UploadResultDto.serializer(), UploadResultDto(entries.map { dto(it, lib) }), 201)
+        HttpResponse.json(UploadResultDto.serializer(), UploadResultDto(entries.map { photos.dto(it, lib) }), 201)
     }
 
     post("/api/v1/photos:batch") { req ->
@@ -330,7 +278,7 @@ fun Router.libraryRoutes(
     patch("/api/v1/photos/{photoId}") { req ->
         val change = photoPatch(req.bodyAs(JsonObject.serializer()))
         val entry = library.update(req.pathParam("photoId"), change)
-        HttpResponse.json(PhotoDto.serializer(), dto(entry, index.library.value))
+        HttpResponse.json(PhotoDto.serializer(), photos.dto(entry, index.library.value))
     }
 
     delete("/api/v1/photos/{photoId}") { req ->
@@ -379,7 +327,7 @@ fun Router.libraryRoutes(
     fun albumList(): HttpResponse {
         val albums =
             index.library.value.albums.values
-                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let(::urls)) }
+                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let { cover -> photos.urls(cover) }) }
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
     }
 

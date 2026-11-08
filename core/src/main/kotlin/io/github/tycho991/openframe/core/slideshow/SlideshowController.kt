@@ -8,6 +8,7 @@ import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.settings.Order
 import io.github.tycho991.openframe.core.settings.Settings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -49,6 +50,16 @@ class CachedDisplayImages(
         entries: List<PhotoEntry>,
         priority: RenderPriority,
     ) = cache.prefetch(entries, priority)
+}
+
+/** A command from the API (spec `slideshow-display`, "Operating the slideshow through the API"). */
+enum class SlideshowAction(
+    val apiName: String,
+) {
+    NEXT("next"),
+    PREVIOUS("previous"),
+    PAUSE("pause"),
+    RESUME("resume"),
 }
 
 sealed interface SlideState {
@@ -114,6 +125,12 @@ class SlideshowController(
 
         /** Fill mode or orientation changed: every display size is a new one. */
         data object Presentation : Command
+
+        /** [command], and [done] completes once it has been handled, also if handling it failed. */
+        data class Awaited(
+            val command: Command,
+            val done: CompletableDeferred<Unit>,
+        ) : Command
     }
 
     private val playlist = Playlist(random)
@@ -182,6 +199,23 @@ class SlideshowController(
         commands.trySend(Command.Pause(null))
     }
 
+    /**
+     * A command from the API: the same as the gestures and the hint, but returns only once the command has been
+     * handled, so that [state] and [paused] show its effect. A step while resting is ignored as from the display.
+     */
+    suspend fun control(action: SlideshowAction) {
+        val command =
+            when (action) {
+                SlideshowAction.NEXT -> Command.Step(+1, manual = true)
+                SlideshowAction.PREVIOUS -> Command.Step(-1, manual = true)
+                SlideshowAction.PAUSE -> Command.Pause(true)
+                SlideshowAction.RESUME -> Command.Pause(false)
+            }
+        val done = CompletableDeferred<Unit>()
+        commands.send(Command.Awaited(command, done))
+        done.await()
+    }
+
     /** The display could not decode the file: log it and move on. */
     fun reportUndecodable(photo: PhotoEntry) {
         commands.trySend(Command.Undecodable(photo.id))
@@ -216,8 +250,11 @@ class SlideshowController(
             }
 
             is Command.Pause -> {
-                _paused.value = command.paused ?: !_paused.value
-                if (_paused.value) timer?.cancel() else armTimer()
+                val paused = command.paused ?: !_paused.value
+                // A resume of a running slideshow must not start the interval over.
+                if (paused == _paused.value) return
+                _paused.value = paused
+                if (paused) timer?.cancel() else armTimer()
             }
 
             is Command.Undecodable -> {
@@ -232,6 +269,14 @@ class SlideshowController(
                 if (!isResting && _state.value is SlideState.Showing) {
                     prefetchUpcoming()
                     showCurrentAgain()
+                }
+            }
+
+            is Command.Awaited -> {
+                try {
+                    handle(command.command)
+                } finally {
+                    command.done.complete(Unit)
                 }
             }
         }

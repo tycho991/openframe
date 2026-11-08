@@ -41,6 +41,8 @@ tags:
     description: Remote sources of photos (a Nextcloud account or share link), read only.
   - name: display
     description: State of the display and the manual switch.
+  - name: slideshow
+    description: The photo on screen, and next, previous, pause and resume from afar.
   - name: update
     description: Updates of the app from the releases on GitHub.
 
@@ -496,6 +498,48 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /slideshow:
+    get:
+      tags: [slideshow]
+      operationId: getSlideshow
+      summary: The photo on screen and whether the slideshow is paused or rests.
+      description: >-
+        Cheap enough to poll every few seconds. Answers 503 and `safe_mode` while the frame is in safe mode, because
+        no slideshow runs then.
+      responses:
+        "200":
+          description: The slideshow state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlideshowState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    post:
+      tags: [slideshow]
+      operationId: controlSlideshow
+      summary: Next or previous photo, pause or resume, like the gestures and the hint on the frame.
+      description: >-
+        `next` and `previous` start the interval over. The answer shows the state after the command has taken effect,
+        or, if that takes longer than two seconds, the state at that moment. While the display is off, `next` and
+        `previous` are refused with 409 and `display_off`; `pause` and `resume` apply. Answers 503 and `safe_mode` at
+        once while the frame is in safe mode.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SlideshowCommand" }
+      responses:
+        "200":
+          description: The slideshow state after the command.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlideshowState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
   /sources:
     get:
       tags: [sources]
@@ -788,7 +832,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`), switching the display while openframe is not a device administrator (`display_unavailable`) or leaving safe mode while not in it (`not_in_safe_mode`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`), switching the display while openframe is not a device administrator (`display_unavailable`), stepping through the slideshow while the display is off (`display_off`) or leaving safe mode while not in it (`not_in_safe_mode`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1151,6 +1195,28 @@ components:
       required: ["on"]
       properties:
         "on": { type: boolean }
+
+    SlideshowState:
+      type: object
+      additionalProperties: false
+      required: [photo, paused, resting]
+      properties:
+        photo:
+          description: The photo on screen, `null` while none is shown (empty library, or the slideshow is still starting).
+          oneOf:
+            - $ref: "#/components/schemas/Photo"
+            - type: "null"
+        paused: { type: boolean, description: "The slideshow is paused, on the frame or from afar." }
+        resting: { type: boolean, description: "The display is off: the photo stays and steps are refused." }
+
+    SlideshowCommand:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [next, previous, pause, resume]
 
     Settings:
       type: object
