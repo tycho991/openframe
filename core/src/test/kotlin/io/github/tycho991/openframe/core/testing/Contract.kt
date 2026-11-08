@@ -1,11 +1,11 @@
 package io.github.tycho991.openframe.core.testing
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
-import com.networknt.schema.JsonSchemaFactory
 import com.networknt.schema.SchemaLocation
-import com.networknt.schema.SpecVersion
+import com.networknt.schema.SchemaRegistry
+import com.networknt.schema.SpecificationVersion
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.dataformat.yaml.YAMLMapper
 import java.io.File
 import java.net.URI
 
@@ -15,15 +15,22 @@ import java.net.URI
  */
 object Contract {
     private val file = File(System.getProperty("openframe.openapi") ?: error("System property openframe.openapi is missing"))
-    private val doc: JsonNode = ObjectMapper(YAMLFactory()).readTree(file)
-    private val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
+    private val doc: JsonNode = YAMLMapper().readTree(file)
+
+    // Version 2 and later load no schema from a URI unless told to, the contract file included.
+    private val registry =
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12) {
+            it.schemaLoader { loader ->
+                loader.fetchRemoteResources()
+            }
+        }
     private val basePath =
         URI(
             doc
                 .path("servers")
                 .path(0)
                 .path("url")
-                .asText("/"),
+                .asString("/"),
         ).path.trimEnd('/')
 
     /** Throws an [AssertionError] if the response does not match the contract. */
@@ -50,11 +57,11 @@ object Contract {
                 type,
             )
         ) {
-            fail("$method $path $status: Content-Type $type not in the contract (${content.fieldNames().asSequence().toList()})")
+            fail("$method $path $status: Content-Type $type not in the contract (${content.propertyNames().toList()})")
         }
         if (type != "application/json") return
-        val schema = factory.getSchema(SchemaLocation.of("${file.toURI()}#$pointer/content/${escape(type)}/schema"))
-        val errors = schema.validate(ObjectMapper().readTree(body))
+        val schema = registry.getSchema(SchemaLocation.of("${file.toURI()}#$pointer/content/${escape(type)}/schema"))
+        val errors = schema.validate(JsonMapper().readTree(body))
         if (errors.isNotEmpty()) fail("$method $path $status violates the contract:\n  ${errors.joinToString("\n  ")}\nBody: $body")
     }
 
@@ -66,7 +73,7 @@ object Contract {
             .asSequence()
             .flatMap { (template, item) ->
                 item
-                    .fieldNames()
+                    .propertyNames()
                     .asSequence()
                     .filter { it in METHODS }
                     .map { "${it.uppercase()} $basePath$template" }
@@ -103,7 +110,7 @@ object Contract {
         node: JsonNode,
         pointer: String,
     ): Pair<JsonNode, String> {
-        val ref = node.path("\$ref").asText(null) ?: return node to pointer
+        val ref = node.path("\$ref").asString(null) ?: return node to pointer
         val target = ref.removePrefix("#")
         return resolve(doc.at(target), target)
     }
