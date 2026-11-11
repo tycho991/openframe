@@ -29,6 +29,8 @@
     <string name="menu_close">Close</string>
     <string name="menu_admin_on">Display schedule: allowed</string>
     <string name="menu_admin_off">Display schedule: not allowed</string>
+    <string name="menu_brightness_on">Brightness control: allowed</string>
+    <string name="menu_brightness_off">Brightness control: not allowed</string>
     <string name="admin_description">Switches the display off at night, as the power button does. openframe uses no other permission of device administration.</string>
     <string name="admin_explanation">openframe needs this to switch the display off by the schedule, as the power button does. It can do nothing else with it. Deactivate it in the frame menu before uninstalling openframe.</string>
     <string name="confirm_admin_off">Stop allowing the display schedule? The display stays on until you allow it again. openframe can then be uninstalled.</string>

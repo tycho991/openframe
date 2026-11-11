@@ -76,6 +76,7 @@ export const errorKeys: Record<string, Key> = {
   share_password_required: "error.share_password_required",
   share_password_wrong: "error.share_password_wrong",
   display_unavailable: "error.display_unavailable",
+  brightness_unavailable: "error.brightness_unavailable",
   display_off: "error.display_off",
   ...installRefusalKeys,
 };

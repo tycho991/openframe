@@ -106,6 +106,15 @@ export const displayAdmin = (on: boolean) => control(`/display/admin?on=${on ? 1
 /** Someone presses the frame's power button. */
 export const powerButton = () => control("/display/power");
 
+/** Modifying system settings allowed or withdrawn on the frame. The test server starts with it allowed. */
+export const brightnessPermission = (on: boolean) => control(`/brightness/permission?on=${on ? 1 : 0}`);
+
+/** A frame with or without a light sensor. The test server starts with one. */
+export const lightSensor = (on: boolean) => control(`/brightness/sensor?on=${on ? 1 : 0}`);
+
+/** Android's brightness on the frame now, such as `40 manual` or `50 auto`. */
+export const frameBrightness = () => control("/brightness");
+
 /** Pairs another client directly through the API and returns its token. */
 export async function pairOtherDevice(baseURL: string, name: string): Promise<string> {
   const code = await frameCode();

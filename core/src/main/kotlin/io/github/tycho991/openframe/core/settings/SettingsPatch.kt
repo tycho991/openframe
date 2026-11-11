@@ -4,6 +4,7 @@ import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -87,6 +88,10 @@ object SettingsPatch {
                     bool(value, key, errors)?.let { s = s.copy(autoUpdateCheck = it) }
                 }
 
+                "brightness" -> {
+                    s = s.copy(brightness = applyBrightness(s.brightness, value, errors))
+                }
+
                 else -> {
                     errors[key] = "Unknown field"
                 }
@@ -157,6 +162,7 @@ object SettingsPatch {
                 "weekdays" -> d = d.copy(weekdays = applyWindow(d.weekdays, v, path, errors))
                 "weekend" -> d = d.copy(weekend = applyWindow(d.weekend, v, path, errors))
                 "wakeMinutes" -> int(v, path, DisplayScheduleSettings.WAKE_MINUTES, errors)?.let { d = d.copy(wakeMinutes = it) }
+                "dimLevel" -> int(v, path, DisplayScheduleSettings.DIM_LEVEL, errors)?.let { d = d.copy(dimLevel = it) }
                 else -> errors[path] = "Unknown field"
             }
         }
@@ -179,10 +185,37 @@ object SettingsPatch {
             when (key) {
                 "on" -> time(v, p, errors)?.let { w = w.copy(on = it) }
                 "off" -> time(v, p, errors)?.let { w = w.copy(off = it) }
+                "dim" -> if (v is JsonNull) w = w.copy(dim = null) else time(v, p, errors)?.let { w = w.copy(dim = it) }
                 else -> errors[p] = "Unknown field"
             }
         }
+        // Checked against the window after the change, so that moving the off time alone can make the dim time invalid.
+        if (!w.dimFits()) {
+            errors.putIfAbsent("$path.dim", "Expected a time after the on time and before the off time")
+            w = w.copy(dim = null)
+        }
         return w
+    }
+
+    private fun applyBrightness(
+        base: BrightnessSettings,
+        value: JsonElement,
+        errors: MutableMap<String, String>,
+    ): BrightnessSettings {
+        if (value !is JsonObject) {
+            errors["brightness"] = "Expected an object"
+            return base
+        }
+        var b = base
+        for ((key, v) in value) {
+            val path = "brightness.$key"
+            when (key) {
+                "mode" -> enum(v, path, BrightnessMode.serializer(), errors)?.let { b = b.copy(mode = it) }
+                "level" -> int(v, path, BrightnessSettings.LEVEL, errors)?.let { b = b.copy(level = it) }
+                else -> errors[path] = "Unknown field"
+            }
+        }
+        return b
     }
 
     private fun time(

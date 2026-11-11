@@ -116,14 +116,33 @@ data class CaptionSettings(
     val position: Corner = Corner.BOTTOM_LEFT,
 )
 
-/** On and off time of a day's window, each as `HH:MM` in the device's local time. */
+/**
+ * On and off time of a day's window, each as `HH:MM` in the device's local time, and the time from which the schedule
+ * dims, `null` for none (spec `display-schedule` › Dim settings).
+ */
 @Serializable
 data class DisplayWindow(
     val on: String,
     val off: String,
+    val dim: String? = null,
 ) {
+    /** The dim time lies after the on time and before the off time along the period; with equal times, not at the on time. */
+    fun dimFits(): Boolean {
+        val d = dim ?: return true
+        val on = minutes(on)
+        val off = minutes(off)
+        val dim = minutes(d)
+        return when {
+            on < off -> dim in (on + 1) until off
+            off < on -> dim > on || dim < off
+            else -> dim != on
+        }
+    }
+
     companion object {
         val TIME = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
+
+        private fun minutes(time: String): Int = time.substring(0, 2).toInt() * 60 + time.substring(3, 5).toInt()
     }
 }
 
@@ -134,11 +153,48 @@ data class DisplayScheduleSettings(
     val weekdays: DisplayWindow = DisplayWindow("07:00", "22:00"),
     val weekend: DisplayWindow = DisplayWindow("08:00", "23:00"),
     val wakeMinutes: Int = 5,
+    /** Brightness in percent from a window's dim time. */
+    val dimLevel: Int = 20,
 ) {
     companion object {
         val WAKE_MINUTES = 1..120
+        val DIM_LEVEL = 1..100
     }
 }
+
+/** How the frame sets the brightness (spec `display-brightness` › Modes of the brightness). */
+@Serializable
+enum class BrightnessMode {
+    /** Android's brightness is left alone, except while the schedule dims. */
+    @SerialName("system")
+    SYSTEM,
+
+    @SerialName("manual")
+    MANUAL,
+
+    /** Android's automatic brightness, only with a light sensor. */
+    @SerialName("auto")
+    AUTO,
+}
+
+@Serializable
+data class BrightnessSettings(
+    val mode: BrightnessMode = BrightnessMode.SYSTEM,
+    /** Brightness in percent for [BrightnessMode.MANUAL]. */
+    val level: Int = 80,
+) {
+    companion object {
+        val LEVEL = 1..100
+    }
+}
+
+/** What the device allows for the brightness, checked when a client changes the mode. */
+data class BrightnessSupport(
+    /** openframe may modify system settings. */
+    val available: Boolean,
+    /** The device has a light sensor. */
+    val autoSupported: Boolean,
+)
 
 /**
  * The frame's settings as the API delivers them. The default values are
@@ -161,6 +217,7 @@ data class Settings(
     val displaySchedule: DisplayScheduleSettings = DisplayScheduleSettings(),
     /** The frame checks GitHub for a new version by itself (spec `app-update`, "Automatic check"). */
     val autoUpdateCheck: Boolean = true,
+    val brightness: BrightnessSettings = BrightnessSettings(),
 ) {
     companion object {
         const val NAME_MAX_LENGTH = 64

@@ -12,6 +12,7 @@ import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
 import io.github.tycho991.openframe.core.platform.ProcessControl
+import io.github.tycho991.openframe.core.platform.ScreenBrightness
 import io.github.tycho991.openframe.core.update.ReleaseSource
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
@@ -29,6 +30,7 @@ class TestFrame(
     clock: Clock = Clock.System,
     displayPower: DisplayPower = DisplayPower.None,
     networkLink: NetworkLink = NetworkLink.None,
+    screenBrightness: ScreenBrightness = ScreenBrightness.None,
     health: Health = Health.normal(),
     processControl: ProcessControl = ProcessControl.None,
     stableAfterMs: Long = RunJournal.STABLE_AFTER_MS,
@@ -54,6 +56,7 @@ class TestFrame(
             nextcloudClients = nextcloudClients,
             displayPower = displayPower,
             networkLink = networkLink,
+            screenBrightness = screenBrightness,
             bindLoopback = true,
             health = health,
             processControl = processControl,

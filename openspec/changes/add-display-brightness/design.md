@@ -47,7 +47,7 @@ interface ScreenBrightness {
 data class RawBrightness(val value: Int, val auto: Boolean)
 ```
 
-The percent scale lives in `:core` (`BrightnessScale`): `raw = max(1, round(level × 255 / 100))`, `level = round(raw × 100 / 255)`. It is pure and tested, and `:android` only moves integers. `write` with `auto = true` sets only the mode, leaving the manual value for when automatic is switched off again. `None` is not available, does not support automatic and reads 100 %, not automatic. `FakeScreenBrightness` in `core/src/test/.../testing/` records writes and lets tests change the value "on the device" and the permission.
+The percent scale lives in `:core` (`BrightnessScale`): `raw = max(1, round(level × 255 / 100))`, `level = round(raw × 100 / 255)`. It is pure and tested, and `:android` only moves integers. `write` sets the value and the mode: for the mode `auto` the controller passes the current value, and restoring a snapshot puts back both. `None` is not available, does not support automatic and reads 100 %, not automatic. `FakeScreenBrightness` in `core/src/test/.../testing/` records writes and lets tests change the value "on the device" and the permission.
 
 On Android: `available` is `Settings.System.canWrite(context)` from API 23, `true` below; `autoSupported` is `SensorManager.getDefaultSensor(Sensor.TYPE_LIGHT) != null`.
 
@@ -65,7 +65,7 @@ The brightness depends on the display's periods, waking and the manual switch, w
 
 1. Not `available`: target `null` (leave alone), `dimmed = false`.
 2. A brightness override (decision 6) bound to the current dim period or night: its level.
-3. Schedule active, its clock set, and `dimAt` or (`nightAfterDim` while the display is on) returns a period: the dim level, `dimmed = true`.
+3. Schedule active, its clock set, and `dimAt` or `nightAfterDim` returns a period: the dim level, `dimmed = true`. The night stays dim also while the display is off, where the brightness is invisible, so that waking and going off again write nothing.
 4. Otherwise the stored mode: `manual` → the level, `auto` → automatic, `system` → the snapshot if one exists (decision 5), else `null`.
 
 `edge` identifies the decision's cause: the dim period's start, the night's start, the override, or the stored settings' version. As with the display, the controller writes only when `edge` changes, never because the read value differs from the target. That is what lets a change on the device hold until the next edge (spec `display-brightness` › Changes on the device). The start of the app, a change of the brightness or dim settings, and the permission becoming available are edges as well; the end of a dark wake is not one.

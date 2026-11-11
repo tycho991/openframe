@@ -12,9 +12,10 @@ interface DisplayState {
 
 interface Schedule {
   enabled: boolean;
-  weekdays: { on: string; off: string };
-  weekend: { on: string; off: string };
+  weekdays: { on: string; off: string; dim: string | null };
+  weekend: { on: string; off: string; dim: string | null };
   wakeMinutes: number;
+  dimLevel: number;
 }
 
 test.beforeEach(async () => {
@@ -31,9 +32,10 @@ test("Set the schedule", async ({ page }) => {
   const settings = await apiAsBrowser<{ displaySchedule: Schedule }>(page, "/settings");
   expect(settings.displaySchedule).toEqual({
     enabled: true,
-    weekdays: { on: "07:00", off: "22:00" },
-    weekend: { on: "09:00", off: "23:00" },
+    weekdays: { on: "07:00", off: "22:00", dim: null },
+    weekend: { on: "09:00", off: "23:00", dim: null },
     wakeMinutes: 5,
+    dimLevel: 20,
   });
   // The frame follows the schedule now: on by it, or woken because it was on when the schedule began. The display
   // takes a saved schedule over shortly after the answer, so wait for it.

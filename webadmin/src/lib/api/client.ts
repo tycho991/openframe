@@ -170,6 +170,11 @@ export function createApi(options: ApiOptions) {
     display: () => call<DisplayState>("GET", "/display"),
     /** Switches the display now, until the schedule's next switching time. 409 while not available. */
     setDisplay: (on: boolean) => call<DisplayState>("PUT", "/display", { on }),
+    /**
+     * Sets the brightness now: stored as the fixed level, or until the dim period ends while the schedule dims.
+     * 409 while the frame may not modify system settings.
+     */
+    setBrightness: (brightness: number) => call<DisplayState>("PUT", "/display", { brightness }),
     update: () => call<UpdateState>("GET", "/update"),
     /** Asks for a check now; the answer is the state, also when no check started. */
     checkUpdate: () => call<UpdateState>("POST", "/update/check"),

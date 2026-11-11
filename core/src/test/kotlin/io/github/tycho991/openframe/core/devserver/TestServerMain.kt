@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.devserver
 import fi.iki.elonen.NanoHTTPD
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.display.BrightnessScale
 import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.nextcloud.FakeClients
@@ -17,6 +18,7 @@ import io.github.tycho991.openframe.core.testing.FakeAppInstaller
 import io.github.tycho991.openframe.core.testing.FakeDisplayPower
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.FakeReleaseSource
+import io.github.tycho991.openframe.core.testing.FakeScreenBrightness
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.update.OfficialCertificate
@@ -53,6 +55,9 @@ object TestServerMain {
 
     /** The display, with device administration active; steered through the control port. */
     private var displayPower = FakeDisplayPower()
+
+    /** Android's brightness, with the permission and a light sensor; steered through the control port. */
+    private var screenBrightness = FakeScreenBrightness()
 
     /**
      * GitHub's releases and Android's installer, in memory; steered through the control port. They outlive a restart
@@ -186,6 +191,7 @@ object TestServerMain {
         val dirs = FrameDirs(File(dataDir, "state"), File(dataDir, "cache"), File(dataDir, "photos"), File(dataDir, "update"))
         nextcloud = FakeClients(login = FakeLoginFlow("http://127.0.0.1:$port"))
         displayPower = FakeDisplayPower()
+        screenBrightness = FakeScreenBrightness()
         core =
             FrameCore(
                 dirs,
@@ -198,6 +204,7 @@ object TestServerMain {
                 scanInterval = Duration.ofSeconds(2),
                 nextcloudClients = nextcloud,
                 displayPower = displayPower,
+                screenBrightness = screenBrightness,
                 bindLoopback = true,
                 health = health,
                 // "Start normally" as a restart in normal mode; on a thread of its own, the request comes from the core.
@@ -383,6 +390,26 @@ object TestServerMain {
                         "/display/power" -> {
                             displayPower.powerButton()
                             ok(if (displayPower.screenOn) "on" else "off")
+                        }
+
+                        // Modifying system settings allowed (`on=1`) or withdrawn (`on=0`) on the frame.
+                        "/brightness/permission" -> {
+                            screenBrightness.available = q["on"] == "1"
+                            core.display.recheck()
+                            ok("permission ${q["on"]}")
+                        }
+
+                        // A device with (`on=1`) or without (`on=0`) a light sensor.
+                        "/brightness/sensor" -> {
+                            screenBrightness.autoSupported = q["on"] == "1"
+                            core.display.recheck()
+                            ok("sensor ${q["on"]}")
+                        }
+
+                        // Android's brightness now, in percent, and whether its automatic brightness is on: `40 manual`.
+                        "/brightness" -> {
+                            val raw = screenBrightness.current
+                            ok("${BrightnessScale.toLevel(raw.value)} ${if (raw.auto) "auto" else "manual"}")
                         }
 
                         // A release on GitHub: `/update/publish?version=0.4.0&notes=…`, `apk=0` for one without an APK.
