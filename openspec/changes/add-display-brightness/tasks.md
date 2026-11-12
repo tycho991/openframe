@@ -38,7 +38,7 @@
 ## 6. Devices (each persistent device change only with the owner's consent at that moment)
 
 - [x] 6.1 Rows in `../openframe-private/DEVICE_TEST.md` under a new section "Brightness", each with its `capability › Requirement › Scenario` reference: › Modes of the brightness › Manual level and › Back to system; › Level scale › Lowest level in a dark room; › Permission on the frame › Allow on Android 6 (Frameo, including whether the system ends openframe when the screen opens, and `canWrite` before and after) and › Android 5 (Lenovo); › Automatic brightness needs a light sensor (which frame has one); › Changes on the device › Quick settings by day; `display-schedule` › Dim periods › Weekday evening, › Dimmed during the night › Power button at night, › Brightness after a dim period › Morning in mode system. Verify: every row names a scenario that exists in this change's specs
-- [ ] 6.2 Ask the owner, then install a build with this change on the Lenovo and the Frameo and grant the permission on the Frameo; run the rows of 6.1 with read-only `settings get system` samples. Verify: results with date and device in the rows, and the risks of the design (Frameo screen, raw value 1, `canWrite`) are answered there
+- [x] 6.2 Ask the owner, then install a build with this change on the Lenovo and the Frameo and grant the permission on the Frameo; run the rows of 6.1 with read-only `settings get system` samples. Verify: results with date and device in the rows, and the risks of the design (Frameo screen, raw value 1, `canWrite`) are answered there
 
 ## Workflow follow-up
 
