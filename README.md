@@ -119,6 +119,11 @@ reservation) in the router. On an iPhone, a web app added to the home screen
 has storage of its own and is not paired, even if Safari is. It has no address
 bar, so links do not reach it: pair it with the code ("Show code on frame").
 
+If a phone cannot reach the frame at all while other devices can (Chrome on Android shows
+`ERR_TOO_MANY_RETRIES`), its browser may lack access to the local network. Android 17 silently blocks
+connections to devices in the home network for apps that were denied it: allow it under Settings ›
+Apps › Chrome › Permissions.
+
 On the frame itself: a tap shows name, address, code, QR code and pause, and a ready update. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
 with "local only", the display schedule, brightness control (Android 6 and later), "Unpair all devices", a ready
