@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/tycho991/openframe/compare/v0.5.0...v0.6.0) (2026-11-13)
+
+
+### Features
+
+* add brightness control and dimming in the display schedule ([#79](https://github.com/tycho991/openframe/issues/79)) ([64f500b](https://github.com/tycho991/openframe/commit/64f500b52028c6cc260fc7f78758e459712d4de6))
+
+
+### Bug Fixes
+
+* **deps:** update dependency tools.jackson.core:jackson-databind to v3.2.3 [security] ([#75](https://github.com/tycho991/openframe/issues/75)) ([7e1e344](https://github.com/tycho991/openframe/commit/7e1e34419dfbeb9e57c8acae307ceb98620c3d70))
+
 ## [0.5.0](https://github.com/tycho991/openframe/compare/v0.4.4...v0.5.0) (2026-11-08)
 
 
