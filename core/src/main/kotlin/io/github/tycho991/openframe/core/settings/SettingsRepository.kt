@@ -24,12 +24,14 @@ data class StoredSettings(
  * then applied, immediately visible as [settings] and stored in batches.
  *
  * [scheduleAllowed] tells whether the display schedule may be switched on (device administration is active). Only a
- * change that switches it on is checked; a stored schedule that is on stays on when it turns false.
+ * change that switches it on is checked; a stored schedule that is on stays on when it turns false. [brightnessSupport]
+ * does the same for the brightness modes `manual` and `auto` (spec `display-brightness` › Permission as precondition).
  */
 class SettingsRepository(
     private val store: JsonStore<StoredSettings>,
     model: String,
     private val log: AppLog,
+    private val brightnessSupport: () -> BrightnessSupport = { BrightnessSupport(available = true, autoSupported = true) },
     private val scheduleAllowed: () -> Boolean = { true },
 ) {
     private val defaults = Settings.defaults(model)
@@ -69,6 +71,15 @@ class SettingsRepository(
         if (switchesScheduleOn && !scheduleAllowed()) {
             errors[SCHEDULE_ENABLED] = "Device administration is not active: activate it in the device menu on the frame"
         }
+        val mode = result.settings.brightness.mode
+        if (mode != _settings.value.brightness.mode && mode != BrightnessMode.SYSTEM) {
+            val support = brightnessSupport()
+            if (!support.available) {
+                errors[BRIGHTNESS_MODE] = "openframe may not modify system settings: allow it in the device menu on the frame"
+            } else if (mode == BrightnessMode.AUTO && !support.autoSupported) {
+                errors[BRIGHTNESS_MODE] = "The device has no light sensor for automatic brightness"
+            }
+        }
         if (errors.isNotEmpty()) throw ValidationException(errors)
         if (result.settings != _settings.value) {
             _settings.value = result.settings
@@ -95,5 +106,6 @@ class SettingsRepository(
     private companion object {
         const val TAG = "settings"
         const val SCHEDULE_ENABLED = "displaySchedule.enabled"
+        const val BRIGHTNESS_MODE = "brightness.mode"
     }
 }

@@ -19,6 +19,12 @@ data class Period(
     val end: Instant?,
 )
 
+/** A stretch of an on period in which the schedule dims, from a window's dim time to the end of that day's period. */
+data class DimPeriod(
+    val start: Instant,
+    val end: Instant,
+)
+
 /**
  * When the schedule wants the display on (spec `display-schedule` › Periods of the schedule). Pure, so that it is
  * tested without time passing.
@@ -51,6 +57,47 @@ object DisplaySchedule {
         }
         // Not reached: the search covers more than a week, and every week has on periods.
         return Period(false, previousEnd, null)
+    }
+
+    /**
+     * The dim period around [at], `null` outside one (spec `display-schedule` › Dim periods). It belongs to the period
+     * of the day on which an on period starts, before periods that touch are merged: where it ends, the next day's
+     * brightness begins, even if the display stays on.
+     */
+    fun dimAt(
+        at: ZonedDateTime,
+        settings: DisplayScheduleSettings,
+    ): DimPeriod? {
+        val instant = at.toInstant()
+        val today = at.toLocalDate()
+        for (date in listOf(today.minusDays(1), today)) {
+            val window = windowOf(date, settings)
+            val dim = LocalTime.parse(window.dim ?: continue)
+            val (start, end) = onPeriod(date, settings, at.zone) ?: continue
+            val on = LocalTime.parse(window.on)
+            val off = LocalTime.parse(window.off)
+            // Before the on time on a window across midnight, the dim time lies on the next day.
+            val dimDate = if (off < on && dim < on) date.plusDays(1) else date
+            val dimStart = ZonedDateTime.of(dimDate, dim, at.zone).toInstant()
+            if (dimStart < start || dimStart >= end) continue
+            if (instant >= dimStart && instant < end) return DimPeriod(dimStart, end)
+        }
+        return null
+    }
+
+    /**
+     * The off period around [at] if a dim period ended where it starts, `null` otherwise (spec `display-schedule` ›
+     * Dimmed during the night).
+     */
+    fun nightAfterDim(
+        at: ZonedDateTime,
+        settings: DisplayScheduleSettings,
+    ): Period? {
+        val period = periodAt(at, settings)
+        val start = period.start
+        if (period.on || start == null) return null
+        val before = dimAt(ZonedDateTime.ofInstant(start.minusMillis(1), at.zone), settings) ?: return null
+        return if (before.end == start) period else null
     }
 
     fun windowOf(

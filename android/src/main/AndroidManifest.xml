@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Updates through Android's installation dialog; a normal permission that takes effect from API 26. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android's system brightness (spec `display-brightness`): granted with the installation up to API 22, allowed by the
+         user in "Modify system settings" from API 23. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <application
         android:name=".android.FrameApp"

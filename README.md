@@ -121,7 +121,8 @@ bar, so links do not reach it: pair it with the code ("Show code on frame").
 
 On the frame itself: a tap shows name, address, code, QR code and pause, and a ready update. Swiping pages
 through the photos. Pressing a corner for three seconds opens the device menu
-with "local only", the display schedule, "Unpair all devices", a ready update and info.
+with "local only", the display schedule, brightness control (Android 6 and later), "Unpair all devices", a ready
+update and info.
 
 ## Display off at night
 
@@ -147,6 +148,27 @@ Android 5 (the Lenovo) knows no such command; use the device menu there.
   once device administration is back.
 - **No screen lock.** Like starting as the home screen, this assumes that no PIN, pattern or password is set up;
   otherwise the lock screen would appear in the morning instead of the slideshow.
+
+## Brightness
+
+Under "Settings" the brightness is either Android's own setting (the default: openframe leaves it alone), a fixed
+level, or Android's automatic brightness on devices with a light sensor. Each window of the display schedule can dim
+the display from a time of its own until it goes off, also while it is woken at night; the next morning the normal
+brightness applies again. The slider in the display state, and `PUT /display` with `brightness`, set a level at once.
+A brightness changed on the device itself holds until openframe next applies its own: at a start, on a change of the
+setting, or when dimming begins or ends.
+
+openframe sets Android's **system brightness**, which needs the permission to modify system settings. Up to Android 5
+it comes with the installation. From Android 6 on allow it once on the frame: press a corner for three seconds, choose
+"Brightness control: not allowed" and switch on "Allow modifying system settings" in the screen that opens. Devices
+whose settings lack that screen can grant it over `adb`:
+
+```bash
+adb shell appops set io.github.tycho991.openframe WRITE_SETTINGS allow
+```
+
+The brightness stays as openframe last set it after uninstalling; choose "Android's setting" first, or set it again in
+Android's quick settings.
 
 ## Captions and place names
 

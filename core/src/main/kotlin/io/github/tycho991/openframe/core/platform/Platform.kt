@@ -119,6 +119,46 @@ interface DisplayPower {
     }
 }
 
+/** Android's brightness setting: [value] on its scale of 0 to 255, and whether its automatic brightness is on. */
+data class RawBrightness(
+    val value: Int,
+    val auto: Boolean,
+)
+
+/**
+ * Android's system brightness (spec `display-brightness`). In :android this is `Settings.System`, which needs the
+ * permission to modify system settings for writing; reading needs none. No event reports the permission, so the core
+ * reads [available] on every evaluation.
+ */
+interface ScreenBrightness {
+    /** openframe may modify system settings. */
+    val available: Boolean
+
+    /** The device has a light sensor for Android's automatic brightness. */
+    val autoSupported: Boolean
+
+    fun read(): RawBrightness
+
+    /**
+     * Sets the value and the mode of [target]; the value is the one Android uses when automatic brightness is
+     * switched off again. `false` if that is not possible (not available).
+     */
+    fun write(target: RawBrightness): Boolean
+
+    companion object {
+        /** A device whose brightness openframe cannot change. */
+        val None: ScreenBrightness =
+            object : ScreenBrightness {
+                override val available = false
+                override val autoSupported = false
+
+                override fun read() = RawBrightness(255, auto = false)
+
+                override fun write(target: RawBrightness) = false
+            }
+    }
+}
+
 /**
  * The frame's network connection and asking the system to get it back (spec `display-schedule`, Asking for the network
  * while the display is off). In :android this is Wi-Fi.

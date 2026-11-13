@@ -203,6 +203,8 @@ class DisplayActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterImmersive()
+        // Back from the system's screen for modifying system settings: no event reports the permission.
+        core?.display?.recheck()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -624,6 +626,7 @@ class DisplayActivity : Activity() {
         val localOnly = c.settings.localOnly.value
         val power = (application as FrameApp).displayPower
         val admin = power.available
+        val brightness = (application as FrameApp).screenBrightness
         val update = c.update.state.value
         // A list of entries: "Start normally" only in safe mode (spec `kiosk-host`, "Leaving safe mode"), the update
         // only while one is ready (spec `app-update`, "Ready update on the frame").
@@ -640,6 +643,13 @@ class DisplayActivity : Activity() {
                         // The Frameo's firmware may end the app when another activity starts: a planned end, not a crash.
                         c.health.plannedExit("device administration", ADMIN_SCREEN_VALID_MS)
                         startActivity(power.activationIntent(text(R.string.admin_explanation)))
+                    }
+                },
+                brightness.permissionIntent()?.let { intent ->
+                    text(if (brightness.available) R.string.menu_brightness_on else R.string.menu_brightness_off) to {
+                        // As for device administration, the Frameo's firmware may end the app when the screen opens.
+                        c.health.plannedExit("brightness permission", ADMIN_SCREEN_VALID_MS)
+                        startActivity(intent)
                     }
                 },
                 text(R.string.menu_reset) to { confirmReset(c) },

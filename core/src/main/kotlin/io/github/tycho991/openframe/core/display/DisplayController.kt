@@ -4,7 +4,11 @@ import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.NetworkLink
+import io.github.tycho991.openframe.core.platform.RawBrightness
+import io.github.tycho991.openframe.core.platform.ScreenBrightness
+import io.github.tycho991.openframe.core.settings.BrightnessMode
 import io.github.tycho991.openframe.core.settings.Settings
+import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +24,23 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
+import kotlinx.serialization.Serializable
 import java.time.Instant
+
+/** The brightness as `GET /display` reports it (spec `display-brightness` › Brightness in the display state). */
+data class BrightnessState(
+    val available: Boolean,
+    val autoSupported: Boolean,
+    /** Android's brightness now in percent. */
+    val level: Int,
+    val auto: Boolean,
+    val dimmed: Boolean,
+) {
+    companion object {
+        /** What [ScreenBrightness.None] reports. */
+        val NONE = BrightnessState(available = false, autoSupported = false, level = 100, auto = false, dimmed = false)
+    }
+}
 
 /** The display as `GET /display` reports it. */
 data class DisplayState(
@@ -28,7 +48,20 @@ data class DisplayState(
     val on: Boolean,
     val cause: DisplayCause,
     val nextChange: Instant?,
+    val brightness: BrightnessState = BrightnessState.NONE,
 )
+
+/** What Android had when dimming began in mode `system`, kept across restarts (design decision 5 of `add-display-brightness`). */
+@Serializable
+data class StoredBrightnessSnapshot(
+    val snapshot: Snapshot? = null,
+) {
+    @Serializable
+    data class Snapshot(
+        val value: Int,
+        val auto: Boolean,
+    )
+}
 
 /**
  * Switches the display by the schedule, the manual switch and waking (spec `display-schedule`, design decision 4).
@@ -40,6 +73,10 @@ data class DisplayState(
  *
  * While the display is off by the frame and the network is missing, it asks for the network once a minute and, after
  * ten minutes without it, wakes the display dark for a minute (spec `display-schedule`, Dark wake for the network).
+ *
+ * The same loop sets Android's brightness by [BrightnessPolicy] (spec `display-brightness`). Like the display it writes
+ * only when the decision's edge changes, so that a brightness changed on the device holds until the next edge.
+ * [storeBrightness] stores a level a client sets outside a dim period as the brightness with mode `manual`.
  */
 class DisplayController(
     private val scope: CoroutineScope,
@@ -48,6 +85,9 @@ class DisplayController(
     private val clock: Clock,
     private val log: AppLog,
     private val network: NetworkLink = NetworkLink.None,
+    private val brightness: ScreenBrightness = ScreenBrightness.None,
+    private val snapshots: JsonStore<StoredBrightnessSnapshot>? = null,
+    private val storeBrightness: (Int) -> Unit = {},
 ) {
     private sealed interface Event {
         data class Screen(
@@ -62,6 +102,8 @@ class DisplayController(
 
         data object ScheduleChanged : Event
 
+        data object BrightnessChanged : Event
+
         data object Wake : Event
 
         data class Hold(
@@ -71,7 +113,8 @@ class DisplayController(
         data object Release : Event
 
         class Manual(
-            val on: Boolean,
+            val on: Boolean?,
+            val level: Int?,
             val reply: CompletableDeferred<DisplayState>,
         ) : Event
     }
@@ -91,6 +134,9 @@ class DisplayController(
 
     /** openframe is a device administrator; without it the manual switch is refused. */
     val available: Boolean get() = power.available
+
+    /** openframe may modify system settings; without it a brightness from a client is refused. */
+    val brightnessAvailable: Boolean get() = brightness.available
 
     // Owned by the loop.
     private var override: Override? = null
@@ -120,6 +166,14 @@ class DisplayController(
     @Volatile
     private var lastTouch: Long? = null
 
+    /** The edge of the brightness decision last written, `null` before the first write or after a forced one. */
+    private var brightnessEdge: Any? = null
+    private var brightnessWasAvailable = false
+    private var brightnessOverride: BrightnessOverride? = null
+    private var overrideIds = 0L
+    private var snapshot: RawBrightness? = null
+    private var brightnessState = BrightnessState.NONE
+
     private val schedule get() = settings.value.displaySchedule
 
     fun start() {
@@ -141,6 +195,13 @@ class DisplayController(
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { events.send(Event.ScheduleChanged) }
+        }
+        scope.launch {
+            settings
+                .map { it.brightness }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { events.send(Event.BrightnessChanged) }
         }
         scope.launch { loop() }
     }
@@ -179,15 +240,30 @@ class DisplayController(
     }
 
     /** The manual switch. The caller checks [available] first. Answers with the state after switching. */
-    suspend fun setManual(on: Boolean): DisplayState {
+    suspend fun setManual(on: Boolean): DisplayState = set(on, null)
+
+    /**
+     * The manual switch and a brightness from a client, either or both (spec `display-brightness` › Brightness now).
+     * The caller checks [available] and [brightnessAvailable] first. Answers with the state after both.
+     */
+    suspend fun set(
+        on: Boolean?,
+        level: Int?,
+    ): DisplayState {
         val reply = CompletableDeferred<DisplayState>()
-        events.send(Event.Manual(on, reply))
+        events.send(Event.Manual(on, level, reply))
         return reply.await()
+    }
+
+    /** Looks again at once at what may have changed outside, e.g. the permission after the system's screen for it. */
+    fun recheck() {
+        events.trySend(Event.Availability)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun loop() {
         wasAvailable = power.available
+        snapshot = snapshots?.load()?.snapshot?.let { RawBrightness(it.value, it.auto) }
         guarded {
             grace()
             evaluate()
@@ -218,7 +294,7 @@ class DisplayController(
 
     private fun handle(event: Event?) {
         when (event) {
-            null, Event.Availability, Event.Network -> {}
+            null, Event.Availability, Event.Network, Event.BrightnessChanged -> {}
 
             is Event.Screen -> {
                 screenChanged(event.on)
@@ -239,7 +315,8 @@ class DisplayController(
             }
 
             is Event.Manual -> {
-                manual(event.on)
+                event.level?.let(::manualBrightness)
+                event.on?.let(::manual)
             }
 
             Event.Wake -> {
@@ -328,6 +405,23 @@ class DisplayController(
         override = Override(on, decide().period)
     }
 
+    /**
+     * A level from a client: during a dim stretch it holds until that stretch ends; outside one it is stored and
+     * written now, also when the stored level is the same, so that it undoes a change on the device.
+     */
+    private fun manualBrightness(level: Int) {
+        if (!brightness.available) return
+        val dimStart = BrightnessPolicy.dimStart(schedule, clock.now(), clock.zone())
+        if (dimStart != null) {
+            log.i(TAG, "Brightness $level % by a client until the dim period ends")
+            brightnessOverride = BrightnessOverride(level, dimStart, ++overrideIds)
+        } else {
+            log.i(TAG, "Brightness $level % by a client")
+            storeBrightness(level)
+            brightnessEdge = null
+        }
+    }
+
     /** A clock that is set after the start counts as a change of the schedule: at night the grace applies. */
     private fun checkClock() {
         val now = clock.now()
@@ -355,6 +449,7 @@ class DisplayController(
         if (override != null && d.cause != DisplayCause.MANUAL) override = null
         if (d.period?.on != false || !available) wakeUntil = null
         if (!available) override = null
+        guarded { evaluateBrightness() }
         // The state is published before switching, so that it is current even when the switch throws.
         publish(d)
         try {
@@ -367,7 +462,62 @@ class DisplayController(
 
     /** A display on for a dark wake counts as off: the API reports the decision, and the slideshow keeps resting. */
     private fun publish(d: Decision) {
-        _state.value = DisplayState(power.available, power.screenOn && darkUntil == null, d.cause, d.nextChange)
+        _state.value = DisplayState(power.available, power.screenOn && darkUntil == null, d.cause, d.nextChange, brightnessState)
+    }
+
+    private fun evaluateBrightness() {
+        val available = brightness.available
+        // At the start and when the permission comes (back), the frame applies its brightness once.
+        if (available && !brightnessWasAvailable) brightnessEdge = null
+        brightnessWasAvailable = available
+        val stored = settings.value.brightness
+        val d =
+            BrightnessPolicy.decide(
+                BrightnessInputs(stored, schedule, available, brightnessOverride, snapshot),
+                clock.now(),
+                clock.zone(),
+            )
+        brightnessOverride?.let { if (it.start != d.dimStart) brightnessOverride = null }
+        if (d.edge != null && d.edge != brightnessEdge && applyBrightness(d, stored.mode)) brightnessEdge = d.edge
+        val raw = brightness.read()
+        brightnessState = BrightnessState(available, brightness.autoSupported, BrightnessScale.toLevel(raw.value), raw.auto, d.dimmed)
+    }
+
+    /** Writes [d]; `false` if the write failed, so that the next evaluation tries again. */
+    private fun applyBrightness(
+        d: BrightnessDecision,
+        mode: BrightnessMode,
+    ): Boolean {
+        if (d.dimmed && mode == BrightnessMode.SYSTEM && snapshot == null) saveSnapshot(brightness.read())
+        if (!d.dimmed && mode != BrightnessMode.SYSTEM && snapshot != null) saveSnapshot(null)
+        val written =
+            when (val target = d.target) {
+                null -> {
+                    true
+                }
+
+                is BrightnessTarget.Level -> {
+                    log.i(TAG, "Brightness ${target.level} %${if (d.dimmed) " (dimmed)" else ""}")
+                    brightness.write(RawBrightness(BrightnessScale.toRaw(target.level), auto = false))
+                }
+
+                BrightnessTarget.Auto -> {
+                    log.i(TAG, "Brightness automatic")
+                    brightness.write(brightness.read().copy(auto = true))
+                }
+
+                is BrightnessTarget.Restore -> {
+                    log.i(TAG, "Brightness back to Android's setting before dimming")
+                    brightness.write(target.raw).also { if (it) saveSnapshot(null) }
+                }
+            }
+        if (!written) log.w(TAG, "Brightness could not be set")
+        return written
+    }
+
+    private fun saveSnapshot(raw: RawBrightness?) {
+        snapshot = raw
+        snapshots?.save(StoredBrightnessSnapshot(raw?.let { StoredBrightnessSnapshot.Snapshot(it.value, it.auto) }))
     }
 
     /**

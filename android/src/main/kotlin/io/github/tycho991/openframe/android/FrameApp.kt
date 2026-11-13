@@ -35,6 +35,9 @@ class FrameApp : Application() {
     /** Switching the display; the [FrameService] reports screen events to it, device administration its changes. */
     val displayPower: AndroidDisplayPower by lazy { AndroidDisplayPower(this) }
 
+    /** Android's system brightness; the core reads the permission on every evaluation. */
+    val screenBrightness: AndroidScreenBrightness by lazy { AndroidScreenBrightness(this) }
+
     /** The network; the [FrameService] reports its network callbacks to it. */
     val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
 
@@ -61,6 +64,7 @@ class FrameApp : Application() {
             logSinks = listOf(LogcatSink),
             displayPower = displayPower,
             networkLink = networkLink,
+            screenBrightness = screenBrightness,
             health = health,
             processControl = AndroidProcessControl(this) { health },
             installer = AndroidAppInstaller(this),

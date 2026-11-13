@@ -27,6 +27,8 @@
     "clock.sizePercent": [50, 300],
     cacheBudgetMb: [100, 10000],
     "displaySchedule.wakeMinutes": [1, 120],
+    "displaySchedule.dimLevel": [1, 100],
+    "brightness.level": [1, 100],
   };
 
   /** The four corners, for the clock and for the caption. */
@@ -38,6 +40,8 @@
     ["weekend", "on"],
     ["weekend", "off"],
   ] as const;
+
+  const windows = ["weekdays", "weekend"] as const;
 
   /** How often the display state is read while the settings are open, so that changes on the frame show up. */
   const DISPLAY_POLL_MS = 30_000;
@@ -69,6 +73,37 @@
       switching = false;
     }
   }
+
+  // The brightness (spec web-admin, "Brightness in the settings", "Display state and manual switch").
+  const brightnessAvailable = $derived(display?.brightness.available ?? false);
+  const autoSupported = $derived(display?.brightness.autoSupported ?? false);
+  /** The slider's value while it is dragged, `null` otherwise. */
+  let dragged = $state<number | null>(null);
+  let settingBrightness = $state(false);
+
+  /** Sets the brightness when the slider is let go, so that a drag is one request. */
+  async function setBrightness(level: number) {
+    settingBrightness = true;
+    error = null;
+    try {
+      display = await api.setBrightness(level);
+      // Outside a dim period the frame stores the level as its fixed brightness.
+      void refreshState();
+    } catch (e) {
+      error = errorText(e);
+      void loadDisplay();
+    } finally {
+      dragged = null;
+      settingBrightness = false;
+    }
+  }
+
+  /** The dim fields carry the brightness notice while the frame may not change its brightness. */
+  const dimHint = $derived(
+    display && !brightnessAvailable
+      ? `${t("settings.dimHint")} ${t("brightness.notAvailable")}`
+      : t("settings.dimHint"),
+  );
 
   const displayText = $derived.by(() => {
     if (!display) return "";
@@ -396,6 +431,27 @@
           >
         </div>
         {#if !display.available}<p class="hint">{t("display.notAvailable")}</p>{/if}
+        <div class="field">
+          <label for="s-brightness-now">{t("display.brightness")}</label>
+          <div class="brightness-now">
+            <input
+              id="s-brightness-now"
+              type="range"
+              min="1"
+              max="100"
+              value={dragged ?? display.brightness.level}
+              disabled={!display.brightness.available || settingBrightness}
+              aria-describedby="s-brightness-now-state"
+              oninput={(e) => (dragged = e.currentTarget.valueAsNumber)}
+              onchange={(e) => void setBrightness(e.currentTarget.valueAsNumber)}
+            />
+            <span id="s-brightness-now-state" aria-live="polite"
+              >{dragged ?? display.brightness.level} %{display.brightness.dimmed
+                ? ` · ${t("display.dimmed")}`
+                : ""}</span
+            >
+          </div>
+        </div>
       {/if}
       <label class="check">
         <input
@@ -426,6 +482,41 @@
         {/each}
       </div>
       <span class="hint">{t("settings.displayTimesHint")}</span>
+      <div class="times">
+        {#each windows as day (day)}
+          {@const path = `displaySchedule.${day}.dim`}
+          <div class="field">
+            <label for="s-{day}-dim">{option("settings.display", day + ".dim")}</label>
+            <!-- Empty for no dimming: the frame stores `null`. -->
+            <input
+              id="s-{day}-dim"
+              type="time"
+              bind:value={
+                () => form!.displaySchedule[day].dim ?? "",
+                (v) => (form!.displaySchedule[day].dim = v || null)
+              }
+              aria-invalid={!!errors[path]}
+              aria-describedby="s-dim-hint"
+            />
+            {#if fieldError(path)}<span class="error" role="alert">{fieldError(path)}</span>{/if}
+          </div>
+        {/each}
+      </div>
+      <div class="field">
+        <label for="s-dim-level">{t("settings.dimLevel")}</label>
+        <input
+          id="s-dim-level"
+          type="number"
+          inputmode="numeric"
+          bind:value={form.displaySchedule.dimLevel}
+          aria-invalid={!!errors["displaySchedule.dimLevel"]}
+          aria-describedby="s-dim-hint"
+        />
+        {#if fieldError("displaySchedule.dimLevel")}<span class="error" role="alert"
+            >{fieldError("displaySchedule.dimLevel")}</span
+          >{/if}
+      </div>
+      <span class="hint" id="s-dim-hint">{dimHint}</span>
       <div class="field">
         <label for="s-wake">{t("settings.wakeMinutes")}</label>
         <input
@@ -441,6 +532,48 @@
             >{fieldError("displaySchedule.wakeMinutes")}</span
           >{/if}
       </div>
+    </fieldset>
+
+    <fieldset class="card">
+      <legend>{t("settings.section.brightness")}</legend>
+      <div class="field">
+        <label for="s-brightness-mode">{t("settings.brightnessMode")}</label>
+        <select
+          id="s-brightness-mode"
+          bind:value={form.brightness.mode}
+          aria-invalid={!!errors["brightness.mode"]}
+          aria-describedby="s-brightness-hint"
+        >
+          <option value="system">{option("settings.brightnessMode", "system")}</option>
+          <option value="manual" disabled={!brightnessAvailable}
+            >{option("settings.brightnessMode", "manual")}</option
+          >
+          {#if autoSupported || saved?.brightness.mode === "auto"}
+            <option value="auto" disabled={!brightnessAvailable || !autoSupported}
+              >{option("settings.brightnessMode", "auto")}</option
+            >
+          {/if}
+        </select>
+        {#if fieldError("brightness.mode")}<span class="error" role="alert"
+            >{fieldError("brightness.mode")}</span
+          >{/if}
+      </div>
+      <div class="field">
+        <label for="s-brightness-level">{t("settings.brightnessLevel")}</label>
+        <input
+          id="s-brightness-level"
+          type="number"
+          inputmode="numeric"
+          bind:value={form.brightness.level}
+          disabled={form.brightness.mode !== "manual"}
+          aria-invalid={!!errors["brightness.level"]}
+        />
+        {#if fieldError("brightness.level")}<span class="error" role="alert"
+            >{fieldError("brightness.level")}</span
+          >{/if}
+      </div>
+      <span class="hint" id="s-brightness-hint">{t("settings.brightnessHint")}</span>
+      {#if display && !brightnessAvailable}<p class="hint">{t("brightness.notAvailable")}</p>{/if}
     </fieldset>
 
     <fieldset class="card">
@@ -599,6 +732,20 @@
     margin: 0;
     font-size: var(--text-small);
   }
+  .brightness-now {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brightness-now input {
+    flex: 1;
+    min-width: 0;
+    /* A touch target of 44 px (spec web-admin, "Touch targets"); the track stays centred. */
+    height: 44px;
+    margin: 0;
+  }
+
   .display-state {
     display: flex;
     flex-wrap: wrap;

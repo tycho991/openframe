@@ -477,11 +477,15 @@ paths:
     put:
       tags: [display]
       operationId: setDisplay
-      summary: Switch the display on or off now.
+      summary: Switch the display on or off, or set its brightness, now.
       description: >-
-        The choice holds until the schedule's next switching time. Without an active schedule, off holds until a
-        client switches the display on or someone wakes the frame. It does not survive a restart of the app. Refused
+        `on`: the choice holds until the schedule's next switching time. Without an active schedule, off holds until
+        a client switches the display on or someone wakes the frame. It does not survive a restart of the app. Refused
         with 409 and `display_unavailable` while openframe is not a device administrator.
+        `brightness`: outside a dim period of the schedule the level becomes the stored brightness with mode `manual`;
+        during a dim period, or while the display is on in the night after one, it holds until that period ends and
+        the settings stay unchanged. Refused with 409 and `brightness_unavailable` while openframe may not modify
+        system settings. The request is checked completely before it acts.
       requestBody:
         required: true
         content:
@@ -832,7 +836,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`), switching the display while openframe is not a device administrator (`display_unavailable`), stepping through the slideshow while the display is off (`display_off`) or leaving safe mode while not in it (`not_in_safe_mode`)."
+      description: "The request does not fit the state of the frame, for example deleting a photo of a read-only source (`read_only_source`), syncing an account that has no folder chosen (`source_no_folder`), a ninth source (`too_many_sources`), a share that already is a source (`source_exists`), switching the display while openframe is not a device administrator (`display_unavailable`), setting the brightness while openframe may not modify system settings (`brightness_unavailable`), stepping through the slideshow while the display is off (`display_off`) or leaving safe mode while not in it (`not_in_safe_mode`)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1147,18 +1151,24 @@ components:
     DisplayWindow:
       type: object
       additionalProperties: false
-      required: ["on", "off"]
+      required: ["on", "off", dim]
       description: >-
         The display is on from `on` to `off`. An `off` before `on` ends the period on the next day; equal times keep
         the display on for the whole day.
       properties:
         "on": { $ref: "#/components/schemas/DisplayTime" }
         "off": { $ref: "#/components/schemas/DisplayTime" }
+        dim:
+          type: [string, "null"]
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: >-
+            From this time to the end of the period the display is at `dimLevel`; `null` for no dimming. It lies after
+            `on` and before `off` along the period; with equal times any time but `on`.
 
     DisplaySchedule:
       type: object
       additionalProperties: false
-      required: [enabled, weekdays, weekend, wakeMinutes]
+      required: [enabled, weekdays, weekend, wakeMinutes, dimLevel]
       properties:
         enabled:
           type: boolean
@@ -1170,14 +1180,20 @@ components:
           minimum: 1
           maximum: 120
           description: "After waking during an off period, the display goes off again this many minutes after the last touch."
+        dimLevel:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: "Brightness in percent from a window's `dim` time, while openframe may modify system settings."
 
     DisplayState:
       type: object
       additionalProperties: false
-      required: [available, "on", cause, nextChange]
+      required: [available, "on", cause, nextChange, brightness]
       properties:
         available: { type: boolean, description: "openframe is a device administrator and can switch the display." }
         "on": { type: boolean, description: "The display is on, as the system reports it." }
+        brightness: { $ref: "#/components/schemas/BrightnessState" }
         cause:
           type: string
           enum: [schedule, manual, wake, none]
@@ -1192,9 +1208,39 @@ components:
     DisplaySwitch:
       type: object
       additionalProperties: false
-      required: ["on"]
+      minProperties: 1
       properties:
         "on": { type: boolean }
+        brightness: { type: integer, minimum: 1, maximum: 100, description: "Brightness in percent." }
+
+    BrightnessState:
+      type: object
+      additionalProperties: false
+      required: [available, autoSupported, level, auto, dimmed]
+      properties:
+        available: { type: boolean, description: "openframe may modify system settings and can set the brightness." }
+        autoSupported: { type: boolean, description: "The device has a light sensor, so the mode `auto` is accepted." }
+        level:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: "Android's brightness now in percent, also without the permission; changes on the device show within 30 seconds."
+        auto: { type: boolean, description: "Android's automatic brightness is on." }
+        dimmed: { type: boolean, description: "The display schedule dims the display at the moment." }
+
+    Brightness:
+      type: object
+      additionalProperties: false
+      required: [mode, level]
+      properties:
+        mode:
+          type: string
+          enum: [system, manual, auto]
+          description: >-
+            `system` leaves Android's brightness alone, except while the schedule dims; `manual` sets `level`; `auto`
+            switches on Android's automatic brightness. `manual` and `auto` need the permission to modify system
+            settings (`GET /display`, `brightness.available`), `auto` also a light sensor.
+        level: { type: integer, minimum: 1, maximum: 100, description: "Brightness in percent for the mode `manual`." }
 
     SlideshowState:
       type: object
@@ -1223,7 +1269,7 @@ components:
       additionalProperties: false
       required:
         [name, intervalSeconds, order, transition, transitionDurationMs, fillMode, orientation, clock, caption,
-         language, cacheBudgetMb, displaySchedule, autoUpdateCheck]
+         language, cacheBudgetMb, displaySchedule, autoUpdateCheck, brightness]
       properties:
         name:
           type: string
@@ -1244,10 +1290,11 @@ components:
         autoUpdateCheck:
           type: boolean
           description: The frame checks GitHub for a new version by itself, every 6 hours.
+        brightness: { $ref: "#/components/schemas/Brightness" }
 
     SettingsPatch:
       type: object
-      description: Like `Settings`, all fields optional, `clock`, `caption` and `displaySchedule` also partially.
+      description: Like `Settings`, all fields optional, `clock`, `caption`, `displaySchedule` and `brightness` also partially. A `dim` of `null` removes a window's dim time.
       properties:
         name: { type: string }
         intervalSeconds: { type: integer }
@@ -1280,13 +1327,21 @@ components:
               properties:
                 "on": { type: string }
                 "off": { type: string }
+                dim: { type: [string, "null"] }
             weekend:
               type: object
               properties:
                 "on": { type: string }
                 "off": { type: string }
+                dim: { type: [string, "null"] }
             wakeMinutes: { type: integer }
+            dimLevel: { type: integer }
         autoUpdateCheck: { type: boolean }
+        brightness:
+          type: object
+          properties:
+            mode: { type: string }
+            level: { type: integer }
 
     ImageUrls:
       type: object

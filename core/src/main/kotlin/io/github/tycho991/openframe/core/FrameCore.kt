@@ -19,6 +19,7 @@ import io.github.tycho991.openframe.core.auth.PairingManager
 import io.github.tycho991.openframe.core.auth.StoredClients
 import io.github.tycho991.openframe.core.auth.StoredSecret
 import io.github.tycho991.openframe.core.display.DisplayController
+import io.github.tycho991.openframe.core.display.StoredBrightnessSnapshot
 import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.health.RunEnd
 import io.github.tycho991.openframe.core.health.RunJournal
@@ -55,6 +56,8 @@ import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.platform.ProcessControl
+import io.github.tycho991.openframe.core.platform.ScreenBrightness
+import io.github.tycho991.openframe.core.settings.BrightnessSupport
 import io.github.tycho991.openframe.core.settings.SettingsRepository
 import io.github.tycho991.openframe.core.settings.StoredSettings
 import io.github.tycho991.openframe.core.slideshow.CachedDisplayImages
@@ -98,6 +101,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.time.Duration
 
@@ -132,6 +138,8 @@ class FrameCore(
     displayPower: DisplayPower = DisplayPower.None,
     /** The network, which the frame asks to come back while the display is off; a device without it is always connected. */
     networkLink: NetworkLink = NetworkLink.None,
+    /** Android's brightness; a device without it never changes the brightness (spec `display-brightness`). */
+    screenBrightness: ScreenBrightness = ScreenBrightness.None,
     /**
      * Binds the server to loopback whatever the setting "local only" says, which itself stays as it is. Only for the
      * test server and tests, so that a test frame is not reachable from the LAN; the frame never sets it.
@@ -162,10 +170,33 @@ class FrameCore(
             JsonStore(File(dirs.state, "settings.json"), StoredSettings.serializer(), scope, log, backupOnLoad = true),
             platform.model,
             log,
+            brightnessSupport = { BrightnessSupport(screenBrightness.available, screenBrightness.autoSupported) },
         ) { displayPower.available }
 
-    /** The display schedule, the manual switch and waking. The display reports screen events and touches here. */
-    val display = DisplayController(scope, displayPower, settings.settings, clock, log, networkLink)
+    /**
+     * The display schedule, the manual switch, waking and the brightness. The display reports screen events and touches
+     * here.
+     */
+    val display =
+        DisplayController(
+            scope,
+            displayPower,
+            settings.settings,
+            clock,
+            log,
+            networkLink,
+            screenBrightness,
+            JsonStore(File(dirs.state, "brightness-restore.json"), StoredBrightnessSnapshot.serializer(), scope, log),
+        ) { level ->
+            settings.patch(
+                buildJsonObject {
+                    putJsonObject("brightness") {
+                        put("mode", "manual")
+                        put("level", level)
+                    }
+                },
+            )
+        }
 
     val transitions =
         TransitionGovernor(
