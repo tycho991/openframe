@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 env:
   # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
-  MISE_VERSION: "2026.10.23"
+  MISE_VERSION: "2026.11.4"
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
 
       # The template itself has no openspec/ yet - then there is nothing to check
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         if: hashFiles('openspec/config.yaml') != ''
         with:
           version: ${{ env.MISE_VERSION }}
