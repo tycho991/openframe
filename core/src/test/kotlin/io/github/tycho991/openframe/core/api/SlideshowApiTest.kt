@@ -204,11 +204,11 @@ class SlideshowApiTest {
             assertEquals("display_off", error(res)["code"]!!.jsonPrimitive.content)
         }
         assertEquals(before.seq, f.shown().seq, "the photo stays while the display is off")
-        // When the display comes on, the slideshow moves on once, as it does without the refused commands.
+        // When the display comes on, the same photo stays, as it does without the refused commands.
         f.displayOn()
-        waitFor { f.shown().seq == before.seq + 1 }
         f.handledSoFar()
-        assertEquals(before.seq + 1, f.shown().seq)
+        assertEquals(before.seq, f.shown().seq, "the same photo, not one step per refused command")
+        assertEquals(before.photo.id, json(f.get("/api/v1/slideshow")).photoId())
     }
 
     @Test
