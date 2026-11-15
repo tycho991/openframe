@@ -12,7 +12,7 @@ env:
   LANG: C.UTF-8
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   # mise itself, pinned like the tools it installs; Renovate raises it (customManagers in renovate.json).
-  MISE_VERSION: "2026.10.23"
+  MISE_VERSION: "2026.11.4"
   DO_NOT_TRACK: "1"
 
 jobs:
@@ -77,7 +77,7 @@ jobs:
           test "$head" = "$RELEASE_SHA"
           test "$(cat version.txt)" = "$VERSION"
       # Java and Node pinned exactly as in .mise.toml.
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: java node
