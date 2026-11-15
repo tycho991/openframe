@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/tycho991/openframe/compare/v0.6.0...v0.7.0) (2026-11-15)
+
+
+### Features
+
+* keep the photo on screen when the display goes on again ([#83](https://github.com/tycho991/openframe/issues/83)) ([5255d2b](https://github.com/tycho991/openframe/commit/5255d2b39b5787d33e734071c6edf23cd3ae37eb))
+
 ## [0.6.0](https://github.com/tycho991/openframe/compare/v0.5.0...v0.6.0) (2026-11-13)
 
 
