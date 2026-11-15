@@ -7,6 +7,7 @@ import io.github.tycho991.openframe.core.library.RenderPriority
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.settings.FillMode
 import io.github.tycho991.openframe.core.settings.Order
+import io.github.tycho991.openframe.core.settings.Orientation
 import io.github.tycho991.openframe.core.settings.Settings
 import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.CompletableDeferred
@@ -319,15 +320,38 @@ class SlideshowControllerTest {
             advanceTimeBy(9 * 3600_000L)
             runCurrent()
             assertEquals(photos[0], s.shown(), "no change through the night")
+            val evening = s.controller.state.value
             s.controller.setResting(false)
             runCurrent()
-            assertEquals(photos[1], s.shown(), "a new photo at once")
+            assertEquals(photos[0], s.shown(), "the photo from the evening")
+            assertTrue(s.controller.state.value === evening, "shown again as it was, without a new slide")
             advanceTimeBy(29_999)
             runCurrent()
-            assertEquals(photos[1], s.shown())
+            assertEquals(photos[0], s.shown())
             advanceTimeBy(2)
             runCurrent()
-            assertEquals(photos[2], s.shown(), "the interval starts over")
+            assertEquals(photos[1], s.shown(), "the next photo after one full interval")
+        }
+
+    @Test
+    fun `Off and on by hand`() =
+        runTest {
+            val s = Setup(this, photos)
+            advanceTimeBy(25_000)
+            s.controller.setResting(true)
+            runCurrent()
+            s.images.prefetched.clear()
+            advanceTimeBy(60_000)
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "the same photo as before")
+            assertEquals(photos[1].id to RenderPriority.NEXT, s.images.prefetched.first(), "the upcoming photos are rendered again")
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "not the 5 s left from before")
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
         }
 
     @Test
@@ -381,6 +405,90 @@ class SlideshowControllerTest {
             s.controller.setResting(false)
             runCurrent()
             assertEquals(photos[1], s.shown(), "replaced, although paused")
+        }
+
+    @Test
+    fun `Photo deleted at night`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            s.library -= photos[0].id
+            s.visible.value = photos - photos[0]
+            runCurrent()
+            advanceTimeBy(9 * 3600_000L)
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the next visible photo at once")
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[2], s.shown(), "the interval starts over")
+        }
+
+    @Test
+    fun `Photo hidden at night`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            // Hidden, not deleted: it stays in the library but leaves the visible photos.
+            s.visible.value = photos - photos[0]
+            runCurrent()
+            assertEquals(photos[0], s.shown(), "not while the display is off")
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the next visible photo at once")
+        }
+
+    @Test
+    fun `Orientation changed at night`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            s.images.variant = "-portrait"
+            s.settings.value = s.settings.value.copy(orientation = Orientation.PORTRAIT)
+            runCurrent()
+            assertEquals(emptyList<String>(), s.images.demanded, "nothing rendered while the display is off")
+            s.controller.setResting(false)
+            runCurrent()
+            assertEquals(listOf(photos[0].id), s.images.demanded, "the photo that stays is rendered for portrait")
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File(photos[0].path + "-portrait"))
+            runCurrent()
+            val after = s.controller.state.value as SlideState.Showing
+            assertEquals(photos[0], after.photo, "the same photo")
+            assertEquals(File(photos[0].path + "-portrait"), after.file, "laid out for portrait")
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertEquals(photos[0], s.shown())
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+        }
+
+    @Test
+    fun `A presentation change at night also reaches a paused photo`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setPaused(true)
+            s.controller.setResting(true)
+            runCurrent()
+            s.images.variant = "-fit"
+            s.settings.value = s.settings.value.copy(fillMode = FillMode.FIT)
+            runCurrent()
+            s.controller.setResting(false)
+            runCurrent()
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File(photos[0].path + "-fit"))
+            runCurrent()
+            assertEquals(File(photos[0].path + "-fit"), (s.controller.state.value as SlideState.Showing).file)
+            assertTrue(s.controller.paused.value, "still paused")
         }
 
     @Test

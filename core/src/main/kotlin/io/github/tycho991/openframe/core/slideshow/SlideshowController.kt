@@ -141,6 +141,9 @@ class SlideshowController(
     private var timer: Job? = null
     private var seq = 0L
 
+    /** Fill mode or orientation changed while resting: the photo that stays is rendered again on wake. */
+    private var presentationChangedWhileResting = false
+
     val state: StateFlow<SlideState> = _state.asStateFlow()
     val paused: StateFlow<Boolean> = _paused.asStateFlow()
 
@@ -266,7 +269,9 @@ class SlideshowController(
             }
 
             is Command.Presentation -> {
-                if (!isResting && _state.value is SlideState.Showing) {
+                if (isResting) {
+                    presentationChangedWhileResting = true
+                } else if (_state.value is SlideState.Showing) {
                     prefetchUpcoming()
                     showCurrentAgain()
                 }
@@ -310,9 +315,15 @@ class SlideshowController(
         }
     }
 
-    /** The display came on: the next photo at once, or, while paused, the paused photo unless it was deleted. */
+    /**
+     * The display came on: the photo from before stays and its interval starts over, also while paused (spec
+     * `display-schedule`, "Slideshow rests while the display is off"). A photo deleted or hidden meanwhile has left the
+     * order, which then already points to the next photo.
+     */
     private suspend fun wake() {
         val current = (_state.value as? SlideState.Showing)?.photo
+        val presentationChanged = presentationChangedWhileResting
+        presentationChangedWhileResting = false
         when {
             playlist.size == 0 -> {
                 _nextUp.value = null
@@ -323,8 +334,15 @@ class SlideshowController(
                 show(0)
             }
 
-            !_paused.value || !exists(current.id) -> {
+            playlist.current?.id != current.id || !exists(current.id) -> {
                 show(+1)
+            }
+
+            else -> {
+                // Nothing was rendered ahead while resting, and the library may have changed.
+                prefetchUpcoming()
+                if (presentationChanged) showCurrentAgain()
+                armTimer()
             }
         }
     }
