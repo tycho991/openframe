@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/tycho991/openframe/compare/v0.7.0...v0.7.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* keep the focus on a photo tile the grid draws again ([#85](https://github.com/tycho991/openframe/issues/85)) ([61d02e6](https://github.com/tycho991/openframe/commit/61d02e6658795492b0987435a56c33372c55c4cc))
+
 ## [0.7.0](https://github.com/tycho991/openframe/compare/v0.6.0...v0.7.0) (2026-11-15)
 
 
