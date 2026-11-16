@@ -40,6 +40,10 @@
   --qr-dark: #000000;
   --qr-light: #ffffff;
 
+  /* The app icon is a dark tile in both themes: --bg and --accent in their dark values, and the sun
+     (openspec/changes/app-icon, design.md, decision 1a). */
+  --icon-sun: #e0a050;
+
   /* Spacing. */
   --space-1: 4px;
   --space-2: 8px;

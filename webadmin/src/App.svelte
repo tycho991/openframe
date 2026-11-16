@@ -61,7 +61,7 @@
 </script>
 
 {#snippet brand()}
-  <span class="logo" aria-hidden="true"></span>
+  <img class="logo" src="/favicon.svg" alt="" width="24" height="24" />
   <span class="name">{session.info?.name ?? t("app.title")}</span>
 {/snippet}
 
@@ -167,10 +167,8 @@
     white-space: nowrap;
   }
   .logo {
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    border: 3px solid var(--accent);
+    width: 24px;
+    height: 24px;
     flex: none;
   }
   .icon-button {

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The adaptive app icon from Android 8.0 on (openspec change app-icon, design.md, decision 2); the monochrome layer
+     serves themed icons from Android 13 on. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ds_bg" />
+    <foreground android:drawable="@drawable/ic_launcher_frame" />
+    <monochrome android:drawable="@drawable/ic_launcher_frame" />
+</adaptive-icon>

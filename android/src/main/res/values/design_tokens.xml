@@ -7,6 +7,9 @@
     <color name="ds_text">#FFEDEBE6</color>
     <color name="ds_muted">#FFA19D95</color>
     <color name="ds_accent">#FF5FB39B</color>
+    <!-- The app icon's tile and sun (openspec change app-icon). -->
+    <color name="ds_bg">#FF151514</color>
+    <color name="ds_icon_sun">#FFE0A050</color>
 
     <dimen name="ds_space_2">8dp</dimen>
     <dimen name="ds_space_3">12dp</dimen>

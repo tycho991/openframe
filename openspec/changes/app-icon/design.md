@@ -65,15 +65,18 @@ rectangle, the frame as one `<path>`, the sun as one `<circle>`. The other files
   `design_tokens.xml` so that `checkDesignTokens` covers them.
 - `android/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`: an adaptive icon with `ds_bg` as background and the frame
   with the sun as foreground, scaled by 0.76 around the centre so that both lie in the 66 dp safe zone (checked in
-  the draft with a round mask).
+  the draft with a round mask). The same drawable is its monochrome layer for themed icons from Android 13 on.
 - A legacy launcher icon for Android 5 to 7 (decision 3).
 - `webadmin/public/apple-touch-icon.png`: 180×180 px, rendered once with Inkscape by `scripts/render-icon.sh` and
-  committed.
+  committed. Its corners are filled with the tile's colour, because iOS expects an opaque square and applies its own
+  mask.
 
-A new Gradle task `checkAppIcon`, next to `checkDesignTokens` and run by `check`, compares the path data of the vector
-drawable with `favicon.svg`. A Vitest test checks that the colours in `favicon.svg` equal `--bg` and `--accent` of the
-dark theme and `--icon-sun` in `tokens.css` and that `apple-touch-icon.png` is 180×180. The PNG's content is not compared; the script is
-the documented way to update it.
+A new Gradle task `checkAppIcon`, next to `checkDesignTokens` and run by `check`, compares the vector drawables with
+`favicon.svg`: the frame's path data and stroke width, the tile and the sun as the paths of the SVG's `<rect>` and
+`<circle>`, and their colour resources. A Vitest test checks that the colours in `favicon.svg` equal `--bg` and
+`--accent` of the dark theme and `--icon-sun` in `tokens.css`, that the frame and the sun reach 3:1 against the tile,
+and that `apple-touch-icon.png` is 180×180. The PNG's content is not compared; the script is the documented way to
+update it.
 
 *Alternative:* render all PNGs in the build. Rejected: it needs a rasteriser in Gradle or npm (a new dependency with
 supply-chain cost) for files that change perhaps once.
