@@ -121,6 +121,32 @@ test("Zoom out to borders", async ({ page }) => {
   await expect.poll(() => shownWidth(page)).toBeCloseTo(450 / 1024, 2);
 });
 
+test("Zoom beyond the photo's resolution with a warning", async ({ page }) => {
+  // Spec `web-admin` › Warning for an enlarged section and `photo-library` › Largest zoom: 300×400 on 1024×600 is
+  // enlarged at every zoom (one original pixel per screen pixel would be zoom 0.29), and it can still be zoomed past 1.
+  await openDetail(page);
+  await openEditor(page);
+  const warning = page.getByRole("status").filter({ hasText: "Der Rahmen vergrößert diesen Ausschnitt" });
+  await expect(warning).toBeVisible();
+  const zoomIn = page.getByRole("button", { name: "Vergrößern" });
+  for (let i = 0; i < 4; i++) await zoomIn.click();
+  // From `auto` at about 0.59, four steps of 1.25 reach about 1.43, past the old limit of 1.
+  await expect.poll(async () => Number(await viewport(page).getAttribute("data-zoom"))).toBeGreaterThan(1.2);
+  const zoom = Number(await viewport(page).getAttribute("data-zoom"));
+  // 1024/300 screen pixels per original pixel at zoom 1.
+  await expect(warning).toContainText(
+    `etwa ${Math.round(100 / ((1024 / 300) * zoom))} % der Bildschirmauflösung`,
+  );
+  await page
+    .getByRole("dialog", { name: "Ausschnitt wählen" })
+    .getByRole("button", { name: "Speichern" })
+    .click();
+  await expect(page.getByRole("dialog", { name: "Ausschnitt wählen" })).toBeHidden();
+  const photo = await onlyPhoto(page);
+  expect(photo.crop!.zoom).toBeCloseTo(zoom, 6);
+  expect(photo.presentation.zoom).toBeCloseTo(zoom, 6);
+});
+
 test("Back to automatic", async ({ page }) => {
   await usb("rotated6.jpg", "hoch.jpg");
   await pairInUi(page);
@@ -163,6 +189,9 @@ test("Section editor on the phone", async ({ page }) => {
   expect(v.x).toBeGreaterThanOrEqual(0);
   expect(v.x + v.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The warning about the enlarged part wraps within the screen.
+  const warning = await box(page.getByRole("status").filter({ hasText: "Der Rahmen vergrößert" }));
+  expect(warning.x + warning.width).toBeLessThanOrEqual(390);
   for (const button of await page
     .getByRole("dialog", { name: "Ausschnitt wählen" })
     .getByRole("button")

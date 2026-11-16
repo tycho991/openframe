@@ -213,7 +213,7 @@ class AndroidMediaEngine(
         /**
          * [region] in whole pixels of an image of [width]×[height]: the corner rounded to the nearest pixel and the size
          * rounded on its own, at least one pixel. Rounding both edges outward would make a window of 1920 pixels at a
-         * fractional position 1921 wide, and scaling it by that hair to 1920 blurs every fine detail at the largest zoom.
+         * fractional position 1921 wide, and scaling it by that hair to 1920 blurs every fine detail at the sharp zoom.
          */
         fun pixels(
             region: Region,

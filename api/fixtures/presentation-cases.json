@@ -1,5 +1,5 @@
 {
-  "description": "Shared cases of Presentation.of (core) and presentation.ts (web UI): photo size after EXIF rotation, screen in the configured orientation, section or null, fill mode -> the shown window (top left corner and size as fractions of the photo), the zoom it is shown with and the size of the rendered display image. Compared within 1/10,000. See openspec change photo-crop, design decisions 1 to 3.",
+  "description": "Shared cases of Presentation.of (core) and presentation.ts (web UI): photo size after EXIF rotation, screen in the configured orientation, section or null, fill mode -> the shown window (top left corner and size as fractions of the photo), the zoom it is shown with and the size of the rendered display image. Compared within 1/10,000. See openspec change photo-crop, design decisions 1 to 3, and zoom-beyond-resolution, design decisions 1 and 5.",
   "autoMaxCrop": 0.25,
   "cases": [
     {
@@ -407,14 +407,70 @@
       },
       "fillMode": "fill",
       "expected": {
-        "x": 0.15,
-        "y": 0.18,
-        "width": 0.3,
-        "height": 0.64,
-        "zoom": 1.5625,
+        "x": 0.182812,
+        "y": 0.25,
+        "width": 0.234375,
+        "height": 0.5,
+        "zoom": 2,
+        "output": {
+          "width": 938,
+          "height": 1500
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section across screen formats › Switch to landscape (portrait)",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1200,
+        "height": 1920
+      },
+      "crop": {
+        "x": 0.3,
+        "y": 0.5,
+        "zoom": 0.5
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0,
+        "y": 0,
+        "width": 0.9375,
+        "height": 1,
+        "zoom": 0.5,
         "output": {
           "width": 1200,
-          "height": 1920
+          "height": 960
+        }
+      }
+    },
+    {
+      "scenario": "slideshow-display › Section across screen formats › Switch to landscape (landscape)",
+      "photo": {
+        "width": 4000,
+        "height": 3000
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.3,
+        "y": 0.5,
+        "zoom": 0.5
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "zoom": 0.833333,
+        "output": {
+          "width": 1600,
+          "height": 1200
         }
       }
     },
@@ -435,14 +491,14 @@
       },
       "fillMode": "fill",
       "expected": {
-        "x": 0.26,
-        "y": 0.3,
-        "width": 0.48,
-        "height": 0.4,
-        "zoom": 2.083333,
+        "x": 0.333333,
+        "y": 0.361111,
+        "width": 0.333333,
+        "height": 0.277778,
+        "zoom": 3,
         "output": {
-          "width": 1920,
-          "height": 1200
+          "width": 1333,
+          "height": 833
         }
       }
     },
@@ -475,7 +531,35 @@
       }
     },
     {
-      "scenario": "photo-library › Largest zoom (a photo smaller than the screen allows zoom 1)",
+      "scenario": "photo-library › Largest zoom › Photo of about the screen's size",
+      "photo": {
+        "width": 1600,
+        "height": 1200
+      },
+      "screen": {
+        "width": 1920,
+        "height": 1200
+      },
+      "crop": {
+        "x": 0.5,
+        "y": 0.5,
+        "zoom": 2
+      },
+      "fillMode": "fill",
+      "expected": {
+        "x": 0.25,
+        "y": 0.291667,
+        "width": 0.5,
+        "height": 0.416667,
+        "zoom": 2,
+        "output": {
+          "width": 800,
+          "height": 500
+        }
+      }
+    },
+    {
+      "scenario": "photo-library › Largest zoom (a photo smaller than the screen is zoomed in as well, and the display enlarges it)",
       "photo": {
         "width": 800,
         "height": 600
@@ -491,14 +575,14 @@
       },
       "fillMode": "fill",
       "expected": {
-        "x": 0.0,
-        "y": 0.083333,
-        "width": 1.0,
-        "height": 0.833333,
-        "zoom": 1.0,
+        "x": 0.25,
+        "y": 0.291667,
+        "width": 0.5,
+        "height": 0.416667,
+        "zoom": 2,
         "output": {
-          "width": 800,
-          "height": 500
+          "width": 400,
+          "height": 250
         }
       }
     },

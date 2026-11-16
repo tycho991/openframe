@@ -90,8 +90,8 @@ class RenderCacheTest {
             assertEquals(first, c.peekAnyDisplay(withCrop))
             val cropped = c.get(withCrop, RenderSize.DISPLAY)
             assertTrue(cropped != first)
-            // 400×300 on 320×200 at zoom 2 would be 0.4 of the width, but one original pixel per screen pixel limits it to 1.25.
-            assertRegion(Region(0.0, 0.0, 0.8, 2.0 / 3), engine.regions.last())
+            // 400×300 on 320×200 at zoom 2 (scale 1.6): half the width and 200/480 of the height, enlarged by the display.
+            assertRegion(Region(0.0, 0.0, 0.5, 200.0 / 480), engine.regions.last())
             fillMode = FillMode.FIT
             assertNull(c.peek(e, RenderSize.DISPLAY), "new fill mode, not rendered yet")
             c.get(e, RenderSize.DISPLAY)

@@ -75,8 +75,9 @@ data class Presentation(
         private const val KEY_UNITS = 10_000
 
         /**
-         * The zooms a photo of [width]×[height] can be shown with on [screen]: from fully visible to one
-         * original pixel per screen pixel, at most [MAX_ZOOM]; a photo smaller than the screen allows 1.
+         * The zooms a photo of [width]×[height] can be shown with on [screen]: from fully visible to [MAX_ZOOM],
+         * whatever the photo's resolution. Above [sharpZoom] the display enlarges the part (openspec change
+         * zoom-beyond-resolution, design decision 1).
          */
         fun zoomRange(
             width: Int,
@@ -85,14 +86,22 @@ data class Presentation(
         ): ClosedFloatingPointRange<Double> {
             val cover = cover(width, height, screen)
             val fit = min(screen.width.toDouble() / width, screen.height.toDouble() / height)
-            return fit / cover..max(1.0, min(MAX_ZOOM, 1 / cover))
+            return fit / cover..MAX_ZOOM
         }
+
+        /** The zoom at which one original pixel covers one screen pixel; above it the part is enlarged. */
+        fun sharpZoom(
+            width: Int,
+            height: Int,
+            screen: PixelSize,
+        ): Double = 1 / cover(width, height, screen)
 
         /**
          * What the frame shows of a photo of [width]×[height] (after EXIF rotation) on [screen]: with
          * [crop] its section, the zoom clamped to [zoomRange]; without, the preset of [fillMode] around
          * the center. The window is moved inward at the photo's edges, and centered where it is the whole
-         * photo. The output is at most the screen and never more than the window's original pixels.
+         * photo. The output is at most the screen and never more than the window's original pixels, so a
+         * zoom above [sharpZoom] gives a smaller image that the display enlarges.
          */
         fun of(
             width: Int,
