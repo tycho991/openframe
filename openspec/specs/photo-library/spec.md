@@ -187,15 +187,19 @@ If a photo's file is replaced by one with the same aspect ratio (within 1 %), th
 - **THEN** the photo has no section any more, and the fill mode applies to it
 
 ### Requirement: Largest zoom
-The frame SHALL show a section with at most the zoom at which one pixel of the original covers one pixel of the screen, and at most 4. A photo that does not cover the screen at zoom 1 SHALL allow zoom 1. A stored zoom above this limit SHALL be shown with the limit.
+The frame SHALL show a section with at most zoom 4, whatever the photo's resolution. Above the zoom at which one pixel of the original covers one pixel of the screen, the frame SHALL enlarge the part to the screen. The display size SHALL still have no more pixels than that part of the original.
 
 #### Scenario: Photo of 12 megapixels
 - **WHEN** a photo of 4000×3000 pixels with zoom 3 is shown on a screen of 1920×1200
-- **THEN** it is shown with a zoom of about 2.08, at which 1920 original pixels cover the screen's width
+- **THEN** it is shown with zoom 3: a part of about 1333×833 original pixels, enlarged to fill the screen
+
+#### Scenario: Photo of about the screen's size
+- **WHEN** a photo of 1600×1200 pixels with zoom 2 is shown on a screen of 1920×1200
+- **THEN** it is shown with zoom 2: a part of 800×500 original pixels, enlarged to fill the screen
 
 #### Scenario: Photo of 48 megapixels
 - **WHEN** a photo of 8000×6000 pixels with zoom 4 is shown on a screen of 1920×1200
-- **THEN** it is shown with zoom 4
+- **THEN** it is shown with zoom 4, and the part has more original pixels than the screen
 
 ### Requirement: Rendering a section within memory
 Rendering a section SHALL get by with the heap of the reference devices, also for a photo of 48 megapixels at the largest zoom.

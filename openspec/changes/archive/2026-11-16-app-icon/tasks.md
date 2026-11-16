@@ -24,7 +24,7 @@
 ## 5. Devices (each persistent device change only with the owner's consent at that moment)
 
 - [x] 5.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references: the icon in "Apps" and in the package installer's dialog during the update on the Lenovo (`visual-design` › Launcher icon on the frame › Frame on Android 5) and the Frameo, and a home-screen bookmark of the web UI on an Android and an iOS phone (`visual-design` › Icon in the web UI › Bookmark on the home screen). Verify: the rows exist with their references
-- [ ] 5.2 Run the rows of 5.1 after the release. Verify: results entered; if a frame shows the default icon or a bookmark is blurred, a finding with the fallback of design decision 3 or the manifest named in its risks
+- [x] 5.2 Run the rows of 5.1 after the release. Verify: results entered; if a frame shows the default icon or a bookmark is blurred, a finding with the fallback of design decision 3 or the manifest named in its risks
 
 ## Workflow follow-up
 
