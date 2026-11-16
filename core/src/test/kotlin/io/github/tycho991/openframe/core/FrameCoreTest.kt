@@ -173,6 +173,56 @@ class FrameCoreTest {
         }
     }
 
+    /**
+     * Spec `photo-library` › Section of a photo › Set a section, and `slideshow-display` › Current part of the photo on
+     * screen › Section of the photo on screen and › Back with previous: through the API, with the real render cache.
+     */
+    @Test
+    fun `A new section reaches the photo on screen and a photo brought back with previous`() {
+        val photos = File(dir, "photos")
+        for (i in 1..3) Fixtures.copy("landscape.jpg", File(photos, "p$i.jpg"))
+        TestFrame(dir).use { frame ->
+            assertEquals(200, frame.send("PATCH", "/api/v1/settings", """{"order":"chronological"}""").statusCode())
+            waitFor { frame.core.slideshow.state.value is SlideState.Showing }
+
+            fun shown() = frame.core.slideshow.state.value as SlideState.Showing
+
+            fun currentPart(id: String) =
+                frame.core.cache
+                    .target(
+                        frame.core.library.index.library.value.photos
+                            .getValue(id),
+                        RenderSize.DISPLAY,
+                    ).name
+
+            // The photo on screen: its new section appears without a step, and it stays the same photo.
+            val onScreen = shown().photo.id
+            assertEquals(200, frame.send("PATCH", "/api/v1/photos/$onScreen", """{"crop":{"x":0,"y":0,"zoom":1}}""").statusCode())
+            waitFor { shown().file.name == currentPart(onScreen) }
+            assertEquals(onScreen, shown().photo.id)
+            assertEquals(
+                0.0,
+                frame.core.cache
+                    .target(shown().photo, RenderSize.DISPLAY)
+                    .region.y,
+                1e-9,
+            )
+
+            // A photo behind in the order: changed while another is on screen, then brought back with previous.
+            frame.core.slideshow.next()
+            waitFor { shown().photo.id != onScreen }
+            assertEquals(200, frame.send("PATCH", "/api/v1/photos/$onScreen", """{"crop":{"x":1,"y":1,"zoom":1}}""").statusCode())
+            frame.core.slideshow.previous()
+            waitFor { shown().photo.id == onScreen && shown().file.name == currentPart(onScreen) }
+            assertTrue(
+                frame.core.cache
+                    .target(shown().photo, RenderSize.DISPLAY)
+                    .region.y > 0.0,
+                "the lower part now",
+            )
+        }
+    }
+
     @Test
     fun `Admin address as the frame shows it`() {
         assertEquals("http://192.168.100.215:8080/", FrameCore.adminUrl("192.168.100.215", 8080))

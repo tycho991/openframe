@@ -26,11 +26,17 @@ import kotlin.random.Random
 
 /** The display sizes as the slideshow needs them. */
 interface DisplayImages {
-    /** A finished display size, if need be still the one from the old format, or `null`. */
+    /** A finished display size, if need be still the one from the old format or section, or `null`. */
     fun ready(entry: PhotoEntry): File?
 
-    /** Renders the display size now, before everything else. Throws if that fails. */
-    suspend fun render(entry: PhotoEntry): File
+    /** The finished display size for the entry's current presentation, or `null` while it is not rendered. */
+    fun current(entry: PhotoEntry): File?
+
+    /** Renders the display size with [priority], by default before everything else. Throws if that fails. */
+    suspend fun render(
+        entry: PhotoEntry,
+        priority: RenderPriority = RenderPriority.DEMAND,
+    ): File
 
     fun prefetch(
         entries: List<PhotoEntry>,
@@ -42,9 +48,14 @@ interface DisplayImages {
 class CachedDisplayImages(
     private val cache: RenderCache,
 ) : DisplayImages {
-    override fun ready(entry: PhotoEntry): File? = cache.peek(entry, RenderSize.DISPLAY) ?: cache.peekAnyDisplay(entry)
+    override fun ready(entry: PhotoEntry): File? = current(entry) ?: cache.peekAnyDisplay(entry)
 
-    override suspend fun render(entry: PhotoEntry): File = cache.get(entry, RenderSize.DISPLAY, RenderPriority.DEMAND)
+    override fun current(entry: PhotoEntry): File? = cache.peek(entry, RenderSize.DISPLAY)
+
+    override suspend fun render(
+        entry: PhotoEntry,
+        priority: RenderPriority,
+    ): File = cache.get(entry, RenderSize.DISPLAY, priority)
 
     override fun prefetch(
         entries: List<PhotoEntry>,
@@ -107,8 +118,15 @@ class SlideshowController(
             val manual: Boolean,
         ) : Command
 
+        /** The timer [timer] ran out; an older timer's tick is ignored. */
         data class Tick(
-            val seq: Long,
+            val timer: Long,
+        ) : Command
+
+        /** The current display size of [photo] is ready, see [refreshShown]. */
+        data class Rendered(
+            val photo: PhotoEntry,
+            val file: File,
         ) : Command
 
         data class Pause(
@@ -139,7 +157,14 @@ class SlideshowController(
     private val _paused = MutableStateFlow(false)
     private val _resting = MutableStateFlow(false)
     private var timer: Job? = null
+
+    /** Counts the timers, so that a tick of a cancelled one is ignored. Apart from [seq]: switching a part keeps it. */
+    private var timerGeneration = 0L
     private var seq = 0L
+
+    /** The render of the current part of the photo on screen and the entry it is for, see [refreshShown]. */
+    private var refresh: Job? = null
+    private var refreshFor: PhotoEntry? = null
 
     /** Fill mode or orientation changed while resting: the photo that stays is rendered again on wake. */
     private var presentationChangedWhileResting = false
@@ -243,7 +268,16 @@ class SlideshowController(
             }
 
             is Command.Tick -> {
-                if (command.seq == seq && !_paused.value && !isResting) show(+1)
+                if (command.timer == timerGeneration && !_paused.value && !isResting) show(+1)
+            }
+
+            is Command.Rendered -> {
+                val shown = _state.value as? SlideState.Showing
+                // Only for the photo still on screen and the entry the render was for: a newer section renders anew.
+                if (shown != null && !isResting && command.photo == refreshFor && shown.photo.id == command.photo.id) {
+                    refreshFor = null
+                    if (shown.file != command.file) switchTo(command.photo, command.file)
+                }
             }
 
             is Command.Rest -> {
@@ -273,7 +307,7 @@ class SlideshowController(
                     presentationChangedWhileResting = true
                 } else if (_state.value is SlideState.Showing) {
                     prefetchUpcoming()
-                    showCurrentAgain()
+                    refreshShown()
                 }
             }
 
@@ -308,9 +342,12 @@ class SlideshowController(
                 show(+1)
             }
 
-            // A new section changes the display size of that photo: render it before the next change.
+            // A new section changes the display size: the photo on screen switches to it once it is rendered (spec
+            // `slideshow-display`, "Current part of the photo on screen"), the others are rendered before their turn.
             else -> {
                 prefetchUpcoming()
+                val updated = command.photos.firstOrNull { it.id == current?.id }
+                if (updated != null && updated != current) refreshShown(updated)
             }
         }
     }
@@ -341,8 +378,8 @@ class SlideshowController(
             else -> {
                 // Nothing was rendered ahead while resting, and the library may have changed.
                 prefetchUpcoming()
-                if (presentationChanged) showCurrentAgain()
                 armTimer()
+                if (presentationChanged) refreshShown()
             }
         }
     }
@@ -369,6 +406,8 @@ class SlideshowController(
             val file = images.ready(entry)
             if (file != null) {
                 emit(entry, file, step)
+                // The file may be of an older section, fill mode or orientation: the current one follows
+                refreshShown()
                 return
             }
             candidates += entry
@@ -408,21 +447,48 @@ class SlideshowController(
     }
 
     /**
-     * The photo on screen in the new fill mode or orientation, at once and also while paused: its old display size would
-     * otherwise stay, after turning the frame a landscape window letterboxed in portrait, until the next change.
+     * Brings the photo on screen to its current part, also while paused (spec `slideshow-display`, "Current part of the
+     * photo on screen"): a step may have shown a display size of an older section, fill mode or orientation, and a new
+     * section or presentation makes the shown one old. If the current part is not rendered yet, it is rendered without
+     * blocking the commands and [Command.Rendered] switches to it; the older part stays until then. [photo] is the
+     * library's entry of the photo on screen, newer than the shown one after a section changed.
      */
-    private suspend fun showCurrentAgain() {
+    private fun refreshShown(photo: PhotoEntry? = null) {
         val shown = _state.value as? SlideState.Showing ?: return
-        val file =
-            try {
-                images.render(shown.photo)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                log.w(TAG, "Photo not rendered for the new presentation: ${shown.photo.path}")
-                return
+        if (isResting) return
+        val entry = photo ?: shown.photo
+        val current = images.current(entry)
+        if (current == shown.file && entry == shown.photo) return
+        refresh?.cancel()
+        refreshFor = null
+        if (current != null) {
+            if (current != shown.file) switchTo(entry, current) else _state.value = shown.copy(photo = entry)
+            return
+        }
+        refreshFor = entry
+        refresh =
+            scope.launch {
+                val file =
+                    try {
+                        images.render(entry, RenderPriority.NEXT)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        // An OutOfMemoryError as well: the older part stays on screen
+                        log.w(TAG, "Current part not rendered, the older one stays: ${entry.path}")
+                        return@launch
+                    }
+                commands.send(Command.Rendered(entry, file))
             }
-        if (file != shown.file && _state.value === shown) emit(shown.photo, file, 0)
+    }
+
+    /** The same photo with another display size; the interval that is running goes on. */
+    private fun switchTo(
+        photo: PhotoEntry,
+        file: File,
+    ) {
+        seq++
+        _state.value = SlideState.Showing(photo, file, 0, seq)
     }
 
     private fun prefetchUpcoming() {
@@ -435,12 +501,12 @@ class SlideshowController(
     private fun armTimer() {
         timer?.cancel()
         if (_paused.value || isResting) return
-        val mySeq = seq
+        val mine = ++timerGeneration
         val interval = settings.value.intervalSeconds * 1000L
         timer =
             scope.launch {
                 delay(interval)
-                commands.send(Command.Tick(mySeq))
+                commands.send(Command.Tick(mine))
             }
     }
 
