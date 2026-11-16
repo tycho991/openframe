@@ -40,7 +40,15 @@ emulator -avd of21 -port 5554 -no-window -no-audio -no-boot-anim -gpu swiftshade
 The default adb server also knows the Frameo, and `adb forward` then refuses with "more than one device". Use a
 second server for the emulator: `adb -P 5038 connect localhost:5557` (adb port of console port 5556, `localhost:5555`
 for 5554), then `adb -P 5038 -s <device> forward tcp:18080 tcp:8080`. Do not use `pkill -f` with the AVD name from
-inside a command that contains that name, it kills the calling shell too.
+inside a command that contains that name, it kills the calling shell too. The same holds for `pgrep -f`: to check
+whether an emulator still runs, look for its process by name (`ps -eo pid,comm | grep qemu`) instead.
+
+## Screenshots
+
+`adb exec-out screencap` aborts on the API 37 image with `-gpu swiftshader_indirect`
+(`Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma`). The emulator console takes the screenshot
+instead: `adb -P 5038 -s emulator-5556 emu screenrecord screenshot <directory>` writes a PNG at the panel's size. On
+API 21, `adb shell screencap -p /sdcard/s.png` followed by `adb pull` works.
 
 ## Pairing without looking at the screen
 
