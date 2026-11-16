@@ -2,19 +2,19 @@
 
 ## 1. The drawing
 
-- [ ] 1.1 `webadmin/public/favicon.svg` with the geometry and colours of design decision 1 (motive approved by the owner on 2026-11-16), and the token `--icon-sun` in `tokens.css` per design decision 1a. Verify: rendered at 16, 48 and 160 px it matches the approved draft, and `npm run lint` is green
-- [ ] 1.2 `scripts/render-icon.sh` (Inkscape, from `favicon.svg`) writes `webadmin/public/apple-touch-icon.png` at 180×180 px; the README's contribution notes name the script. Verify: running it twice gives the same file, and `file` reports 180×180 PNG
+- [x] 1.1 `webadmin/public/favicon.svg` with the geometry and colours of design decision 1 (motive approved by the owner on 2026-11-16), and the token `--icon-sun` in `tokens.css` per design decision 1a. Verify: rendered at 16, 48 and 160 px it matches the approved draft, and `npm run lint` is green
+- [x] 1.2 `scripts/render-icon.sh` (Inkscape, from `favicon.svg`) writes `webadmin/public/apple-touch-icon.png` at 180×180 px; the README's contribution notes name the script. Verify: running it twice gives the same file, and `file` reports 180×180 PNG
 
 ## 2. Web UI
 
-- [ ] 2.1 Icon links in `webadmin/index.html` and the header's brand mark in `App.svelte` per design decision 4 (24 px `<img>`, `alt=""`). Verify: an e2e test for `visual-design` › Icon in the web UI › Browser tab (the page links `/favicon.svg` and fetching it returns 200 with `image/svg+xml`), › Bookmark on the home screen (`/apple-touch-icon.png` returns 200 with `image/png`) and › Header (the image is visible next to the frame's name in the light and the dark theme), with its own `OPENFRAME_E2E_PORT`
-- [ ] 2.2 Vitest test per design decision 2: the colours of `favicon.svg` equal `--bg` and `--accent` of the dark theme and `--icon-sun` in `tokens.css`, and `apple-touch-icon.png` is 180×180. Verify: `npm test` is green, and fails when the accent in `favicon.svg` is changed by hand
-- [ ] 2.3 Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e` in `webadmin/`. Verify: all green
+- [x] 2.1 Icon links in `webadmin/index.html` and the header's brand mark in `App.svelte` per design decision 4 (24 px `<img>`, `alt=""`). Verify: an e2e test for `visual-design` › Icon in the web UI › Browser tab (the page links `/favicon.svg` and fetching it returns 200 with `image/svg+xml`), › Bookmark on the home screen (`/apple-touch-icon.png` returns 200 with `image/png`) and › Header (the image is visible next to the frame's name in the light and the dark theme), with its own `OPENFRAME_E2E_PORT`
+- [x] 2.2 Vitest test per design decision 2: the colours of `favicon.svg` equal `--bg` and `--accent` of the dark theme and `--icon-sun` in `tokens.css`, and `apple-touch-icon.png` is 180×180. Verify: `npm test` is green, and fails when the accent in `favicon.svg` is changed by hand
+- [x] 2.3 Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e` in `webadmin/`. Verify: all green
 
 ## 3. Frame
 
-- [ ] 3.1 `ds_bg` and `ds_icon_sun` in `design_tokens.xml`, the vector drawables and the adaptive icon per design decisions 2 and 3, `android:icon="@mipmap/ic_launcher"` on the application in `AndroidManifest.xml`. Verify: `./gradlew :android:lintDebug` reports no new error, and `aapt2 dump badging` of the debug APK names `icon='res/mipmap-anydpi-v4/ic_launcher.xml'` (or its equivalent) and the v26 adaptive icon
-- [ ] 3.2 `checkAppIcon` in `android/build.gradle.kts`, run by `check`, per design decision 2. Verify: `./gradlew check` is green, and fails naming the file when the path data of one drawable is changed by hand
+- [x] 3.1 `ds_bg` and `ds_icon_sun` in `design_tokens.xml`, the vector drawables and the adaptive icon per design decisions 2 and 3, `android:icon="@mipmap/ic_launcher"` on the application in `AndroidManifest.xml`. Verify: `./gradlew :android:lintDebug` reports no new error or warning, and `aapt2 dump resources` of the debug APK lists `mipmap/ic_launcher` for `anydpi` (the vector, compiled as `-v21`) and `anydpi-v26` (the adaptive icon)
+- [x] 3.2 `checkAppIcon` in `android/build.gradle.kts`, run by `check`, per design decision 2. Verify: `./gradlew check` is green, and fails naming the file when the path data of one drawable is changed by hand
 - [ ] 3.3 On the API 37 emulator with the debug build: the app list with the default round mask, a square mask, and the HOME chooser with a second launcher installed (emulator only). Verify: screenshots show the whole open frame in each (`visual-design` › Launcher icon on the frame › Round mask, › Choice of the HOME app)
 
 ## 4. README

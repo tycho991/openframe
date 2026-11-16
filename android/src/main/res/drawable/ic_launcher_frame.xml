@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foreground of the adaptive app icon: the frame and the sun of webadmin/public/favicon.svg without the tile,
+     scaled by 0.76 around the centre so that both lie in the 66 dp safe zone (openspec change app-icon, design.md,
+     decision 2). checkAppIcon compares the path data with favicon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.76"
+        android:scaleY="0.76">
+        <path
+            android:name="frame"
+            android:pathData="M56 24H38a14 14 0 0 0-14 14v32a14 14 0 0 0 14 14h32a14 14 0 0 0 14-14V52"
+            android:strokeColor="@color/ds_accent"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="12" />
+        <path
+            android:name="sun"
+            android:fillColor="@color/ds_icon_sun"
+            android:pathData="M69 30A9 9 0 1 0 87 30A9 9 0 1 0 69 30Z" />
+    </group>
+</vector>

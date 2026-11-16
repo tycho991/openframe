@@ -197,6 +197,91 @@ val checkDesignTokens by tasks.registering {
     }
 }
 
+// The launcher icons are copies of the app icon's source, webadmin/public/favicon.svg (openspec change app-icon,
+// design.md, decision 2): the frame's path data and stroke width as they are, the tile and the sun as the paths of
+// the SVG's <rect> and <circle>, in the colour resources of the design tokens. Their colours are covered by
+// checkDesignTokens and the web UI's appIcon test.
+val checkAppIcon by tasks.registering {
+    group = "verification"
+    description = "Checks that the launcher icons draw the same shapes as webadmin/public/favicon.svg."
+    val source = webadminDir.file("public/favicon.svg").asFile
+    val legacy = file("src/main/res/mipmap-anydpi/ic_launcher.xml")
+    val foreground = file("src/main/res/drawable/ic_launcher_frame.xml")
+    inputs.files(source, legacy, foreground)
+    val root = rootProject.layout.projectDirectory.asFile
+    doLast {
+        val svg = source.readText()
+
+        fun element(name: String): Map<String, String> {
+            val tag = Regex("""<$name\b[^>]*>""").find(svg)?.value ?: throw GradleException("$source has no <$name>")
+            return Regex("""([a-z-]+)="([^"]*)"""").findAll(tag).associate { it.groupValues[1] to it.groupValues[2] }
+        }
+
+        fun number(
+            attributes: Map<String, String>,
+            key: String,
+        ) = attributes[key]?.toDoubleOrNull() ?: throw GradleException("$source: $key is missing or not a number")
+
+        fun n(value: Double) = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+        val rect = element("rect")
+        val (w, h, rx) = listOf("width", "height", "rx").map { number(rect, it) }
+        val tile =
+            "M${n(rx)} 0H${n(w - rx)}A${n(rx)} ${n(rx)} 0 0 1 ${n(w)} ${n(rx)}V${n(h - rx)}" +
+                "A${n(rx)} ${n(rx)} 0 0 1 ${n(w - rx)} ${n(h)}H${n(rx)}A${n(rx)} ${n(rx)} 0 0 1 0 ${n(h - rx)}" +
+                "V${n(rx)}A${n(rx)} ${n(rx)} 0 0 1 ${n(rx)} 0Z"
+        val circle = element("circle")
+        val (cx, cy, r) = listOf("cx", "cy", "r").map { number(circle, it) }
+        val sun =
+            "M${n(cx - r)} ${n(cy)}A${n(r)} ${n(r)} 0 1 0 ${n(cx + r)} ${n(cy)}" +
+                "A${n(r)} ${n(r)} 0 1 0 ${n(cx - r)} ${n(cy)}Z"
+        val path = element("path")
+        val frame = path["d"] ?: throw GradleException("$source: <path> has no d")
+
+        // name -> attribute -> expected value
+        val shapes =
+            mapOf(
+                "tile" to mapOf("pathData" to tile, "fillColor" to "@color/ds_bg"),
+                "frame" to
+                    mapOf(
+                        "pathData" to frame,
+                        "strokeColor" to "@color/ds_accent",
+                        "strokeWidth" to n(number(path, "stroke-width")),
+                    ),
+                "sun" to mapOf("pathData" to sun, "fillColor" to "@color/ds_icon_sun"),
+            )
+        val problems = mutableListOf<String>()
+        for ((file, names) in listOf(legacy to listOf("tile", "frame", "sun"), foreground to listOf("frame", "sun"))) {
+            val where = file.relativeTo(root)
+            val paths =
+                Regex("""<path\b[^>]*/>""").findAll(file.readText()).associate { match ->
+                    val attributes =
+                        Regex("""android:([a-zA-Z]+)="([^"]*)"""").findAll(match.value).associate {
+                            it.groupValues[1] to it.groupValues[2]
+                        }
+                    (attributes["name"] ?: "") to attributes
+                }
+            for (name in names) {
+                val actual = paths[name]
+                if (actual == null) {
+                    problems += "$where has no <path android:name=\"$name\">"
+                    continue
+                }
+                for ((attribute, expected) in shapes.getValue(name)) {
+                    if (actual[attribute] != expected) {
+                        problems += "$where, $name: android:$attribute is ${actual[attribute]}, expected $expected"
+                    }
+                }
+            }
+        }
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                "The launcher icons differ from webadmin/public/favicon.svg:\n" + problems.joinToString("\n") { "  $it" },
+            )
+        }
+    }
+}
+
 // The APK ships webadmin/public/licenses/third-party-android.txt (visual-design, "Licences of bundled components").
 // Every runtime module of the app needs a "Module: group:name" line there, and the desugared JDK library, which
 // carries GPL-2.0 with the Classpath Exception, needs its exact version next to the link to that version's source.
@@ -277,7 +362,7 @@ val checkThirdPartyNotices by tasks.registering(CheckThirdPartyNotices::class) {
 }
 
 tasks.named("check") {
-    dependsOn(checkDesignTokens, checkThirdPartyNotices)
+    dependsOn(checkDesignTokens, checkAppIcon, checkThirdPartyNotices)
 }
 
 tasks.named("preBuild") {

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app icon up to Android 7.1, drawn from webadmin/public/favicon.svg (openspec change app-icon, design.md,
+     decisions 2 and 3). From Android 8.0 on, mipmap-anydpi-v26 replaces it with an adaptive icon. checkAppIcon
+     compares the path data with favicon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:name="tile"
+        android:fillColor="@color/ds_bg"
+        android:pathData="M24 0H84A24 24 0 0 1 108 24V84A24 24 0 0 1 84 108H24A24 24 0 0 1 0 84V24A24 24 0 0 1 24 0Z" />
+    <path
+        android:name="frame"
+        android:pathData="M56 24H38a14 14 0 0 0-14 14v32a14 14 0 0 0 14 14h32a14 14 0 0 0 14-14V52"
+        android:strokeColor="@color/ds_accent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="12" />
+    <path
+        android:name="sun"
+        android:fillColor="@color/ds_icon_sun"
+        android:pathData="M69 30A9 9 0 1 0 87 30A9 9 0 1 0 69 30Z" />
+</vector>

@@ -1,3 +1,5 @@
+<img src="webadmin/public/favicon.svg" width="96" height="96" alt="">
+
 # openframe
 
 Digital picture frame for old Android tablets and Frameo frames. The slideshow
@@ -343,6 +345,10 @@ port when several run at once.
 - `webadmin/.npmrc` sets `ignore-scripts=true`, so install scripts of dependencies
   never run (in `npm ci`, in the Gradle build and in CI). A package that needs its
   install script is built with `npm rebuild --ignore-scripts=false <package>`.
+- The app icon's source is `webadmin/public/favicon.svg`. The launcher icons in
+  `android/src/main/res/mipmap-anydpi/` and `drawable/ic_launcher_frame.xml` copy its shapes, which `checkAppIcon`
+  verifies; after changing it, update them and run `scripts/render-icon.sh` (Inkscape) for
+  `webadmin/public/apple-touch-icon.png`.
 - `npm run lint` also checks `api/openapi.yaml` with Redocly. Every operation needs
   a 4xx response; `.redocly.lint-ignore.yaml` holds the only exception, `GET /info`.
 - Gradle checks every artifact it resolves against `gradle/verification-metadata.xml`.
