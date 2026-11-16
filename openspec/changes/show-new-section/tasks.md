@@ -14,7 +14,7 @@
 
 ## 3. Emulator
 
-- [ ] 3.1 On the API 37 emulator with the debug build: set a section on the photo on screen through the web interface, then step forward and back with `POST /slideshow` `next` and `previous` after changing the section of the previous photo. Verify: screenshots show the new section within a few seconds in both cases, and the photo changes after the interval that was running
+- [x] 3.1 On the API 37 emulator with the debug build: set a section on the photo on screen through the web interface, then step forward and back with `POST /slideshow` `next` and `previous` after changing the section of the previous photo. Verify: screenshots show the new section within a few seconds in both cases, and the photo changes after the interval that was running
 
 ## 4. Devices (each persistent device change only with the owner's consent at that moment)
 
