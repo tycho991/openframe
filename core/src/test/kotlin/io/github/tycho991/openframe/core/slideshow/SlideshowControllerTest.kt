@@ -2,6 +2,7 @@
 
 package io.github.tycho991.openframe.core.slideshow
 
+import io.github.tycho991.openframe.core.library.Crop
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.RenderPriority
 import io.github.tycho991.openframe.core.log.AppLog
@@ -29,6 +30,10 @@ class SlideshowControllerTest {
         return PhotoEntry(PhotoEntry.idFor("local", path), "local", path, 4, 3, n * 1000L, 1, 1, 1)
     }
 
+    /**
+     * Display sizes as the render cache keeps them: a photo in [readyIds] has a finished file. A new presentation
+     * ([variant]) or section makes it an older one: [ready] still returns it, [current] not until it is rendered again.
+     */
     private class FakeImages : DisplayImages {
         val readyIds = mutableSetOf<String>()
         val broken = mutableSetOf<String>()
@@ -36,23 +41,61 @@ class SlideshowControllerTest {
         val prefetched = mutableListOf<Pair<String, RenderPriority>>()
         val pending = mutableMapOf<String, CompletableDeferred<File>>()
         val demanded = mutableListOf<String>()
+        val priorities = mutableListOf<Pair<String, RenderPriority>>()
 
-        /** Part of the file names, so a new presentation gives new files. */
+        /** Variant and section each finished file was rendered for; without an entry, for the current ones. */
+        private val renderedVariant = mutableMapOf<String, String>()
+        private val renderedCrop = mutableMapOf<String, Crop?>()
+
+        /** Part of the file names, so a new presentation gives new files. The finished ones keep the old one. */
         var variant = ""
+            set(value) {
+                readyIds.forEach { renderedVariant.putIfAbsent(it, field) }
+                field = value
+            }
 
         /** [ready] throws, so that handling a step fails. */
         var failing = false
 
+        /** The files of [photos] are rendered for their sections as they are now. */
+        fun renderedFor(photos: List<PhotoEntry>) = photos.forEach { renderedCrop[it.id] = it.crop }
+
+        private fun file(
+            entry: PhotoEntry,
+            variant: String,
+            crop: Crop?,
+        ) = File(entry.path + variant + (crop?.let { "-${it.x}-${it.y}-${it.zoom}" } ?: ""))
+
+        private fun shownVariant(entry: PhotoEntry) = renderedVariant[entry.id] ?: variant
+
+        private fun shownCrop(entry: PhotoEntry) = if (entry.id in renderedCrop) renderedCrop[entry.id] else entry.crop
+
         override fun ready(entry: PhotoEntry): File? {
             check(!failing) { "failing" }
-            return if (entry.id in readyIds) File(entry.path + variant) else null
+            return if (entry.id in readyIds) file(entry, shownVariant(entry), shownCrop(entry)) else null
         }
 
-        override suspend fun render(entry: PhotoEntry): File {
+        override fun current(entry: PhotoEntry): File? =
+            if (entry.id in readyIds && shownVariant(entry) == variant && shownCrop(entry) == entry.crop) {
+                file(entry, variant, entry.crop)
+            } else {
+                null
+            }
+
+        override suspend fun render(
+            entry: PhotoEntry,
+            priority: RenderPriority,
+        ): File {
             demanded += entry.id
+            priorities += entry.id to priority
             if (entry.id in broken) throw IllegalStateException("broken")
             if (entry.id in outOfMemory) throw OutOfMemoryError("test")
-            return pending.getOrPut(entry.id) { CompletableDeferred() }.await().also { readyIds += entry.id }
+            return pending.getOrPut(entry.id) { CompletableDeferred() }.await().also {
+                readyIds += entry.id
+                renderedVariant[entry.id] = variant
+                renderedCrop[entry.id] = entry.crop
+                pending.remove(entry.id)
+            }
         }
 
         override fun prefetch(
@@ -72,7 +115,13 @@ class SlideshowControllerTest {
         val visible = MutableStateFlow(photos)
         val library = photos.map { it.id }.toMutableSet()
         val settings = MutableStateFlow(settings)
-        val images = FakeImages().apply { if (allReady) readyIds += photos.map { it.id } }
+        val images =
+            FakeImages().apply {
+                if (allReady) {
+                    readyIds += photos.map { it.id }
+                    renderedFor(photos)
+                }
+            }
         val controller =
             SlideshowController(visible, { it in library }, this.settings, images, scope.backgroundScope, AppLog(TestClock())).also {
                 it.start()
@@ -441,6 +490,122 @@ class SlideshowControllerTest {
             s.controller.setResting(false)
             runCurrent()
             assertEquals(photos[1], s.shown(), "the next visible photo at once")
+        }
+
+    // Spec `slideshow-display` › Current part of the photo on screen.
+
+    private val head = Crop(0.5, 0.2, 1.0)
+
+    /** The library with [photo] changed, as a new section of it arrives. */
+    private fun Setup.change(photo: PhotoEntry) {
+        visible.value = visible.value.map { if (it.id == photo.id) photo else it }
+    }
+
+    private fun Setup.file(): File = (controller.state.value as SlideState.Showing).file
+
+    @Test
+    fun `Section of the photo on screen`() =
+        runTest {
+            val s = Setup(this, photos)
+            val before = s.file()
+            advanceTimeBy(10_000)
+            s.change(photos[0].copy(crop = head))
+            runCurrent()
+            assertEquals(before, s.file(), "the older part until the new one is rendered")
+            assertEquals(listOf(photos[0].id to RenderPriority.NEXT), s.images.priorities)
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File("p01-head.jpg"))
+            runCurrent()
+            val after = s.controller.state.value as SlideState.Showing
+            assertEquals(File("p01-head.jpg"), after.file, "the new section once it is rendered")
+            assertEquals(head, after.photo.crop)
+            assertEquals(0, after.step)
+            advanceTimeBy(19_999)
+            runCurrent()
+            assertEquals(photos[0].id, s.shown()?.id, "the interval that was running goes on")
+            advanceTimeBy(2)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "after 30 seconds from the start, not from the switch")
+        }
+
+    @Test
+    fun `Back with previous`() =
+        runTest {
+            val s = Setup(this, photos)
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+            val old = s.images.ready(photos[0])
+            s.change(photos[0].copy(crop = head))
+            runCurrent()
+            assertEquals(emptyList<String>(), s.images.demanded, "the photo on screen did not change")
+            s.controller.previous()
+            runCurrent()
+            assertEquals(photos[0].id, s.shown()?.id)
+            assertEquals(old, s.file(), "at once with the older part")
+            assertTrue(photos[0].id in s.images.demanded, "and its current part is rendered")
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File("p01-head.jpg"))
+            runCurrent()
+            assertEquals(File("p01-head.jpg"), s.file(), "then the new section, not the old part for good")
+        }
+
+    @Test
+    fun `Section removed on screen`() =
+        runTest {
+            val withHead = listOf(photos[0].copy(crop = head)) + photos.drop(1)
+            val s = Setup(this, withHead)
+            s.change(photos[0])
+            runCurrent()
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File("p01-auto.jpg"))
+            runCurrent()
+            assertEquals(File("p01-auto.jpg"), s.file())
+            assertEquals(null, s.shown()?.crop, "the fill mode applies again")
+        }
+
+    @Test
+    fun `Next photo before the switch`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.change(photos[0].copy(crop = head))
+            runCurrent()
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown())
+            s.images.pending
+                .getValue(photos[0].id)
+                .complete(File("p01-head.jpg"))
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the next photo stays")
+            assertTrue(s.images.current(photos[0].copy(crop = head)) != null, "rendered for its next appearance")
+        }
+
+    @Test
+    fun `A failed render of the current part keeps the older one`() =
+        runTest {
+            val s = Setup(this, photos)
+            val before = s.file()
+            s.images.broken += photos[0].id
+            s.change(photos[0].copy(crop = head))
+            runCurrent()
+            assertEquals(before, s.file())
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[1], s.shown(), "the slideshow goes on")
+        }
+
+    @Test
+    fun `A comment does not render the photo on screen again`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.change(photos[0].copy(comment = "Summer"))
+            runCurrent()
+            assertEquals(emptyList<String>(), s.images.demanded)
+            assertEquals("Summer", s.shown()?.comment, "the entry on screen follows the library")
         }
 
     @Test

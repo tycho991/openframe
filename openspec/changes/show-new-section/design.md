@@ -53,9 +53,13 @@ takes seconds on the Lenovo, during which steps from the remote or the API would
 ### 3. The switch keeps the interval
 
 The switch emits a new `Showing` with `step = 0` and a new `seq`, so that `SlideRenderer` swaps to the new file with
-the transition it uses for step 0 today. The timer moves from "tick for `seq`" to a deadline: `armTimer()` stores the
-time of the next change, and the switch re-arms the timer for the time left instead of a full interval. A paused or
-resting slideshow has no deadline and gets none.
+the transition it uses for step 0 today. The timer no longer ticks for `seq`: `armTimer()` counts its own generation,
+and `Command.Tick` carries that number. The switch does not arm a timer, so the one that is running ticks at the end of
+the interval it started; every path that arms a timer today still does, and still cancels the older one. A paused or
+resting slideshow has no timer and gets none.
+
+*Alternative:* a deadline that the switch re-arms for the time left. Rejected while implementing: a separate counter
+gives the same behaviour without a clock in the controller.
 
 *Alternative:* swap the file without a new `seq`. Rejected: `SlideRenderer` and `CaptionOverlay` key on `seq`; a
 second key for "same slide, new file" would touch the Android side for no gain.
