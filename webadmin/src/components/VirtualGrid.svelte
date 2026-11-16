@@ -53,6 +53,27 @@
     if (hasMore && layout.nearEnd) onloadmore();
   });
 
+  // The photo whose tile has the focus. A tile that leaves the visible range is removed without a focus event, and
+  // the range can jump for a moment: Firefox reports scrollY 0 once when a dialog's scroll lock ends. When the tile
+  // is rendered again and nothing else took the focus, it gets it back.
+  let focusedId: string | null = null;
+
+  function onfocusin(event: FocusEvent) {
+    focusedId = (event.target as HTMLElement).closest<HTMLElement>(".tile")?.dataset.photo ?? null;
+  }
+
+  function onfocusout(event: FocusEvent) {
+    // A tile still on the page lost the focus to the user, not to the grid.
+    if ((event.target as HTMLElement).isConnected) focusedId = null;
+  }
+
+  $effect(() => {
+    void visible;
+    const id = focusedId;
+    if (id === null || (document.activeElement !== null && document.activeElement !== document.body)) return;
+    container.querySelector<HTMLElement>(`[data-photo="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  });
+
   /** Brings the tile of photo [id] into view if it is not, and focuses it: the element that opened a detail may
    *  have been recycled for another photo meanwhile (spec web-admin, "Keyboard operation"). */
   export async function focusPhoto(id: string): Promise<void> {
@@ -75,7 +96,7 @@
   }
 </script>
 
-<div class="grid" bind:this={container} style:height="{layout.height}px">
+<div class="grid" bind:this={container} style:height="{layout.height}px" {onfocusin} {onfocusout}>
   {#each visible as photo, i (photo.id)}
     {@const pos = layout.position(layout.first + i)}
     <button
