@@ -161,7 +161,7 @@ It SHALL be possible to set and remove a photo's section through the API: a focu
 
 #### Scenario: Set a section
 - **WHEN** a client sets the section x 0.5, y 0.2, zoom 1.5 on a photo
-- **THEN** the photo carries this section, and the slideshow shows it with it from the next change on
+- **THEN** the photo carries this section, and the slideshow shows it with it at once if the photo is on screen, otherwise when it appears next
 
 #### Scenario: Invalid focus point
 - **WHEN** a client sets a section with x 1.2
