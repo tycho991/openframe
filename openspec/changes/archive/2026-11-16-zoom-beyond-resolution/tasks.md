@@ -21,7 +21,7 @@
 ## 4. Devices (each persistent device change only with the owner's consent at that moment)
 
 - [x] 4.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references: a phone photo zoomed to about 50 % and 25 % of the screen's resolution on the Frameo and the Lenovo, judged for how blurred it looks (`photo-library` › Largest zoom › Photo of about the screen's size), and the warning in the editor on a phone (`web-admin` › Warning for an enlarged section › Zoom into a phone photo). Verify: the rows exist with their references
-- [ ] 4.2 Run the rows of 4.1 after the release and remove the test sections again. Verify: results entered, or a finding for anything that differs
+- [x] 4.2 Run the rows of 4.1 after the release and remove the test sections again. Verify: results entered, or a finding for anything that differs
 
 ## Workflow follow-up
 
