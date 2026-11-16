@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.2](https://github.com/tycho991/openframe/compare/v0.7.1...v0.7.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.application to v9.5.1 ([#86](https://github.com/tycho991/openframe/issues/86)) ([13e4d52](https://github.com/tycho991/openframe/commit/13e4d52f5ed24628ed52d36f2fc56144867490a2))
+* show the current part of the photo on screen after a new section ([#90](https://github.com/tycho991/openframe/issues/90)) ([fa9a87e](https://github.com/tycho991/openframe/commit/fa9a87e92cd6a4fea9aecadf1eeefe2693d56c81))
+
 ## [0.7.1](https://github.com/tycho991/openframe/compare/v0.7.0...v0.7.1) (2026-11-16)
 
 
