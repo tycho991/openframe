@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/tycho991/openframe/compare/v0.7.2...v0.8.0) (2026-11-16)
+
+
+### Features
+
+* add the openframe app icon ([#94](https://github.com/tycho991/openframe/issues/94)) ([d87320f](https://github.com/tycho991/openframe/commit/d87320ff3edbd808fc385dadd66a34ba3c21bb4f))
+* zoom sections beyond the photo's resolution with a warning ([#95](https://github.com/tycho991/openframe/issues/95)) ([5585a35](https://github.com/tycho991/openframe/commit/5585a3567fcb2242fc24f201b80311b0938ca37d))
+
 ## [0.7.2](https://github.com/tycho991/openframe/compare/v0.7.1...v0.7.2) (2026-11-16)
 
 
