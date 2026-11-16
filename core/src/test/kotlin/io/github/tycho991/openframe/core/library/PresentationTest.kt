@@ -72,12 +72,18 @@ class PresentationTest {
     }
 
     @Test
-    fun `A stored zoom above the largest one is shown with the largest, below the smallest with the smallest`() {
+    fun `A zoom beyond the sharp one is enlarged, above the largest one shown with the largest, below the smallest with the smallest`() {
         // 4000×3000 on 1920×1200: one original pixel per screen pixel at zoom 1920/(0.48·4000) ≈ 2.083.
-        val above = Presentation.of(4000, 3000, landscape, Crop(0.5, 0.5, 4.0), FillMode.FILL)
-        assertEquals(1 / 0.48, above.zoom, 1e-9)
-        assertEquals(PixelSize(1920, 1200), above.output)
-        assertEquals(0.48, above.width, 1e-9)
+        assertEquals(1 / 0.48, Presentation.sharpZoom(4000, 3000, landscape), 1e-9)
+        val sharp = Presentation.of(4000, 3000, landscape, Crop(0.5, 0.5, 1 / 0.48), FillMode.FILL)
+        assertEquals(PixelSize(1920, 1200), sharp.output)
+        // Zoom 4 shows a quarter of the width: 1000×625 original pixels, which the display enlarges.
+        val enlarged = Presentation.of(4000, 3000, landscape, Crop(0.5, 0.5, 4.0), FillMode.FILL)
+        assertEquals(4.0, enlarged.zoom, 1e-9)
+        assertEquals(0.25, enlarged.width, 1e-9)
+        assertEquals(PixelSize(1000, 625), enlarged.output)
+        val above = Presentation.of(4000, 3000, landscape, Crop(0.5, 0.5, 5.0), FillMode.FILL)
+        assertEquals(Presentation.MAX_ZOOM, above.zoom, 1e-9)
         val below = Presentation.of(3000, 4000, landscape, Crop(0.5, 0.5, 0.01), FillMode.FILL)
         assertEquals(Presentation.zoomRange(3000, 4000, landscape).start, below.zoom, 1e-9)
         assertEquals(1.0, below.width, 1e-9)

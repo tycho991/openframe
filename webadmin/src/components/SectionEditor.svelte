@@ -3,7 +3,16 @@
   import type { Crop, FillMode, Photo } from "../lib/api/client";
   import { errorText } from "../lib/i18n/errors";
   import { t } from "../lib/i18n/i18n.svelte";
-  import { presentationOf, shownArea, zoomRange, type Size } from "../lib/presentation";
+  import {
+    enlargedPercent,
+    enlargement,
+    presentationOf,
+    sharpZoom,
+    shownArea,
+    zoomRange,
+    zoomStep,
+    type Size,
+  } from "../lib/presentation";
   import Icon from "./Icon.svelte";
 
   interface Props {
@@ -42,6 +51,12 @@
   const ZOOM_STEP = 1.25;
   const atMin = $derived(shown.zoom <= range.min + 1e-6);
   const atMax = $derived(shown.zoom >= range.max - 1e-6);
+  /** The zoom at which one original pixel covers one screen pixel; the buttons stop there once (design decision 4). */
+  const sharp = $derived(sharpZoom(size, screen));
+  /** Screen pixels per original pixel; above 1 the frame enlarges the part (design decision 2). */
+  const upscale = $derived(enlargement(size, screen, shown));
+  /** The share of the screen's resolution while the part is enlarged, else `null`. */
+  const percent = $derived(enlargedPercent(upscale));
 
   $effect(() => {
     dialog.showModal();
@@ -57,10 +72,11 @@
   /**
    * The section after moving the shown part by [dx], [dy] viewport pixels and zooming by [factor]. It is stored as
    * what is shown, so a focus point beyond the edge does not pile up and the photo follows the finger back at once.
+   * With [stopAtSharp] (the buttons) the zoom stops at the sharp zoom when it would cross it.
    */
-  function change(dx: number, dy: number, factor: number) {
+  function change(dx: number, dy: number, factor: number, stopAtSharp = false) {
     const current = shown;
-    const zoom = Math.min(Math.max(current.zoom * factor, range.min), range.max);
+    const zoom = zoomStep(current.zoom, factor, range, sharp, stopAtSharp);
     const next = presentationOf(
       size,
       screen,
@@ -170,18 +186,23 @@
       type="button"
       aria-label={t("section.zoomOut")}
       disabled={atMin}
-      onclick={() => change(0, 0, 1 / ZOOM_STEP)}><Icon name="remove" /></button
+      onclick={() => change(0, 0, 1 / ZOOM_STEP, true)}><Icon name="remove" /></button
     >
     <button
       type="button"
       aria-label={t("section.zoomIn")}
       disabled={atMax}
-      onclick={() => change(0, 0, ZOOM_STEP)}><Icon name="add" /></button
+      onclick={() => change(0, 0, ZOOM_STEP, true)}><Icon name="add" /></button
     >
     <button type="button" aria-pressed={crop === null} onclick={() => (crop = null)}
       >{t("section.automatic")}</button
     >
   </div>
+  <!-- Always in the page, so a screen reader announces the warning when it appears. -->
+  <p class="enlarged" role="status" data-enlargement={upscale}>
+    {#if percent !== null}<Icon name="warning" size={20} /><span>{t("section.enlarged", { percent })}</span
+      >{/if}
+  </p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="actions">
     <button type="button" onclick={oncancel}>{t("common.cancel")}</button>
@@ -259,6 +280,18 @@
     place-items: center;
     width: var(--target);
     padding: 0;
+  }
+  .enlarged {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 1lh;
+    margin: 12px 0 0;
+    font-size: var(--text-label);
+    color: var(--warning);
+  }
+  .enlarged :global(svg) {
+    flex: none;
   }
   button[aria-pressed="true"] {
     border-color: var(--accent);

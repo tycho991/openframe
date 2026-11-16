@@ -264,10 +264,26 @@ class LibraryApiTest {
             frame.core.library.index.library.value.photos[id("a.jpg")]!!
                 .crop,
         )
-        // 400×300 on 1024×600 cannot be zoomed beyond 1: the window is the one of `fill`, moved to the top.
-        assertEquals(1.0, dto.presentation.zoom, 1e-9)
+        // 400×300 on 1024×600 is already enlarged at zoom 1 and is still zoomed to 1.5; the focus point is moved to the top.
+        assertEquals(1.5, dto.presentation.zoom, 1e-9)
         assertEquals(0.0, dto.presentation.y, 1e-9)
         assertFalse(dto.hidden, "a patch of only the section leaves the hidden state")
+    }
+
+    @Test
+    fun `Zoom beyond the photo's resolution renders the part with its original pixels`() {
+        put("a.jpg")
+        frame.scan()
+        patch(id("a.jpg"), """{"crop":{"x":0.5,"y":0.5,"zoom":2}}""")
+        val photo = page().items.single()
+        // 400×300 on 1024×600 at zoom 2 (scale 5.12): half the width and 600/1536 of the height.
+        assertEquals(2.0, photo.presentation.zoom, 1e-9)
+        assertEquals(0.5, photo.presentation.width, 1e-9)
+        val res = frame.http.requestBytes("GET", photo.urls.display)
+        assertEquals(200, res.statusCode())
+        val img = ImageIO.read(res.bytes().inputStream())
+        // The display enlarges it; the image itself has only the part's original pixels.
+        assertEquals(200 to 117, img.width to img.height)
     }
 
     @Test

@@ -36,11 +36,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-/** From fully visible to one original pixel per screen pixel, at most 4; a photo smaller than the screen allows 1. */
+/** From fully visible to 4, whatever the photo's resolution (openspec change zoom-beyond-resolution, decision 1). */
 export function zoomRange(photo: Size, screen: Size): { min: number; max: number } {
   const c = cover(photo, screen);
   const fit = Math.min(screen.width / photo.width, screen.height / photo.height);
-  return { min: fit / c, max: Math.max(1, Math.min(MAX_ZOOM, 1 / c)) };
+  return { min: fit / c, max: MAX_ZOOM };
+}
+
+/** The zoom at which one original pixel covers one screen pixel; above it the frame enlarges the part. */
+export function sharpZoom(photo: Size, screen: Size): number {
+  return 1 / cover(photo, screen);
+}
+
+/**
+ * Screen pixels per original pixel of what the frame shows: above 1 the frame enlarges the part, and `1 / enlargement`
+ * is the share of the screen's resolution it has (openspec change zoom-beyond-resolution, decision 2).
+ */
+export function enlargement(photo: Size, screen: Size, presentation: Presentation): number {
+  return cover(photo, screen) * presentation.zoom;
 }
 
 /** What the frame shows of [photo] on [screen]: with [crop] its section, else the preset of [fillMode]. */
@@ -76,4 +89,31 @@ export function shownArea(photo: Size, screen: Size, presentation: Presentation)
     width: Math.min(1, (presentation.width * photo.width * scale) / screen.width),
     height: Math.min(1, (presentation.height * photo.height * scale) / screen.height),
   };
+}
+
+/**
+ * The share of the screen's resolution, in whole percent, of a part the frame enlarges by [enlargementFactor], or `null`
+ * when it is sharp. The tolerance keeps the warning off at the sharp zoom itself, whatever the rounding of a stored
+ * section (openspec change zoom-beyond-resolution, decision 2).
+ */
+export function enlargedPercent(enlargementFactor: number): number | null {
+  return enlargementFactor > 1.005 ? Math.round(100 / enlargementFactor) : null;
+}
+
+/**
+ * The zoom after zooming [current] by [factor] within [range]. With [stopAtSharp] (the editor's buttons) a step that
+ * would cross [sharp] stops on it, if it lies inside the range (openspec change zoom-beyond-resolution, decision 4).
+ */
+export function zoomStep(
+  current: number,
+  factor: number,
+  range: { min: number; max: number },
+  sharp: number,
+  stopAtSharp: boolean,
+): number {
+  const next = clamp(current * factor, range.min, range.max);
+  if (!stopAtSharp || sharp <= range.min || sharp >= range.max) return next;
+  const crossesUp = current < sharp - 1e-6 && next > sharp;
+  const crossesDown = current > sharp + 1e-6 && next < sharp;
+  return crossesUp || crossesDown ? sharp : next;
 }

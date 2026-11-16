@@ -45,7 +45,8 @@ A part is enlarged when `s > 1`, that is, when one original pixel covers more th
 same in both directions, so the share of the screen's resolution the part has is `1/s` along each edge; the editor
 shows it rounded to whole percent ("about 42 %"). It is a linear share, not one of the area, because that matches what
 the eye sees as sharpness and because "DPI" is a linear measure too. `presentation.ts` gets `enlargement(photo, screen,
-presentation)` returning `s`; the editor already computes the same product for its own scale.
+presentation)` returning `s`, and `enlargedPercent(s)` the rounded share or `null` while the part is sharp; the editor
+already computes the same product for its own scale.
 
 The warning appears for `s > 1 + 0.005`, so rounding in the stored zoom (four decimals) cannot show it at the exact
 sharp limit that the zoom buttons stop at. A visible threshold such as 10 % was considered and rejected: the user
@@ -65,8 +66,8 @@ screen reader.
 
 ### 4. The zoom buttons stop once at `1/c`
 
-`change` gets an optional stop: the zoom-in button computes `next = zoom · 1.25`, and if `zoom < 1/c − ε` and
-`next > 1/c`, it zooms to exactly `1/c` instead. The zoom-out button does the same from above, so that the sharp limit
+`change` gets an optional stop, computed by `zoomStep` in `presentation.ts`: the zoom-in button computes
+`next = zoom · 1.25`, and if `zoom < 1/c − ε` and `next > 1/c`, it zooms to exactly `1/c` instead. The zoom-out button does the same from above, so that the sharp limit
 can be reached from both sides. Wheel and two fingers pass no stop, so a pinch does not stick. If `1/c` lies outside
 `z_min..MAX_ZOOM` (a photo smaller than the screen, or one so large that `1/c > 4`), there is no stop.
 
