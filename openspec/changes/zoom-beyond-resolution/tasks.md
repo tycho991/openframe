@@ -16,11 +16,11 @@
 
 ## 3. Emulator
 
-- [ ] 3.1 On the API 37 emulator with the debug build: zoom a photo of about the screen's size to zoom 2 in the web interface and save. Verify: a screenshot shows the enlarged part filling the screen, and the editor showed the warning with the percentage
+- [x] 3.1 On the API 37 emulator (2560×1600) with the debug build: a synthetic test photo of 3200×2400 pixels (sharp up to zoom 1.25) zoomed with the editor's buttons in the frame's web interface (1 → 1.25 → 1.5625 → 1.95) and saved. Verify: the editor showed the warning with about 64 %, and a screenshot of the frame shows the same enlarged part filling the screen
 
 ## 4. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 4.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references: a phone photo zoomed to about 50 % and 25 % of the screen's resolution on the Frameo and the Lenovo, judged for how blurred it looks (`photo-library` › Largest zoom › Photo of about the screen's size), and the warning in the editor on a phone (`web-admin` › Warning for an enlarged section › Zoom into a phone photo). Verify: the rows exist with their references
+- [x] 4.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references: a phone photo zoomed to about 50 % and 25 % of the screen's resolution on the Frameo and the Lenovo, judged for how blurred it looks (`photo-library` › Largest zoom › Photo of about the screen's size), and the warning in the editor on a phone (`web-admin` › Warning for an enlarged section › Zoom into a phone photo). Verify: the rows exist with their references
 - [ ] 4.2 Run the rows of 4.1 after the release and remove the test sections again. Verify: results entered, or a finding for anything that differs
 
 ## Workflow follow-up
