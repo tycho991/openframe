@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/tycho991/openframe/compare/v0.8.0...v0.8.1) (2026-11-16)
+
+
+### Documentation
+
+* note how to take screenshots on the API 37 emulator ([#100](https://github.com/tycho991/openframe/issues/100)) ([12391f1](https://github.com/tycho991/openframe/commit/12391f1eca925af00c5859b8d01401ea581db7b4))
+
 ## [0.8.0](https://github.com/tycho991/openframe/compare/v0.7.2...v0.8.0) (2026-11-16)
 
 
