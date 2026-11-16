@@ -19,7 +19,7 @@
 
 ## 4. README
 
-- [ ] 4.1 The icon above the README's title per design decision 4. Verify: `README.md` renders it on the pull request's "Files changed" view at 96 px
+- [x] 4.1 The icon above the README's title per design decision 4. Verify: `README.md` renders it on the pull request's "Files changed" view at 96 px
 
 ## 5. Devices (each persistent device change only with the owner's consent at that moment)
 
