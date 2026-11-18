@@ -289,7 +289,10 @@ Read this before you install it.
 - **Limits.** The frame holds at most 48 connections, 16 per device, and closes idle ones first when full. Headers
   must arrive within 10 seconds, JSON bodies within 10 seconds, and a pairing body has at most 4 KiB. What remains:
   a device on the LAN can keep pairing by code paused for up to a day, and attackers with several addresses, or one
-  that reads answers very slowly, can still block the web UI. The slideshow keeps running meanwhile.
+  that reads answers very slowly, can still block the web UI. A frame with a slow network stack (seen on an Android 5
+  tablet) accepts only a few dozen connections per second: while a device on the LAN floods it with new
+  connections, the web UI answers within seconds instead of a fraction of a second. The slideshow keeps running
+  meanwhile.
 - **Local only.** "Local only" in the device menu binds the server to `127.0.0.1`, so nothing on the LAN reaches it.
 - **Stored credentials.** App passwords, share links and share passwords of Nextcloud sources are stored
   unencrypted in the app's private storage. They never appear in an API answer or in the log, but anyone who can
