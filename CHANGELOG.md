@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/tycho991/openframe/compare/v0.8.1...v0.9.0) (2026-11-18)
+
+
+### Features
+
+* harden the LAN server ([#105](https://github.com/tycho991/openframe/issues/105)) ([0b6245a](https://github.com/tycho991/openframe/commit/0b6245ada2253c3dc2caafa9dbb7b7dfc6e066c6))
+
 ## [0.8.1](https://github.com/tycho991/openframe/compare/v0.8.0...v0.8.1) (2026-11-16)
 
 
