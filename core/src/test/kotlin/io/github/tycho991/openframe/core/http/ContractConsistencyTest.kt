@@ -14,7 +14,7 @@ class ContractConsistencyTest {
     private val file = File(System.getProperty("openframe.openapi") ?: error("System property openframe.openapi is missing"))
 
     @Test
-    fun `Every operation describes 421 and 500, and 408 with a JSON body`() {
+    fun `Every operation describes 421 and 500, and 400, 408, 413 and 415 with a JSON body`() {
         assertEquals(emptyList<String>(), missingResponses(YAMLMapper().readTree(file)))
     }
 
@@ -40,6 +40,14 @@ class ContractConsistencyTest {
                 "",
             )
         assertEquals(listOf("POST /pairing: 408"), missingResponses(YAMLMapper().readTree(withoutTimeout)))
+
+        for ((code, ref) in listOf("400" to "BadRequest", "413" to "TooLarge", "415" to "UnsupportedMedia")) {
+            val text = file.readText()
+            val line = """        "$code": { ${'$'}ref: "#/components/responses/$ref" }""" + "\n"
+            val at = text.indexOf(line, text.indexOf("\n  /pairing:\n"))
+            val without = text.removeRange(at, at + line.length)
+            assertEquals(listOf("POST /pairing: $code"), missingResponses(YAMLMapper().readTree(without)), code)
+        }
     }
 
     private fun missingResponses(doc: JsonNode): List<String> =
@@ -50,7 +58,7 @@ class ContractConsistencyTest {
                 item.properties().filter { it.key in METHODS }.flatMap { (method, operation) ->
                     val responses = operation.path("responses")
                     val json = operation.path("requestBody").path("content").has("application/json")
-                    val wanted = listOf("421", "500") + if (json) listOf("408") else emptyList()
+                    val wanted = listOf("421", "500") + if (json) listOf("400", "408", "413", "415") else emptyList()
                     wanted.filter { !responses.has(it) }.map { "${method.uppercase()} $template: $it" }
                 }
             }

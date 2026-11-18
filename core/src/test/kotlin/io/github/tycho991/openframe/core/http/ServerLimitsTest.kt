@@ -274,25 +274,8 @@ class ServerLimitsTest {
         return readResponse(socket.getInputStream())
     }
 
-    /** Reads one answer with `Content-Length` from [input], leaving the connection open. */
-    private fun readResponse(input: InputStream): RawRes {
-        val head = ByteArrayOutputStream()
-        while (!head.toString(Charsets.UTF_8.name()).endsWith("\r\n\r\n")) {
-            val b = input.read()
-            if (b < 0) throw IOException("Connection closed")
-            head.write(b)
-        }
-        val parsed = RawRes.parse(head.toByteArray())
-        val length = parsed.headers["content-length"]?.toInt() ?: 0
-        val body = ByteArray(length)
-        var off = 0
-        while (off < length) {
-            val n = input.read(body, off, length - off)
-            if (n < 0) throw IOException("Connection closed")
-            off += n
-        }
-        return RawRes(parsed.status, parsed.headers, body.toString(Charsets.UTF_8))
-    }
+    /** Reads one answer from [input], leaving the connection open. */
+    private fun readResponse(input: InputStream): RawRes = RawRes.read(input, withBody = true)
 
     private companion object {
         const val REQUEST = "GET /api/v1/info HTTP/1.1\r\nHost: x\r\n\r\n"

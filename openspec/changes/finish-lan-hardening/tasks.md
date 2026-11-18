@@ -2,7 +2,7 @@
 
 ## 1. Stricter contract harness (first, so old violations surface early)
 
-- [ ] 1.1 `Contract.check` takes the response headers and the request body (design decision 9):
+- [x] 1.1 `Contract.check` takes the response headers and the request body (design decision 9):
   - it validates every response header the contract declares and requires the `required` ones;
   - it turns on format assertions;
   - for 2xx answers to a JSON request it validates the request body against `requestBody`.
@@ -12,15 +12,15 @@
   `ContractHarnessTest` cases fail for a 204 with a text body, a 204 with binary bytes, a 429 without `Retry-After`,
   a `date-time` field holding `"yesterday"` and a 2xx answer to a request body with an unknown field. The existing
   cases stay green.
-- [ ] 1.2 Run `./gradlew :core:test` with the stricter harness and fix every violation it finds, in the contract or
+- [x] 1.2 Run `./gradlew :core:test` with the stricter harness and fix every violation it finds, in the contract or
   in the code, whichever is wrong. Verify: `:core:test` is green, and the PR text lists each fix.
-- [ ] 1.3 `ContractConsistencyTest` also requires 400, 413 and 415 at every operation with a JSON request body. Add
+- [x] 1.3 `ContractConsistencyTest` also requires 400, 413 and 415 at every operation with a JSON request body. Add
   the missing ones to `api/openapi.yaml`. Verify: the test fails on a copy of the contract without one of them and
   passes on the real contract.
 
 ## 2. Contract
 
-- [ ] 2.1 `api/openapi.yaml` per design decision 10:
+- [x] 2.1 `api/openapi.yaml` per design decision 10:
   - 206 and 416 at `GET /photos/{photoId}/image` (`Content-Range`, `Accept-Ranges`);
   - `SettingsPatch` with `additionalProperties: false` and the enums and limits of `Settings`;
   - 405 and HEAD in the info description.
