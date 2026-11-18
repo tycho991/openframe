@@ -94,7 +94,7 @@
 
 ## 6. Malformed JSON
 
-- [ ] 6.1 Depth scan, `StackOverflowError` mapping and short messages in `Http.kt` per design decision 9. Verify: tests
+- [x] 6.1 Depth scan, `StackOverflowError` mapping and short messages in `Http.kt` per design decision 9. Verify: tests
   for `admin-access` › Malformed JSON bodies › Deep nesting (100,000 `[` at a JSON route with token: 400, no ERROR
   in the log) and › Broken JSON (a one-line message with the offset, no echo). Also:
   - 64 levels still parse;
