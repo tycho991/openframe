@@ -363,6 +363,13 @@ class FrameCore(
                 .distinctUntilChanged()
                 .collect(slideshow::setResting)
         }
+        // A pairing code only while someone can see it: the display is on and not in a dark wake (design decision 5
+        // of harden-lan-server).
+        scope.launch {
+            combine(display.state, display.dark) { state, dark -> state.on && !dark }
+                .distinctUntilChanged()
+                .collect(pairing::setScreenUsable)
+        }
         scope.launch { settings.settings.collect(transitions::onSettings) }
         // While the installation dialog is open, the display is on and stays on (design decision 8 of app-auto-update).
         scope.launch {

@@ -18,11 +18,12 @@ data class StoredSecret(
 
 /**
  * Signatures for image URLs, because `<img>` cannot send an Authorization
- * header. The signature is valid for one photo only and expires at the full
- * hour after next, that is, after one to two hours. Within an hour it stays
- * the same so that the browser cache works.
+ * header. The signature is valid for one photo only, names the client it was
+ * issued to and expires at the full hour after next, that is, after one to two
+ * hours. Within an hour it stays the same per client so that the browser cache
+ * works. [AccessControl] also requires that the client is still paired.
  *
- * Format of `t`: `<expiry in epoch seconds>.<HMAC-SHA256(photoId + "." + expiry), Base64url>`.
+ * Format of `t`: `<expiry in epoch seconds>.<client ID>.<HMAC-SHA256(photoId.clientId.expiry), Base64url>`.
  */
 class ImageSigner(
     private val store: JsonStore<StoredSecret>,
@@ -70,25 +71,34 @@ class ImageSigner(
 
     private fun stored() = StoredSecret(Base64.getUrlEncoder().withoutPadding().encodeToString(key))
 
-    fun sign(photoId: String): String {
+    fun sign(
+        photoId: String,
+        clientId: String,
+    ): String {
+        require(CLIENT_ID.matches(clientId)) { "Client IDs are 16 hex characters" }
         val nowSeconds = clock.millis() / 1000
         val expires = (nowSeconds / HOUR) * HOUR + 2 * HOUR
-        return "$expires.${mac(photoId, expires)}"
+        return "$expires.$clientId.${mac(photoId, clientId, expires)}"
     }
 
+    /** The client the valid [signature] for [photoId] was issued to, or `null`. */
     fun verify(
         photoId: String,
         signature: String,
-    ): Boolean {
-        val expires = signature.substringBefore('.', "").toLongOrNull() ?: return false
-        val mac = signature.substringAfter('.', "")
+    ): String? {
+        val parts = signature.split('.')
+        if (parts.size != 3) return null
+        val expires = parts[0].toLongOrNull() ?: return null
+        val clientId = parts[1].takeIf { CLIENT_ID.matches(it) } ?: return null
         val nowSeconds = clock.millis() / 1000
-        if (expires <= nowSeconds || expires > nowSeconds + 2 * HOUR) return false
-        return MessageDigest.isEqual(mac.toByteArray(), mac(photoId, expires).toByteArray())
+        if (expires <= nowSeconds || expires > nowSeconds + 2 * HOUR) return null
+        val valid = MessageDigest.isEqual(parts[2].toByteArray(), mac(photoId, clientId, expires).toByteArray())
+        return if (valid) clientId else null
     }
 
     private fun mac(
         photoId: String,
+        clientId: String,
         expires: Long,
     ): String {
         val k = key
@@ -99,11 +109,12 @@ class ImageSigner(
             } else {
                 Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(k, "HmacSHA256")) }.also { macs.set(k to it) }
             }
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(hmac.doFinal("$photoId.$expires".toByteArray()))
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hmac.doFinal("$photoId.$clientId.$expires".toByteArray()))
     }
 
     private companion object {
         const val KEY_BYTES = 32
         const val HOUR = 3600L
+        val CLIENT_ID = Regex("[0-9a-f]{16}")
     }
 }

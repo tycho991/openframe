@@ -8,6 +8,8 @@ import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.http.isLocalHost
+import io.github.tycho991.openframe.core.http.parseHost
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.Serializable
@@ -53,22 +55,18 @@ data class ClientListDto(
 
 private fun StoredClient.toDto(currentId: String?) = ClientDto(id, name, pairedAt.toString(), lastSeenAt.toString(), id == currentId)
 
+/** A pairing body without a token is small (spec `admin-access`, Size of request bodies without token). */
+private const val MAX_PAIRING_BODY = 4L * 1024
+
 private val CODE = Regex("[0-9]{6}")
 private val SECRET = Regex("[A-Za-z0-9_-]{22}")
 
-// DNS name or IPv4 address, or an IPv6 address in brackets, each with an optional port.
-private val LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-private val HOST = Regex("(?:$LABEL(?:\\.$LABEL)*|\\[[0-9A-Fa-f:.]+])(?::([0-9]{1,5}))?")
-
 /**
  * The admin address for the `Host` header of a request, e.g. `http://192.168.100.215:8080/`,
- * or `null` if the header is missing or not a valid host with optional port.
+ * or `null` if the header is missing or not a local host with optional port ([isLocalHost]).
  */
 internal fun adminUrlFromHost(host: String?): String? {
-    if (host == null || host.length > 260) return null
-    val match = HOST.matchEntire(host) ?: return null
-    val port = match.groupValues[1]
-    if (port.isNotEmpty() && port.toInt() !in 1..65535) return null
+    if (host == null || parseHost(host) == null || !isLocalHost(host)) return null
     return "http://$host/"
 }
 
@@ -79,7 +77,7 @@ fun Router.pairingRoutes(
     adminUrl: () -> String?,
 ) {
     post("/api/v1/pairing", Access.PUBLIC) { req ->
-        val body = req.bodyAs(PairingRequestDto.serializer())
+        val body = req.bodyAs(PairingRequestDto.serializer(), maxBytes = MAX_PAIRING_BODY)
         val code = body.code
         val secret = body.secret
         if ((code == null) == (secret == null)) {
@@ -102,7 +100,7 @@ fun Router.pairingRoutes(
     post("/api/v1/pairing/invites") { req ->
         val base =
             adminUrlFromHost(req.header("host")) ?: adminUrl()
-                ?: throw IllegalStateException("No address for the invitation")
+                ?: throw HttpException(503, "no_address", "The frame has no network address for the invitation link")
         val invite = pairing.createInvite(req.clientId!!, base)
         HttpResponse.json(
             InviteDto.serializer(),

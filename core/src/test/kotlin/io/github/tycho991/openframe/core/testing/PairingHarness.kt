@@ -9,6 +9,7 @@ import io.github.tycho991.openframe.core.auth.StoredClients
 import io.github.tycho991.openframe.core.auth.StoredSecret
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.http.ServerLimits
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.test.TestScope
@@ -20,17 +21,21 @@ import java.io.File
 /** Pairing routes on a server of their own, with a controllable clock and contract check. */
 class PairingHarness(
     private val dir: File,
+    /** The address the frame shows, `null` without a network address. */
+    private val adminUrl: String? = ADMIN_URL,
+    limits: ServerLimits = ServerLimits(),
 ) : AutoCloseable {
     val clock = TestClock()
     val log = AppLog(clock)
     val clients = newRegistry()
     private val signer =
         ImageSigner(JsonStore(File(dir, "secret.json"), StoredSecret.serializer(), TestScope(), log), clock).also { it.load() }
-    val pairing = PairingManager(clients, clock, log, { ADMIN_URL })
+    val pairing = PairingManager(clients, clock, log, { adminUrl })
     val http =
         TestHttp(
-            HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { ADMIN_URL } }, AccessControl(clients, signer), log)::handle,
+            HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { adminUrl } }, AccessControl(clients, signer), log)::handle,
             checkContract = true,
+            limits = limits,
         )
 
     /** A registry that loads what [clients] stored, as after a restart. */
@@ -38,9 +43,16 @@ class PairingHarness(
 
     /** Pairs a client by code directly and returns its auth header. */
     fun pairedAuth(name: String): Map<String, String> {
-        pairing.requestDisplay()
-        val token = pairing.pair(pairing.display.value.code!!, name).first
+        val token = pairing.pair(shownCode(), name).first
         return mapOf("Authorization" to "Bearer $token")
+    }
+
+    /** The code as the user reads it: the frame shows the hint, as the activity does on a request, and hides it again. */
+    fun shownCode(): String {
+        pairing.setShownOnFrame(true)
+        val code = pairing.display.value.code!!
+        pairing.setShownOnFrame(false)
+        return code
     }
 
     fun pairWithSecret(secret: String) = http.request("POST", "/api/v1/pairing", """{"secret":"$secret"}""")

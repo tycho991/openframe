@@ -4,11 +4,13 @@ import io.github.tycho991.openframe.core.readAtMost
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import java.io.File
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
@@ -59,7 +61,11 @@ class HttpRequest(
     /** The body as a stream, limited to `Content-Length`. May be read only once. */
     fun bodyStream(): InputStream = body
 
-    /** Reads the body as JSON. Rejects bodies over [maxBytes] with 413. */
+    /**
+     * Reads the body as JSON. Rejects bodies over [maxBytes] with 413. Messages name at most the missing fields, never
+     * the input or a class (spec `admin-access`, Malformed JSON bodies).
+     */
+    @OptIn(ExperimentalSerializationApi::class)
     fun <T> bodyAs(
         serializer: KSerializer<T>,
         maxBytes: Long = MAX_JSON_BYTES,
@@ -67,10 +73,12 @@ class HttpRequest(
         val json = bodyJson(maxBytes)
         return try {
             ApiJson.decodeFromJsonElement(serializer, json)
+        } catch (e: MissingFieldException) {
+            throw HttpException.badRequest("Invalid body: missing ${e.missingFields.joinToString(", ")}")
         } catch (e: kotlinx.serialization.SerializationException) {
-            throw HttpException.badRequest("Invalid body: ${e.message?.lineSequence()?.first()}")
+            throw HttpException.badRequest("Invalid body")
         } catch (e: IllegalArgumentException) {
-            throw HttpException.badRequest("Invalid body: ${e.message?.lineSequence()?.first()}")
+            throw HttpException.badRequest("Invalid body")
         }
     }
 
@@ -81,17 +89,71 @@ class HttpRequest(
         }
         val length = contentLength
         if (length != null && length > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
-        val bytes = body.readAtMost((maxBytes + 1).toInt())
+        val bytes =
+            try {
+                body.readAtMost((maxBytes + 1).toInt())
+            } catch (e: SocketTimeoutException) {
+                throw HttpException(408, "request_timeout", "The request body did not arrive in time")
+            }
         if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
+        if (nesting(bytes) >
+            MAX_JSON_DEPTH
+        ) {
+            throw HttpException(400, "invalid_json", "Not valid JSON: nested deeper than $MAX_JSON_DEPTH levels")
+        }
         return try {
             ApiJson.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8))
         } catch (e: kotlinx.serialization.SerializationException) {
-            throw HttpException(400, "invalid_json", "Not valid JSON: ${e.message}")
+            // The exception type with the offset is internal, its message repeats the input.
+            val offset = e.message?.let { OFFSET.find(it)?.groupValues?.get(1) }
+            throw HttpException(400, "invalid_json", if (offset != null) "Not valid JSON at offset $offset" else "Not valid JSON")
+        } catch (e: StackOverflowError) {
+            throw HttpException(400, "invalid_json", "Not valid JSON: nested too deeply")
         }
     }
 
     companion object {
         const val MAX_JSON_BYTES = 1L * 1024 * 1024
+
+        /** Deeper bodies could overflow the small thread stacks of Android while parsing. */
+        const val MAX_JSON_DEPTH = 64
+
+        private val OFFSET = Regex("at offset (\\d+)")
+
+        /** The deepest nesting of arrays and objects in [json], outside strings, in one linear pass. */
+        internal fun nesting(json: ByteArray): Int {
+            var depth = 0
+            var max = 0
+            var inString = false
+            var escaped = false
+            for (b in json) {
+                val c = b.toInt().toChar()
+                when {
+                    escaped -> {
+                        escaped = false
+                    }
+
+                    inString && c == '\\' -> {
+                        escaped = true
+                    }
+
+                    c == '"' -> {
+                        inString = !inString
+                    }
+
+                    inString -> {}
+
+                    c == '[' || c == '{' -> {
+                        if (++depth > max) max = depth
+                    }
+
+                    c == ']' || c == '}' -> {
+                        depth--
+                    }
+                }
+            }
+            return max
+        }
 
         fun parseQuery(raw: String?): Map<String, List<String>> {
             if (raw.isNullOrEmpty()) return emptyMap()

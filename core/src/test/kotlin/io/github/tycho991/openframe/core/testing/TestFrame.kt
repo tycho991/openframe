@@ -73,9 +73,17 @@ class TestFrame(
 
     val photos: File get() = dirs.photos
 
+    /**
+     * Pairs by code as a user would: the frame shows the hint, the user reads the code. A frame whose display starts
+     * off shows it as if the display were on for a moment.
+     */
     fun pair(name: String): String {
-        core.pairing.requestDisplay()
-        return core.pairing.pair(core.pairing.display.value.code!!, name).first
+        core.pairing.setScreenUsable(true)
+        core.pairing.setShownOnFrame(true)
+        val code = core.pairing.display.value.code!!
+        core.pairing.setShownOnFrame(false)
+        core.pairing.setScreenUsable(core.display.state.value.on && !core.display.dark.value)
+        return core.pairing.pair(code, name).first
     }
 
     fun get(path: String) = http.get(path, auth)

@@ -19,18 +19,21 @@ class PhotoDtos(
     private val places: PlaceIndex,
     private val platform: PlatformInfo,
 ) {
-    // The display URL carries the key of the shown window, so it changes with section, fill mode and format.
+    // The display URL carries the key of the shown window, so it changes with section, fill mode and format. The
+    // signature is the requesting client's, so that its URLs stop working when its pairing is revoked.
     fun urls(
         entry: PhotoEntry,
+        clientId: String,
         presentation: Presentation = library.cache.presentation(entry),
     ): ImageUrlsDto {
-        val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id)}"
+        val base = "/api/v1/photos/${entry.id}/image?v=${entry.version}&t=${signer.sign(entry.id, clientId)}"
         return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${RenderCache.displayKey(presentation)}", "$base&size=full")
     }
 
     fun dto(
         entry: PhotoEntry,
         lib: Library,
+        clientId: String,
     ): PhotoDto {
         val p = library.cache.presentation(entry)
         return PhotoDto(
@@ -48,7 +51,7 @@ class PhotoDtos(
             version = entry.version,
             crop = entry.crop,
             presentation = PresentationDto(p.x, p.y, p.width, p.height, p.zoom),
-            urls = urls(entry, p),
+            urls = urls(entry, clientId, p),
             comment = entry.comment,
             location =
                 entry.gps?.let {
@@ -67,8 +70,11 @@ class PhotoDtos(
     }
 
     /** The record of [entry] as the library has it now, so that an edited comment shows at once; [entry] itself if it is gone. */
-    fun current(entry: PhotoEntry): PhotoDto {
+    fun current(
+        entry: PhotoEntry,
+        clientId: String,
+    ): PhotoDto {
         val lib = library.index.library.value
-        return dto(lib.photos[entry.id] ?: entry, lib)
+        return dto(lib.photos[entry.id] ?: entry, lib, clientId)
     }
 }

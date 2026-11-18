@@ -28,5 +28,7 @@ Out of scope:
 - a frame exposed to the internet through port forwarding or UPnP, which the README warns against;
 - vulnerabilities of Android itself, for example in its native image decoders; the README names the residual risk.
 
-What the frame protects and what it does not is described in the [security model](README.md#security-model) of the
-README.
+The frame defends against two kinds of attacker besides the paired devices: websites that reach it through a
+browser on the LAN (DNS rebinding, requests from foreign origins), and hostile devices on the LAN (flooding the
+server, guessing the pairing code). What it protects and what it does not, including the residual risks, is
+described in the [security model](README.md#security-model) of the README.

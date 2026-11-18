@@ -15,7 +15,10 @@ info:
     receives a token (`Authorization: Bearer`). Image URLs carry a server-issued signature
     `t` instead, which is valid for one photo only and for at most two hours.
 
-    Mutating requests from foreign origins are rejected with 403.
+    Mutating requests from foreign origins are rejected with 403. Every request whose `Host` is not an IP
+    address, `localhost`, a single-label name or a local name such as `frame.local` or `frame.fritz.box` gets 421
+    `misdirected_host`, against DNS rebinding. A JSON body must arrive within 10 seconds, else 408
+    `request_timeout`.
 servers:
   - url: /api/v1
 security:
@@ -59,6 +62,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Info" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /pairing:
     post:
@@ -69,7 +74,7 @@ paths:
         Send exactly one of `code` and `secret`. The secret comes from the
         fragment `#pair=` of the frame's QR code or of an invitation. Wrong
         secrets do not count as failed attempts, and the lockout after wrong
-        codes does not apply to secrets.
+        codes does not apply to secrets. The body is at most 4 KiB.
       security: []
       requestBody:
         required: true
@@ -89,7 +94,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
         "429": { $ref: "#/components/responses/Locked" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /pairing/code:
     post:
@@ -98,12 +107,16 @@ paths:
       summary: Ask the frame to show a valid code and QR code for 5 minutes.
       description: |
         The response never contains the code or the secret. While pairing by
-        code is locked after failed attempts, the frame shows the QR code alone.
+        code is locked or paused after failed attempts, the frame shows the QR
+        code alone. While the display is off, the frame creates a code only once
+        the display is on and shows the hint.
       security: []
       responses:
         "204":
           description: The frame shows a valid code and QR code, or the QR code alone during the lockout.
         "403": { $ref: "#/components/responses/Forbidden" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /pairing/invites:
     post:
@@ -122,6 +135,13 @@ paths:
               schema: { $ref: "#/components/schemas/Invite" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          description: "The request carries no `Host` and the frame knows no network address for the link (`no_address`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /clients:
     get:
@@ -135,6 +155,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ClientList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /clients/{clientId}:
     parameters:
@@ -161,6 +183,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       tags: [pairing]
       operationId: deleteClient
@@ -170,6 +195,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /settings:
     get:
@@ -183,6 +210,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Settings" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     patch:
       tags: [settings]
       operationId: patchSettings
@@ -205,6 +234,9 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /photos:
     get:
@@ -245,6 +277,8 @@ paths:
               schema: { $ref: "#/components/schemas/PhotoPage" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     post:
       tags: [photos]
       operationId: uploadPhotos
@@ -289,6 +323,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "415": { $ref: "#/components/responses/UnsupportedMedia" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/Unavailable" }
         "507": { $ref: "#/components/responses/InsufficientStorage" }
 
@@ -313,6 +349,9 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /photos/{photoId}:
     parameters:
@@ -339,6 +378,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       tags: [photos]
       operationId: deletePhoto
@@ -350,6 +392,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /photos/{photoId}/image:
     parameters:
@@ -394,6 +438,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503":
           description: "The image could not be rendered (`render_failed`), also for a quarantined photo without a rendering attempt, or the frame is in safe mode (`safe_mode`)."
           content:
@@ -412,6 +458,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SkippedFileList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /albums:
     get:
@@ -425,6 +473,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AlbumList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     patch:
       tags: [albums]
       operationId: patchAlbum
@@ -448,6 +498,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /state:
     get:
@@ -461,6 +514,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/State" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /display:
     get:
@@ -474,6 +529,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DisplayState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     put:
       tags: [display]
       operationId: setDisplay
@@ -500,7 +557,10 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /slideshow:
     get:
@@ -517,6 +577,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SlideshowState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/Unavailable" }
     post:
       tags: [slideshow]
@@ -541,7 +603,10 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
   /sources:
@@ -557,6 +622,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SourceList" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     post:
       tags: [sources]
       operationId: addShare
@@ -582,7 +649,10 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "502": { $ref: "#/components/responses/BadGateway" }
 
   /sources/login:
@@ -608,7 +678,10 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "502": { $ref: "#/components/responses/BadGateway" }
 
   /sources/login/{flowId}:
@@ -631,6 +704,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SourceLoginState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /sources/{sourceId}:
     parameters:
@@ -647,6 +722,8 @@ paths:
               schema: { $ref: "#/components/schemas/Source" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     patch:
       tags: [sources]
       operationId: patchSource
@@ -667,6 +744,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       tags: [sources]
       operationId: removeSource
@@ -680,6 +760,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /sources/{sourceId}/sync:
     parameters:
@@ -702,6 +784,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
   /safe-mode/exit:
@@ -721,6 +805,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /update:
     get:
@@ -734,6 +820,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/UpdateState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /update/check:
     post:
@@ -751,6 +839,8 @@ paths:
               schema: { $ref: "#/components/schemas/UpdateState" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /update/install:
     post:
@@ -773,6 +863,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InstallRefusal" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /logs:
     get:
@@ -791,6 +883,8 @@ paths:
               schema: { $ref: "#/components/schemas/LogList" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
 components:
   securitySchemes:
@@ -815,6 +909,21 @@ components:
       schema: { type: string }
 
   responses:
+    RequestTimeout:
+      description: "The JSON body did not arrive within 10 seconds (`request_timeout`). The frame closes the connection."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    MisdirectedHost:
+      description: "The `Host` is not a local name or address of the frame (`misdirected_host`), as with DNS rebinding. Open the frame by the IP address it shows."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InternalError:
+      description: "Unexpected error on the frame (`internal_error`)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     BadRequest:
       description: Invalid request. For validation errors with an entry per field.
       content:
@@ -851,9 +960,11 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Locked:
-      description: Too many failed attempts. Pairing is temporarily locked.
+      description: "Too many failed attempts: pairing by code is locked for a while after 5 wrong codes (`locked`), or paused after 20 wrong codes within 24 hours (`code_paused`). `Retry-After` gives the seconds until it is possible again."
       headers:
-        Retry-After: { schema: { type: integer } }
+        Retry-After:
+          required: true
+          schema: { type: integer, minimum: 1 }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

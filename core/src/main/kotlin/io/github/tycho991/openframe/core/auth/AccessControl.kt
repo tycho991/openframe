@@ -3,7 +3,7 @@ package io.github.tycho991.openframe.core.auth
 import io.github.tycho991.openframe.core.http.Authenticator
 import io.github.tycho991.openframe.core.http.HttpRequest
 
-/** Bearer token from [ClientRegistry], image signatures from [ImageSigner]. */
+/** Bearer token from [ClientRegistry], image signatures from [ImageSigner] of a client that is still paired. */
 class AccessControl(
     private val clients: ClientRegistry,
     private val signer: ImageSigner,
@@ -21,7 +21,8 @@ class AccessControl(
         photoId: String,
     ): Boolean {
         val t = request.queryParam("t") ?: return false
-        return signer.verify(photoId, t)
+        val client = signer.verify(photoId, t) ?: return false
+        return clients.clients.value.any { it.id == client }
     }
 }
 

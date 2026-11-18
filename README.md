@@ -261,7 +261,9 @@ Uninstalling deletes the photo folder as well. Back it up first, into a folder o
 
 ## Security model
 
-openframe is made for a home network you trust. Read this before you install it.
+openframe is made for a home network you trust. It defends against websites that try to reach the frame through
+your browser, and it limits what a hostile device on the LAN can do, but it does not replace a network you trust.
+Read this before you install it.
 
 - **LAN only, without TLS.** The frame serves the web UI and the API over plain HTTP on port 8080. Never make it
   reachable from the internet: no port forwarding in the router, and switch off UPnP port mappings for it. Anyone on
@@ -269,10 +271,25 @@ openframe is made for a home network you trust. Read this before you install it.
 - **Pairing.** A browser gets a token by entering the code shown on the frame, by scanning its QR code or through an
   invitation from a paired device. Every paired device has full rights for now: it can change settings, delete
   photos, add sources and pair further devices. "Unpair all devices" in the device menu removes every token.
+- **Guessing the code.** A code exists only while the frame shows it on a display that is on. After 5 wrong codes,
+  pairing by code is locked for 60 seconds, twice as long at each further lockout, at most an hour. After 20 wrong
+  codes within 24 hours it pauses until the oldest of them is a day old. A pairing of any kind, or "Unpair all
+  devices", ends both. Pairing by QR code and by invitation always keeps working.
 - **Without a token** only three API endpoints answer: `GET /api/v1/info` (name and versions of the frame),
   `POST /api/v1/pairing` and `POST /api/v1/pairing/code`. The static files of the web UI are open to everyone on the
   LAN; they hold no data. Image URLs carry a signature instead of the token, valid for one photo and at most two
-  hours.
+  hours, and only while the device it was issued to stays paired. The app and Android versions in `GET /api/v1/info`
+  stay public: the web UI's file names give the build away anyway, and a client needs the frame's identity before it
+  pairs.
+- **Websites in your browser.** The frame answers only requests whose `Host` is an IP address, `localhost`, a name
+  without dots or a local name (`.local`, `.home.arpa`, `.localdomain`, `.lan`, `.fritz.box` and similar). A website
+  that points a name of its own at the frame's address (DNS rebinding) gets 421 and neither reads nor changes
+  anything. If you reach the frame through a DNS name under a public domain, open it by its IP address instead.
+  Changes from foreign origins are refused as before.
+- **Limits.** The frame holds at most 48 connections, 16 per device, and closes idle ones first when full. Headers
+  must arrive within 10 seconds, JSON bodies within 10 seconds, and a pairing body has at most 4 KiB. What remains:
+  a device on the LAN can keep pairing by code paused for up to a day, and attackers with several addresses, or one
+  that reads answers very slowly, can still block the web UI. The slideshow keeps running meanwhile.
 - **Local only.** "Local only" in the device menu binds the server to `127.0.0.1`, so nothing on the LAN reaches it.
 - **Stored credentials.** App passwords, share links and share passwords of Nextcloud sources are stored
   unencrypted in the app's private storage. They never appear in an API answer or in the log, but anyone who can

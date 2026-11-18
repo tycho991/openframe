@@ -12,8 +12,8 @@ this change brings it now, delivered to the frames through the updater.
 ## What Changes
 
 - **Connection limits and deadlines.** The server accepts at most 48 connections, 16 per remote address, and drops
-  idle keep-alive connections first when full. Headers must arrive within 10 s of the first byte, JSON bodies within
-  10 s, else 408 `request_timeout`. Draining an unread body gets one overall deadline. Small JSON bodies are read
+  idle keep-alive connections first when full. Headers must arrive within 10 s of the first byte, else the connection is
+  closed; JSON bodies within 10 s, else 408 `request_timeout`. Draining an unread body gets one overall deadline. Small JSON bodies are read
   before a handler slot is taken. `POST /pairing` accepts at most 4 KiB. A failing `accept()` backs off instead of
   spinning.
 - **Host check against DNS rebinding.** Every request, the web UI included, whose `Host` is not an IP literal,
