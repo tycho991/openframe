@@ -84,7 +84,7 @@ From the detail view the user SHALL be able to choose a photo's section in an ed
 
 #### Scenario: Move the section
 - **WHEN** the user drags a portrait photo down in the editor of a landscape frame and saves
-- **THEN** the frame shows the upper part of the photo from the next change on, and the detail view shows the same part
+- **THEN** the frame shows the upper part of the photo at once if it is on screen, otherwise when it appears next, and the detail view shows the same part
 
 #### Scenario: Zoom out to borders
 - **WHEN** the user zooms out until the whole photo is visible and saves
