@@ -73,18 +73,18 @@
 
 ## 5. Connection limits and deadlines
 
-- [ ] 5.1 `BoundedAsyncRunner` and the backing-off server socket per design decision 1, limits as constructor
+- [x] 5.1 `BoundedAsyncRunner` and the backing-off server socket per design decision 1, limits as constructor
   parameters. Verify: a new `ServerLimitsTest` with short injected deadlines and the flood from `127.0.0.2`:
   - 200 connections at slowloris pace leave `GET /api/v1/info` from `127.0.0.1` answering within 1 s, and the thread
     count stays below 48 plus a small constant;
   - 16 idle kept-alive connections of one address let a 17th request of that address through;
   - a simulated out-of-memory in `exec()` keeps the listener accepting;
   - an `IOException` from `accept()` backs off instead of spinning.
-- [ ] 5.2 `ConnectionInput` phases with monotonic deadlines per design decision 2, passed on explicitly instead of the
+- [x] 5.2 `ConnectionInput` phases with monotonic deadlines per design decision 2, passed on explicitly instead of the
   ThreadLocal. Verify in `ServerLimitsTest`: a header sent byte by byte is closed after the header deadline, and a
   drain that trickles ends after its overall deadline. The existing test "A body that is announced but not sent"
   stays green.
-- [ ] 5.3 JSON bodies up to 64 KiB read before the dispatcher, 408 `request_timeout` on a slow JSON body, 4 KiB limit for
+- [x] 5.3 JSON bodies up to 64 KiB read before the dispatcher, 408 `request_timeout` on a slow JSON body, 4 KiB limit for
   `POST /pairing` per design decision 3. Verify:
   - `admin-access` › Limits for connections and request times › Slow body ends with 408 and the security headers,
     without an ERROR in `GET /api/v1/logs`.

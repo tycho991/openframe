@@ -4,37 +4,87 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
+import java.net.InetAddress
 import java.net.Socket
-import java.net.SocketException
 import io.github.tycho991.openframe.core.http.Method as ApiMethod
 
 /**
  * NanoHTTPD as pure transport: translates requests and responses and
  * runs the handlers on a bounded [dispatcher]. Knows no routes.
+ *
+ * Connections are bounded by [ServerLimits]: in number, per remote address and
+ * in time (design decisions 1 to 3 of harden-lan-server). A JSON body up to
+ * 64 KiB is read on the connection's thread before the handler gets a slot, so
+ * slow bodies hold no handler.
  */
-class NanoHttpServer(
+class NanoHttpServer internal constructor(
     host: String,
     port: Int,
     private val dispatcher: CoroutineDispatcher,
+    private val limits: ServerLimits,
+    startThread: ((Runnable, String) -> Unit)?,
     private val handler: suspend (HttpRequest) -> HttpResponse,
 ) : NanoHTTPD(host, port) {
+    constructor(
+        host: String,
+        port: Int,
+        dispatcher: CoroutineDispatcher,
+        handler: suspend (HttpRequest) -> HttpResponse,
+        limits: ServerLimits = ServerLimits(),
+    ) : this(host, port, dispatcher, limits, null, handler)
+
+    private val runner =
+        if (startThread != null) {
+            BoundedAsyncRunner(limits, { "http-$listeningPort" }, startThread)
+        } else {
+            BoundedAsyncRunner(limits, { "http-$listeningPort" })
+        }
+
+    init {
+        setAsyncRunner(runner)
+        setServerSocketFactory { BackoffServerSocket(limits.acceptBackoffMs) }
+    }
+
     /** The port actually bound, even if started with port 0. */
     val port: Int get() = listeningPort
 
+    /** Connections currently open, for tests. */
+    internal val connections: Int get() = runner.size
+
     fun startServer() {
-        start(SOCKET_READ_TIMEOUT_MS, true)
+        start(limits.idleTimeoutMs, true)
     }
 
     override fun serve(session: IHTTPSession): Response {
+        val connection = current.get()
+        connection?.beginRequest()
         val length = session.headers["content-length"]?.toLongOrNull()
-        val body = BoundedInputStream(session.inputStream, length ?: 0)
+        val json = isJson(session.headers["content-type"])
+        var unread: BoundedInputStream? = null
+        val body: InputStream =
+            if (json && length != null && length in 1..EARLY_JSON_BYTES) {
+                connection?.beginBody(limits.jsonBodyTimeoutMs)
+                try {
+                    ByteArrayInputStream(readUpTo(session.inputStream, length.toInt()))
+                } catch (e: IOException) {
+                    return finish(toNano(timeout(), null), connection, close = true)
+                }
+            } else {
+                if ((length ?: 0) > 0) connection?.beginBody(if (json) limits.jsonBodyTimeoutMs else null)
+                BoundedInputStream(session.inputStream, length ?: 0).also { unread = it }
+            }
         val method =
             runCatching { ApiMethod.valueOf(session.method.name) }.getOrNull()
-                ?: return toNano(HttpResponse.error(HttpException(405, "method_not_allowed", "Method not supported")), null)
+                ?: return finish(
+                    toNano(HttpResponse.error(HttpException(405, "method_not_allowed", "Method not supported")), null),
+                    connection,
+                    close = true,
+                )
         val request =
             HttpRequest(
                 method = method,
@@ -49,22 +99,40 @@ class NanoHttpServer(
                 withContext(dispatcher) { handler(request) }
             }
         val nano = toNano(response, request)
+        // A body that did not arrive in time leaves the connection in an unknown state.
+        var close = response.status == 408
         // Unread bodies would disturb the next request on the same connection. Discard instead of
         // closing right away, otherwise a TCP reset makes the client drop the response already sent.
         // A client that announced a body and does not send it must not hold the answer back for the
-        // whole read timeout, so waiting for the rest is limited to a short time.
-        val connection = ConnectionInput.current()
-        connection?.setReadTimeout(DRAIN_TIMEOUT_MS)
-        val drained =
-            try {
-                body.drain(MAX_DRAIN_BYTES)
-            } catch (e: IOException) {
-                false
-            }
-        connection?.setReadTimeout(SOCKET_READ_TIMEOUT_MS)
-        if (!drained) nano.closeConnection(true)
+        // whole read timeout, so waiting for the rest has a deadline of its own.
+        val rest = unread
+        if (rest != null && !close) {
+            connection?.beginDrain()
+            val drained =
+                try {
+                    rest.drain(MAX_DRAIN_BYTES)
+                } catch (e: IOException) {
+                    false
+                }
+            if (!drained) close = true
+        }
+        return finish(nano, connection, close)
+    }
+
+    private fun finish(
+        nano: Response,
+        connection: ConnectionInput?,
+        close: Boolean,
+    ): Response {
+        if (close) nano.closeConnection(true)
+        connection?.endRequest()
         return nano
     }
+
+    private fun timeout(): HttpResponse =
+        HttpResponse
+            .error(HttpException(408, "request_timeout", "The request body did not arrive in time"))
+            .withHeaders(HttpPipeline.SECURITY_HEADERS)
 
     /** Headers and body go out separately. Without `TCP_NODELAY` that costs about 40 ms per response with delayed ACK. */
     override fun createClientHandler(
@@ -72,7 +140,25 @@ class NanoHttpServer(
         inputStream: InputStream,
     ): ClientHandler {
         runCatching { finalAccept.tcpNoDelay = true }
-        return super.createClientHandler(finalAccept, ConnectionInput(finalAccept, inputStream))
+        return Connection(finalAccept, ConnectionInput(finalAccept, inputStream, limits))
+    }
+
+    /** A connection with its address and input, for the runner's limits; [serve] finds the input on its thread. */
+    private inner class Connection(
+        socket: Socket,
+        override val input: ConnectionInput,
+    ) : ClientHandler(input, socket),
+        BoundedAsyncRunner.Tracked {
+        override val address: InetAddress? = socket.inetAddress
+
+        override fun run() {
+            current.set(input)
+            try {
+                super.run()
+            } finally {
+                current.remove()
+            }
+        }
     }
 
     override fun useGzipWhenAccepted(r: Response): Boolean {
@@ -144,12 +230,30 @@ class NanoHttpServer(
     }
 
     companion object {
-        const val SOCKET_READ_TIMEOUT_MS = 30_000
-
-        /** How long to wait for the rest of a body that is not needed any more. */
-        const val DRAIN_TIMEOUT_MS = 2_000
+        /** JSON bodies up to this size are read before the handler gets a slot. */
+        const val EARLY_JSON_BYTES = 64L * 1024
         private const val MAX_DRAIN_BYTES = 8L * 1024 * 1024
         private const val JSON_TYPE = "application/json; charset=utf-8"
+
+        /** The input of the connection whose thread calls, set for the connection's whole life. */
+        private val current = ThreadLocal<ConnectionInput?>()
+
+        private fun isJson(contentType: String?) = contentType?.substringBefore(';')?.trim()?.lowercase() == "application/json"
+
+        /** Up to [length] bytes, fewer if the stream ends first. */
+        private fun readUpTo(
+            input: InputStream,
+            length: Int,
+        ): ByteArray {
+            val buf = ByteArray(length)
+            var off = 0
+            while (off < length) {
+                val n = input.read(buf, off, length - off)
+                if (n < 0) break
+                off += n
+            }
+            return if (off == length) buf else buf.copyOf(off)
+        }
 
         /** A single range `bytes=a-b`, `bytes=a-` or `bytes=-n`. An empty range means 416. */
         internal fun parseRange(
@@ -187,55 +291,12 @@ class NanoHttpServer(
         private val REASONS =
             mapOf(
                 405 to "Method Not Allowed",
+                408 to "Request Timeout",
                 413 to "Payload Too Large",
                 421 to "Misdirected Request",
                 429 to "Too Many Requests",
                 507 to "Insufficient Storage",
             )
-    }
-}
-
-/**
- * The input of a connection with its socket, so that the read timeout can be shortened for a while.
- * NanoHTTPD wraps it in a buffer of its own and reads and serves a connection on one thread, hence
- * [current] finds the connection that the calling thread is reading from.
- */
-private class ConnectionInput(
-    private val socket: Socket,
-    input: InputStream,
-) : FilterInputStream(input) {
-    override fun read(): Int {
-        current.set(this)
-        return super.read()
-    }
-
-    override fun read(
-        b: ByteArray,
-        off: Int,
-        len: Int,
-    ): Int {
-        current.set(this)
-        return super.read(b, off, len)
-    }
-
-    override fun close() {
-        if (current.get() === this) current.remove()
-        super.close()
-    }
-
-    fun setReadTimeout(millis: Int) {
-        try {
-            socket.soTimeout = millis
-        } catch (e: SocketException) {
-            // The connection is closed anyway.
-        }
-    }
-
-    companion object {
-        private val current = ThreadLocal<ConnectionInput?>()
-
-        /** The connection the calling thread reads from, `null` outside a request. */
-        fun current(): ConnectionInput? = current.get()
     }
 }
 

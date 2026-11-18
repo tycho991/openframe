@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import java.io.File
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
@@ -81,7 +82,12 @@ class HttpRequest(
         }
         val length = contentLength
         if (length != null && length > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
-        val bytes = body.readAtMost((maxBytes + 1).toInt())
+        val bytes =
+            try {
+                body.readAtMost((maxBytes + 1).toInt())
+            } catch (e: SocketTimeoutException) {
+                throw HttpException(408, "request_timeout", "The request body did not arrive in time")
+            }
         if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
         return try {
             ApiJson.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8))

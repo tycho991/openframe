@@ -16,7 +16,7 @@ The frame SHALL answer a request only if its `Host` is an IP literal, `localhost
 - **THEN** the frame answers 421
 
 ### Requirement: Limits for connections and request times
-The frame SHALL hold at most 48 connections at once and at most 16 from one address; when full, it SHALL close an idle kept-alive connection before refusing a new one. A request's headers SHALL be complete within 10 seconds of its first byte, and a JSON body SHALL arrive within 10 seconds, else the frame SHALL answer 408 `request_timeout` and close the connection.
+The frame SHALL hold at most 48 connections at once and at most 16 from one address; when full, it SHALL close an idle kept-alive connection before refusing a new one. A request's headers SHALL be complete within 10 seconds of its first byte, else the frame SHALL close the connection. A JSON body SHALL arrive within 10 seconds, else the frame SHALL answer 408 `request_timeout` and close the connection.
 
 #### Scenario: Flood from one device
 - **WHEN** one device on the LAN opens 200 connections and sends their requests byte by byte

@@ -68,7 +68,7 @@ class HttpPipelineTest {
             assertTrue(reply.startsWith("HTTP/1.1 200"), reply)
             assertTrue("batch" in reply, reply)
             // Without the short drain timeout this takes the whole read timeout of 30 s.
-            assertTrue(seconds < NanoHttpServer.DRAIN_TIMEOUT_MS / 1000.0 + 3, "answer after $seconds s")
+            assertTrue(seconds < ServerLimits().drainTimeoutMs / 1000.0 + 3, "answer after $seconds s")
         }
     }
 

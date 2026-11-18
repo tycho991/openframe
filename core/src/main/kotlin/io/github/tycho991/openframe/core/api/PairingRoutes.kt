@@ -55,6 +55,9 @@ data class ClientListDto(
 
 private fun StoredClient.toDto(currentId: String?) = ClientDto(id, name, pairedAt.toString(), lastSeenAt.toString(), id == currentId)
 
+/** A pairing body without a token is small (spec `admin-access`, Size of request bodies without token). */
+private const val MAX_PAIRING_BODY = 4L * 1024
+
 private val CODE = Regex("[0-9]{6}")
 private val SECRET = Regex("[A-Za-z0-9_-]{22}")
 
@@ -74,7 +77,7 @@ fun Router.pairingRoutes(
     adminUrl: () -> String?,
 ) {
     post("/api/v1/pairing", Access.PUBLIC) { req ->
-        val body = req.bodyAs(PairingRequestDto.serializer())
+        val body = req.bodyAs(PairingRequestDto.serializer(), maxBytes = MAX_PAIRING_BODY)
         val code = body.code
         val secret = body.secret
         if ((code == null) == (secret == null)) {

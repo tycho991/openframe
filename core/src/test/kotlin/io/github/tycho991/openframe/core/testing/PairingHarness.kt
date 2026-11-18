@@ -9,6 +9,7 @@ import io.github.tycho991.openframe.core.auth.StoredClients
 import io.github.tycho991.openframe.core.auth.StoredSecret
 import io.github.tycho991.openframe.core.http.HttpPipeline
 import io.github.tycho991.openframe.core.http.Router
+import io.github.tycho991.openframe.core.http.ServerLimits
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.test.TestScope
@@ -22,6 +23,7 @@ class PairingHarness(
     private val dir: File,
     /** The address the frame shows, `null` without a network address. */
     private val adminUrl: String? = ADMIN_URL,
+    limits: ServerLimits = ServerLimits(),
 ) : AutoCloseable {
     val clock = TestClock()
     val log = AppLog(clock)
@@ -33,6 +35,7 @@ class PairingHarness(
         TestHttp(
             HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { adminUrl } }, AccessControl(clients, signer), log)::handle,
             checkContract = true,
+            limits = limits,
         )
 
     /** A registry that loads what [clients] stored, as after a restart. */

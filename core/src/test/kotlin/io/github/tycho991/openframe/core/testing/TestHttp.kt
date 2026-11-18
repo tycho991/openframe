@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.testing
 import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.NanoHttpServer
+import io.github.tycho991.openframe.core.http.ServerLimits
 import kotlinx.coroutines.Dispatchers
 import java.io.InputStream
 import java.net.URI
@@ -41,7 +42,12 @@ class TestHttp private constructor(
     constructor(
         handler: suspend (HttpRequest) -> HttpResponse,
         checkContract: Boolean = false,
-    ) : this(NanoHttpServer("127.0.0.1", 0, Dispatchers.IO.limitedParallelism(4), handler).also { it.startServer() }, null, checkContract)
+        limits: ServerLimits = ServerLimits(),
+    ) : this(
+        NanoHttpServer("127.0.0.1", 0, Dispatchers.IO.limitedParallelism(4), handler, limits).also { it.startServer() },
+        null,
+        checkContract,
+    )
 
     /** Client for a server that is already running, for example the one of a [io.github.tycho991.openframe.core.FrameCore]. */
     constructor(baseUrl: String, checkContract: Boolean = true) : this(null, baseUrl, checkContract)

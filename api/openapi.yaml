@@ -17,7 +17,7 @@ info:
 
     Mutating requests from foreign origins are rejected with 403. Every request whose `Host` is not an IP
     address, `localhost`, a single-label name or a local name such as `frame.local` or `frame.fritz.box` gets 421
-    `misdirected_host`, against DNS rebinding. Headers and JSON bodies must arrive within 10 seconds, else 408
+    `misdirected_host`, against DNS rebinding. A JSON body must arrive within 10 seconds, else 408
     `request_timeout`.
 servers:
   - url: /api/v1
@@ -910,7 +910,7 @@ components:
 
   responses:
     RequestTimeout:
-      description: "Headers or the JSON body did not arrive within 10 seconds (`request_timeout`). The frame closes the connection."
+      description: "The JSON body did not arrive within 10 seconds (`request_timeout`). The frame closes the connection."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
