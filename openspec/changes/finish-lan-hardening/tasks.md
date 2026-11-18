@@ -53,7 +53,7 @@
   IPv6. Add `PlatformInfo.localAddresses()`; `FakePlatform` and `TestCore` follow. Verify: `LanAddressesTest` cases
   for Wi-Fi, Ethernet, hotspot (`OTHER`), VPN and IPv6 link-local accepted, and mobile data and `192.0.0.4`
   refused. `lanAddresses()` returns the same as before.
-- [ ] 4.2 `AndroidPlatform` collects IPv4 and IPv6 candidates for `localAddresses()`; `ipAddresses()` stays IPv4.
+- [x] 4.2 `AndroidPlatform` collects IPv4 and IPv6 candidates for `localAddresses()`; `ipAddresses()` stays IPv4.
   Verify: `./gradlew :android:check` is green. On the API 37 emulator, `dumpsys connectivity` shows whether an
   interface is cellular. A debug build there logs no refusal for `adb forward` and the Wi-Fi address, and refuses a
   cellular address if the emulator has one.
@@ -87,13 +87,13 @@
 
 ## 7. Checks
 
-- [ ] 7.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
+- [x] 7.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
   (own `OPENFRAME_E2E_PORT`) are green. Verify: the command outputs.
-- [ ] 7.2 `openspec validate finish-lan-hardening --strict` exits 0 without warnings. Verify: the output.
+- [x] 7.2 `openspec validate finish-lan-hardening --strict` exits 0 without warnings. Verify: the output.
 
 ## 8. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 8.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
+- [x] 8.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
   - both frames, read only: which socket listens on the port (`/proc/net/tcp`, `/proc/net/tcp6`), and that the
     admin interface answers on the Wi-Fi IPv4 address, on an IPv6 address of the Wi-Fi (`curl` from this PC, with
     `%25<interface>` for a link-local address, since browsers take no zone) and through `adb forward`
