@@ -85,6 +85,17 @@ class InviteTest {
     }
 
     @Test
+    fun `No address known`() {
+        PairingHarness(File(dir, "noaddress").apply { mkdirs() }, adminUrl = null).use { frame ->
+            val token = frame.pairedAuth("Phone").getValue("Authorization")
+            val res =
+                frame.http.raw("POST /api/v1/pairing/invites HTTP/1.0\r\nAuthorization: $token\r\nContent-Length: 0\r\n\r\n")
+            assertEquals(503, res.status, res.body)
+            assertTrue("\"no_address\"" in res.body, res.body)
+        }
+    }
+
+    @Test
     fun `Inviting device revoked`() {
         val phone = h.pairedAuth("Phone")
         val laptop = h.pairedAuth("Laptop")

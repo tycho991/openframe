@@ -102,7 +102,7 @@ fun Router.pairingRoutes(
     post("/api/v1/pairing/invites") { req ->
         val base =
             adminUrlFromHost(req.header("host")) ?: adminUrl()
-                ?: throw IllegalStateException("No address for the invitation")
+                ?: throw HttpException(503, "no_address", "The frame has no network address for the invitation link")
         val invite = pairing.createInvite(req.clientId!!, base)
         HttpResponse.json(
             InviteDto.serializer(),

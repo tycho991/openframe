@@ -2,7 +2,7 @@
 
 ## 1. Contract and error texts (no change in behaviour except `no_address`)
 
-- [ ] 1.1 `api/openapi.yaml` per design decision 10:
+- [x] 1.1 `api/openapi.yaml` per design decision 10:
   - shared responses `MisdirectedHost` (421) and `InternalError` (500) on every operation;
   - `RequestTimeout` (408) on every operation with a JSON request body;
   - 503 `no_address` on `POST /pairing/invites`;
@@ -11,13 +11,13 @@
 
   Verify: `npm run lint` in `webadmin/` (Redocly) is clean, and `npm run gen:api` regenerates the types without
   typecheck errors.
-- [ ] 1.2 Contract consistency test in `core/src/test`: it reads `api/openapi.yaml` and requires 421 and 500 on every
+- [x] 1.2 Contract consistency test in `core/src/test`: it reads `api/openapi.yaml` and requires 421 and 500 on every
   operation and 408 on every operation with a JSON request body. Verify: the test fails on a copy of the contract
   without one of them and passes on 1.1. `RouteAccessTest` stays green.
-- [ ] 1.3 `POST /pairing/invites` throws `HttpException(503, "no_address")` instead of `IllegalStateException` when the
+- [x] 1.3 `POST /pairing/invites` throws `HttpException(503, "no_address")` instead of `IllegalStateException` when the
   frame knows no address. Verify: an `InviteTest` case with an HTTP/1.0 request without `Host` over a raw socket, the
   frame without an address, gets 503 `no_address` with the contract check on.
-- [ ] 1.4 Texts for `request_timeout`, `misdirected_host` (with the hint to use the IP address the frame shows),
+- [x] 1.4 Texts for `request_timeout`, `misdirected_host` (with the hint to use the IP address the frame shows),
   `code_paused` and `no_address` in `webadmin/src/lib/i18n/errorCodes.ts`, `en.json` and `de.json`. Verify:
   `npm test` (`errorCodes.test.ts`) and `npm run typecheck` are green.
 

@@ -110,7 +110,52 @@ class TestHttp private constructor(
         return res
     }
 
+    /**
+     * Sends [request] as it is over a socket of its own, for requests that the JDK client cannot send, such as one
+     * without `Host`. The request should end the connection (HTTP/1.0 or `Connection: close`). The answer is checked
+     * against the contract like the others.
+     */
+    fun raw(
+        request: String,
+        timeoutMs: Int = 10_000,
+        socket: java.net.Socket = java.net.Socket("127.0.0.1", port()),
+    ): RawRes {
+        val res =
+            socket.use { s ->
+                s.soTimeout = timeoutMs
+                s.getOutputStream().write(request.toByteArray())
+                s.getOutputStream().flush()
+                RawRes.parse(s.getInputStream().readBytes())
+            }
+        val (method, target) = request.substringBefore("\r\n").split(' ').let { it[0] to it[1] }
+        if (checkContract && target.startsWith("/api/")) {
+            Contract.check(method, target, res.status, res.headers["content-type"], res.body)
+        }
+        return res
+    }
+
+    /** The port of the server. */
+    fun port(): Int = base.substringAfterLast(':').toInt()
+
     override fun close() {
         server?.stop()
+    }
+}
+
+/** An answer read from a socket: status, headers with lower-case names, and the body as text. */
+class RawRes(
+    val status: Int,
+    val headers: Map<String, String>,
+    val body: String,
+) {
+    companion object {
+        fun parse(bytes: ByteArray): RawRes {
+            val text = bytes.toString(Charsets.UTF_8)
+            val head = text.substringBefore("\r\n\r\n")
+            val lines = head.split("\r\n")
+            val status = lines.first().split(' ').getOrNull(1)?.toIntOrNull() ?: error("No status line in: $text")
+            val headers = lines.drop(1).associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
+            return RawRes(status, headers, text.substringAfter("\r\n\r\n", ""))
+        }
     }
 }

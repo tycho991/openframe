@@ -20,16 +20,18 @@ import java.io.File
 /** Pairing routes on a server of their own, with a controllable clock and contract check. */
 class PairingHarness(
     private val dir: File,
+    /** The address the frame shows, `null` without a network address. */
+    private val adminUrl: String? = ADMIN_URL,
 ) : AutoCloseable {
     val clock = TestClock()
     val log = AppLog(clock)
     val clients = newRegistry()
     private val signer =
         ImageSigner(JsonStore(File(dir, "secret.json"), StoredSecret.serializer(), TestScope(), log), clock).also { it.load() }
-    val pairing = PairingManager(clients, clock, log, { ADMIN_URL })
+    val pairing = PairingManager(clients, clock, log, { adminUrl })
     val http =
         TestHttp(
-            HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { ADMIN_URL } }, AccessControl(clients, signer), log)::handle,
+            HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { adminUrl } }, AccessControl(clients, signer), log)::handle,
             checkContract = true,
         )
 
