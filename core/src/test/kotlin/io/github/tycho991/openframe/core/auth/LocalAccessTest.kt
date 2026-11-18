@@ -43,7 +43,7 @@ class LocalAccessTest {
         val (token1, laptop) = clients.create("Laptop")
         val (token2, _) = clients.create("Phone")
         val photo = "local-" + "a".repeat(40)
-        val url = signer.sign(photo)
+        val url = signer.sign(photo, laptop.id)
         pairing.setShownOnFrame(false)
         val before = pairing.display.value.code
         val invite = pairing.createInvite(laptop.id, "http://192.168.100.215:8080/").url.substringAfter("#pair=")
@@ -52,7 +52,7 @@ class LocalAccessTest {
 
         assertNull(clients.authenticate(token1))
         assertNull(clients.authenticate(token2))
-        assertFalse(signer.verify(photo, url))
+        assertNull(signer.verify(photo, url))
         // The reset asks the frame to show the hint, and the activity shows it.
         assertTrue(pairing.display.value.requested)
         pairing.setShownOnFrame(true)

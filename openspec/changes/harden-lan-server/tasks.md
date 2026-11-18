@@ -103,7 +103,7 @@
 
 ## 7. Image signatures bound to the device
 
-- [ ] 7.1 `ImageSigner.sign(photoId, clientId)` and `verify` returning the client, per design decision 8; `AccessControl`
+- [x] 7.1 `ImageSigner.sign(photoId, clientId)` and `verify` returning the client, per design decision 8; `AccessControl`
   checks the registry; `PhotoDtos` and its callers in the library and slideshow routes pass the request's client.
   Verify:
   - `ImageSignerTest`: a swapped client ID or another photo makes the signature invalid.

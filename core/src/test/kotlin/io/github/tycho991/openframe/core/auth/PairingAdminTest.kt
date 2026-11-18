@@ -4,6 +4,7 @@ import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.TestClock
 import kotlinx.coroutines.test.TestScope
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -36,7 +37,7 @@ class PairingAdminTest {
         val pairing = PairingManager(clients, clock, log, { "http://192.168.100.215:8080/" })
         val (phone, _) = clients.create("Phone")
         val (laptop, _) = clients.create("Laptop")
-        val signature = signer.sign("p1")
+        val signature = signer.sign("p1", "0123456789abcdef")
         val oldCode = pairing.display.value.code
         // Directories in the place of the temp files make every atomic write fail.
         File(dir, "clients.json.tmp").mkdir()
@@ -46,7 +47,7 @@ class PairingAdminTest {
 
         assertNull(clients.authenticate(phone))
         assertNull(clients.authenticate(laptop))
-        assertFalse(signer.verify("p1", signature))
+        assertNull(signer.verify("p1", signature))
         // The reset asks the frame to show the hint, and the activity shows it.
         assertTrue(pairing.display.value.requested)
         pairing.setShownOnFrame(true)
@@ -58,7 +59,7 @@ class PairingAdminTest {
         val restarted = clients()
         assertNull(restarted.authenticate(phone))
         assertNull(restarted.authenticate(laptop))
-        assertFalse(signer().verify("p1", signature))
+        assertNull(signer().verify("p1", signature))
     }
 
     @Test
@@ -67,7 +68,7 @@ class PairingAdminTest {
         val signer = signer()
         val pairing = PairingManager(clients, clock, log, { "http://192.168.100.215:8080/" })
         val (phone, _) = clients.create("Phone")
-        val signature = signer.sign("p1")
+        val signature = signer.sign("p1", "0123456789abcdef")
         // A file in the place of the state folder: nothing can be written there.
         val blocked = File(dir, "blocked").apply { writeText("not a folder") }
         val brokenSigner = ImageSigner(JsonStore(File(blocked, "secret.json"), StoredSecret.serializer(), TestScope(), log), clock)
@@ -75,7 +76,7 @@ class PairingAdminTest {
         PairingAdmin(clients, brokenSigner, pairing, log).resetAll()
 
         assertNull(clients.authenticate(phone))
-        assertTrue(signer.verify("p1", signature), "the other signer is untouched")
+        assertEquals("0123456789abcdef", signer.verify("p1", signature), "the other signer is untouched")
         assertTrue(pairing.display.value.requested)
         pairing.setShownOnFrame(true)
         assertNotNull(pairing.display.value.code)

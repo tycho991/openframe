@@ -30,17 +30,17 @@ fun Router.slideshowRoutes(
     photos: PhotoDtos,
     safeMode: () -> Boolean,
 ) {
-    fun state(): HttpResponse {
-        val photo = (slideshow.state.value as? SlideState.Showing)?.photo?.let(photos::current)
+    fun state(clientId: String): HttpResponse {
+        val photo = (slideshow.state.value as? SlideState.Showing)?.photo?.let { photos.current(it, clientId) }
         return HttpResponse.json(
             SlideshowStateDto.serializer(),
             SlideshowStateDto(photo, slideshow.paused.value, slideshow.resting.value),
         )
     }
 
-    get("/api/v1/slideshow") {
+    get("/api/v1/slideshow") { req ->
         if (safeMode()) throw safeModeRefusal()
-        state()
+        state(req.clientId!!)
     }
     post("/api/v1/slideshow") { req ->
         if (safeMode()) throw safeModeRefusal()
@@ -57,6 +57,6 @@ fun Router.slideshowRoutes(
             throw HttpException(409, "display_off", "The display is off: the photo changes only when it is on again")
         }
         withTimeoutOrNull(CONTROL_WAIT_MS) { slideshow.control(action) }
-        state()
+        state(req.clientId!!)
     }
 }

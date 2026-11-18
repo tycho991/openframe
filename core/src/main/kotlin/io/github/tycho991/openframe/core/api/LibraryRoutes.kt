@@ -234,14 +234,14 @@ fun Router.libraryRoutes(
             } else {
                 null
             }
-        HttpResponse.json(PhotoPageDto.serializer(), PhotoPageDto(page.map { photos.dto(it, lib) }, filtered.size, next))
+        HttpResponse.json(PhotoPageDto.serializer(), PhotoPageDto(page.map { photos.dto(it, lib, req.clientId!!) }, filtered.size, next))
     }
 
     post("/api/v1/photos") { req ->
         refuseInSafeMode()
         val entries = library.upload(req)
         val lib = index.library.value
-        HttpResponse.json(UploadResultDto.serializer(), UploadResultDto(entries.map { photos.dto(it, lib) }), 201)
+        HttpResponse.json(UploadResultDto.serializer(), UploadResultDto(entries.map { photos.dto(it, lib, req.clientId!!) }), 201)
     }
 
     post("/api/v1/photos:batch") { req ->
@@ -278,7 +278,7 @@ fun Router.libraryRoutes(
     patch("/api/v1/photos/{photoId}") { req ->
         val change = photoPatch(req.bodyAs(JsonObject.serializer()))
         val entry = library.update(req.pathParam("photoId"), change)
-        HttpResponse.json(PhotoDto.serializer(), photos.dto(entry, index.library.value))
+        HttpResponse.json(PhotoDto.serializer(), photos.dto(entry, index.library.value, req.clientId!!))
     }
 
     delete("/api/v1/photos/{photoId}") { req ->
@@ -324,21 +324,21 @@ fun Router.libraryRoutes(
         HttpResponse.json(SkippedFileListDto.serializer(), SkippedFileListDto(items))
     }
 
-    fun albumList(): HttpResponse {
+    fun albumList(clientId: String): HttpResponse {
         val albums =
             index.library.value.albums.values
-                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let { cover -> photos.urls(cover) }) }
+                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let { cover -> photos.urls(cover, clientId) }) }
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
     }
 
-    get("/api/v1/albums") { albumList() }
+    get("/api/v1/albums") { req -> albumList(req.clientId!!) }
 
     // The album is in the body because its path contains `/`, and the answer is the whole
     // list because switching an album resets its sub-albums.
     patch("/api/v1/albums") { req ->
         val body = req.bodyAs(AlbumPatchDto.serializer())
         library.setAlbumHidden(body.name, body.hidden)
-        albumList()
+        albumList(req.clientId!!)
     }
 
     get("/api/v1/state") {
