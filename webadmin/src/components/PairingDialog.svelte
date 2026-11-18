@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { ApiError } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
-  import { errorText } from "../lib/i18n/errors";
+  import { pairingErrorText } from "../lib/pairingError";
   import { api, session } from "../lib/session.svelte";
 
   let code = $state("");
@@ -11,22 +10,6 @@
   let error = $state<string | null>(null);
 
   const valid = $derived(/^[0-9]{6}$/.test(code));
-
-  function describe(e: unknown): string {
-    if (!(e instanceof ApiError)) return t("pair.network");
-    switch (e.code) {
-      case "invalid_code":
-        return t("pair.invalid");
-      case "expired_code":
-        return t("pair.expired");
-      case "locked":
-        return t("pair.locked", { seconds: /[0-9]+/.exec(e.message)?.[0] ?? "60" });
-      case "network":
-        return t("pair.network");
-      default:
-        return errorText(e);
-    }
-  }
 
   const linkErrors = {
     expired: "pair.linkExpired",
@@ -44,7 +27,7 @@
       await api.pair(code, deviceName.trim() || undefined);
       session.paired = true;
     } catch (e) {
-      error = describe(e);
+      error = pairingErrorText(e);
       code = "";
     } finally {
       busy = false;
@@ -59,7 +42,7 @@
       await api.showCodeOnFrame();
       message = t("pair.codeShown");
     } catch (e) {
-      error = describe(e);
+      error = pairingErrorText(e);
     }
   }
 </script>

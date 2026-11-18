@@ -316,8 +316,8 @@ class DisplayActivity : Activity() {
                 combine(core.pairing.display, core.clients.clients) { display, clients -> display to clients.isEmpty() }
                     .collect { (display, noClients) ->
                         // On request from the web UI the hint with the code stays up.
-                        if (display.requestedUntil != null && !hintVisible) setHintVisible(true, autoHide = false)
-                        if (display.requestedUntil == null && hintVisible && !hintAutoHides) setHintVisible(false)
+                        if (display.requested && !hintVisible) setHintVisible(true, autoHide = false)
+                        if (!display.requested && hintVisible && !hintAutoHides) setHintVisible(false)
                         core.pairing.setShownOnFrame(hintVisible || (showingEmpty && noClients))
                         updateHint()
                         updateEmpty()

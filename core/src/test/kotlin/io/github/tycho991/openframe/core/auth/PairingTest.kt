@@ -66,7 +66,15 @@ class PairingTest {
 
     private fun requestCode(): String {
         assertEquals(204, http.request("POST", "/api/v1/pairing/code").statusCode())
-        return pairing.display.value.code!!
+        return shownCode()
+    }
+
+    /** The code as the user reads it: the frame shows the hint, as the activity does on a request, and hides it again. */
+    private fun shownCode(): String {
+        pairing.setShownOnFrame(true)
+        val code = pairing.display.value.code!!
+        pairing.setShownOnFrame(false)
+        return code
     }
 
     private fun pair(
@@ -151,17 +159,23 @@ class PairingTest {
         val res = http.request("POST", "/api/v1/pairing/code")
         assertEquals(204, res.statusCode())
         assertEquals("", res.body())
+        assertTrue(pairing.display.value.requested)
+        // The code appears once the frame shows the hint.
+        pairing.setShownOnFrame(true)
         val shown = pairing.display.value
         assertNotNull(shown.code)
-        assertEquals(clock.now() + Duration.ofMinutes(5), shown.requestedUntil)
         // A second call does not create a new code as long as the old one is valid.
         http.request("POST", "/api/v1/pairing/code")
         assertEquals(shown.code, pairing.display.value.code)
-        // After 5 minutes the request window ends.
-        clock.advance(Duration.ofMinutes(5))
+        // After 5 minutes the request window ends, and the frame hides the hint.
+        clock.advance(Duration.ofMinutes(5).minusSeconds(1))
         pairing.tick()
+        assertTrue(pairing.display.value.requested)
+        clock.advance(Duration.ofSeconds(1))
+        pairing.tick()
+        assertFalse(pairing.display.value.requested)
+        pairing.setShownOnFrame(false)
         assertNull(pairing.display.value.code)
-        assertNull(pairing.display.value.requestedUntil)
     }
 
     @Test
@@ -218,8 +232,7 @@ class PairingTest {
         clock.advance(Duration.ofMinutes(5))
         pairing.tick()
         // One more mistake against the new code is the first, not the fifth.
-        pairing.requestDisplay()
-        val second = pairing.display.value.code!!
+        val second = shownCode()
         val wrong2 = if (second == "000000") "111111" else "000000"
         assertEquals(401, pair(wrong2).statusCode())
         assertEquals(201, pair(second).statusCode())

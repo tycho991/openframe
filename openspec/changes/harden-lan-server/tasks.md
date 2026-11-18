@@ -23,19 +23,19 @@
 
 ## 2. Pairing on monotonic time
 
-- [ ] 2.1 `PairingManager` per design decision 7: expiry of session and invitation, `lockedUntil` and the request window
+- [x] 2.1 `PairingManager` per design decision 7: expiry of session and invitation, `lockedUntil` and the request window
   on `clock.monotonicMillis()`; `CreatedInvite.expiresAt` and `Retry-After` as now plus the time left;
   `PairingDisplay.requestedUntil` becomes `requested: Boolean` (and `DisplayActivity`'s null check becomes that
   boolean). Verify: `PairingTest` and `InviteTest` with `TestClock` cover `admin-access` › Pairing deadlines
   independent of the wall clock › Clock set back and › Clock set forward, plus jumps during a session and during the
   request window. `./gradlew :android:lint` is green.
-- [ ] 2.2 `pair()` and `pairWithSecret()` check and consume inside a `synchronized` block; `clients.create()` and the log
+- [x] 2.2 `pair()` and `pairWithSecret()` check and consume inside a `synchronized` block; `clients.create()` and the log
   run outside it. Verify: a new test with a `JsonStore` whose write blocks on a latch shows that `setShownOnFrame()`
   and `tick()` return at once while `create()` waits. The existing pairing tests stay green.
 
 ## 3. Pairing by code: visibility, lockout, budget
 
-- [ ] 3.1 `setScreenUsable(Boolean)` fed by `FrameCore` from the display state per design decision 5. A code only when
+- [x] 3.1 `setScreenUsable(Boolean)` fed by `FrameCore` from the display state per design decision 5. A code only when
   shown and usable, `requestDisplay()` creating at most a secret, and a code staying valid after the hint is hidden.
   The e2e test server's `/code` and `/qr` set the hint as shown with its fake display on. Verify:
   - `PairingTest` covers `admin-access` › Code only while shown on the frame › Display off, with the secret unchanged
@@ -44,16 +44,16 @@
     display is off.
   - A `FrameCore` test with `FakeDisplayPower` covers display off and dark wake.
   - `npm run e2e` (pairing specs) stays green.
-- [ ] 3.2 Growing lockout per design decision 6 (60, 120, 240 … up to 3600 s; back to 60 s after a pairing or
+- [x] 3.2 Growing lockout per design decision 6 (60, 120, 240 … up to 3600 s; back to 60 s after a pairing or
   `reset()`), keeping the text "Try again in N s." Verify: `PairingTest` covers `admin-access` › Brute-force
   protection › Growing lockout, › Lockout back to 60 seconds, and the cap at 3600 s over several virtual days.
-- [ ] 3.3 Rolling budget of 20 wrong codes in 24 h with 429 `code_paused` and `Retry-After`; `codeLocked` on the frame
+- [x] 3.3 Rolling budget of 20 wrong codes in 24 h with 429 `code_paused` and `Retry-After`; `codeLocked` on the frame
   while paused. Verify:
   - `PairingTest` covers `admin-access` › Daily budget for pairing by code › Budget used up and › QR code while
     paused, and a simulation over 24 virtual hours admits at most 20 code attempts.
   - An API test with `TestFrame` and the contract check sees 429 `code_paused` with `Retry-After`.
   - `slideshow-display` › Display of the pairing QR code › Code paused is checked through `PairingDisplay.codeLocked`.
-- [ ] 3.4 Pairing dialog in the web UI: `code_paused` shows its text (the default branch with the error text) and no
+- [x] 3.4 Pairing dialog in the web UI: `code_paused` shows its text (the default branch with the error text) and no
   countdown. Verify: a component or unit test of the dialog's error mapping, and `npm run lint` is green.
 
 ## 4. Host check

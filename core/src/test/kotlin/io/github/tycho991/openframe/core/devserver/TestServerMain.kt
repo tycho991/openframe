@@ -242,14 +242,17 @@ object TestServerMain {
                             reset().let { ok("reset") }
                         }
 
+                        // The frame shows the hint on a display that is on, as the activity does on a request.
                         "/code" -> {
                             core.pairing.requestDisplay()
+                            core.pairing.setShownOnFrame(true)
                             ok(core.pairing.display.value.code ?: "")
                         }
 
                         // The secret of the QR code the frame is currently showing.
                         "/qr" -> {
                             core.pairing.requestDisplay()
+                            core.pairing.setShownOnFrame(true)
                             ok(
                                 core.pairing.display.value.url
                                     ?.substringAfter("#pair=") ?: "",

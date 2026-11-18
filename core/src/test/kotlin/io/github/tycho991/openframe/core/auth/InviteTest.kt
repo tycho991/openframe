@@ -120,8 +120,7 @@ class InviteTest {
     @Test
     fun `Lockout does not affect invitations`() {
         val invite = invite(h.pairedAuth("Phone"))
-        h.pairing.requestDisplay()
-        val code = h.pairing.display.value.code!!
+        val code = h.shownCode()
         val wrong = if (code == "000000") "111111" else "000000"
         repeat(PairingManager.MAX_FAILURES) { h.pairWithCode(wrong) }
         assertEquals(429, h.pairWithCode(code).statusCode())

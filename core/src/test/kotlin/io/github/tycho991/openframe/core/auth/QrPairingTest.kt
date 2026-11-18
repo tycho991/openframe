@@ -101,6 +101,7 @@ class QrPairingTest {
     @Test
     fun `Request during the lockout`() {
         h.pairing.requestDisplay()
+        h.pairing.setShownOnFrame(true)
         lockCode()
         assertEquals(204, h.http.request("POST", "/api/v1/pairing/code").statusCode())
         val locked = h.pairing.display.value

@@ -40,9 +40,16 @@ class PairingHarness(
 
     /** Pairs a client by code directly and returns its auth header. */
     fun pairedAuth(name: String): Map<String, String> {
-        pairing.requestDisplay()
-        val token = pairing.pair(pairing.display.value.code!!, name).first
+        val token = pairing.pair(shownCode(), name).first
         return mapOf("Authorization" to "Bearer $token")
+    }
+
+    /** The code as the user reads it: the frame shows the hint, as the activity does on a request, and hides it again. */
+    fun shownCode(): String {
+        pairing.setShownOnFrame(true)
+        val code = pairing.display.value.code!!
+        pairing.setShownOnFrame(false)
+        return code
     }
 
     fun pairWithSecret(secret: String) = http.request("POST", "/api/v1/pairing", """{"secret":"$secret"}""")

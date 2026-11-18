@@ -53,6 +53,9 @@ class LocalAccessTest {
         assertNull(clients.authenticate(token1))
         assertNull(clients.authenticate(token2))
         assertFalse(signer.verify(photo, url))
+        // The reset asks the frame to show the hint, and the activity shows it.
+        assertTrue(pairing.display.value.requested)
+        pairing.setShownOnFrame(true)
         val shown = pairing.display.value.code
         assertNotNull(shown, "The frame shows a new pairing code")
         assertNotEquals(before, shown)

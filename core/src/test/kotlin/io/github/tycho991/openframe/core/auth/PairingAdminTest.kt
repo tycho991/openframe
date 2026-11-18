@@ -47,6 +47,9 @@ class PairingAdminTest {
         assertNull(clients.authenticate(phone))
         assertNull(clients.authenticate(laptop))
         assertFalse(signer.verify("p1", signature))
+        // The reset asks the frame to show the hint, and the activity shows it.
+        assertTrue(pairing.display.value.requested)
+        pairing.setShownOnFrame(true)
         assertNotNull(pairing.display.value.code)
         assertNotEquals(oldCode, pairing.display.value.code)
         assertTrue(log.recent(100).any { it.message == "All pairings revoked on the frame" })
@@ -73,6 +76,8 @@ class PairingAdminTest {
 
         assertNull(clients.authenticate(phone))
         assertTrue(signer.verify("p1", signature), "the other signer is untouched")
+        assertTrue(pairing.display.value.requested)
+        pairing.setShownOnFrame(true)
         assertNotNull(pairing.display.value.code)
     }
 }

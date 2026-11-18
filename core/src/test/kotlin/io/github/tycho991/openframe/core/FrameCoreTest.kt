@@ -434,6 +434,39 @@ class FrameCoreTest {
         }
     }
 
+    /** Spec `admin-access`: Code only while shown on the frame (design decision 5 of harden-lan-server). */
+    @Test
+    fun `No pairing code while the display is off or in a dark wake`() {
+        val clock = TestClock(Instant.parse("2026-10-21T15:00:00Z"))
+        val power = FakeDisplayPower()
+        val network = FakeNetworkLink()
+        TestFrame(dir, clock = clock, displayPower = power, networkLink = network).use { frame ->
+            val pairing = frame.core.pairing
+            assertEquals(200, frame.send("PATCH", "/api/v1/settings", """{"displaySchedule":{"enabled":true}}""").statusCode())
+            clock.instant = Instant.parse("2026-10-21T23:00:00Z")
+            frame.core.display.userActivity()
+            waitFor { !power.screenOn }
+            // The hint is up on the dark screen: a secret for the QR code, but no code.
+            assertEquals(204, frame.http.request("POST", "/api/v1/pairing/code").statusCode())
+            pairing.setShownOnFrame(true)
+            waitFor { pairing.display.value.url != null }
+            assertNull(pairing.display.value.code)
+            network.drop()
+            waitFor { network.requests == 1 }
+            clock.advance(Duration.ofMinutes(10))
+            frame.core.display.userActivity()
+            waitFor { frame.core.display.dark.value }
+            assertTrue(power.screenOn)
+            pairing.tick()
+            assertNull(pairing.display.value.code, "No code in a dark wake")
+            network.restore()
+            waitFor { !frame.core.display.dark.value && !power.screenOn }
+            // Switched on by the power button, the frame shows a code.
+            power.powerButton()
+            waitFor { pairing.display.value.code != null }
+        }
+    }
+
     @Test
     fun `Settings and library survive a restart`() {
         TestFrame(dir).use { frame ->

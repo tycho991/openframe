@@ -10,6 +10,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
+import java.util.ArrayDeque
 import java.util.Base64
 
 /**
@@ -18,15 +19,15 @@ import java.util.Base64
  * [code] and [url] are set as long as somebody needs them: the frame itself
  * (empty state, hint) or a request from the web UI. [url] is the pairing
  * link with the secret for the QR code, `null` without a network address.
- * While pairing by code is locked, [code] is `null` and [codeLocked] is set,
- * the QR code stays. [requestedUntil] is set as long as the hint stays up
+ * While pairing by code is locked or paused, [code] is `null` and [codeLocked]
+ * is set, the QR code stays. [requested] is set as long as the hint stays up
  * because of such a request.
  */
 data class PairingDisplay(
     val code: String?,
     val url: String?,
     val codeLocked: Boolean,
-    val requestedUntil: Instant?,
+    val requested: Boolean,
 )
 
 /** An invitation as `POST /api/v1/pairing/invites` returns it. */
@@ -40,14 +41,26 @@ data class CreatedInvite(
  *
  * A session consists of a six-digit code and a secret for the QR code. Both
  * are created together, are valid for 5 minutes and usable only once, and
- * redeeming either ends the session. After 5 wrong codes only the code is
- * discarded and pairing by code is locked for 60 seconds; the secret stays.
- * Wrong secrets do not count as failed attempts. If a displayed session
- * expires, or the lockout ends, [tick] replaces it with a new one.
+ * redeeming either ends the session. A code is created only while the frame
+ * shows the pairing and its screen is usable (on, not in a dark wake); a
+ * request from the web UI alone creates only the secret, which cannot be
+ * guessed. A code once created stays valid for its 5 minutes.
+ *
+ * After 5 wrong codes only the code is discarded and pairing by code is locked,
+ * for 60 seconds at first and twice as long at each further lockout, at most an
+ * hour; the secret stays. After 20 wrong codes within 24 hours pairing by code
+ * pauses until the oldest of them is 24 hours old. A successful pairing of any
+ * kind and [reset] end lockout and pause. Wrong secrets do not count as failed
+ * attempts. If a displayed session expires, or the lockout ends, [tick]
+ * replaces it with a new one.
  *
  * An invitation is a secret of its own, created by a paired client, valid for
  * 5 minutes and once. Each client has at most one, and it ends with the
- * client's pairing. Invitations live in memory only.
+ * client's pairing. Invitations, lockout and budget live in memory only.
+ *
+ * All deadlines run on [Clock.monotonicMillis], so that setting the device's
+ * clock moves none of them. Creating the client, which writes to storage, runs
+ * outside the lock.
  *
  * [adminUrl] is the address of the admin interface, e.g. `http://192.168.100.215:8080/`.
  */
@@ -60,21 +73,24 @@ class PairingManager(
 ) {
     private class Invite(
         val secret: String,
-        val expiresAt: Instant,
+        val expiresAt: Long,
     )
 
     private var code: String? = null
     private var secret: String? = null
-    private var expiresAt: Instant = Instant.EPOCH
+    private var expiresAt = 0L
     private var lastExpiredCode: String? = null
     private var lastExpiredSecret: String? = null
     private var failures = 0
-    private var lockedUntil: Instant = Instant.EPOCH
-    private var requestedUntil: Instant? = null
+    private var lockedUntil = NEVER
+    private var lockouts = 0
+    private val wrongCodes = ArrayDeque<Long>()
+    private var requestedUntil: Long? = null
     private var shownOnFrame = false
+    private var screenUsable = true
     private val invites = HashMap<String, Invite>()
 
-    private val _display = MutableStateFlow(PairingDisplay(null, null, false, null))
+    private val _display = MutableStateFlow(PairingDisplay(null, null, false, false))
 
     val display: StateFlow<PairingDisplay> = _display.asStateFlow()
 
@@ -85,13 +101,21 @@ class PairingManager(
         refresh()
     }
 
+    /** Whether someone can see the screen: the display is on and not in a dark wake. `FrameCore` feeds it. */
+    @Synchronized
+    fun setScreenUsable(usable: Boolean) {
+        screenUsable = usable
+        refresh()
+    }
+
     /**
-     * `POST /api/v1/pairing/code`: the frame shows a valid code and QR code for
-     * 5 minutes. During the lockout it shows the QR code alone.
+     * `POST /api/v1/pairing/code`: the frame shows the hint for 5 minutes, with a
+     * code once it shows the hint on a usable screen. While pairing by code is
+     * locked or paused it shows the QR code alone.
      */
     @Synchronized
     fun requestDisplay() {
-        requestedUntil = clock.now() + REQUEST_WINDOW
+        requestedUntil = clock.monotonicMillis() + REQUEST_WINDOW.toMillis()
         refresh()
     }
 
@@ -100,58 +124,60 @@ class PairingManager(
     fun tick() = refresh()
 
     /** Checks the six-digit [input] and creates a client on success. Returns token and client. */
-    @Synchronized
     fun pair(
         input: String,
         deviceName: String,
     ): Pair<String, StoredClient> {
-        val now = clock.now()
-        if (now.isBefore(lockedUntil)) throw locked(now)
-        expireIfDue(now)
-        val current = code
-        if (current != null && equal(input, current)) return completeSession(deviceName)
-        val expired = lastExpiredCode
-        if (expired != null && equal(input, expired)) throw expired()
-        // Without a live code there is nothing to guess, so such attempts must not lock out the next session.
-        if (current == null) throw invalid()
-        failures++
-        if (failures >= MAX_FAILURES) {
-            log.w(TAG, "$MAX_FAILURES wrong codes, pairing by code locked for ${LOCK.seconds} s")
-            failures = 0
-            code = null
-            lastExpiredCode = null
-            lockedUntil = now + LOCK
-            refresh()
+        synchronized(this) {
+            val now = clock.monotonicMillis()
+            if (isPaused(now)) throw pausedError(now)
+            if (now < lockedUntil) throw lockedError(now)
+            expireIfDue(now)
+            val current = code
+            if (current == null || !equal(input, current)) {
+                val expired = lastExpiredCode
+                if (expired != null && equal(input, expired)) throw expiredError()
+                // Without a live code there is nothing to guess, so such attempts must not lock out the next session.
+                if (current != null) wrongCode(now)
+                throw invalidError()
+            }
+            consumeSession()
         }
-        throw invalid()
+        return create(deviceName, "Paired")
     }
 
     /**
      * Checks a secret from the frame's QR code or from an invitation and creates
-     * a client on success. Not subject to the lockout, and a wrong secret is no
-     * failed attempt.
+     * a client on success. Not subject to the lockout or the budget, and a wrong
+     * secret is no failed attempt.
      */
-    @Synchronized
     fun pairWithSecret(
         input: String,
         deviceName: String,
     ): Pair<String, StoredClient> {
-        val now = clock.now()
-        expireIfDue(now)
-        val current = secret
-        if (current != null && equal(input, current)) return completeSession(deviceName)
-        val invite = invites.entries.firstOrNull { equal(input, it.value.secret) }
-        if (invite != null) {
-            invites.remove(invite.key)
-            if (clients.clients.value.none { it.id == invite.key }) throw invalid()
-            if (!now.isBefore(invite.value.expiresAt)) throw expired()
-            val result = clients.create(deviceName)
-            log.i(TAG, "Paired by invitation: ${result.second.name}")
-            return result
-        }
-        val expired = lastExpiredSecret
-        if (expired != null && equal(input, expired)) throw expired()
-        throw invalid()
+        val how =
+            synchronized(this) {
+                val now = clock.monotonicMillis()
+                expireIfDue(now)
+                val current = secret
+                if (current != null && equal(input, current)) {
+                    consumeSession()
+                    return@synchronized "Paired"
+                }
+                val invite = invites.entries.firstOrNull { equal(input, it.value.secret) }
+                if (invite == null) {
+                    val expired = lastExpiredSecret
+                    if (expired != null && equal(input, expired)) throw expiredError()
+                    throw invalidError()
+                }
+                invites.remove(invite.key)
+                if (clients.clients.value.none { it.id == invite.key }) throw invalidError()
+                if (now >= invite.value.expiresAt) throw expiredError()
+                endProtection()
+                refresh()
+                "Paired by invitation"
+            }
+        return create(deviceName, how)
     }
 
     /**
@@ -163,9 +189,9 @@ class PairingManager(
         clientId: String,
         baseUrl: String,
     ): CreatedInvite {
-        val invite = Invite(newSecret(), clock.now() + VALIDITY)
+        val invite = Invite(newSecret(), clock.monotonicMillis() + VALIDITY.toMillis())
         invites[clientId] = invite
-        return CreatedInvite("$baseUrl#pair=${invite.secret}", invite.expiresAt)
+        return CreatedInvite("$baseUrl#pair=${invite.secret}", clock.now() + VALIDITY)
     }
 
     /** The pairing of [clientId] was revoked: its invitation ends. */
@@ -182,50 +208,94 @@ class PairingManager(
         lastExpiredCode = null
         lastExpiredSecret = null
         failures = 0
-        lockedUntil = Instant.EPOCH
+        endProtection()
         invites.clear()
-        requestedUntil = clock.now() + REQUEST_WINDOW
+        requestedUntil = clock.monotonicMillis() + REQUEST_WINDOW.toMillis()
         refresh()
     }
 
-    private fun completeSession(deviceName: String): Pair<String, StoredClient> {
+    /** A session was redeemed: it ends, and lockout and budget start over. Called under the lock. */
+    private fun consumeSession() {
         code = null
         secret = null
         failures = 0
         requestedUntil = null
+        endProtection()
         refresh()
+    }
+
+    private fun endProtection() {
+        lockedUntil = NEVER
+        lockouts = 0
+        wrongCodes.clear()
+    }
+
+    private fun create(
+        deviceName: String,
+        how: String,
+    ): Pair<String, StoredClient> {
         val result = clients.create(deviceName)
-        log.i(TAG, "Paired: ${result.second.name}")
+        log.i(TAG, "$how: ${result.second.name}")
         return result
     }
 
+    private fun wrongCode(now: Long) {
+        failures++
+        wrongCodes.addLast(now)
+        if (isPaused(now)) {
+            log.w(TAG, "$DAILY_BUDGET wrong codes within 24 hours, pairing by code paused")
+            discardCode()
+        } else if (failures >= MAX_FAILURES) {
+            val millis = minOf(LOCK.toMillis() shl minOf(lockouts, MAX_DOUBLINGS), MAX_LOCK.toMillis())
+            lockouts++
+            lockedUntil = now + millis
+            log.w(TAG, "$MAX_FAILURES wrong codes, pairing by code locked for ${millis / 1000} s")
+            discardCode()
+        }
+    }
+
+    private fun discardCode() {
+        failures = 0
+        code = null
+        lastExpiredCode = null
+        refresh()
+    }
+
+    /** Whether the budget of wrong codes is used up; drops the ones older than 24 hours. */
+    private fun isPaused(now: Long): Boolean {
+        while (wrongCodes.isNotEmpty() && now - wrongCodes.peekFirst() >= BUDGET_WINDOW.toMillis()) wrongCodes.removeFirst()
+        return wrongCodes.size >= DAILY_BUDGET
+    }
+
     private fun refresh() {
-        val now = clock.now()
+        val now = clock.monotonicMillis()
         expireIfDue(now)
-        if (requestedUntil != null && !now.isBefore(requestedUntil)) requestedUntil = null
-        invites.values.removeAll { !now.isBefore(it.expiresAt + VALIDITY) }
+        requestedUntil?.let { if (now >= it) requestedUntil = null }
+        invites.values.removeAll { now >= it.expiresAt + VALIDITY.toMillis() }
         val needed = shownOnFrame || requestedUntil != null
-        val locked = now.isBefore(lockedUntil)
-        // A session without a code after the lockout is replaced by a complete one.
-        if (needed && (secret == null || (code == null && !locked))) {
+        val blocked = now < lockedUntil || isPaused(now)
+        val codeAllowed = shownOnFrame && screenUsable && !blocked
+        // A session without a code, after a lockout or created while nobody could see it, is replaced by a complete
+        // one as soon as a code may be shown.
+        if (needed && (secret == null || (code == null && codeAllowed))) {
             if (secret != null) expire()
             secret = newSecret()
             failures = 0
-            code = if (locked) null else (0 until 6).map { random.nextInt(10) }.joinToString("")
-            expiresAt = now + VALIDITY
+            code = if (codeAllowed) (0 until 6).map { random.nextInt(10) }.joinToString("") else null
+            expiresAt = now + VALIDITY.toMillis()
         }
         val url = if (needed) secret?.let { s -> adminUrl()?.let { "$it#pair=$s" } } else null
         _display.value =
             PairingDisplay(
-                code = if (needed && !locked) code else null,
+                code = if (needed && !blocked) code else null,
                 url = url,
-                codeLocked = needed && locked,
-                requestedUntil = requestedUntil,
+                codeLocked = needed && blocked,
+                requested = requestedUntil != null,
             )
     }
 
-    private fun expireIfDue(now: Instant) {
-        if (secret != null && !now.isBefore(expiresAt)) expire()
+    private fun expireIfDue(now: Long) {
+        if (secret != null && now >= expiresAt) expire()
     }
 
     private fun expire() {
@@ -239,12 +309,13 @@ class PairingManager(
     private fun newSecret(): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(SECRET_BYTES).also(random::nextBytes))
 
-    private fun invalid() = HttpException(401, "invalid_code", "The code is wrong.")
+    private fun invalidError() = HttpException(401, "invalid_code", "The code is wrong.")
 
-    private fun expired() = HttpException(401, "expired_code", "The code has expired. Have the frame show a new one.")
+    private fun expiredError() = HttpException(401, "expired_code", "The code has expired. Have the frame show a new one.")
 
-    private fun locked(now: Instant): HttpException {
-        val seconds = Duration.between(now, lockedUntil).seconds.coerceAtLeast(1)
+    // The web UI's pairing dialog reads the seconds from this text.
+    private fun lockedError(now: Long): HttpException {
+        val seconds = secondsUntil(now, lockedUntil)
         return HttpException(
             429,
             "locked",
@@ -252,6 +323,21 @@ class PairingManager(
             headers = mapOf("Retry-After" to seconds.toString()),
         )
     }
+
+    private fun pausedError(now: Long): HttpException {
+        val seconds = secondsUntil(now, wrongCodes.peekFirst() + BUDGET_WINDOW.toMillis())
+        return HttpException(
+            429,
+            "code_paused",
+            "Too many wrong codes within 24 hours. Pair by QR code, or try again in $seconds s.",
+            headers = mapOf("Retry-After" to seconds.toString()),
+        )
+    }
+
+    private fun secondsUntil(
+        now: Long,
+        end: Long,
+    ) = ((end - now + 999) / 1000).coerceAtLeast(1)
 
     private fun equal(
         a: String,
@@ -262,8 +348,13 @@ class PairingManager(
         val VALIDITY: Duration = Duration.ofMinutes(5)
         val REQUEST_WINDOW: Duration = Duration.ofMinutes(5)
         val LOCK: Duration = Duration.ofSeconds(60)
+        val MAX_LOCK: Duration = Duration.ofHours(1)
+        val BUDGET_WINDOW: Duration = Duration.ofHours(24)
         const val MAX_FAILURES = 5
+        const val DAILY_BUDGET = 20
         const val SECRET_BYTES = 16
+        private const val MAX_DOUBLINGS = 6
+        private const val NEVER = Long.MIN_VALUE
         private const val TAG = "pairing"
     }
 }
