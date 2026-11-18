@@ -114,7 +114,7 @@
 
 ## 8. Threat model in the docs
 
-- [ ] 8.1 `SECURITY.md` and the README security model per design decision 11:
+- [x] 8.1 `SECURITY.md` and the README security model per design decision 11:
   - the Host check, the limits and the pairing budget;
   - the residual risks: several attacker addresses or slow reads block the web UI while the slideshow runs on, and
     pairing by code can be paused for up to 24 h;
