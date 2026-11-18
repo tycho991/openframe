@@ -7,10 +7,11 @@
   - it turns on format assertions;
   - for 2xx answers to a JSON request it validates the request body against `requestBody`.
 
-  `TestHttp.send` and `TestHttp.raw` pass both, and `TestHttp.send` passes on text and JSON bodies of every
-  answer. Verify: new `ContractHarnessTest` cases fail for a 204 with a text body, a 429 without `Retry-After`, a
-  `date-time` field holding `"yesterday"` and a 2xx answer to a request body with an unknown field. The existing cases
-  stay green.
+  It skips HEAD, TRACE and PROPFIND. `TestHttp.send` and `TestHttp.raw` pass headers and request body, and the body
+  of text and JSON answers or the byte count of others. `Invite.url` gets `format: uri`. Verify: new
+  `ContractHarnessTest` cases fail for a 204 with a text body, a 204 with binary bytes, a 429 without `Retry-After`,
+  a `date-time` field holding `"yesterday"` and a 2xx answer to a request body with an unknown field. The existing
+  cases stay green.
 - [ ] 1.2 Run `./gradlew :core:test` with the stricter harness and fix every violation it finds, in the contract or
   in the code, whichever is wrong. Verify: `:core:test` is green, and the PR text lists each fix.
 - [ ] 1.3 `ContractConsistencyTest` also requires 400, 413 and 415 at every operation with a JSON request body. Add
@@ -31,44 +32,51 @@
 ## 3. Responses
 
 - [ ] 3.1 Range answers close their file (design decision 6). Verify: a test in `HttpPipelineTest` sends 100 range
-  requests for an image (206, contract check on), and the number of entries under `/proc/self/fd` is unchanged
-  afterwards. A test hook that reports the close replaces the count where `/proc` is missing.
+  requests for an image (206, contract check on), and a test hook reports 100 closed files.
 - [ ] 3.2 Errors while opening a response (design decision 7). Verify:
   - a file deleted between the cache lookup and the open gives JSON 404 with `X-Content-Type-Options` and no path in
-    the body;
+    the body, with and without a `Range` header;
+  - an `IOException` other than `FileNotFoundException` while opening gives JSON 500;
   - an `AssetSource` that returns `null` on the second open gives JSON 404;
   - a stream that throws `IllegalStateException` on open gives JSON 500 with the security headers and an `ERROR`
     line in the log;
   - `TRACE` and `PROPFIND` get 405 with the security headers and `Allow`.
-- [ ] 3.3 HEAD (design decision 8). Verify, over a raw socket on one keep-alive connection: HEAD on `/` with and
-  without `Accept-Encoding: gzip`, then GET `/`. HEAD gives 0 body bytes and the `Content-Length` of the GET, and the
-  GET is complete. HEAD on `/api/v1/info` stays 405.
+- [ ] 3.3 HEAD (design decision 8), with the keep-alive raw reader of 1.1. Verify, on one connection: HEAD on `/`
+  with and without `Accept-Encoding: gzip`, then GET `/` without gzip. Each HEAD has exactly one `Content-Length`
+  line, its value equals the decoded byte count of the GET, and it sends 0 body bytes, so the GET that follows is
+  complete. HEAD on `/api/v1/info` stays 405.
 
 ## 4. Connections only on local addresses
 
-- [ ] 4.1 Address candidates may hold IPv6 addresses. Add
-  `acceptedAddresses(candidates): Set<String>` in `platform/LanAddresses.kt`: everything except `CELLULAR` and
-  464XLAT. Add `Platform.acceptedAddresses()`; `FakePlatform` and `TestCore` follow. Verify: `LanAddressesTest`
-  cases for Wi-Fi, Ethernet, hotspot (`OTHER`), VPN and IPv6 link-local accepted, and mobile data and
-  `192.0.0.4` refused. `lanAddresses()` returns the same as before.
-- [ ] 4.2 `AndroidPlatform` collects IPv6 addresses for `acceptedAddresses()`; `ipAddresses()` stays IPv4.
-  Verify: `./gradlew :android:check` is green, and a debug build on the API 37 emulator logs no refusal for
-  `adb forward` and for the emulator's own address.
-- [ ] 4.3 `NanoHttpServer` and `FrameServer` take an `acceptsLocal` predicate. Connections on other addresses are
-  closed before a thread starts and logged at most once a minute (design decision 1). `FrameCore` supplies loopback
-  plus the cached `acceptedAddresses()`: cleared in `onNetworkChanged()`, refreshed at most every 5 s for an unknown
-  address (design decision 2). Addresses are compared by their bytes (design decision 3). Verify, new tests in
-  `ServerLimitsTest` or a `LocalAddressTest`:
-  - `127.0.0.2` is answered with an allowed set that holds only a foreign address;
+- [ ] 4.1 Add `localAddresses(candidates): LocalAddresses` in `platform/LanAddresses.kt`, with accepted and refused
+  `InetAddress` lists (design decision 2): refused are `CELLULAR` and 464XLAT, accepted is everything else, IPv4 and
+  IPv6. Add `PlatformInfo.localAddresses()`; `FakePlatform` and `TestCore` follow. Verify: `LanAddressesTest` cases
+  for Wi-Fi, Ethernet, hotspot (`OTHER`), VPN and IPv6 link-local accepted, and mobile data and `192.0.0.4`
+  refused. `lanAddresses()` returns the same as before.
+- [ ] 4.2 `AndroidPlatform` collects IPv4 and IPv6 candidates for `localAddresses()`; `ipAddresses()` stays IPv4.
+  Verify: `./gradlew :android:check` is green. On the API 37 emulator, `dumpsys connectivity` shows whether an
+  interface is cellular. A debug build there logs no refusal for `adb forward` and the Wi-Fi address, and refuses a
+  cellular address if the emulator has one.
+- [ ] 4.3 `NanoHttpServer` and `FrameServer` take an `acceptsLocal` predicate. Connections on other addresses get a
+  `Refused` handler, which `BoundedAsyncRunner.exec` closes without a slot or a thread, logged at most once a minute
+  (design decision 1). `FrameCore` supplies loopback plus the snapshot of `localAddresses()` (design decision 2):
+  byte keys in a `@Volatile` field, cleared in `onNetworkChanged()`, read again at once for an address in neither
+  list, at most once a second on `monotonicMillis`. Addresses are compared by their bytes (design decision 3).
+  Verify, new tests in a `LocalAddressTest`:
+  - `127.0.0.2` is answered with an accepted list that holds only a foreign address;
   - a predicate without the loopback exception closes the connection without an answer and without a thread;
-  - an unknown address triggers one refresh, and a second one comes at the earliest 5 s later (`TestClock`);
-  - `::ffff:127.0.0.1` counts as loopback;
+  - an address that appears in the fake platform without `onNetworkChanged()` (a VPN coming up) is accepted on
+    its first connection;
+  - an address in neither list triggers one read, and the next read comes at the earliest 1 s later (`TestClock`);
+    a refused address triggers none;
+  - `Inet6Address.getByAddress(null, <::ffff:127.0.0.1 bytes>, -1)` counts as loopback, and an IPv4-mapped LAN
+    address matches its IPv4 entry;
   - `LocalAccessTest` stays green.
 
 ## 5. Log of device management
 
 - [ ] 5.1 Lines per design decision 5 for pairing, pairing by invitation, rename, revocation and invitation, outside
-  the pairing lock. Verify: a `TestFrame` test renames, revokes, creates an invitation and pairs with it. Then
+  the pairing lock; the revocation reads the name before removing the client. "Revoke all pairings" keeps its line. Verify: a `TestFrame` test renames, revokes, creates an invitation and pairs with it. Then
   `GET /api/v1/logs` has one line per event with the IDs, and contains neither a token, nor the pairing secret, nor
   the invitation URL. `RenameTest` and `InviteTest` stay green.
 
@@ -87,11 +95,13 @@
 
 - [ ] 8.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
   - both frames, read only: which socket listens on the port (`/proc/net/tcp`, `/proc/net/tcp6`), and that the
-    admin interface answers on the Wi-Fi IPv4 address, on the IPv6 link-local address and through `adb forward`
+    admin interface answers on the Wi-Fi IPv4 address, on an IPv6 address of the Wi-Fi (`curl` from this PC, with
+    `%25<interface>` for a link-local address, since browsers take no zone) and through `adb forward`
     (`admin-access` › Connections only on local addresses › From the device itself; › IPv6 on the LAN);
   - one frame, with consent: Wi-Fi off and on, then the admin interface answers on the new address without a
     restart (› Wi-Fi off and on);
-  - mobile data and VPN not testable on the frames (no SIM, no VPN app); noted with the JVM tests that cover them.
+  - mobile data and VPN not testable on the frames (no SIM, no VPN app); noted with the JVM and emulator tests that
+    cover them.
 
   Verify: the rows exist with their references.
 - [ ] 8.2 Run the rows of 8.1 after the release. Verify: results entered, and a finding in

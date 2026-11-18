@@ -14,7 +14,7 @@ were left for a follow-up:
   - A file removed between the cache lookup and the open gets NanoHTTPD's plain-text 500 with the cache path. A
     missing web UI asset ends the connection without an answer (`assets.open(target)!!`).
   - The early 405 for unknown methods has no security headers.
-  - HEAD on the web UI sends a gzip body when the client accepts gzip.
+  - HEAD on the web UI sends the whole body, gzipped when the client accepts gzip, with `Content-Length: -1`.
 - **The contract test sees less than it should.**
   - 206 and 416 at the image are missing from `api/openapi.yaml`, and `SettingsPatch` accepts any field.
   - `Contract.check` checks no response headers (a 429 without `Retry-After` passes), no formats (`date-time`) and
@@ -29,8 +29,8 @@ were left for a follow-up:
   address of a Wi-Fi, Ethernet, hotspot/tethering or VPN interface of the device, IPv4 or IPv6. It SHALL close
   connections on a mobile data address without an answer. VPN addresses are allowed (owner's decision), so a frame
   stays reachable through Tailscale or WireGuard. The address the frame shows stays the LAN address as before.
-- **Log of device management.** Pairing, renaming, revoking, creating an invitation and pairing by invitation SHALL
-  each write one info line with the IDs of the acting and the affected device and the device name. Tokens, secrets
+- **Log of device management.** Pairing, pairing by invitation, and renaming, revoking and inviting through the API
+  SHALL each write one info line with the IDs of the acting and the affected device and the device name. Tokens, secrets
   and invitation links SHALL NOT be logged.
 - **Fixes without a spec change:**
   - Range responses close their file.
@@ -60,12 +60,12 @@ None.
 
 - `core`:
   - `http/NanoHttpServer.kt`, `http/FrameServer.kt`, `http/StaticAssets.kt`, `FrameCore.kt`,
-    `platform/Platform.kt`, `platform/LanAddresses.kt`, `api/PairingRoutes.kt`, `auth/PairingManager.kt`.
+    `platform/Platform.kt` (`PlatformInfo`), `platform/LanAddresses.kt`, `api/PairingRoutes.kt`, `auth/PairingManager.kt`.
   - Tests: `testing/Contract.kt`, `testing/TestHttp.kt`, `testing/FakePlatform.kt`, `ContractConsistencyTest`, new
     tests for local addresses, Range/HEAD/500 and the log.
 - `android`: `AndroidPlatform.kt` reports the accepted addresses, IPv6 included. `TestCore.kt` follows.
 - `api/openapi.yaml`: 206/416 at the image, stricter `SettingsPatch`, description of 405 and HEAD. `npm run gen:api`.
-  The web UI types may become narrower for settings.
+  `format: uri` at `Invite.url`. The web UI types may become narrower for settings.
 - Behaviour visible to users: none on Wi-Fi. A frame on mobile data no longer answers there, and a frame on a VPN
   keeps answering.
 - Device rows: mobile data cannot be tested (no test device has a SIM). Read-only checks on both frames instead: the

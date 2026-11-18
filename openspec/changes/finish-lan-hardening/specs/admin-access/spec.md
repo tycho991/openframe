@@ -9,7 +9,7 @@ The frame SHALL answer only connections that arrive on loopback or on an address
 - **THEN** the frame closes the connection without an answer, and the slideshow and the admin interface on Wi-Fi keep working
 
 #### Scenario: VPN
-- **GIVEN** the device is connected to a VPN, for example Tailscale or WireGuard
+- **GIVEN** local-only mode is off and the device is connected to a VPN, for example Tailscale or WireGuard
 - **WHEN** a browser opens the frame's VPN address
 - **THEN** the admin interface answers as it does on the LAN
 
@@ -18,15 +18,16 @@ The frame SHALL answer only connections that arrive on loopback or on an address
 - **THEN** a browser on the LAN opens the admin interface on the new address without a restart of the app
 
 #### Scenario: From the device itself
-- **WHEN** a client connects to `127.0.0.1` or `::1`, for example through `adb forward`
-- **THEN** the frame answers
+- **WHEN** a client on the device connects to `127.0.0.1`, for example through `adb forward`
+- **THEN** the frame answers, with local-only mode on or off
 
 #### Scenario: IPv6 on the LAN
-- **WHEN** a browser on the LAN opens the frame by the IPv6 address of its Wi-Fi connection
+- **GIVEN** local-only mode is off
+- **WHEN** a client on the LAN connects to an IPv6 address of the frame's Wi-Fi connection
 - **THEN** the admin interface answers
 
 ### Requirement: Log of device management
-The frame SHALL write one info line to its log for each pairing, renaming, revocation and invitation of a device. The line SHALL name the device that acted by its ID and, where there is one, the device affected by its ID and name. It SHALL NOT contain a token, a pairing secret or an invitation link.
+The frame SHALL write one info line to its log for each pairing, and for each renaming, revocation and invitation made through the API. The line SHALL name the device that acted by its ID and, where there is one, the device affected by its ID and name. It SHALL NOT contain a token, a pairing secret or an invitation link.
 
 #### Scenario: Revoked by another device
 - **WHEN** a paired phone revokes the pairing of a laptop
