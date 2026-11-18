@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.http.HttpResponse
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.isLocalHost
 import io.github.tycho991.openframe.core.http.parseHost
+import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.Serializable
@@ -70,10 +71,14 @@ internal fun adminUrlFromHost(host: String?): String? {
     return "http://$host/"
 }
 
-/** Pairing by code, secret or invitation and management of the paired devices. */
+private const val TAG = "pairing"
+
+/** Pairing by code, secret or invitation and management of the paired devices. Renaming, revoking and inviting are logged with
+ * the IDs of the acting and the affected device (spec `admin-access`, "Log of device management"). */
 fun Router.pairingRoutes(
     pairing: PairingManager,
     clients: ClientRegistry,
+    log: AppLog? = null,
     adminUrl: () -> String?,
 ) {
     post("/api/v1/pairing", Access.PUBLIC) { req ->
@@ -102,6 +107,7 @@ fun Router.pairingRoutes(
             adminUrlFromHost(req.header("host")) ?: adminUrl()
                 ?: throw HttpException(503, "no_address", "The frame has no network address for the invitation link")
         val invite = pairing.createInvite(req.clientId!!, base)
+        log?.i(TAG, "Device ${req.clientId} created an invitation")
         HttpResponse.json(
             InviteDto.serializer(),
             InviteDto(invite.url, invite.expiresAt.toString(), QrMatrix.encode(invite.url).rows()),
@@ -121,12 +127,19 @@ fun Router.pairingRoutes(
             throw HttpException.badRequest("The name has 1 to 64 characters", mapOf("name" to "1 to 64 characters"))
         }
         val client = clients.rename(req.pathParam("clientId"), name) ?: throw HttpException.notFound("No such device")
+        log?.i(TAG, "Device ${req.clientId} renamed ${client.id} to ${client.name}")
         HttpResponse.json(ClientDto.serializer(), client.toDto(req.clientId))
     }
     delete("/api/v1/clients/{clientId}") { req ->
         val id = req.pathParam("clientId")
+        // The name is read before the client goes, for the log line.
+        val name =
+            clients.clients.value
+                .firstOrNull { it.id == id }
+                ?.name
         if (!clients.remove(id)) throw HttpException.notFound("No such device")
         pairing.dropInvite(id)
+        log?.i(TAG, "Device ${req.clientId} revoked $id: ${name ?: "?"}")
         HttpResponse.noContent()
     }
 }

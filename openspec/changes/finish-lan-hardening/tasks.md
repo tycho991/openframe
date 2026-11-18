@@ -48,7 +48,7 @@
 
 ## 4. Connections only on local addresses
 
-- [ ] 4.1 Add `localAddresses(candidates): LocalAddresses` in `platform/LanAddresses.kt`, with accepted and refused
+- [x] 4.1 Add `localAddresses(candidates): LocalAddresses` in `platform/LanAddresses.kt`, with accepted and refused
   `InetAddress` lists (design decision 2): refused are `CELLULAR` and 464XLAT, accepted is everything else, IPv4 and
   IPv6. Add `PlatformInfo.localAddresses()`; `FakePlatform` and `TestCore` follow. Verify: `LanAddressesTest` cases
   for Wi-Fi, Ethernet, hotspot (`OTHER`), VPN and IPv6 link-local accepted, and mobile data and `192.0.0.4`
@@ -57,7 +57,7 @@
   Verify: `./gradlew :android:check` is green. On the API 37 emulator, `dumpsys connectivity` shows whether an
   interface is cellular. A debug build there logs no refusal for `adb forward` and the Wi-Fi address, and refuses a
   cellular address if the emulator has one.
-- [ ] 4.3 `NanoHttpServer` and `FrameServer` take an `acceptsLocal` predicate. Connections on other addresses get a
+- [x] 4.3 `NanoHttpServer` and `FrameServer` take an `acceptsLocal` predicate. Connections on other addresses get a
   `Refused` handler, which `BoundedAsyncRunner.exec` closes without a slot or a thread, logged at most once a minute
   (design decision 1). `FrameCore` supplies loopback plus the snapshot of `localAddresses()` (design decision 2):
   byte keys in a `@Volatile` field, cleared in `onNetworkChanged()`, read again at once for an address in neither
@@ -75,14 +75,14 @@
 
 ## 5. Log of device management
 
-- [ ] 5.1 Lines per design decision 5 for pairing, pairing by invitation, rename, revocation and invitation, outside
+- [x] 5.1 Lines per design decision 5 for pairing, pairing by invitation, rename, revocation and invitation, outside
   the pairing lock; the revocation reads the name before removing the client. "Revoke all pairings" keeps its line. Verify: a `TestFrame` test renames, revokes, creates an invitation and pairs with it. Then
   `GET /api/v1/logs` has one line per event with the IDs, and contains neither a token, nor the pairing secret, nor
   the invitation URL. `RenameTest` and `InviteTest` stay green.
 
 ## 6. Docs
 
-- [ ] 6.1 README security model and `SECURITY.md`: the frame answers only on loopback, LAN and VPN addresses, and the
+- [x] 6.1 README security model and `SECURITY.md`: the frame answers only on loopback, LAN and VPN addresses, and the
   log records changes to the paired devices. Verify: both name VPN as reachable and mobile data as not.
 
 ## 7. Checks

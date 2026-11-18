@@ -118,7 +118,11 @@ class PairingTest {
         val res = pair(requestCode(), "Tablet\\rX")
         assertEquals("Tablet X", ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body()).client.name)
         assertEquals(listOf("Tablet X"), clients.clients.value.map { it.name })
-        assertEquals(listOf("Paired: Tablet X"), log.recent(100).filter { it.message.startsWith("Paired") }.map { it.message })
+        val id =
+            clients.clients.value
+                .single()
+                .id
+        assertEquals(listOf("Paired $id: Tablet X"), log.recent(100).filter { it.message.startsWith("Paired") }.map { it.message })
     }
 
     @Test

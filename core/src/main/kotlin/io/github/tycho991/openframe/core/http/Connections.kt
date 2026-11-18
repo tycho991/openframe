@@ -165,12 +165,19 @@ internal class BoundedAsyncRunner(
         val input: ConnectionInput
     }
 
+    /** A connection to close at once, without a slot or a thread (finish-lan-hardening, design decision 1). */
+    interface Refused
+
     private val running = LinkedHashMap<NanoHTTPD.ClientHandler, Tracked?>()
     private var count = 0L
 
     val size: Int @Synchronized get() = running.size
 
     override fun exec(handler: NanoHTTPD.ClientHandler) {
+        if (handler is Refused) {
+            handler.close()
+            return
+        }
         val tracked = handler as? Tracked
         val (victim, admitted, name) =
             synchronized(this) {

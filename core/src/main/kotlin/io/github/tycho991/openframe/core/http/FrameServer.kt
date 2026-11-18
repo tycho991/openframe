@@ -32,6 +32,8 @@ class FrameServer(
     private val log: AppLog,
     private val handler: suspend (HttpRequest) -> HttpResponse,
     private val limits: ServerLimits = ServerLimits(),
+    /** Whether a connection on this address of the device gets an answer (spec `admin-access`). */
+    private val acceptsLocal: (java.net.InetAddress) -> Boolean = { true },
 ) {
     private var server: NanoHttpServer? = null
     private val _state = MutableStateFlow<ServerState>(ServerState.Stopped)
@@ -52,7 +54,7 @@ class FrameServer(
         server = null
         this.localOnly = localOnly
         val host = if (localOnly) LOOPBACK else ALL
-        val s = NanoHttpServer(host, port, dispatcher, handler, limits, log)
+        val s = NanoHttpServer(host, port, dispatcher, handler, limits, log, acceptsLocal)
         try {
             s.startServer()
         } catch (e: Exception) {

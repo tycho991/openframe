@@ -36,8 +36,13 @@ class NanoHttpServer internal constructor(
     private val limits: ServerLimits,
     startThread: ((Runnable, String) -> Unit)?,
     private val log: AppLog?,
+    private val acceptsLocal: (InetAddress) -> Boolean,
     private val handler: suspend (HttpRequest) -> HttpResponse,
 ) : NanoHTTPD(host, port) {
+    /**
+     * @param acceptsLocal whether a connection that arrived on this address of the device gets an answer (spec
+     *   `admin-access`, "Connections only on local addresses"); others are closed before a thread starts.
+     */
     constructor(
         host: String,
         port: Int,
@@ -45,7 +50,11 @@ class NanoHttpServer internal constructor(
         handler: suspend (HttpRequest) -> HttpResponse,
         limits: ServerLimits = ServerLimits(),
         log: AppLog? = null,
-    ) : this(host, port, dispatcher, limits, null, log, handler)
+        acceptsLocal: (InetAddress) -> Boolean = { true },
+    ) : this(host, port, dispatcher, limits, null, log, acceptsLocal, handler)
+
+    @Volatile
+    private var lastRefusalLog = Long.MIN_VALUE
 
     /** Files opened for an answer and not closed yet, for tests. */
     internal val openFiles = AtomicInteger()
@@ -156,9 +165,29 @@ class NanoHttpServer internal constructor(
         finalAccept: Socket,
         inputStream: InputStream,
     ): ClientHandler {
+        val local = finalAccept.localAddress
+        if (local != null && !runCatching { acceptsLocal(local) }.getOrDefault(false)) {
+            logRefusal(local)
+            return Refused(finalAccept, inputStream)
+        }
         runCatching { finalAccept.tcpNoDelay = true }
         return Connection(finalAccept, ConnectionInput(finalAccept, inputStream, limits))
     }
+
+    /** At most one line a minute: a client trying again and again must not fill the log. */
+    private fun logRefusal(local: InetAddress) {
+        val now = System.nanoTime() / 1_000_000
+        if (lastRefusalLog != Long.MIN_VALUE && now - lastRefusalLog < REFUSAL_LOG_MS) return
+        lastRefusalLog = now
+        log?.w(TAG, "Connection on ${local.hostAddress} refused: not a local address")
+    }
+
+    /** A connection on an address the frame does not answer on; the runner closes it without a slot or a thread. */
+    private inner class Refused(
+        socket: Socket,
+        input: InputStream,
+    ) : ClientHandler(input, socket),
+        BoundedAsyncRunner.Refused
 
     /** A connection with its address and input, for the runner's limits; [serve] finds the input on its thread. */
     private inner class Connection(
@@ -350,6 +379,7 @@ class NanoHttpServer internal constructor(
 
     companion object {
         private const val TAG = "server"
+        private const val REFUSAL_LOG_MS = 60_000L
 
         /** JSON bodies up to this size are read before the handler gets a slot. */
         const val EARLY_JSON_BYTES = 64L * 1024

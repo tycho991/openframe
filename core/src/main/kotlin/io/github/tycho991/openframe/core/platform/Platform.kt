@@ -55,6 +55,13 @@ interface PlatformInfo {
      */
     fun ipAddresses(): List<String>
 
+    /**
+     * The addresses the server answers on and those it refuses, IPv4 and IPv6 (see [localAddresses]). The default
+     * accepts the addresses of [ipAddresses], for platforms that know no more.
+     */
+    fun localAddresses(): LocalAddresses =
+        LocalAddresses(ipAddresses().mapNotNull { runCatching { java.net.InetAddress.getByName(it) }.getOrNull() }, emptyList())
+
     /** Free storage on the volume that contains [dir]. */
     fun freeBytes(dir: File): Long = dir.usableSpace
 
