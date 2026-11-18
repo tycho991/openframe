@@ -125,21 +125,21 @@
 
 ## 9. Integration
 
-- [ ] 9.1 Run the full checks. Verify: `./gradlew check` with `:android`, `npm run lint`, `npm run typecheck`, `npm test`
+- [x] 9.1 Run the full checks. Verify: `./gradlew check` with `:android`, `npm run lint`, `npm run typecheck`, `npm test`
   and `npm run e2e` (with its own `OPENFRAME_E2E_PORT`) are green.
-- [ ] 9.2 Emulators API 21 and API 37 with the debug build:
+- [x] 9.2 Emulators API 21 and API 37 with the debug build:
   - pair by code with the display on;
   - after the display is switched off, `POST /pairing/code` creates no code;
   - the web UI works through `adb forward` (Host `localhost:<port>`);
   - photos load with their signed URLs.
 
   Verify: noted in the pull request, screenshots without private photos.
-- [ ] 9.3 Check read-only which host the owner's Home Assistant entries use for both frames, from the config entries in
+- [x] 9.3 Check read-only which host the owner's Home Assistant entries use for both frames, from the config entries in
   its database. Verify: an IP address or an allowed name. If neither, tell the owner before the release.
 
 ## 10. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 10.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
+- [x] 10.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
   - a flood of 200 slow connections from a computer on the LAN while the web UI is used from a phone, on the Lenovo
     and the Frameo: the slideshow stays smooth, no restart, and the entries under `/proc/<pid>/fd` stay bounded, read
     only (`admin-access` › Limits for connections and request times › Flood from one device);
