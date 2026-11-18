@@ -58,12 +58,12 @@
 
 ## 4. Host check
 
-- [ ] 4.1 `isLocalHost(host)` in `core/.../http/` per design decision 4, without DNS and without Java 9+ APIs. Verify:
+- [x] 4.1 `isLocalHost(host)` in `core/.../http/` per design decision 4, without DNS and without Java 9+ APIs. Verify:
   - Unit tests for every scenario of `admin-access` › Host check against DNS rebinding, including trailing dots,
     upper case, ports 0 and 65536 (rejected), `[::1]` and `frame.fritz.box`.
   - Test addresses follow the neutral convention (`192.168.100.x`).
   - `./gradlew :core:check` (Animal Sniffer) is green.
-- [ ] 4.2 The check at the start of `HttpPipeline.dispatch`, 421 `misdirected_host` with the security headers, 421 in
+- [x] 4.2 The check at the start of `HttpPipeline.dispatch`, 421 `misdirected_host` with the security headers, 421 in
   the status reasons, and `adminUrlFromHost` using the same check. Verify:
   - `SecurityTest` with `Host` and `Origin` set to `rebind.example:8080`: `GET /api/v1/info`, `POST /api/v1/pairing`,
     `POST /api/v1/pairing/code` and `GET /` give 421.

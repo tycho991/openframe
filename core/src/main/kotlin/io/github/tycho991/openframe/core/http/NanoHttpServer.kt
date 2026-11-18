@@ -188,6 +188,7 @@ class NanoHttpServer(
             mapOf(
                 405 to "Method Not Allowed",
                 413 to "Payload Too Large",
+                421 to "Misdirected Request",
                 429 to "Too Many Requests",
                 507 to "Insufficient Storage",
             )

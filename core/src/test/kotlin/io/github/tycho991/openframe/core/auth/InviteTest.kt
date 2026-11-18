@@ -75,13 +75,35 @@ class InviteTest {
     }
 
     @Test
-    fun `Invalid Host falls back to the frame's address`() {
+    fun `Invalid Host`() {
         val phone = h.pairedAuth("Phone")
-        assertTrue(invite(phone, "bad_host!:8080").url.startsWith("$ADMIN_URL#pair="))
-        for (host in listOf(null, "", "a b", "host:99999", "host:", "evil.com/x", "[fe80::1", "user@host", "-host")) {
+        val res = h.http.request("POST", "/api/v1/pairing/invites", headers = phone + ("Host" to "bad_host!:8080"))
+        assertEquals(421, res.statusCode())
+        assertEquals("misdirected_host", h.errorCode(res))
+        for (host in listOf(
+            null,
+            "",
+            "a b",
+            "host:99999",
+            "host:",
+            "evil.com/x",
+            "[fe80::1",
+            "user@host",
+            "-host",
+            "rebind.example:8080",
+        )) {
             assertNull(adminUrlFromHost(host), "$host")
         }
         assertEquals("http://Frame-1.local:80/", adminUrlFromHost("Frame-1.local:80"))
+        assertEquals("http://frame.fritz.box:8080/", adminUrlFromHost("frame.fritz.box:8080"))
+    }
+
+    @Test
+    fun `Without Host the link uses the frame's address`() {
+        val token = h.pairedAuth("Phone").getValue("Authorization")
+        val res = h.http.raw("POST /api/v1/pairing/invites HTTP/1.0\r\nAuthorization: $token\r\nContent-Length: 0\r\n\r\n")
+        assertEquals(201, res.status, res.body)
+        assertTrue(ApiJson.decodeFromString(InviteDto.serializer(), res.body).url.startsWith("$ADMIN_URL#pair="))
     }
 
     @Test

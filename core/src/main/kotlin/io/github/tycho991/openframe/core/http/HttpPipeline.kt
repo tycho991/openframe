@@ -18,8 +18,8 @@ interface Authenticator {
 }
 
 /**
- * Processes every request in the same order: find route,
- * check origin, check access, run handler, map errors and
+ * Processes every request in the same order: check the host,
+ * find route, check origin, check access, run handler, map errors and
  * set security headers. Paths outside `/api/` go to [fallback],
  * the serving of the web UI.
  */
@@ -47,6 +47,10 @@ class HttpPipeline(
     }
 
     private suspend fun dispatch(request: HttpRequest): HttpResponse {
+        // Against DNS rebinding, before anything else, for the API and the web UI alike.
+        if (!isLocalHost(request.header("host"))) {
+            throw HttpException(421, "misdirected_host", "Unknown host. Open the frame by the IP address it shows.")
+        }
         if (request.method.isMutating) checkOrigin(request)
         if (!request.path.startsWith(API_PREFIX)) return fallback(request)
         return when (val match = router.match(request.method, request.path)) {
