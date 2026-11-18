@@ -327,7 +327,17 @@ fun Router.libraryRoutes(
     fun albumList(clientId: String): HttpResponse {
         val albums =
             index.library.value.albums.values
-                .map { AlbumDto(it.name, it.count, it.hidden, it.overridesParent, it.newest?.let { cover -> photos.urls(cover, clientId) }) }
+                .map {
+                    AlbumDto(
+                        it.name,
+                        it.count,
+                        it.hidden,
+                        it.overridesParent,
+                        it.newest?.let { cover ->
+                            photos.urls(cover, clientId)
+                        },
+                    )
+                }
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
     }
 

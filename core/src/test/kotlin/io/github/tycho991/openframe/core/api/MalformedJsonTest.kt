@@ -32,7 +32,12 @@ class MalformedJsonTest {
     private fun message(res: Res) = error(res)["message"]!!.jsonPrimitive.content
 
     private fun noErrorInLog() =
-        assertFalse(frame.core.log.recent(500).any { it.level == LogLevel.ERROR }, "${frame.core.log.recent(500)}")
+        assertFalse(
+            frame.core.log
+                .recent(500)
+                .any { it.level == LogLevel.ERROR },
+            "${frame.core.log.recent(500)}",
+        )
 
     @Test
     fun `Deep nesting`() {
@@ -76,9 +81,10 @@ class MalformedJsonTest {
 
     @Test
     fun `An unknown field names no class`() {
-        val id = frame.core.clients.clients.value
-            .first()
-            .id
+        val id =
+            frame.core.clients.clients.value
+                .first()
+                .id
         val res = frame.send("PATCH", "/api/v1/clients/$id", """{"name":"Phone","secretfield":1}""")
         assertEquals(400, res.statusCode())
         val text = message(res)

@@ -22,7 +22,9 @@ class SignedImageTest {
 
     private fun thumbFor(auth: Map<String, String>): String {
         val page = ApiJson.decodeFromString(PhotoPageDto.serializer(), frame.http.get("/api/v1/photos", auth).body())
-        return page.items.single().urls.thumb
+        return page.items
+            .single()
+            .urls.thumb
     }
 
     @Test

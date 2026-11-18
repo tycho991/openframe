@@ -159,7 +159,12 @@ class RawRes(
             val text = bytes.toString(Charsets.UTF_8)
             val head = text.substringBefore("\r\n\r\n")
             val lines = head.split("\r\n")
-            val status = lines.first().split(' ').getOrNull(1)?.toIntOrNull() ?: error("No status line in: $text")
+            val status =
+                lines
+                    .first()
+                    .split(' ')
+                    .getOrNull(1)
+                    ?.toIntOrNull() ?: error("No status line in: $text")
             val headers = lines.drop(1).associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
             return RawRes(status, headers, text.substringAfter("\r\n\r\n", ""))
         }

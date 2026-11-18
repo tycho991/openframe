@@ -215,7 +215,8 @@ class ServerLimitsTest {
         PairingHarness(dir, limits = limits).use { h ->
             val socket = connect(h.http.port(), "127.0.0.1")
             socket.getOutputStream().write(
-                "POST /api/v1/pairing HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"code\"".toByteArray(),
+                "POST /api/v1/pairing HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"code\""
+                    .toByteArray(),
             )
             var answer: RawRes? = null
             val elapsed = seconds { answer = readResponse(socket.getInputStream()) }

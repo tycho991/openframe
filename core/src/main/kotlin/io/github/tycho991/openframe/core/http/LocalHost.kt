@@ -27,7 +27,14 @@ internal fun parseHost(host: String): ParsedHost? {
         if (end < 0) return null
         name = lower.substring(1, end)
         val rest = lower.substring(end + 1)
-        port = if (rest.isEmpty()) null else if (rest.startsWith(":")) rest.substring(1) else return null
+        port =
+            if (rest.isEmpty()) {
+                null
+            } else if (rest.startsWith(":")) {
+                rest.substring(1)
+            } else {
+                return null
+            }
         if (!IPV6.matches(name) || ':' !in name) return null
     } else {
         val colon = lower.lastIndexOf(':')

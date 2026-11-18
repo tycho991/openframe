@@ -96,7 +96,11 @@ class HttpRequest(
                 throw HttpException(408, "request_timeout", "The request body did not arrive in time")
             }
         if (bytes.size > maxBytes) throw HttpException(413, "too_large", "Body larger than $maxBytes bytes")
-        if (nesting(bytes) > MAX_JSON_DEPTH) throw HttpException(400, "invalid_json", "Not valid JSON: nested deeper than $MAX_JSON_DEPTH levels")
+        if (nesting(bytes) >
+            MAX_JSON_DEPTH
+        ) {
+            throw HttpException(400, "invalid_json", "Not valid JSON: nested deeper than $MAX_JSON_DEPTH levels")
+        }
         return try {
             ApiJson.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8))
         } catch (e: kotlinx.serialization.SerializationException) {
@@ -125,12 +129,27 @@ class HttpRequest(
             for (b in json) {
                 val c = b.toInt().toChar()
                 when {
-                    escaped -> escaped = false
-                    inString && c == '\\' -> escaped = true
-                    c == '"' -> inString = !inString
+                    escaped -> {
+                        escaped = false
+                    }
+
+                    inString && c == '\\' -> {
+                        escaped = true
+                    }
+
+                    c == '"' -> {
+                        inString = !inString
+                    }
+
                     inString -> {}
-                    c == '[' || c == '{' -> if (++depth > max) max = depth
-                    c == ']' || c == '}' -> depth--
+
+                    c == '[' || c == '{' -> {
+                        if (++depth > max) max = depth
+                    }
+
+                    c == ']' || c == '}' -> {
+                        depth--
+                    }
                 }
             }
             return max

@@ -20,13 +20,25 @@ class ContractConsistencyTest {
 
     @Test
     fun `A contract without one of them fails`() {
-        val withoutHost = file.readText().replaceFirst("""        "421": { ${'$'}ref: "#/components/responses/MisdirectedHost" }""" + "\n", "")
+        val withoutHost =
+            file.readText().replaceFirst(
+                """        "421": { ${'$'}ref: "#/components/responses/MisdirectedHost" }""" + "\n",
+                "",
+            )
         assertEquals(listOf("GET /info: 421"), missingResponses(YAMLMapper().readTree(withoutHost)))
 
-        val withoutError = file.readText().replaceFirst("""        "500": { ${'$'}ref: "#/components/responses/InternalError" }""" + "\n", "")
+        val withoutError =
+            file.readText().replaceFirst(
+                """        "500": { ${'$'}ref: "#/components/responses/InternalError" }""" + "\n",
+                "",
+            )
         assertEquals(listOf("GET /info: 500"), missingResponses(YAMLMapper().readTree(withoutError)))
 
-        val withoutTimeout = file.readText().replaceFirst("""        "408": { ${'$'}ref: "#/components/responses/RequestTimeout" }""" + "\n", "")
+        val withoutTimeout =
+            file.readText().replaceFirst(
+                """        "408": { ${'$'}ref: "#/components/responses/RequestTimeout" }""" + "\n",
+                "",
+            )
         assertEquals(listOf("POST /pairing: 408"), missingResponses(YAMLMapper().readTree(withoutTimeout)))
     }
 
