@@ -52,7 +52,7 @@ class FrameServer(
         server = null
         this.localOnly = localOnly
         val host = if (localOnly) LOOPBACK else ALL
-        val s = NanoHttpServer(host, port, dispatcher, handler, limits)
+        val s = NanoHttpServer(host, port, dispatcher, handler, limits, log)
         try {
             s.startServer()
         } catch (e: Exception) {

@@ -31,9 +31,9 @@
 
 ## 3. Responses
 
-- [ ] 3.1 Range answers close their file (design decision 6). Verify: a test in `HttpPipelineTest` sends 100 range
+- [x] 3.1 Range answers close their file (design decision 6). Verify: a test in `HttpPipelineTest` sends 100 range
   requests for an image (206, contract check on), and a test hook reports 100 closed files.
-- [ ] 3.2 Errors while opening a response (design decision 7). Verify:
+- [x] 3.2 Errors while opening a response (design decision 7). Verify:
   - a file deleted between the cache lookup and the open gives JSON 404 with `X-Content-Type-Options` and no path in
     the body, with and without a `Range` header;
   - an `IOException` other than `FileNotFoundException` while opening gives JSON 500;
@@ -41,7 +41,7 @@
   - a stream that throws `IllegalStateException` on open gives JSON 500 with the security headers and an `ERROR`
     line in the log;
   - `TRACE` and `PROPFIND` get 405 with the security headers and `Allow`.
-- [ ] 3.3 HEAD (design decision 8), with the keep-alive raw reader of 1.1. Verify, on one connection: HEAD on `/`
+- [x] 3.3 HEAD (design decision 8), with the keep-alive raw reader of 1.1. Verify, on one connection: HEAD on `/`
   with and without `Accept-Encoding: gzip`, then GET `/` without gzip. Each HEAD has exactly one `Content-Length`
   line, its value equals the decoded byte count of the GET, and it sends 0 body bytes, so the GET that follows is
   complete. HEAD on `/api/v1/info` stays 405.

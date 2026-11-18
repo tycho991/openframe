@@ -1,16 +1,20 @@
 package io.github.tycho991.openframe.core.http
 
 import fi.iki.elonen.NanoHTTPD
+import io.github.tycho991.openframe.core.log.AppLog
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.InetAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicInteger
 import io.github.tycho991.openframe.core.http.Method as ApiMethod
 
 /**
@@ -21,6 +25,9 @@ import io.github.tycho991.openframe.core.http.Method as ApiMethod
  * in time (design decisions 1 to 3 of harden-lan-server). A JSON body up to
  * 64 KiB is read on the connection's thread before the handler gets a slot, so
  * slow bodies hold no handler.
+ *
+ * Every answer leaves with the security headers, also when opening its file or stream fails (JSON 404 or 500, never
+ * NanoHTTPD's plain text with a path), and HEAD gets the headers of GET without a body.
  */
 class NanoHttpServer internal constructor(
     host: String,
@@ -28,6 +35,7 @@ class NanoHttpServer internal constructor(
     private val dispatcher: CoroutineDispatcher,
     private val limits: ServerLimits,
     startThread: ((Runnable, String) -> Unit)?,
+    private val log: AppLog?,
     private val handler: suspend (HttpRequest) -> HttpResponse,
 ) : NanoHTTPD(host, port) {
     constructor(
@@ -36,7 +44,11 @@ class NanoHttpServer internal constructor(
         dispatcher: CoroutineDispatcher,
         handler: suspend (HttpRequest) -> HttpResponse,
         limits: ServerLimits = ServerLimits(),
-    ) : this(host, port, dispatcher, limits, null, handler)
+        log: AppLog? = null,
+    ) : this(host, port, dispatcher, limits, null, log, handler)
+
+    /** Files opened for an answer and not closed yet, for tests. */
+    internal val openFiles = AtomicInteger()
 
     private val runner =
         if (startThread != null) {
@@ -81,7 +93,12 @@ class NanoHttpServer internal constructor(
         val method =
             runCatching { ApiMethod.valueOf(session.method.name) }.getOrNull()
                 ?: return finish(
-                    toNano(HttpResponse.error(HttpException(405, "method_not_allowed", "Method not supported")), null),
+                    toNano(
+                        HttpResponse
+                            .error(HttpException(405, "method_not_allowed", "Method not supported"))
+                            .withHeaders(HttpPipeline.SECURITY_HEADERS + ("Allow" to ApiMethod.entries.joinToString(", "))),
+                        null,
+                    ),
                     connection,
                     close = true,
                 )
@@ -98,7 +115,7 @@ class NanoHttpServer internal constructor(
             runBlocking {
                 withContext(dispatcher) { handler(request) }
             }
-        val nano = toNano(response, request)
+        val nano = guardedToNano(response, request)
         // A body that did not arrive in time leaves the connection in an unknown state.
         var close = response.status == 408
         // Unread bodies would disturb the next request on the same connection. Discard instead of
@@ -161,12 +178,83 @@ class NanoHttpServer internal constructor(
         }
     }
 
+    /** Never for HEAD: NanoHTTPD would send a gzip header and trailer as the body of an answer that has none. */
     override fun useGzipWhenAccepted(r: Response): Boolean {
+        if (r.requestMethod == NanoHTTPD.Method.HEAD) return false
         val type = r.mimeType?.lowercase() ?: return false
         return type.startsWith("text/") || "json" in type || "javascript" in type || "svg" in type
     }
 
+    /**
+     * [toNano] with a JSON answer when opening the file or stream fails: 404 if it is gone (a file removed after the
+     * cache lookup, a missing asset), 500 for anything else. The message never names the file.
+     */
+    private fun guardedToNano(
+        response: HttpResponse,
+        request: HttpRequest,
+    ): Response =
+        try {
+            toNano(response, request)
+        } catch (e: FileNotFoundException) {
+            toNano(HttpResponse.error(HttpException.notFound()).withHeaders(HttpPipeline.SECURITY_HEADERS), request)
+        } catch (e: Throwable) {
+            log?.e(TAG, "Error while opening the answer to ${request.method} ${request.path}", e)
+            toNano(
+                HttpResponse.error(HttpException(500, "internal_error", "Internal error")).withHeaders(HttpPipeline.SECURITY_HEADERS),
+                request,
+            )
+        }
+
     private fun toNano(
+        response: HttpResponse,
+        request: HttpRequest?,
+    ): Response {
+        val nano =
+            if (request?.method == ApiMethod.HEAD) headResponse(response) else bodyResponse(response, request)
+        response.headers.forEach { (k, v) -> nano.addHeader(k, v) }
+        return nano
+    }
+
+    /**
+     * The headers of GET without a body. NanoHTTPD 2.3.1 sends a HEAD answer's body anyway and always writes its own
+     * `Content-Length`, so the answer gets an empty stream of the GET's length: one header, no bytes.
+     */
+    private fun headResponse(response: HttpResponse): Response {
+        val length: Long =
+            when (response) {
+                is HttpResponse.Json -> {
+                    response.body
+                        .toByteArray(Charsets.UTF_8)
+                        .size
+                        .toLong()
+                }
+
+                is HttpResponse.Empty -> {
+                    0
+                }
+
+                is HttpResponse.StreamBody -> {
+                    response.length ?: response.open().use { count(it) }
+                }
+
+                is HttpResponse.FileBody -> {
+                    FileInputStream(response.file).use { it.channel.size() }
+                }
+            }
+        val type = (response as? HttpResponse.Json)?.let { JSON_TYPE } ?: response.contentType()
+        val nano = newFixedLengthResponse(status(response.status), type, ByteArrayInputStream(ByteArray(0)), length)
+        if (response is HttpResponse.FileBody) nano.addHeader("Accept-Ranges", "bytes")
+        return nano
+    }
+
+    private fun HttpResponse.contentType(): String? =
+        when (this) {
+            is HttpResponse.StreamBody -> contentType
+            is HttpResponse.FileBody -> contentType
+            else -> null
+        }
+
+    private fun bodyResponse(
         response: HttpResponse,
         request: HttpRequest?,
     ): Response {
@@ -192,44 +280,77 @@ class NanoHttpServer internal constructor(
                     fileResponse(response, request?.header("range"))
                 }
             }
-        response.headers.forEach { (k, v) -> nano.addHeader(k, v) }
         return nano
     }
 
+    /**
+     * The file is opened first and its length taken from the open file, so a file removed after the cache lookup
+     * gives [FileNotFoundException] (404) instead of a length of 0 (416 for a range).
+     */
     private fun fileResponse(
         response: HttpResponse.FileBody,
         rangeHeader: String?,
     ): Response {
-        val total = response.file.length()
-        val range = if (response.status == 200) rangeHeader?.let { parseRange(it, total) } else null
+        val raf = RandomAccessFile(response.file, "r")
+        openFiles.incrementAndGet()
         val nano =
-            when {
-                range == null -> {
-                    newFixedLengthResponse(status(response.status), response.contentType, response.file.inputStream(), total)
-                }
+            try {
+                val total = raf.length()
+                val range = if (response.status == 200) rangeHeader?.let { parseRange(it, total) } else null
+                when {
+                    range == null -> {
+                        newFixedLengthResponse(status(response.status), response.contentType, FileBodyStream(raf, total), total)
+                    }
 
-                range.isEmpty() -> {
-                    newFixedLengthResponse(status(416), null, null, 0).also { it.addHeader("Content-Range", "bytes */$total") }
-                }
+                    range.isEmpty() -> {
+                        closeFile(raf)
+                        newFixedLengthResponse(status(416), null, null, 0).also { it.addHeader("Content-Range", "bytes */$total") }
+                    }
 
-                else -> {
-                    val raf = RandomAccessFile(response.file, "r").also { it.seek(range.first) }
-                    val stream =
-                        BoundedInputStream(
-                            java.nio.channels.Channels
-                                .newInputStream(raf.channel),
-                            range.last - range.first + 1,
-                        )
-                    newFixedLengthResponse(status(206), response.contentType, stream, range.last - range.first + 1).also {
-                        it.addHeader("Content-Range", "bytes ${range.first}-${range.last}/$total")
+                    else -> {
+                        raf.seek(range.first)
+                        val length = range.last - range.first + 1
+                        newFixedLengthResponse(status(206), response.contentType, FileBodyStream(raf, length), length).also {
+                            it.addHeader("Content-Range", "bytes ${range.first}-${range.last}/$total")
+                        }
                     }
                 }
+            } catch (e: Throwable) {
+                closeFile(raf)
+                throw e
             }
         nano.addHeader("Accept-Ranges", "bytes")
         return nano
     }
 
+    private fun closeFile(raf: RandomAccessFile) {
+        runCatching { raf.close() }
+        openFiles.decrementAndGet()
+    }
+
+    /** At most [limit] bytes of [raf] from its position; closing closes the file (NanoHTTPD closes it after sending). */
+    private inner class FileBodyStream(
+        private val raf: RandomAccessFile,
+        limit: Long,
+    ) : FilterInputStream(
+            BoundedInputStream(
+                java.nio.channels.Channels
+                    .newInputStream(raf.channel),
+                limit,
+            ),
+        ) {
+        private var closed = false
+
+        override fun close() {
+            if (closed) return
+            closed = true
+            closeFile(raf)
+        }
+    }
+
     companion object {
+        private const val TAG = "server"
+
         /** JSON bodies up to this size are read before the handler gets a slot. */
         const val EARLY_JSON_BYTES = 64L * 1024
         private const val MAX_DRAIN_BYTES = 8L * 1024 * 1024
@@ -239,6 +360,16 @@ class NanoHttpServer internal constructor(
         private val current = ThreadLocal<ConnectionInput?>()
 
         private fun isJson(contentType: String?) = contentType?.substringBefore(';')?.trim()?.lowercase() == "application/json"
+
+        private fun count(input: InputStream): Long {
+            val buf = ByteArray(8192)
+            var total = 0L
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) return total
+                total += n
+            }
+        }
 
         /** Up to [length] bytes, fewer if the stream ends first. */
         private fun readUpTo(

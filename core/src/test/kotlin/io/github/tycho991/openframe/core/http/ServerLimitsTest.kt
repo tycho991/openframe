@@ -129,7 +129,7 @@ class ServerLimitsTest {
             NanoHttpServer("127.0.0.1", 0, Dispatchers.IO, limits, { runnable, name ->
                 if (starts.incrementAndGet() == 1) throw OutOfMemoryError("unable to create native thread")
                 Thread(runnable, name).apply { isDaemon = true }.start()
-            }, HttpPipeline(router, NO_AUTH, log)::handle).also { it.startServer() }
+            }, null, HttpPipeline(router, NO_AUTH, log)::handle).also { it.startServer() }
         closeables += AutoCloseable { server.stop() }
         val first = connect(server.port, "127.0.0.1")
         first.getOutputStream().write(REQUEST.toByteArray())

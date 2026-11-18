@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.http
 
 import io.github.tycho991.openframe.core.platform.AssetSource
+import java.io.FileNotFoundException
 
 /**
  * Serves the web UI from [assets]. Paths without a file extension, for example
@@ -29,7 +30,7 @@ class StaticAssets(
             } else {
                 mapOf("Cache-Control" to "no-cache")
             }
-        return HttpResponse.StreamBody(200, mimeType(target), { assets.open(target)!! }, null, headers)
+        return HttpResponse.StreamBody(200, mimeType(target), { assets.open(target) ?: throw FileNotFoundException(target) }, null, headers)
     }
 
     companion object {
