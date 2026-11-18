@@ -357,7 +357,7 @@ While the display is off, the frame SHALL refuse `next` and `previous` with 409 
 
 #### Scenario: Next photo at night
 - **WHEN** the display is off by the schedule and a client sends `next`
-- **THEN** the frame answers with 409 and `display_off`, the photo stays while the display is off, and when the display comes on the slideshow moves on by one photo, as it does without the command
+- **THEN** the frame answers with 409 and `display_off`, and when the display comes on the same photo is shown, as it is without the command
 
 #### Scenario: Pause at night
 - **WHEN** the display is off, a client sends `pause` and the display comes on

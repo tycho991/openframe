@@ -14,7 +14,7 @@
 ## 3. Devices (each persistent device change only with the owner's consent at that moment)
 
 - [x] 3.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references: display off and on by hand (the Home Assistant card or `PUT /display`) on the Lenovo and the Frameo (`display-schedule` › Slideshow rests while the display is off › Off and on by hand), and the morning after a night off by the schedule on both frames (› Morning). Verify: the rows exist with their references
-- [ ] 3.2 Run the rows of 3.1 after the release. Verify: results entered, and a finding in `../openframe-private/FINDINGS.md` for anything that differs
+- [x] 3.2 Run the rows of 3.1 after the release. Verify: results entered, and a finding in `../openframe-private/FINDINGS.md` for anything that differs
 
 ## Workflow follow-up
 
