@@ -104,7 +104,7 @@
     cover them.
 
   Verify: the rows exist with their references.
-- [ ] 8.2 Run the rows of 8.1 after the release. Verify: results entered, and a finding in
+- [x] 8.2 Run the rows of 8.1 after the release. Verify: results entered, and a finding in
   `../openframe-private/FINDINGS.md` for anything that differs.
 
 ## Workflow follow-up
