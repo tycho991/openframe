@@ -84,14 +84,64 @@ class SourceRegistry(
         return added
     }
 
-    /** New credentials for the same account: the photos and settings stay, a sync follows soon. */
+    /**
+     * New credentials for the same account: the photos and settings stay, a sync follows soon. The credentials they
+     * replace are revoked on the server in the background once a running sync of the source has ended (spec
+     * `nextcloud-source`, "No orphaned app passwords"), unless the server already refused them.
+     */
     fun reconnect(
         id: String,
         connection: Connection,
     ) {
+        val old = configs.get(id) ?: return
+        val refused = refusedCredentials(id)
         configs.reconnect(id, connection) ?: return
-        running[id]?.scheduler?.configChanged()
+        val scheduler = running[id]?.scheduler
+        scheduler?.configChanged()
         log.i(TAG, "Source $id has new credentials")
+        if (old.connection == connection) return
+        // A refusal of the old credentials says nothing about these: they are revoked when they are replaced in turn.
+        if (scheduler != null) {
+            scheduler.credentialsReplaced()
+        } else {
+            results.get(id).takeIf { it.lastSyncAtMs != null }?.let { results.put(id, it.copy(credentialsReplaced = true)) }
+        }
+        if (refused) return
+        val kind = kindOf(old) ?: return
+        scope.launch {
+            scheduler?.awaitNoSync()
+            revoke(id, kind, old)
+        }
+    }
+
+    /** Runs [block], a request to revoke credentials on a server, in the background, so that a silent server holds up nothing. */
+    fun revokeLater(
+        what: String,
+        block: () -> Unit,
+    ) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                log.w(TAG, "$what could not be revoked on the server: ${e.message}")
+            }
+        }
+    }
+
+    /** The last sync of [id] failed because the server refused its credentials for the folder: sending them again is useless. */
+    fun refusedCredentials(id: String): Boolean =
+        status(id).last.let { it.rejected && it.errorCode == SourceException.Kind.UNAUTHORIZED.code && !it.credentialsReplaced }
+
+    private fun revoke(
+        id: String,
+        kind: SourceKind,
+        config: StoredSource,
+    ) {
+        try {
+            kind.revoke(config)
+        } catch (e: Exception) {
+            log.w(TAG, "The credentials of $id could not be revoked on the server: ${e.message}")
+        }
     }
 
     /** Validates and applies a partial change of [id], then lets that source sync again soon. */
@@ -121,6 +171,8 @@ class SourceRegistry(
      */
     @Synchronized
     fun remove(id: String): Boolean {
+        // Asked first: the result goes with the source.
+        val refused = refusedCredentials(id)
         // The configuration goes first: a sync that is still running sees it gone and applies nothing.
         val config = configs.remove(id) ?: return false
         val gone = running.remove(id)
@@ -137,15 +189,8 @@ class SourceRegistry(
         (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes)).delete()
         onSourceRemoved(config)
         log.i(TAG, "Source $id removed, ${removed.size} photos removed")
-        kindOf(config)?.let { kind ->
-            scope.launch {
-                try {
-                    kind.revoke(config)
-                } catch (e: Exception) {
-                    log.w(TAG, "The credentials of $id could not be revoked on the server: ${e.message}")
-                }
-            }
-        }
+        // Credentials the server refused are not sent again: each attempt counts as a failed login there.
+        if (!refused) kindOf(config)?.let { kind -> scope.launch { revoke(id, kind, config) } }
         return true
     }
 
@@ -154,10 +199,24 @@ class SourceRegistry(
         running.values.forEach { it.scheduler.networkChanged() }
     }
 
-    /** The original of [entry] for a rendering, fetched again if it was removed from the cache. */
-    fun original(entry: PhotoEntry): File =
-        source(entry.source)?.original(entry)
-            ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source of ${entry.path} is not there")
+    /**
+     * The original of [entry] for a rendering, fetched again if it was removed from the cache, and pinned with [pin]. A
+     * source whose access was rejected sends no request with the refused credentials (spec "Rejected access" › Removed
+     * original wanted): only an original that is still stored is given.
+     */
+    fun original(
+        entry: PhotoEntry,
+        pin: Boolean = false,
+    ): File {
+        val running =
+            running[entry.source] ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source of ${entry.path} is not there")
+        if (running.scheduler.rejected && !running.source.originals.has(entry)) {
+            val last = running.scheduler.status.value.last
+            val kind = SourceException.Kind.entries.firstOrNull { it.code == last.errorCode } ?: SourceException.Kind.UNAUTHORIZED
+            throw SourceException(kind, "The server refused access to the source ${entry.source}; ${entry.path} is not fetched")
+        }
+        return running.source.original(entry, pin)
+    }
 
     private fun removeOrphans() {
         val known = configs.sources.value.mapTo(HashSet()) { it.id } + LocalPhotoSource.SOURCE_ID
@@ -196,6 +255,8 @@ class SourceRegistry(
                 OriginalsStore(File(originalsDir, id), freeBytes),
                 onPhotoRemoved,
                 log,
+                onStale = { running[id]?.scheduler?.staleOriginal() },
+                clock = clock,
             )
         val scheduler = SourceScheduler(scope, source, { configs.get(id) }, results, syncLock, clock, log, onSynced)
         val started = Running(source, scheduler)

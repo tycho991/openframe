@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -25,7 +26,11 @@
         android:label="@string/app_name"
         android:largeHeap="true"
         android:supportsRtl="true"
-        android:theme="@style/Theme.OpenFrame">
+        android:theme="@style/Theme.OpenFrame"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="23">
+        <!-- Plain http to a Nextcloud address that the user entered on purpose, also from Android 9 on (spec
+             `nextcloud-source`, "Plain http on every Android version"). The updater refuses http in its own code. -->
 
         <!-- HOME launcher: the Home button leads to the slideshow. -->
         <activity

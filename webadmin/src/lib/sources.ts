@@ -1,5 +1,6 @@
-import type { SourceSettings, SourceStatus } from "./api/client";
+import type { SourceErrorCode, SourceSettings, SourceStatus } from "./api/client";
 import type de from "./i18n/de.json";
+import { sourceErrorKeys } from "./i18n/errorCodes";
 
 type Key = keyof typeof de;
 
@@ -41,11 +42,47 @@ export function formatTime(iso: string | null, lang: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(lang);
 }
 
+/**
+ * An error of a sync or a login in the interface language: the text of its code ([reason]), or, for a result without a
+ * code, the frame's text itself ([text]); an unknown code shows as it is. [detail] is the frame's English text when the
+ * code has a text of its own.
+ */
+export interface SourceError {
+  reason?: Key;
+  text: string;
+  detail: string | null;
+}
+
+/** The error with [code] and the frame's English [text]. */
+export function sourceError(code: string | null | undefined, text: string | null | undefined): SourceError {
+  const english = text ?? "";
+  if (!code) return { text: english, detail: null };
+  const reason = (sourceErrorKeys as Record<string, Key | undefined>)[code];
+  if (!reason) return { text: english ? `${code}: ${english}` : code, detail: null };
+  return { reason, text: "", detail: english || null };
+}
+
+/** Whether [address] may be opened as the login page: only `http` and `https` (design decision 16). */
+export function isWebAddress(address: string): boolean {
+  try {
+    const url = new URL(address);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** What the status line of a source says: a text key, its values, and whether it is an error. */
 export interface StatusLine {
   key: Key;
   params: Record<string, string | number>;
   failed: boolean;
+  /** For a failure with a known code: the key of its text, which goes into the parameter `reason`. */
+  reason?: Key;
+  /** For a failure with a known code: the frame's English text. */
+  detail?: string | null;
+  /** Rejected access: the frame tries again at most once a day until the user acts. */
+  daily?: boolean;
 }
 
 /** The status line of a source in the interface language [lang]. */
@@ -61,7 +98,23 @@ export function statusLine(status: SourceStatus, lang: string): StatusLine {
       failed: false,
     };
   }
-  return { key: "sources.lastFailed", params: { time, error: status.error ?? "" }, failed: true };
+  const error = sourceError(status.errorCode as SourceErrorCode | string | null, status.error);
+  if (error.reason) {
+    return {
+      key: "sources.lastFailedReason",
+      params: { time },
+      failed: true,
+      reason: error.reason,
+      detail: error.detail,
+      daily: status.rejected,
+    };
+  }
+  return {
+    key: "sources.lastFailed",
+    params: { time, error: error.text },
+    failed: true,
+    daily: status.rejected,
+  };
 }
 
 /** The ranges the API accepts, for the message at a field. */

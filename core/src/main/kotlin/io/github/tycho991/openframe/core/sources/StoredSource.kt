@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.net.URISyntaxException
 import java.security.SecureRandom
@@ -315,7 +316,9 @@ class SourceConfigStore(
                     !uri.host.isNullOrEmpty() &&
                     uri.userInfo == null &&
                     uri.rawQuery == null &&
-                    uri.rawFragment == null
+                    uri.rawFragment == null &&
+                    // OkHttp is what sends the requests: an address it refuses, such as a port over 65535, is none.
+                    text.toHttpUrlOrNull() != null
             if (!ok) throw ValidationException(mapOf("serverUrl" to "An address starting with http:// or https://"))
             return scheme + text.substring(scheme!!.length).trimEnd('/')
         }

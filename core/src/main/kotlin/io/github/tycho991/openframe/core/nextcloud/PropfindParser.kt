@@ -1,9 +1,10 @@
 package io.github.tycho991.openframe.core.nextcloud
 
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.sources.SourceLimits
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
-import org.xml.sax.helpers.DefaultHandler
+import org.xml.sax.ext.DefaultHandler2
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -26,38 +27,71 @@ data class DavEntry(
 
 /**
  * Reads the answer of a `PROPFIND` with a SAX parser, which streams and keeps only the five properties of each
- * entry. `javax.xml.parsers` is on the JVM and on Android alike.
+ * entry. `javax.xml.parsers` is on the JVM and on Android alike. It refuses a document type, collects text only
+ * inside `<response>` and up to [SourceLimits.ELEMENT_CHARS] per element, and at most [maxEntries] entries (spec
+ * `nextcloud-source`, "Bounded answers of a server"). The byte and time limits are the caller's stream's.
  */
 object PropfindParser {
-    fun parse(input: InputStream): List<DavEntry> {
-        val handler = Handler()
+    /** What the frame says about a listing that declares a document type. */
+    const val DOCTYPE_REFUSED = "The listing declares a document type (DOCTYPE), which the frame refuses"
+
+    fun parse(
+        input: InputStream,
+        maxEntries: Int = SourceLimits.ENTRIES_PER_ANSWER,
+        /**
+         * Lets Xerces refuse a document type itself, before the [Handler] sees it. Only a test switches it off, to show
+         * that the handler refuses it as well, as it must on Android, whose parser does not know the feature.
+         */
+        refuseDoctypeByFeature: Boolean = true,
+    ): List<DavEntry> {
+        val handler = Handler(maxEntries)
         try {
-            newParser().parse(InputSource(input), handler)
+            val reader = newParser(refuseDoctypeByFeature).xmlReader
+            reader.contentHandler = handler
+            reader.errorHandler = handler
+            // Called before the internal subset of a DOCTYPE is read, so no entity in it is ever expanded.
+            reader.setProperty("http://xml.org/sax/properties/lexical-handler", handler)
+            reader.parse(InputSource(input))
+        } catch (e: Refused) {
+            throw e.failure
         } catch (e: org.xml.sax.SAXException) {
+            (e.exception as? Refused)?.let { throw it.failure }
+            if (LimitedResponseStream.failureIn(e) != null) throw java.io.IOException(e.message, e)
+            if (e.message.orEmpty().contains(DOCTYPE_FEATURE)) throw SourceException(SourceException.Kind.PROTOCOL, DOCTYPE_REFUSED, e)
             throw SourceException(SourceException.Kind.PROTOCOL, "The listing of the folder could not be read", e)
         }
         return handler.entries
     }
 
-    private fun newParser(): javax.xml.parsers.SAXParser {
+    private const val DOCTYPE_FEATURE = "http://apache.org/xml/features/disallow-doctype-decl"
+
+    private fun newParser(refuseDoctypeByFeature: Boolean): javax.xml.parsers.SAXParser {
         val factory = SAXParserFactory.newInstance()
         factory.isNamespaceAware = true
         // No external entities or document types: the answer comes from a server that is not ours to trust blindly.
-        for ((feature, value) in listOf(
-            "http://xml.org/sax/features/external-general-entities" to false,
-            "http://xml.org/sax/features/external-parameter-entities" to false,
-            "http://apache.org/xml/features/disallow-doctype-decl" to true,
-        )) {
+        val features =
+            listOf(
+                "http://xml.org/sax/features/external-general-entities" to false,
+                "http://xml.org/sax/features/external-parameter-entities" to false,
+            ) + if (refuseDoctypeByFeature) listOf(DOCTYPE_FEATURE to true) else emptyList()
+        for ((feature, value) in features) {
             try {
                 factory.setFeature(feature, value)
             } catch (e: Exception) {
-                // The parser of the platform does not know this feature; it does not load external entities either.
+                // The parser of the platform does not know this feature; the handler refuses a document type itself.
             }
         }
         return factory.newSAXParser()
     }
 
-    private class Handler : DefaultHandler() {
+    /** A refusal of the handler, passed through the parser as a [org.xml.sax.SAXException]. */
+    private class Refused(
+        val failure: SourceException,
+    ) : org.xml.sax.SAXException(failure.message)
+
+    private class Handler(
+        private val maxEntries: Int,
+    ) : DefaultHandler2() {
         val entries = ArrayList<DavEntry>()
         private val text = StringBuilder()
         private var inResponse = false
@@ -74,6 +108,17 @@ object PropfindParser {
             qName: String?,
             attributes: Attributes?,
         ) {
+            // Names, namespaces and attribute values are bounded like the text of an element.
+            limited(uri)
+            limited(localName)
+            limited(qName)
+            if (attributes != null) {
+                for (i in 0 until attributes.length) {
+                    limited(attributes.getQName(i))
+                    limited(attributes.getURI(i))
+                    limited(attributes.getValue(i))
+                }
+            }
             text.setLength(0)
             when (localName) {
                 "response" -> {
@@ -92,11 +137,40 @@ object PropfindParser {
             }
         }
 
+        override fun startPrefixMapping(
+            prefix: String?,
+            uri: String?,
+        ) {
+            limited(prefix)
+            limited(uri)
+        }
+
+        private fun limited(value: String?) {
+            if (value != null && value.length > SourceLimits.ELEMENT_CHARS) throw elementTooLong()
+        }
+
+        private fun elementTooLong() =
+            Refused(
+                SourceException(
+                    SourceException.Kind.LIMIT,
+                    "An element of the listing is longer than ${SourceLimits.ELEMENT_CHARS / 1024} KiB",
+                ),
+            )
+
+        override fun startDTD(
+            name: String?,
+            publicId: String?,
+            systemId: String?,
+        ): Unit = throw Refused(SourceException(SourceException.Kind.PROTOCOL, DOCTYPE_REFUSED))
+
         override fun characters(
             ch: CharArray,
             start: Int,
             length: Int,
         ) {
+            // Text outside an entry is never used, so it is not kept either.
+            if (!inResponse) return
+            if (text.length + length > SourceLimits.ELEMENT_CHARS) throw elementTooLong()
             text.append(ch, start, length)
         }
 
@@ -130,6 +204,12 @@ object PropfindParser {
 
                 "response" -> {
                     inResponse = false
+                    // The folder's own entry comes on top of the entries in it.
+                    if (entries.size > maxEntries) {
+                        throw Refused(
+                            SourceException(SourceException.Kind.LIMIT, "The listing has more than $maxEntries entries in one folder"),
+                        )
+                    }
                     entries += DavEntry(decodedPath(href), folder, etag, size, modified, displayName)
                 }
             }

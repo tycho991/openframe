@@ -9,11 +9,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
+import kotlin.concurrent.thread
 
 /** Spec `nextcloud-source`: Trusted connections on old devices. */
 class TrustAnchorsTest {
@@ -76,6 +79,36 @@ class TrustAnchorsTest {
         val url = start("server.p12")
         val failure = assertThrows(SourceException::class.java) { get(url, TrustAnchors.delivered()) }
         assertEquals(SourceException.Kind.TLS, failure.kind)
+    }
+
+    /**
+     * Design decision 11 of `nextcloud-hardening`: only a certificate problem is an untrusted certificate. The server
+     * answers the client's hello with plain text and keeps the connection open, so the client fails in its own TLS
+     * layer, whatever the timing.
+     */
+    @Test
+    fun `A handshake that fails for another reason than the certificate is a failed handshake`() {
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { listener ->
+            val answer =
+                thread(isDaemon = true) {
+                    runCatching {
+                        listener.accept().use { socket ->
+                            socket.getInputStream().read(ByteArray(512))
+                            socket.getOutputStream().apply {
+                                write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                                flush()
+                            }
+                            Thread.sleep(2_000)
+                        }
+                    }
+                }
+            val failure =
+                assertThrows(SourceException::class.java) {
+                    get("https://127.0.0.1:${listener.localPort}/", listOf(testRoot("root.pem")))
+                }
+            assertEquals(SourceException.Kind.TLS_HANDSHAKE, failure.kind, failure.message)
+            answer.interrupt()
+        }
     }
 
     @Test

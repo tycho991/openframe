@@ -6,6 +6,7 @@ import io.github.tycho991.openframe.core.testing.TestClock
 import io.github.tycho991.openframe.core.testing.TestHttp
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CopyOnWriteArrayList
@@ -61,6 +62,21 @@ class StaticAssetsTest {
             )
             assertEquals("no-cache", res.headers().firstValue("cache-control").get())
         }
+    }
+
+    /** Tests-quality-8 of `nextcloud-hardening`: scripts only from the frame itself, never inline. */
+    @Test
+    fun `The policy allows scripts only from the frame and none inline`() {
+        val csp =
+            http
+                .get("/")
+                .headers()
+                .firstValue("content-security-policy")
+                .get()
+        val scripts = csp.split(';').map { it.trim() }.single { it.startsWith("script-src ") }
+        assertEquals("script-src 'self'", scripts)
+        assertFalse(csp.substringAfter("script-src").substringBefore(';').contains("unsafe"))
+        assertTrue(csp.contains("default-src 'self'") && csp.contains("object-src 'none'") && csp.contains("frame-ancestors 'none'"))
     }
 
     @Test

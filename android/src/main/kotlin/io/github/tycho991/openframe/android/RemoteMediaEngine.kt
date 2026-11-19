@@ -10,6 +10,7 @@ import android.os.Process
 import android.os.RemoteException
 import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
+import io.github.tycho991.openframe.core.platform.ImageFormat
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -60,6 +61,7 @@ internal class RemoteMediaEngine(
     private val watchdogMs: Long = WATCHDOG_MS,
     private val timers: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { Thread(it, "decoder-timers").apply { isDaemon = true } },
+    private val sdkInt: Int = android.os.Build.VERSION.SDK_INT,
 ) : MediaEngine {
     private class Connection(
         val binder: IBinder,
@@ -88,6 +90,12 @@ internal class RemoteMediaEngine(
 
     /** Ordinary calls share it; a repeated call after a death holds it alone. */
     private val isolation = ReentrantReadWriteLock(true)
+
+    /**
+     * Answered here from the SDK level, without a call to the decoder process: it can never throw
+     * [DecoderUnavailableException] (design decision 14 of `nextcloud-hardening`).
+     */
+    override fun canDecode(format: ImageFormat): Boolean = AndroidMediaEngine.canDecode(format, sdkInt)
 
     override fun probe(file: File): ImageInfo = call { DecoderProtocol.probe(it, file) }
 

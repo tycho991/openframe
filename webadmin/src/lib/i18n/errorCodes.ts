@@ -1,4 +1,4 @@
-import type { InstallRefusal, SkippedFile, UpdateError } from "../api/client";
+import type { InstallRefusal, SkippedFile, SourceErrorCode, UpdateError } from "../api/client";
 import type de from "./de.json";
 
 type Key = keyof typeof de;
@@ -27,6 +27,30 @@ export const updateErrorKeys: Record<UpdateError["code"], Key> = {
   install_cancelled: "update.error.install_cancelled",
   install_unanswered: "update.error.install_unanswered",
   install_failed: "update.error.install_failed",
+};
+
+/**
+ * The text of every error code of a sync or a login of a source; a code the contract gains without a text fails the
+ * type check. The frame's English text stays as a detail.
+ */
+export const sourceErrorKeys: Record<SourceErrorCode, Key> = {
+  unreachable: "sources.error.unreachable",
+  tls: "sources.error.tls",
+  tls_handshake: "sources.error.tls_handshake",
+  unauthorized: "sources.error.unauthorized",
+  not_found: "sources.error.not_found",
+  gone: "sources.error.gone",
+  not_readable: "sources.error.not_readable",
+  server: "sources.error.server",
+  throttled: "sources.error.throttled",
+  protocol: "sources.error.protocol",
+  limit: "sources.error.limit",
+  changed: "sources.error.changed",
+  insecure_login: "error.nextcloud_insecure_login",
+  login_failed: "sources.error.login_failed",
+  storage: "sources.error.storage",
+  unexpected: "sources.error.unexpected",
+  too_many_sources: "error.too_many_sources",
 };
 
 /** The text of every refusal of an installation request, as for [updateErrorKeys]. */
@@ -71,6 +95,7 @@ export const errorKeys: Record<string, Key> = {
   read_only_source: "error.read_only_source",
   invalid_album: "error.invalid_album",
   nextcloud_unreachable: "error.nextcloud_unreachable",
+  nextcloud_insecure_login: "error.nextcloud_insecure_login",
   source_no_folder: "error.source_no_folder",
   too_many_sources: "error.too_many_sources",
   source_exists: "error.source_exists",

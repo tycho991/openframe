@@ -12,6 +12,21 @@ data class StoredSyncResult(
     val added: Int = 0,
     val updated: Int = 0,
     val removed: Int = 0,
+    /**
+     * The code of the failure, a value of the contract's `SourceErrorCode`, or `null` for a success and for a result of a
+     * version before it. A string, not an enum: a code that this version does not know must not make the file unreadable.
+     */
+    val errorCode: String? = null,
+    /**
+     * The server refused access to the folder (spec `remote-sources`, "Rejected access"): the source tries again at most
+     * once a day, and no original is fetched for a rendering until a sync succeeds.
+     */
+    val rejected: Boolean = false,
+    /**
+     * The source got other credentials since this result: a refusal in it was of the old ones, so the current ones may
+     * be revoked when they are replaced or the source is removed.
+     */
+    val credentialsReplaced: Boolean = false,
 )
 
 /** The content of `sources-status.json`: the last result of each source by its ID. */

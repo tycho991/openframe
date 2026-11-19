@@ -3,7 +3,7 @@
   import { ApiError, type Source, type SourceKind, type SourceSettings } from "../lib/api/client";
   import { errorText } from "../lib/i18n/errors";
   import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
-  import { settingsPatch, sourceRanges, statusLine } from "../lib/sources";
+  import { isPlainHttp, settingsPatch, sourceRanges, statusLine } from "../lib/sources";
   import { api } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
@@ -35,6 +35,9 @@
   // Open at first for an account that waits for its folder; after that the user decides.
   let settingsOpen = $state(untrack(() => needsFolder));
   const status = $derived(statusLine(source.status, i18n.lang));
+  const statusText = $derived(
+    t(status.key, status.reason ? { ...status.params, reason: t(status.reason) } : status.params),
+  );
   const prefix = $derived("src-" + source.id);
 
   /** The settings as the frame has them, as a plain object that the form can change. */
@@ -116,12 +119,18 @@
       : t("sources.shareOn", { server: source.serverUrl })}
   </p>
 
+  {#if isPlainHttp(source.serverUrl)}<p class="hint warn" role="note">{t("sources.httpWarning")}</p>{/if}
   {#if needsFolder}<p class="hint warn" role="status">{t("sources.noFolder")}</p>{/if}
   {#if status.failed}
-    <p class="error" role="alert">{t(status.key, status.params)}</p>
+    <p class="error" role="alert">
+      {statusText}
+      {#if status.daily}<span class="detail">{t("sources.rejectedRetry")}</span>{/if}
+      {#if status.detail}<span class="detail">{t("sources.errorDetail", { detail: status.detail })}</span
+        >{/if}
+    </p>
   {:else}
     <p role="status" class:muted={source.status.ok === null && !source.status.syncing}>
-      {t(status.key, status.params)}
+      {statusText}
     </p>
   {/if}
   {#if syncMessage}<p role="status">{syncMessage}</p>{/if}
@@ -251,5 +260,10 @@
   }
   .warn {
     color: var(--warning);
+  }
+  .detail {
+    display: block;
+    font-size: 0.85em;
+    opacity: 0.85;
   }
 </style>

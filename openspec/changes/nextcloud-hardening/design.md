@@ -90,7 +90,7 @@ All limits live in one object (`SourceLimits`), named in the tests:
 |---|---|---|
 | Listing body after gzip decompression | 64 MiB | each PROPFIND answer |
 | Text per element | 16 KiB | `href`, `getetag`, … (a long percent-encoded path fits) |
-| Entries per answer | 50,000 | each PROPFIND answer |
+| Entries per answer | 50,000 | each PROPFIND answer, the folder's own entry on top |
 | Depth of subfolders | 32 | each sync |
 | Folders per sync | 5,000 | each sync |
 | Files per sync | 100,000 | each sync |
@@ -98,12 +98,25 @@ All limits live in one object (`SourceLimits`), named in the tests:
 | Download with a listed size | size + 1 MiB | each download |
 | Download without a listed size | `Content-Length` + 1 MiB, else 512 MiB | each download |
 | Minimum throughput | 16 KiB per 60 s | every body |
-| Total time | 5 min per listing answer, 60 s per login answer, 30 min per download | every body |
+| Total time | 5 min per listing answer, 60 s per login answer, 30 min per download | every call, from the request to the last byte of the body |
+| Time of one sync | 2 h | listing and downloads of one sync together |
+| Length of one path | 1,024 characters | each file or folder, relative to the folder of the source |
+| Paths of one sync | 8 million characters | the paths and entity tags of all entries of one sync |
 
 - **Sizing:** the values for entries and files are proposals sized for the Frameo's heap. The device row with 50,000
   entries can lower them, and the spec names only "fixed limits", so a new value needs no spec change.
 - **What the total time protects:** it bounds how long a trickling server holds the `syncLock` or the render download
   thread. At the minimum throughput alone, a 512 MiB file would take weeks.
+- **Before the body:** `LimitedResponseStream` starts at the first read of the body, so a server could trickle its
+  status line and headers within the read timeout. `NextcloudHttp.execute` therefore sets OkHttp's call timeout to the
+  same total time, over all redirects, so that the time to the headers counts as well.
+- **Per sync:** the times per answer add up (5,000 folders at 5 minutes each are 17 days). A sync as a whole ends
+  after 2 hours with `LIMIT`: `RemoteSource` folds the deadline into the cancel check of the listing and the
+  downloads and checks it between downloads. What arrived stays, nothing is removed, the lock is free for the other
+  sources, and the next sync goes on (requirement "Time limit of a sync").
+- **Memory of a listing:** a path relative to the folder has at most 1,024 characters, and the paths and entity tags
+  of one sync together at most 8 million, so 100,000 entries cannot fill the heap of an Android 5 frame with long
+  names.
 
 ### 3. The parser refuses a DOCTYPE through a LexicalHandler
 
@@ -113,10 +126,13 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **Why it holds on Android:** Expat reports `startDTD` before it reads the internal subset, so nested entities are
   never expanded. Setting `disallow-doctype-decl` stays for Xerces, but a failure to set it is no longer the only
   defence.
-- **Text and entries:** text is collected only inside `<response>`, up to the cap per element. More entries than the
+- **Text and entries:** text is collected only inside `<response>`, up to the cap per element. Element names,
+  namespace URIs, prefixes and attribute values have the same cap. More entries than the
   cap end the parse with `LIMIT`.
 - **Test:** the JVM test uses a DOCTYPE without entities, so Xerces' own entity-expansion limit cannot make it pass,
-  and it asserts the handler's own error and the kind `PROTOCOL`.
+  and it asserts the handler's own error and the kind `PROTOCOL`. With `disallow-doctype-decl` set, Xerces refuses
+  the DOCTYPE before it calls `startDTD`, so this test parses through an internal switch that leaves the feature
+  off, as Android's parser does. A refusal by the feature is reported with the same text as the handler's.
 - **Fallback:** a streaming filter in front of the parser that refuses `<!DOCTYPE` and `<!ENTITY` before the root
   element, skipping comments and processing instructions. It is built only if the device row shows that Expat does
   not call `startDTD`.
@@ -126,7 +142,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **How:** `DavFolder.walk` becomes a loop over a queue with the depth, folder and file caps, and checks
   `cancelled()` between PROPFINDs.
 - **Reference point:** in each answer it is the folder's own entry. That is the one whose path equals the requested
-  path, otherwise the first one, which Nextcloud always lists first at `Depth: 1`.
+  path, otherwise the first one, which Nextcloud always lists first at `Depth: 1`, if it is a folder with the name of
+  the folder asked for (a proxy with a path of its own). Any other first entry fails the listing with `PROTOCOL`.
 - **Rejected entries:** every other entry must be a direct child of it, with a name that is not `.`, `..` or empty.
   Anything else fails the listing with `PROTOCOL`.
 - **Why fail and not drop:** `RemoteFolder.list` promises "complete or nothing", and "Vanished photos" would delete
@@ -135,8 +152,9 @@ All limits live in one object (`SourceLimits`), named in the tests:
 ### 5. Downloads: limits, changed files, too large files, cancel
 
 - **Interface:**
-  - `RemoteFolder.download(file, target, limits)` takes `DownloadLimits(maxBytes, cancelled, acceptHeader)` and
-    returns the response's `ETag` header.
+  - `RemoteFolder.download(file, target, limits)` takes `DownloadLimits(roomBytes, cancelled, acceptHeader,
+    unknownSizeBytes)` and returns the response's `ETag` header. `roomBytes` is the free space minus the reserve, and
+    `unknownSizeBytes` the fixed cap, smaller in a test.
   - `RemoteFolder.list(recursive, cancelled)` takes the cancel check.
 - **Cancel signal:** `RemoteSource` passes `cancelled = { config() == null }`. A removed source ends its listing or
   download at the next read, at the latest after the read timeout; `Job.cancel` does not interrupt a blocking read.
@@ -172,7 +190,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
   - It then queues the jobs again with their `Deferred`, together with the downloaded file.
   - The `inFlight` entry stays during the handoff, so another request for the same size joins it.
 - **Pinning:** the downloaded original stays pinned in `OriginalsStore` until the queued jobs of that photo have
-  rendered. `trim` skips pinned files, so a small budget cannot evict it in between and cause a download loop.
+  rendered. `trim` skips pinned files, so a small budget cannot evict it in between and cause a download loop. A
+  third function `release(entry)` (`SourceOriginals.release`) ends the pin.
 - **Failures:**
   - A failed download completes all waiting `Deferred`s of that photo with a `SourceException`, never a
     `CancellationException`.
@@ -203,6 +222,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **Log in again with `http`:** if the address typed for a login matches, by `serverKey` without regard to scheme, a
   source that is on `https`, `startLogin` switches to that source's `https` address before the first request. The
   whole flow then runs over `https`, poll answer and app password included.
+- **Redirects:** during the login a redirect target follows the same rule; one to another port of an `https` server
+  stops the login with `INSECURE_LOGIN`.
 - **Port change:** `pollLogin` finds the existing source by the reported address and, failing that, by the address
   the login started with. So an `http` account on one port that moves to `https` on another port of the same host
   updates its source instead of adding a second one, and the old password is revoked (decision 9).
@@ -228,7 +249,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
     `Retry-After` (seconds or an HTTP date) and clamped to 15 min–24 h. A network change does not move that deadline
     either. Without the header, the normal retry applies.
   - Other failures: the existing retry, which a network change still shortens.
-- **Across restarts:** the rejected state comes from the stored `StoredSyncResult` (its `errorCode` and time). It
+- **Across restarts:** the rejected state comes from the stored `StoredSyncResult` (its `errorCode`, a flag
+  `rejected` and the time; the flag tells a refused listing from a refused file and from old credentials). It
   therefore holds after a restart and in safe mode, where no scheduler runs. On start, a rejected source waits for the
   rest of its 24 hours, clamped to 0–24 h because the wall clock may jump after a boot, instead of `FIRST_SYNC_MS`.
 - **Renderings:** `SourceRegistry.original` refuses at once in the rejected state, without a request that carries the
@@ -246,7 +268,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
   itself, because a silent server would hold the request for up to 75 s. The same background revoke replaces the
   synchronous one on a full frame.
 - **Refused passwords:** neither `reconnect` nor `remove` revokes a password while the source is in the rejected state
-  for `UNAUTHORIZED`. The server refuses it anyway, and the attempt counts as a failed login there.
+  for `UNAUTHORIZED`. `reconnect` marks the stored result with `credentialsReplaced`, so that the refusal is not taken
+  for the new password: that one is revoked when it is replaced in turn or the source is removed. The server refuses it anyway, and the attempt counts as a failed login there.
 - **Leftover of 0.1.0:** `NextcloudMigration.cleanUpLeftovers()` runs at start only when `sources.json` was read
   (`READ`) or has just been created by `migrate()`, and only when sources launch (not in safe mode). With an
   unreadable list the registry is empty, and the source `nextcloud` would look gone although its password is in use.
@@ -278,7 +301,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
     `SSLException`s become `TLS_HANDSHAKE`.
   - An `UnknownServiceException` gets a text about cleartext, a fallback should the manifest attribute ever be
     missing.
-- **Body reads:** I/O errors while reading a body (`propfind`, `json`) go through `translate`.
+- **Body reads:** I/O errors while reading a body (`propfind`, `json`) go through `translate`. A failure to write a
+  download on the frame, such as a full storage, is `STORAGE`.
 - **Address checks:** `normalizeServerUrl` and `ShareLink.parse` also check with `toHttpUrlOrNull`, so a port outside
   1–65535 gives 400 at the field.
 - **Contract:** a named schema `SourceErrorCode` is a string enum with:
@@ -297,6 +321,9 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **Tests:**
   - A JVM test checks that every kind has a contract value.
   - `SourcesApiTest` asserts `errorCode` `null` on success, a code on failure, and `null` for a result without one.
+- **Rejected access in the API:** `SourceStatus.rejected` (boolean, required) says that the frame waits a day. The
+  texts of `unauthorized`, `gone` and `not_readable` say nothing about the wait, because these codes are also stored
+  for a single refused file and for logins; the web UI adds the sentence about the daily try only for `rejected`.
 - **Web UI:**
   - `sourceErrorKeys: Record<SourceErrorCode, Key>` follows `updateErrorKeys`, and the English text stays as a detail.
   - `nextcloud_insecure_login` also goes into `errorKeys`, which `errorCodes.test.ts` checks for every
@@ -342,7 +369,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
 ### 15. Refetched originals: ETag fast path, then dimensions
 
 - **Fast path:** `RemoteSource.original` compares the normalised response `ETag` (no `W/`, no quotes, no `-gzip` or
-  `-br` suffix) with the entry. If they match, the original is taken.
+  `-br` suffix) with the entry. If they match, the original is taken. A missing `ETag`, in the answer or in the
+  entry, counts as different.
 - **Otherwise:** it probes the `.part` file. Same dimensions: the original is taken.
 - **Stale:** if the dimensions after rotation differ, or the download ended with `CHANGED`:
   - the part is deleted and the rendering fails;

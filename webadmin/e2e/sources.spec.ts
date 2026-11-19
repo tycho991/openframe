@@ -51,6 +51,8 @@ async function connect(page: Page) {
   await nextcloudApprove();
   const account = card(page, "127.0.0.1");
   await expect(account.getByText(`Anna auf ${FRAME_ORIGIN}`)).toBeVisible({ timeout: 15_000 });
+  // The card of a saved http source says that its connection is not encrypted.
+  await expect(account.getByText("Diese Adresse nutzt http")).toBeVisible();
   // No folder is chosen yet: nothing syncs, and the interface says so.
   await expect(account.getByText("Wähle den Ordner")).toBeVisible();
   await expect(account.getByRole("button", { name: "Jetzt abgleichen" })).toBeDisabled();
@@ -170,8 +172,9 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
   await page.getByRole("link", { name: "Fotos" }).click();
   await expect(page.locator(".tile")).toHaveCount(2);
 
-  // A server that is down: a readable error, and the photos stay.
-  await nextcloudFail(true);
+  // A server that is down: a readable error in the interface language, the frame's text as a detail, and the
+  // photos stay.
+  await nextcloudFail(true, { kind: "unreachable" });
   await openSources(page);
   await account.getByRole("button", { name: "Jetzt abgleichen" }).click();
   await expect(account.getByRole("alert").filter({ hasText: "der Abgleich ist fehlgeschlagen" })).toBeVisible(
@@ -179,6 +182,9 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
       timeout: 20_000,
     },
   );
+  await expect(
+    account.getByText("Der Server ist nicht erreichbar oder hat zu langsam geantwortet."),
+  ).toBeVisible();
   await expect(account.getByText("did not answer in time")).toBeVisible();
   await page.getByRole("link", { name: "Fotos" }).click();
   await expect(page.locator(".tile")).toHaveCount(2);
@@ -266,4 +272,24 @@ test("The address of the Nextcloud section of earlier versions leads to the sour
   await page.goto("/nextcloud");
   await expect(page.getByRole("heading", { name: "Quellen", level: 1 })).toBeVisible();
   await expect(page).toHaveURL(/\/sources$/);
+});
+
+test("A double click on Connect starts one login", async ({ page }) => {
+  await pairInUi(page);
+  await openSources(page);
+  await page.getByRole("tab", { name: "Nextcloud-Konto" }).click();
+  await page.getByLabel("Adresse des Servers").fill(FRAME_ORIGIN);
+  const starts: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/sources/login")
+      starts.push(request.url());
+  });
+  const popups: unknown[] = [];
+  page.context().on("page", (popup) => popups.push(popup));
+  await page.getByRole("button", { name: "Verbinden" }).dblclick();
+  await expect(page.getByText("Warte auf deine Zustimmung")).toBeVisible();
+  // Time for a second request, had the double click sent one.
+  await page.waitForTimeout(500);
+  expect(starts).toHaveLength(1);
+  expect(popups.length).toBeLessThanOrEqual(1);
 });

@@ -225,6 +225,58 @@ class RemoteSourceTest {
         assertEquals(setOf("a.jpg", "old.jpg", "b.jpg"), photos().keys, "b.jpg arrived, old.jpg is not removed after a failure")
     }
 
+    /** Review finding 2 of `nextcloud-hardening`: a sync as a whole has a time limit. */
+    @Test
+    fun `A sync that takes longer than two hours stops between downloads and keeps what arrived`() {
+        val clock = TestClock()
+        val timed = RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, originals, {}, log, clock = clock)
+        for (i in 1..3) remote.put("p$i.jpg", jpg(), "e$i")
+        remote.beforeDownload = { clock.advance(java.time.Duration.ofMinutes(61)) }
+        val failure = assertThrows(SourceException::class.java) { runBlocking { timed.scan() } }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("longer than 2 hours"), failure.message)
+        assertEquals(listOf("p1.jpg", "p2.jpg"), remote.downloads, "the third is not started")
+        assertEquals(setOf("p1.jpg", "p2.jpg"), photos().keys)
+    }
+
+    @Test
+    fun `A listing that runs past the time limit of the sync ends with that limit`() {
+        val clock = TestClock()
+        val slow =
+            object : RemoteFolder by remote {
+                override fun list(
+                    recursive: Boolean,
+                    cancelled: () -> Boolean,
+                ): List<RemoteFile> {
+                    // Thousands of slow folder answers: the listing asks between them whether to go on.
+                    repeat(100) {
+                        clock.advance(java.time.Duration.ofMinutes(5))
+                        if (cancelled()) throw SourceException(SourceException.Kind.UNREACHABLE, "The listing was ended")
+                    }
+                    return emptyList()
+                }
+            }
+        val timed =
+            RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { slow }, index, engine, originals, {}, log, clock = clock)
+        val failure = assertThrows(SourceException::class.java) { runBlocking { timed.scan() } }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("longer than 2 hours"), failure.message)
+        assertTrue(clock.monotonic <= 2 * 60 * 60_000L + 5 * 60_000L)
+    }
+
+    /** Spec "Rejected access" › One file refused: only a refused listing is about the folder. */
+    @Test
+    fun `A refused download is a failure of one file, a refused listing is not`() {
+        remote.put("a.jpg", jpg(), "e1")
+        remote.beforeDownload =
+            { throw SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 403)") }
+        val download = assertThrows(SourceException::class.java) { sync() }
+        assertEquals(SourceException.Kind.UNAUTHORIZED to true, download.kind to download.fileOnly)
+        remote.listFailure = SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 401)")
+        val listing = assertThrows(SourceException::class.java) { sync() }
+        assertEquals(SourceException.Kind.UNAUTHORIZED to false, listing.kind to listing.fileOnly)
+    }
+
     @Test
     fun `A source that is gone as a whole ends the sync at once and removes nothing`() {
         remote.put("a.jpg", jpg(), "e1")

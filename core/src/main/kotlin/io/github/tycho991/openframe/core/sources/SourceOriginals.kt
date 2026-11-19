@@ -6,24 +6,42 @@ import java.io.File
 
 /**
  * Where the original of a photo is: in the photo folder for a local photo, in the cache of downloaded originals of its
- * source for a remote photo (fetched again first if it was removed from the cache). The render cache asks this on its
- * worker thread.
+ * source for a remote photo. The render cache asks [onFrame] on its worker thread and [fileOf] on its download thread,
+ * so that a missing original never holds up the renderings of other photos.
  */
 class SourceOriginals(
     private val local: LocalPhotoSource,
     private val sources: SourceRegistry,
 ) {
-    fun fileOf(entry: PhotoEntry): File = if (entry.source == LocalPhotoSource.SOURCE_ID) local.fileOf(entry) else sources.original(entry)
+    /**
+     * The file of [entry], fetched again first if it was removed from the cache. A remote original stays pinned until
+     * [release], so that a small budget cannot remove it before the renderings that wait for it are done.
+     */
+    fun fileOf(entry: PhotoEntry): File =
+        if (entry.source == LocalPhotoSource.SOURCE_ID) local.fileOf(entry) else sources.original(entry, pin = true)
 
-    /** The file of [entry] if it is on the frame, without a download: `null` for a remote photo without its original. */
-    fun onFrame(entry: PhotoEntry): File? =
+    /** Ends the pin that [fileOf] set. */
+    fun release(entry: PhotoEntry) {
+        if (entry.source != LocalPhotoSource.SOURCE_ID) sources.source(entry.source)?.unpin(entry)
+    }
+
+    /**
+     * The file of [entry] if it is on the frame, without a download: `null` for a remote photo without its original. A
+     * remote original found for a rendering ([markUsed]) is marked as used, as a fetched one is, so that the most shown
+     * are not the first removed.
+     */
+    fun onFrame(
+        entry: PhotoEntry,
+        markUsed: Boolean = true,
+    ): File? =
         if (entry.source == LocalPhotoSource.SOURCE_ID) {
             local.fileOf(entry)
         } else {
             sources
                 .source(entry.source)
                 ?.originals
-                ?.fileOf(entry)
-                ?.takeIf { it.isFile }
+                ?.let { store ->
+                    store.fileOf(entry).takeIf { it.isFile }?.also { if (markUsed) store.touch(entry) }
+                }
         }
 }

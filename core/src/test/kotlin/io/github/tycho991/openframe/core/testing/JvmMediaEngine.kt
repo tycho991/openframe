@@ -50,6 +50,11 @@ class JvmMediaEngine(
 
     @Volatile var metadataFailure: (File) -> Throwable? = { null }
 
+    /** What [canDecode] says for HEIF: by default whether this engine decodes HEIC at all. */
+    @Volatile var canDecodeHeif: Boolean = supportsHeic
+
+    override fun canDecode(format: ImageFormat): Boolean = format != ImageFormat.HEIF || canDecodeHeif
+
     override fun probe(file: File): ImageInfo {
         probes.incrementAndGet()
         probeFailure(file)?.let { throw it }

@@ -74,6 +74,36 @@ class SourceRegistryTest {
 
     private fun jpg() = Fixtures.file("landscape.jpg").readBytes()
 
+    /** Spec `nextcloud-source`: No orphaned app passwords › Log in again (design decision 9 of nextcloud-hardening). */
+    @Test
+    fun `New credentials revoke the old ones only after a running sync of the source has ended`() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        remote("sa").put("a.jpg", jpg(), "e1")
+        remote("sa").beforeDownload = { gate.await() }
+        registry.add(FakeKind.source("sa"))
+        scope.runCurrent()
+        val deadline = System.currentTimeMillis() + 10_000
+        while (remote("sa").limits.isEmpty()) {
+            check(System.currentTimeMillis() < deadline) { "the download did not start" }
+            Thread.sleep(5)
+        }
+        registry.reconnect("sa", Connection.Share("https://cloud.example.org", "token-new"))
+        scope.runCurrent()
+        assertEquals(0, kind.revoked, "the running sync still uses the old credentials")
+        gate.countDown()
+        while (registry.status("sa").syncing) {
+            check(System.currentTimeMillis() < deadline) { "the sync did not end" }
+            scope.runCurrent()
+            Thread.sleep(5)
+        }
+        scope.runCurrent()
+        assertEquals(1, kind.revoked)
+        // The same credentials again replace nothing.
+        registry.reconnect("sa", Connection.Share("https://cloud.example.org", "token-new"))
+        scope.runCurrent()
+        assertEquals(1, kind.revoked)
+    }
+
     @Test
     fun `Two sources each have their photos, and the same album name is one album`() {
         registry.add(FakeKind.source("sa"))

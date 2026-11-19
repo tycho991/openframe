@@ -127,6 +127,16 @@ this way SHALL leave no partial file and SHALL NOT hold up the sync of other sou
 - **THEN** the listing or download ends, no partial file stays, the slideshow keeps running, and the next source can
   sync
 
+### Requirement: Time limit of a sync
+A sync of a source SHALL end after a fixed time, also while it lists the folder or downloads a file, with a readable
+error that names the limit. What it downloaded before SHALL stay, no photo SHALL be removed, the other sources SHALL
+sync afterwards, and the next sync of the source SHALL go on.
+
+#### Scenario: Slow server with many folders
+- **WHEN** a server answers every folder of a large tree so slowly that the sync would take longer than the limit
+- **THEN** the sync ends at the limit with an error that says so, the photos downloaded so far stay, and the next
+  source syncs
+
 ### Requirement: Rendering does not wait for downloads
 An original of a remote photo that is not stored SHALL be fetched outside the rendering of other photos. While it
 downloads, local photos and remote photos whose original is stored SHALL keep rendering.

@@ -701,7 +701,10 @@ paths:
       description: >-
         The frame asks the server for a login page; the client opens `loginUrl` in a new browser tab and polls
         `GET /sources/login/{flowId}`. There is at most one flow, a new one replaces the old. Refused with
-        `too_many_sources` when eight sources exist and none of them is an account that the login could renew.
+        `too_many_sources` when eight sources exist and none of them is an account that the login could renew. An
+        address with `http` for an account that is a source on `https` already starts the flow on `https`. Refused with
+        `nextcloud_insecure_login` (502) when the server answers with a poll address or login page that is not `https`
+        on the same host and port as an `https` address, or not `http(s)` on the server's host.
       requestBody:
         required: true
         content:
@@ -1011,7 +1014,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     BadGateway:
-      description: "The frame could not talk to the server of a source (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server)."
+      description: "The frame could not talk to the server of a source (`nextcloud_unreachable`: not reachable, certificate not trusted, not a Nextcloud server), or the login answer of the server points to an insecure address or another server (`nextcloud_insecure_login`: check `overwriteprotocol` and `trusted_proxies` on the server)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1051,6 +1054,22 @@ components:
       enum: [nextcloud-account, nextcloud-share]
       description: "`nextcloud-account`: an account connected with the login flow; `nextcloud-share`: the link of a folder share."
 
+    SourceErrorCode:
+      type: string
+      enum:
+        [unreachable, tls, tls_handshake, unauthorized, not_found, gone, not_readable, server, throttled, protocol,
+         limit, changed, insecure_login, login_failed, storage, unexpected, too_many_sources]
+      description: >-
+        Why a sync or a login failed. `unreachable`: no connection, or an answer too slow; `tls`: the certificate is
+        not trusted; `tls_handshake`: no secure connection for another reason; `unauthorized`: the credentials or the
+        password of a share were refused; `not_found`: the folder is not there; `gone`: the share was withdrawn;
+        `not_readable`: the share only accepts uploads; `server`: the server answered with an error; `throttled`: the
+        server asks to wait (HTTP 429); `protocol`: an answer that is not one of Nextcloud, or a listing with a DOCTYPE
+        or an entry outside the folder; `limit`: an answer beyond a fixed limit; `changed`: a file was replaced during
+        the sync; `insecure_login`: the login pointed to an insecure address; `login_failed`: the login was not
+        completed; `storage`: not enough free storage; `unexpected`: any other failure; `too_many_sources`: a login on
+        a full frame. A stored result never carries `changed` or `insecure_login`.
+
     SourceSettings:
       type: object
       additionalProperties: false
@@ -1083,7 +1102,7 @@ components:
     SourceStatus:
       type: object
       additionalProperties: false
-      required: [syncing, waiting, lastSyncAt, ok, error, added, updated, removed]
+      required: [syncing, waiting, lastSyncAt, ok, error, errorCode, rejected, added, updated, removed]
       properties:
         syncing: { type: boolean, description: "A sync of this source runs, or is asked for and about to start." }
         waiting:
@@ -1092,6 +1111,17 @@ components:
         lastSyncAt: { type: [string, "null"], format: date-time }
         ok: { type: [boolean, "null"], description: "Result of the last sync, `null` before the first." }
         error: { type: [string, "null"], description: "Readable error of the last sync. Never contains a credential or a share token." }
+        errorCode:
+          description: "The code of the error of the last sync; `null` after a success, for a result of an older version and for a code this version does not know."
+          anyOf:
+            - { $ref: "#/components/schemas/SourceErrorCode" }
+            - { type: "null" }
+        rejected:
+          type: boolean
+          description: >-
+            The last sync failed because the server refused access to the folder (refused credentials, a withdrawn or
+            upload-only share): the frame tries again at most once a day, a new login, a change or a sync on request at
+            once. `false` again once the source has other credentials.
         added: { type: integer }
         updated: { type: integer }
         removed: { type: integer }
@@ -1149,12 +1179,17 @@ components:
     SourceLoginState:
       type: object
       additionalProperties: false
-      required: [state, user, sourceId, error]
+      required: [state, user, sourceId, error, errorCode]
       properties:
         state: { type: string, enum: [pending, done, failed, expired] }
         user: { type: [string, "null"], description: "Set when `done`." }
         sourceId: { type: [string, "null"], description: "The source of the account, set when `done`." }
-        error: { type: [string, "null"], description: "Set when `failed`." }
+        error: { type: [string, "null"], description: "Set when `failed`, in English." }
+        errorCode:
+          description: "The code of the failure, set when `failed`."
+          anyOf:
+            - { $ref: "#/components/schemas/SourceErrorCode" }
+            - { type: "null" }
 
     SyncRequest:
       type: object

@@ -367,19 +367,19 @@ object TestServerMain {
                             ok("removed")
                         }
 
-                        // `/nextcloud/fail?on=1` lets listing the folder fail like a server that is down, `on=0` ends it.
+                        // `/nextcloud/fail?on=1` lets listing the folder fail like a server that is down, `on=0` ends it;
+                        // `kind=unauthorized` (a value of the contract's SourceErrorCode) fails it with that kind instead.
                         "/nextcloud/fail" -> {
-                            remoteOf(q).listFailure =
-                                if (q["on"] ==
-                                    "1"
-                                ) {
-                                    SourceException(
-                                        SourceException.Kind.UNREACHABLE,
-                                        "The server cloud.example.org did not answer in time",
-                                    )
+                            val kind =
+                                q["kind"]?.let { code -> SourceException.Kind.entries.single { it.code == code } }
+                                    ?: SourceException.Kind.UNREACHABLE
+                            val text =
+                                if (kind == SourceException.Kind.UNREACHABLE) {
+                                    "The server cloud.example.org did not answer in time"
                                 } else {
-                                    null
+                                    "Fake failure: ${kind.code}"
                                 }
+                            remoteOf(q).listFailure = if (q["on"] == "1") SourceException(kind, text) else null
                             ok("fail ${q["on"]}")
                         }
 

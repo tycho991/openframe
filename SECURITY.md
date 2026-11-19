@@ -31,5 +31,7 @@ Out of scope:
 The frame defends against two kinds of attacker besides the paired devices: websites that reach it through a
 browser on the LAN (DNS rebinding, requests from foreign origins), and hostile devices on the LAN (flooding the
 server, guessing the pairing code). It answers only on loopback and on its LAN and VPN addresses, never on a mobile
-data address, and it logs every change to the list of paired devices. What it protects and what it does not, including the residual risks, is
-described in the [security model](README.md#security-model) of the README.
+data address, and it logs every change to the list of paired devices. It also bounds what a source server sends,
+and accepts that a paired device can point a source at any address the frame reaches (a blind server-side request);
+plain `http` to a source is allowed and pointed out. What it protects and what it does not, including the residual
+risks, is described in the [security model](README.md#security-model) of the README.

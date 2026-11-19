@@ -86,17 +86,27 @@ class RenderTarget(
  * with low priority, requests from the display and the web UI before pre-rendering.
  * The cache stays within the budget by removing the files unused for the
  * longest time. It never touches originals.
+ *
+ * An original that is not on the frame, of a remote photo, is fetched on a download thread of its own (spec
+ * `remote-sources`, "Rendering does not wait for downloads"): the worker hands the job over and renders the next one.
+ * The download thread fetches each photo once, however many sizes wait for it, in the order of their priority, and
+ * queues the jobs again with the fetched file.
  */
 class RenderCache(
     private val dir: File,
     private val engine: MediaEngine,
-    private val originalOf: (PhotoEntry) -> File,
+    /** The original of a photo if it is on the frame, `null` if it has to be fetched first. */
+    private val onFrame: (PhotoEntry) -> File?,
     private val screen: () -> PixelSize,
     private val fillMode: () -> FillMode,
     private val budgetBytes: () -> Long,
     private val log: AppLog,
     /** A rendering of this entry's version crashed the decoder: it is to be quarantined (spec "Quarantined photos"). */
     private val onCrashed: (PhotoEntry) -> Unit = {},
+    /** Fetches the original that [onFrame] did not have, on the download thread; it stays until [release]. */
+    private val fetch: (PhotoEntry) -> File = { onFrame(it) ?: throw RenderFailedException("The original of ${it.path} is missing") },
+    /** The renderings that waited for a fetched original are done. */
+    private val release: (PhotoEntry) -> Unit = {},
 ) {
     private class Job(
         val priority: RenderPriority,
@@ -104,8 +114,36 @@ class RenderCache(
         val entry: PhotoEntry,
         val target: RenderTarget,
         val result: CompletableDeferred<File>,
+        /** The original fetched for this job by the download thread. */
+        val original: File? = null,
+        /** Called once when the job is done, for a fetched original. */
+        private val onFinished: (() -> Unit)? = null,
     ) {
         val key: String get() = target.name
+
+        private val finished =
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+
+        fun finish() {
+            if (finished.compareAndSet(false, true)) onFinished?.invoke()
+        }
+
+        fun withOriginal(
+            seq: Long,
+            file: File,
+            onFinished: () -> Unit,
+        ) = Job(priority, seq, entry, target, result, file, onFinished)
+    }
+
+    /** The original of [entry] to be fetched for the [jobs] that wait for it. */
+    private class Download(
+        val entry: PhotoEntry,
+        var priority: RenderPriority,
+        val seq: Long,
+    ) {
+        val jobs = ArrayList<Job>()
+        var started = false
     }
 
     /** A file waiting to be rendered, with the highest priority it was asked for. */
@@ -129,6 +167,18 @@ class RenderCache(
             priority = Thread.NORM_PRIORITY - 2
         }
 
+    private val downloads =
+        PriorityBlockingQueue<Download>(4, compareByDescending<Download> { it.priority }.thenBy { it.seq })
+
+    /** The downloads that are queued or running, by photo ID; guarded by itself. */
+    private val pendingDownloads = HashMap<String, Download>()
+
+    private val downloader =
+        Thread({ runDownloads() }, "render-download").apply {
+            isDaemon = true
+            priority = Thread.NORM_PRIORITY - 2
+        }
+
     init {
         dir.mkdirs()
         dir
@@ -143,6 +193,7 @@ class RenderCache(
             .sortedBy { it.lastModified() }
             .forEach { lastUse[it.name] = clock.incrementAndGet() }
         worker.start()
+        downloader.start()
     }
 
     /** What the frame shows of [entry] with the current screen and fill mode. */
@@ -292,13 +343,19 @@ class RenderCache(
     /** Jobs waiting for the worker, for tests. */
     internal val queued: Int get() = queue.size
 
-    /** Stops the worker. Waiting jobs fail, running ones are rendered to the end. */
+    /** Stops the worker and the download thread. Waiting jobs fail, running ones are rendered to the end. */
     fun close() {
         closed = true
         worker.interrupt()
+        downloader.interrupt()
         worker.join(WORKER_STOP_TIMEOUT_MS)
+        // A download may hang in a read that an interrupt does not end; the thread is a daemon and its jobs fail now.
+        downloader.join(DOWNLOAD_STOP_TIMEOUT_MS)
         queue.forEach { it.result.cancel() }
         queue.clear()
+        val waiting = synchronized(pendingDownloads) { pendingDownloads.values.flatMap { it.jobs }.also { pendingDownloads.clear() } }
+        waiting.forEach { it.result.cancel() }
+        downloads.clear()
     }
 
     @Volatile
@@ -313,10 +370,23 @@ class RenderCache(
                 } catch (e: InterruptedException) {
                     return
                 }
-            if (job.result.isCompleted) continue
+            if (job.result.isCompleted) {
+                job.finish()
+                continue
+            }
             val target = File(dir, job.key)
+            var handedOver = false
             try {
-                if (!target.exists()) render(job, target)
+                if (!target.exists()) {
+                    val original = job.original ?: onFrame(job.entry)
+                    if (original == null) {
+                        // The original has to be fetched first: on the download thread, while this one renders on.
+                        handOver(job)
+                        handedOver = true
+                        continue
+                    }
+                    render(job, target, original)
+                }
                 touch(job.key)
                 job.result.complete(target)
             } catch (e: Throwable) {
@@ -330,17 +400,92 @@ class RenderCache(
                     if (e is Exception) e else RenderFailedException("Rendering of ${job.entry.path} failed", e),
                 )
             } finally {
-                synchronized(inFlight) { inFlight.remove(job.key) }
+                // A job handed over stays in flight, so that another request for the same size joins it.
+                if (!handedOver) {
+                    synchronized(inFlight) { inFlight.remove(job.key) }
+                    job.finish()
+                }
             }
+        }
+    }
+
+    /** Lets the download thread fetch the original of [job]; jobs for the same photo share one download. */
+    private fun handOver(job: Job) {
+        synchronized(pendingDownloads) {
+            val known = pendingDownloads[job.entry.id]
+            if (known == null) {
+                val download = Download(job.entry, job.priority, seq.incrementAndGet())
+                download.jobs += job
+                pendingDownloads[job.entry.id] = download
+                downloads.add(download)
+            } else {
+                known.jobs += job
+                if (job.priority > known.priority && !known.started && downloads.remove(known)) {
+                    known.priority = job.priority
+                    downloads.add(known)
+                }
+            }
+        }
+    }
+
+    private fun runDownloads() {
+        while (!closed) {
+            val download =
+                try {
+                    downloads.take()
+                } catch (e: InterruptedException) {
+                    return
+                }
+            synchronized(pendingDownloads) { download.started = true }
+            val fetched =
+                try {
+                    Result.success(fetch(download.entry))
+                } catch (e: Throwable) {
+                    Result.failure(e)
+                }
+            // Jobs that joined while it ran are in the list as well; one that comes after it finds the original there.
+            val jobs =
+                synchronized(pendingDownloads) {
+                    pendingDownloads.remove(download.entry.id)
+                    download.jobs.toList()
+                }
+            fetched
+                .onSuccess { file ->
+                    if (closed) {
+                        release(download.entry)
+                        jobs.forEach { it.result.cancel() }
+                        return@onSuccess
+                    }
+                    val left =
+                        java.util.concurrent.atomic
+                            .AtomicInteger(jobs.size)
+                    val done = { if (left.decrementAndGet() == 0) release(download.entry) }
+                    if (jobs.isEmpty()) release(download.entry)
+                    for (job in jobs) queue.add(job.withOriginal(seq.incrementAndGet(), file, done))
+                }.onFailure { e ->
+                    log.w(TAG, "The original of ${download.entry.path} could not be fetched: ${e.message}")
+                    // Only the decoder crashing on a fetched original, in the check of its dimensions, quarantines it; a
+                    // failed download does not.
+                    if (e is ImageException && e.reason == SkipReason.CRASHED) {
+                        log.e(TAG, "${download.entry.path} made the decoder crash and is quarantined")
+                        onCrashed(download.entry)
+                    }
+                    val failure = if (e is Exception) e else RenderFailedException("Fetching ${download.entry.path} failed", e)
+                    for (job in jobs) {
+                        synchronized(inFlight) { inFlight.remove(job.key) }
+                        job.result.completeExceptionally(failure)
+                    }
+                }
         }
     }
 
     private fun render(
         job: Job,
         target: File,
+        original: File,
     ) {
         val tmp = File(dir, ".${job.key}.tmp")
-        engine.render(originalOf(job.entry), tmp, job.target.size.width, job.target.size.height, job.target.region)
+        engine.render(original, tmp, job.target.size.width, job.target.size.height, job.target.region)
         if (!tmp.renameTo(target)) throw IllegalStateException("Renaming to ${target.name} failed")
         // Older image versions of this photo are no longer needed.
         touch(target.name)
@@ -379,6 +524,7 @@ class RenderCache(
         /** Starts the key in the name of a display size; thumbnail and full size start with a digit there. */
         private const val DISPLAY_MARK = "p"
         private const val WORKER_STOP_TIMEOUT_MS = 10_000L
+        private const val DOWNLOAD_STOP_TIMEOUT_MS = 1_000L
     }
 }
 

@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.update
 
+import io.github.tycho991.openframe.core.causes
 import io.github.tycho991.openframe.core.nextcloud.TrustAnchors
 import io.github.tycho991.openframe.core.readAtMost
 import kotlinx.serialization.SerialName
@@ -185,8 +186,6 @@ class GithubReleases(
             }
         }
     }
-
-    private fun Throwable.causes(): Sequence<Throwable> = generateSequence(this) { it.cause.takeIf { c -> c !== it } }
 
     /** An `http` hop, refused before anything is sent. */
     private class NotHttpsException(

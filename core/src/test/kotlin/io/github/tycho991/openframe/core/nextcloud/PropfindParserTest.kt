@@ -73,6 +73,104 @@ class PropfindParserTest {
             }
         assertTrue(entries.none { "root:" in it.path })
     }
+
+    // --- Spec nextcloud-source: Bounded answers of a server (design decision 3 of nextcloud-hardening)
+
+    private val plainDoctype =
+        """<?xml version="1.0"?><!DOCTYPE multistatus [<!ELEMENT multistatus ANY>]><d:multistatus xmlns:d="DAV:"><d:response><d:href>/a</d:href></d:response></d:multistatus>"""
+
+    @Test
+    fun `A document type without entities is refused by the handler itself, as on Android`() {
+        // Without the Xerces feature, which Android's parser does not know: only the lexical handler can refuse it.
+        val failure =
+            assertThrows(
+                SourceException::class.java,
+            ) { PropfindParser.parse(plainDoctype.byteInputStream(), refuseDoctypeByFeature = false) }
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
+        assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+    }
+
+    @Test
+    fun `A document type is refused with the same text when Xerces refuses it first`() {
+        val failure = assertThrows(SourceException::class.java) { parse(plainDoctype) }
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
+        assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+    }
+
+    @Test
+    fun `Nested entities are never expanded`() {
+        val lol =
+            """<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">""" +
+                """<!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]>""" +
+                """<d:multistatus xmlns:d="DAV:"><d:response><d:href>&lol3;</d:href></d:response></d:multistatus>"""
+        for (feature in listOf(true, false)) {
+            val failure =
+                assertThrows(SourceException::class.java) { PropfindParser.parse(lol.byteInputStream(), refuseDoctypeByFeature = feature) }
+            assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+        }
+    }
+
+    private fun response(href: String) =
+        "<d:response><d:href>$href</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>"
+
+    @Test
+    fun `Text up to 16 KiB per element passes, more is a limit`() {
+        val fits = "/" + "a".repeat(16 * 1024 - 1)
+        assertEquals(fits, parse("""<d:multistatus xmlns:d="DAV:">${response(fits)}</d:multistatus>""").single().path)
+        val failure =
+            assertThrows(SourceException::class.java) {
+                parse("""<d:multistatus xmlns:d="DAV:">${response("/" + "a".repeat(16 * 1024))}</d:multistatus>""")
+            }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("16 KiB"), failure.message)
+    }
+
+    @Test
+    fun `Text outside an entry is not kept`() {
+        val padding = " ".repeat(1024 * 1024)
+        assertEquals(1, parse("""<d:multistatus xmlns:d="DAV:">$padding${response("/a")}$padding</d:multistatus>""").size)
+    }
+
+    @Test
+    fun `More entries than the limit end the listing`() {
+        // The folder's own entry and 10 entries in it pass a limit of 10, one more does not.
+        val fits = """<d:multistatus xmlns:d="DAV:">""" + (0..10).joinToString("") { response("/f$it") } + "</d:multistatus>"
+        assertEquals(11, PropfindParser.parse(fits.byteInputStream(), maxEntries = 10).size)
+        val more = """<d:multistatus xmlns:d="DAV:">""" + (0..11).joinToString("") { response("/f$it") } + "</d:multistatus>"
+        val failure = assertThrows(SourceException::class.java) { PropfindParser.parse(more.byteInputStream(), maxEntries = 10) }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+    }
+}
+
+/** Review finding 9 of `nextcloud-hardening`: names, namespaces and attribute values are bounded as the text is. */
+class PropfindParserNamesTest {
+    private val long = "a".repeat(16 * 1024 + 1)
+
+    /** Without the JDK's own limit of 1000 characters per name (raised here), which Android's parser does not have. */
+    private fun limitOf(xml: String): SourceException {
+        val before = System.getProperty("jdk.xml.maxXMLNameLimit")
+        System.setProperty("jdk.xml.maxXMLNameLimit", "100000")
+        try {
+            return assertThrows(SourceException::class.java) { PropfindParser.parse(xml.byteInputStream()) }
+        } finally {
+            if (before == null) System.clearProperty("jdk.xml.maxXMLNameLimit") else System.setProperty("jdk.xml.maxXMLNameLimit", before)
+        }
+    }
+
+    @Test
+    fun `A long attribute value, element name or namespace is a limit`() {
+        for (xml in listOf(
+            """<d:multistatus xmlns:d="DAV:"><d:response x="$long"><d:href>/a</d:href></d:response></d:multistatus>""",
+            """<d:multistatus xmlns:d="DAV:"><d:response><d:$long/><d:href>/a</d:href></d:response></d:multistatus>""",
+            """<d:multistatus xmlns:d="DAV:" xmlns:x="urn:$long"><d:response><d:href>/a</d:href></d:response></d:multistatus>""",
+        )) {
+            val failure = limitOf(xml)
+            assertEquals(SourceException.Kind.LIMIT, failure.kind, "${failure.message} ${failure.cause}")
+        }
+        // Short ones pass.
+        val fine = """<d:multistatus xmlns:d="DAV:" xmlns:x="urn:x"><d:response x="1"><d:href>/a</d:href></d:response></d:multistatus>"""
+        assertEquals(1, PropfindParser.parse(fine.byteInputStream()).size)
+    }
 }
 
 class PathDecodingTest {
