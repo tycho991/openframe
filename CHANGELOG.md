@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/tycho991/openframe/compare/v0.10.0...v0.11.0) (2026-11-19)
+
+
+### Features
+
+* harden Nextcloud sources against hostile servers ([#113](https://github.com/tycho991/openframe/issues/113)) ([d058d18](https://github.com/tycho991/openframe/commit/d058d18f22ffc7ea2a3c9f21a44d886fd0086f21))
+
 ## [0.10.0](https://github.com/tycho991/openframe/compare/v0.9.0...v0.10.0) (2026-11-19)
 
 
