@@ -124,6 +124,7 @@
   {#if status.failed}
     <p class="error" role="alert">
       {statusText}
+      {#if status.daily}<span class="detail">{t("sources.rejectedRetry")}</span>{/if}
       {#if status.detail}<span class="detail">{t("sources.errorDetail", { detail: status.detail })}</span
         >{/if}
     </p>

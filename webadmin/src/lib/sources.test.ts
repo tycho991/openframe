@@ -30,6 +30,7 @@ const status = {
   ok: true as boolean | null,
   error: null as string | null,
   errorCode: null as SourceErrorCode | null,
+  rejected: false,
   added: 2,
   updated: 1,
   removed: 0,
@@ -134,6 +135,20 @@ describe("Source errors in the interface language", () => {
     expect(line.reason).toBe("sources.error.unreachable");
     expect(line.detail).toBe("The server cloud.example.org did not answer in time");
     expect(line.failed).toBe(true);
+    expect(line.daily).toBe(false);
+  });
+
+  it("says that the frame tries once a day only in the state of rejected access", () => {
+    const failed = { ...status, ok: false, error: "The server refused the credentials (HTTP 401)" };
+    const rejected = statusLine({ ...failed, errorCode: "unauthorized", rejected: true }, "en");
+    expect(rejected.daily).toBe(true);
+    expect(rejected.reason).toBe("sources.error.unauthorized");
+    // One refused file, or a refusal of credentials that were replaced since: retried as usual.
+    expect(statusLine({ ...failed, errorCode: "unauthorized", rejected: false }, "en").daily).toBe(false);
+    for (const code of ["unauthorized", "gone", "not_readable"] as const) {
+      expect(en[sourceErrorKeys[code]]).not.toMatch(/once a day/);
+      expect(de[sourceErrorKeys[code]]).not.toMatch(/einmal am Tag/);
+    }
   });
 
   it("falls back to the frame's text without a code, and shows an unknown code as it is", () => {

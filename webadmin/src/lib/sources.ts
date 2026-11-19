@@ -81,6 +81,8 @@ export interface StatusLine {
   reason?: Key;
   /** For a failure with a known code: the frame's English text. */
   detail?: string | null;
+  /** Rejected access: the frame tries again at most once a day until the user acts. */
+  daily?: boolean;
 }
 
 /** The status line of a source in the interface language [lang]. */
@@ -104,9 +106,15 @@ export function statusLine(status: SourceStatus, lang: string): StatusLine {
       failed: true,
       reason: error.reason,
       detail: error.detail,
+      daily: status.rejected,
     };
   }
-  return { key: "sources.lastFailed", params: { time, error: error.text }, failed: true };
+  return {
+    key: "sources.lastFailed",
+    params: { time, error: error.text },
+    failed: true,
+    daily: status.rejected,
+  };
 }
 
 /** The ranges the API accepts, for the message at a field. */
