@@ -90,7 +90,7 @@ All limits live in one object (`SourceLimits`), named in the tests:
 |---|---|---|
 | Listing body after gzip decompression | 64 MiB | each PROPFIND answer |
 | Text per element | 16 KiB | `href`, `getetag`, … (a long percent-encoded path fits) |
-| Entries per answer | 50,000 | each PROPFIND answer |
+| Entries per answer | 50,000 | each PROPFIND answer, the folder's own entry on top |
 | Depth of subfolders | 32 | each sync |
 | Folders per sync | 5,000 | each sync |
 | Files per sync | 100,000 | each sync |
@@ -116,7 +116,9 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **Text and entries:** text is collected only inside `<response>`, up to the cap per element. More entries than the
   cap end the parse with `LIMIT`.
 - **Test:** the JVM test uses a DOCTYPE without entities, so Xerces' own entity-expansion limit cannot make it pass,
-  and it asserts the handler's own error and the kind `PROTOCOL`.
+  and it asserts the handler's own error and the kind `PROTOCOL`. With `disallow-doctype-decl` set, Xerces refuses
+  the DOCTYPE before it calls `startDTD`, so this test parses through an internal switch that leaves the feature
+  off, as Android's parser does. A refusal by the feature is reported with the same text as the handler's.
 - **Fallback:** a streaming filter in front of the parser that refuses `<!DOCTYPE` and `<!ENTITY` before the root
   element, skipping comments and processing instructions. It is built only if the device row shows that Expat does
   not call `startDTD`.
@@ -135,8 +137,9 @@ All limits live in one object (`SourceLimits`), named in the tests:
 ### 5. Downloads: limits, changed files, too large files, cancel
 
 - **Interface:**
-  - `RemoteFolder.download(file, target, limits)` takes `DownloadLimits(maxBytes, cancelled, acceptHeader)` and
-    returns the response's `ETag` header.
+  - `RemoteFolder.download(file, target, limits)` takes `DownloadLimits(roomBytes, cancelled, acceptHeader,
+    unknownSizeBytes)` and returns the response's `ETag` header. `roomBytes` is the free space minus the reserve, and
+    `unknownSizeBytes` the fixed cap, smaller in a test.
   - `RemoteFolder.list(recursive, cancelled)` takes the cancel check.
 - **Cancel signal:** `RemoteSource` passes `cancelled = { config() == null }`. A removed source ends its listing or
   download at the next read, at the latest after the read timeout; `Job.cancel` does not interrupt a blocking read.
@@ -172,7 +175,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
   - It then queues the jobs again with their `Deferred`, together with the downloaded file.
   - The `inFlight` entry stays during the handoff, so another request for the same size joins it.
 - **Pinning:** the downloaded original stays pinned in `OriginalsStore` until the queued jobs of that photo have
-  rendered. `trim` skips pinned files, so a small budget cannot evict it in between and cause a download loop.
+  rendered. `trim` skips pinned files, so a small budget cannot evict it in between and cause a download loop. A
+  third function `release(entry)` (`SourceOriginals.release`) ends the pin.
 - **Failures:**
   - A failed download completes all waiting `Deferred`s of that photo with a `SourceException`, never a
     `CancellationException`.
@@ -228,7 +232,8 @@ All limits live in one object (`SourceLimits`), named in the tests:
     `Retry-After` (seconds or an HTTP date) and clamped to 15 min–24 h. A network change does not move that deadline
     either. Without the header, the normal retry applies.
   - Other failures: the existing retry, which a network change still shortens.
-- **Across restarts:** the rejected state comes from the stored `StoredSyncResult` (its `errorCode` and time). It
+- **Across restarts:** the rejected state comes from the stored `StoredSyncResult` (its `errorCode`, a flag
+  `rejected` and the time; the flag tells a refused listing from a refused file and from old credentials). It
   therefore holds after a restart and in safe mode, where no scheduler runs. On start, a rejected source waits for the
   rest of its 24 hours, clamped to 0–24 h because the wall clock may jump after a boot, instead of `FIRST_SYNC_MS`.
 - **Renderings:** `SourceRegistry.original` refuses at once in the rejected state, without a request that carries the

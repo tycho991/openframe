@@ -236,8 +236,9 @@ source unused for the longest time are removed and fetched again when a renderin
 frame without its original. A download never leaves less than 100 MB free.
 
 A frame that had a Nextcloud connection before (0.1.0) keeps it as the source `nextcloud`, with its photos, their IDs
-and hidden states, without a new login. Its old `nextcloud.json` stays until that source is removed, so the older
-build can still be installed again.
+and hidden states, without a new login. Its old `nextcloud.json` is deleted at the next start with a readable list of
+sources, and an app password in it that the source no longer uses is revoked on the server; going back to 0.1.0
+then means logging in again.
 
 ### Further providers
 
@@ -301,6 +302,24 @@ Read this before you install it.
 - **Changes to the paired devices are logged.** Each pairing, rename, revocation and invitation writes a line with
   the IDs of the device that made it and of the device it concerns, readable with `GET /api/v1/logs`. Tokens,
   pairing secrets and invitation links never appear there.
+- **Sources point anywhere (accepted).** A paired device can set a source to any `http` or `https` address the frame
+  reaches, also the frame's own loopback services or, on a device with a SIM, the carrier's network. The frame then
+  sends requests there in its own name (a blind server-side request forgery): it reports only whether the sync
+  worked and a class of error, never the content of an answer. This is accepted while every paired device has full
+  rights anyway; it is to be checked again when a permission model decides who may add sources.
+- **Answers of a source are bounded.** A Nextcloud server, or anything a source points at, can send at most fixed
+  amounts: a listing of 64 MiB after decompression, 50,000 entries per folder answer, 32 levels of subfolders,
+  5,000 folders and 100,000 files per sync, 64 KiB per login answer, and per download the listed size plus 1 MiB.
+  Every answer has a total time and a minimum speed. A listing with a `DOCTYPE` or with an entry outside its folder
+  fails the sync instead of being read. Such a failure keeps the photos of the source.
+- **Plain http.** A Nextcloud address with `http` works on every Android version, also from Android 9 on. The web UI
+  warns at the address field and on the card of every source with `http`: its app password, share password and
+  photos then cross the network unencrypted. The updater accepts only `https`, also for every redirect. A login that
+  starts on `https` never continues on `http` or on another port.
+- **Refused access.** When the server refuses the credentials of a source, or a share is withdrawn or only accepts
+  uploads, the frame tries that source again at most once a day, also after a restart, so that it does not keep
+  failing logins on the server. Logging in again, changing the source or "Sync now" try at once. An app password
+  that a new login replaces is revoked on the server.
 - **Stored credentials.** App passwords, share links and share passwords of Nextcloud sources are stored
   unencrypted in the app's private storage. They never appear in an API answer or in the log, but anyone who can
   read the app's data (root, or `run-as` on a debug build) can read them.

@@ -2,7 +2,7 @@
 
 ## 1. Error kinds and the contract (first, so later groups report codes)
 
-- [ ] 1.1 `api/openapi.yaml` (design decision 11): a schema `SourceErrorCode`, and `errorCode` as
+- [x] 1.1 `api/openapi.yaml` (design decision 11): a schema `SourceErrorCode`, and `errorCode` as
   `anyOf: [SourceErrorCode, null]` (required) on `SourceStatus` and `SourceLoginState`. Add `nextcloud_insecure_login`
   to the `BadGateway` description and at `POST /sources/login`. Then the DTOs in `SourcesRoutes.kt` by hand and
   `npm run gen:api`. Verify:
@@ -10,7 +10,7 @@
   - `SourcesApiTest` cases with the contract check on see `errorCode` `null` after a successful sync, a code after a
     failed one and after a failed login, and `null` for a stored result without one;
   - a hand-made answer with `errorCode: "nonsense"` fails the contract check.
-- [ ] 1.2 Kinds and stored codes:
+- [x] 1.2 Kinds and stored codes:
   - add the kinds `TLS_HANDSHAKE`, `THROTTLED`, `CHANGED`, `LIMIT` and `INSECURE_LOGIN`, and `retryAfterMs` on
     `SourceException`;
   - `StoredSyncResult.errorCode` as a string: the scheduler writes the kind, or `unexpected` for any other
@@ -22,7 +22,7 @@
   - a JVM test maps every kind to a contract value and fails on a kind without one;
   - a stored result without `errorCode` and one with an unknown value both load, and the unknown one is served as
     `null`.
-- [ ] 1.3 Classification (design decision 11):
+- [x] 1.3 Classification (design decision 11):
   - `NextcloudHttp.translate` walks the cause chain: `TLS` only for a `CertificateException` or an
     `SSLPeerUnverifiedException`, other `SSLException`s are `TLS_HANDSHAKE`, an `UnknownServiceException` gets the
     cleartext text;
@@ -38,13 +38,13 @@
 
 ## 2. Bounded answers and listings
 
-- [ ] 2.1 `LimitedResponseStream` and `SourceLimits` (design decisions 1 and 2): byte cap, total time and throughput
+- [x] 2.1 `LimitedResponseStream` and `SourceLimits` (design decisions 1 and 2): byte cap, total time and throughput
   window on `Clock.monotonicMillis`, cancel check, and the exceptions `LimitExceeded`, `NoRoom`, `TooSlow` and
   `Cancelled`. Pass `FrameCore`'s `Clock` to `OkHttpNextcloudClients`. Verify:
   - unit tests with `TestClock` for the cap and cap + 1, a stall below 16 KiB per 60 s, a steady trickle above the
     minimum that passes the total time, a cancel between reads, and a wall-clock jump that does not count as slow;
   - `./gradlew :core:check` (API 21 check) is green.
-- [ ] 2.2 `PropfindParser` (design decision 3):
+- [x] 2.2 `PropfindParser` (design decision 3):
   - text only inside `<response>`, up to 16 KiB per element, and at most 50,000 entries;
   - `DOCTYPE` refused through a `LexicalHandler` on the `XMLReader`;
   - `propfind` reads through the limited stream (64 MiB after gzip, 5 min).
@@ -57,18 +57,18 @@
     installed;
   - a folder with 20,000 entries syncs completely;
   - `PropfindParserTest` stays green.
-- [ ] 2.3 `DavFolder.walk` iterative with depth 32, 5,000 folders and 100,000 files, checked against the folder's own
+- [x] 2.3 `DavFolder.walk` iterative with depth 32, 5,000 folders and 100,000 files, checked against the folder's own
   entry (design decision 4). Verify, against `FakeNextcloud`:
   - an entry `..`, an empty name, `.` and an entry outside the folder each fail the listing with `PROTOCOL`, and no
     photo is removed with "remove vanished" on;
   - depth 33 and 5,001 folders fail with `LIMIT`;
   - a normal tree with subfolders still syncs.
-- [ ] 2.4 `LoginFlow.json` reads at most 64 KiB within 60 s. Verify: a 65 KiB answer to the start and to the poll
+- [x] 2.4 `LoginFlow.json` reads at most 64 KiB within 60 s. Verify: a 65 KiB answer to the start and to the poll
   fails the login with a readable error and stores nothing.
 
 ## 3. Downloads
 
-- [ ] 3.1 `RemoteFolder.download(file, target, DownloadLimits)` returns the `ETag`, and `list` takes `cancelled`.
+- [x] 3.1 `RemoteFolder.download(file, target, DownloadLimits)` returns the `ETag`, and `list` takes `cancelled`.
   `DavFolder` enforces the caps per design decision 5, and `FakeRemoteFolder` follows. Verify, new tests:
   - a new file sending more bytes than listed is skipped as `too_large`, the `.part` is gone, and the sync goes on
     with the next file;
@@ -79,13 +79,13 @@
   - a download that would go below the reserve fails with `STORAGE`, and nothing is skipped;
   - the existing "A download that stalls" test now ends on the throughput rule with `TestClock`;
   - a test where the download exceeds the total time passes as well.
-- [ ] 3.2 Cancel on removal: `RemoteSource` passes `cancelled = { config() == null }` to `list` and `download`.
+- [x] 3.2 Cancel on removal: `RemoteSource` passes `cancelled = { config() == null }` to `list` and `download`.
   Verify:
   - a test removes the source while `FakeNextcloud` holds first a listing and then a download open; each ends, no
     `.part` stays, and a second source's sync starts after it;
   - a `TestFrame` test removes a source while one of its originals downloads for a rendering; the slideshow keeps
     changing photos afterwards.
-- [ ] 3.3 HEIC from the first bytes (design decision 14):
+- [x] 3.3 HEIC from the first bytes (design decision 14):
   - `MediaEngine.canDecode`, with the overrides in `AndroidMediaEngine` and in `RemoteMediaEngine` (local, no binder)
     and a switch in `JvmMediaEngine`;
   - `acceptHeader` in the download;
@@ -99,13 +99,13 @@
 
 ## 4. Rendering and the originals store
 
-- [ ] 4.1 `OriginalsStore` with a synchronized running total, pinned files and a seam for listing the folder (design
+- [x] 4.1 `OriginalsStore` with a synchronized running total, pinned files and a seam for listing the folder (design
   decision 10). Verify:
   - a counting test shows one folder listing per sync instead of one per `fitsBudget`, and `trim` stats each file
     once;
   - a pinned file survives a `trim` below budget;
   - `RemoteSourceTest`'s budget cases stay green.
-- [ ] 4.2 Download thread in `RenderCache` (design decision 6):
+- [x] 4.2 Download thread in `RenderCache` (design decision 6):
   - `onFrame` (now marking the original as used) and `fetch`;
   - priority order and one download per photo;
   - `inFlight` kept during the handoff, the file pinned until its jobs render;
@@ -123,7 +123,7 @@
   - an original rendered through `onFrame` is not the first evicted;
   - `close()` during a download returns;
   - `RenderCacheTest` and `SourceOriginalsTest` stay green.
-- [ ] 4.3 Refetched originals (design decision 15): ETag fast path, then dimensions; `CHANGED` or other dimensions
+- [x] 4.3 Refetched originals (design decision 15): ETag fast path, then dimensions; `CHANGED` or other dimensions
   trigger `onStale` once per sync; version + 1 in the `unchanged` branch when the dimensions differ. Verify:
   - a replaced file with other dimensions, and one with a `Content-Length` 2 MiB above the listed size, each fail the
     render and trigger one sync of the source;
@@ -132,7 +132,7 @@
 
 ## 5. Scheduler, login and app passwords
 
-- [ ] 5.1 Scheduler (design decision 8):
+- [x] 5.1 Scheduler (design decision 8):
   - absolute deadlines on `monotonicMillis` and wake flags instead of the conflated channel;
   - the rejected state only for listing failures and only when the connection is unchanged since the sync started;
   - 24 h for rejected access, taken from the stored result after a restart and clamped to 0 to 24 h;
@@ -148,7 +148,7 @@
   - after a 429 the next try comes after `Retry-After`, also with a network change in between;
   - a 401 from a sync that ran while `reconnect` stored new credentials does not enter the rejected state;
   - a render request in the rejected state makes no HTTP request (`FakeNextcloud.requests`).
-- [ ] 5.2 Login (design decision 7, remote-sources-9):
+- [x] 5.2 Login (design decision 7, remote-sources-9):
   - `LoginOrigin` for the poll endpoint and the login page, with the hint only for a downgrade;
   - `INSECURE_LOGIN` → 502 `nextcloud_insecure_login`;
   - `upgradedServer` only where the rule holds;
@@ -164,7 +164,7 @@
   - a re-login typed with `http` for an `https` source sends no request over `http` (`FakeNextcloud.requests`) and
     stays on `https`;
   - login, sync and revoke work for the login name `jürgen` against `FakeNextcloud`.
-- [ ] 5.3 App-password hygiene (design decision 9):
+- [x] 5.3 App-password hygiene (design decision 9):
   - `reconnect` revokes the old password in the background, after a running sync of the source, unless it was
     refused;
   - the login handler revokes the new password in the background when `userId()` or `reconnect` fails, and on a full
@@ -184,12 +184,12 @@
 
 ## 6. Android, web UI and docs
 
-- [ ] 6.1 `android:usesCleartextTraffic="true"` with `tools:targetApi="23"` and the `xmlns:tools` declaration (design
+- [x] 6.1 `android:usesCleartextTraffic="true"` with `tools:targetApi="23"` and the `xmlns:tools` declaration (design
   decision 13). Verify:
   - a test reads the merged manifest and finds the attribute;
   - `./gradlew :android:check` (lint with `abortOnError`) is green;
   - `GithubReleasesTest` "Redirect to http" stays green.
-- [ ] 6.2 Web UI (design decisions 11 and 16):
+- [x] 6.2 Web UI (design decisions 11 and 16):
   - `sourceErrorKeys` with de/en texts for every code;
   - `nextcloud_insecure_login` also in `errorKeys`;
   - the status line and the login error use the code, with the English text as a detail, and the text when the code
@@ -205,7 +205,7 @@
     German text;
   - `errorCodes.test.ts` is green;
   - `npm run lint`, `npm run typecheck` and `npm test` are green.
-- [ ] 6.3 Tests that were missing (tests-quality-8):
+- [x] 6.3 Tests that were missing (tests-quality-8):
   - `FakeClients.accountFolder` records the folder per account;
   - a new `AccountSyncTest` with the real `OkHttpNextcloudClients` against `FakeNextcloud`: login flow, `PATCH` to
     `/Photos`, files in `Photos` and `Audio`;
@@ -214,16 +214,16 @@
   Verify:
   - only the `Photos` files reach the library, and every request is under `/remote.php/dav/files/<user>/Photos`;
   - the test fails when `NextcloudKinds` passes the account's root instead of its folder.
-- [ ] 6.4 Docs: the README security model names the accepted blind SSRF (design decision 12), plain http with its
+- [x] 6.4 Docs: the README security model names the accepted blind SSRF (design decision 12), plain http with its
   warning, and that a refused source retries once a day; `SECURITY.md` points to it. Verify: both texts are there, and
   the README names a future permission model for adding sources as the point to re-check.
 
 ## 7. Checks
 
-- [ ] 7.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
+- [x] 7.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
   (own `OPENFRAME_E2E_PORT`) are green. Verify: the command outputs.
-- [ ] 7.2 `openspec validate nextcloud-hardening --strict` exits 0 without warnings. Verify: the output.
-- [ ] 7.3 A standalone `FakeNextcloud` for the device rows (design decision 17), with a bind address and with:
+- [x] 7.2 `openspec validate nextcloud-hardening --strict` exits 0 without warnings. Verify: the output.
+- [x] 7.3 A standalone `FakeNextcloud` for the device rows (design decision 17), with a bind address and with:
   - a DOCTYPE share;
   - a folder with 50,000 entries;
   - a HEIC share;

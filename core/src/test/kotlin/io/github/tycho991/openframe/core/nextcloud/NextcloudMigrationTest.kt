@@ -157,6 +157,35 @@ class NextcloudMigrationTest {
     }
 
     @Test
+    fun `In safe mode the files of 0 1 0 stay, and removing the source then revokes both passwords`() {
+        oldFrame()
+        TestFrame(dir, nextcloudClients = clients).close()
+        val sources = File(state, "sources.json")
+        sources.writeText(sources.readText().replace("app-pw-old-Tz55", "app-pw-new-Qx81"))
+        oldFrame()
+        File(state, "index.json").delete()
+        TestFrame(
+            dir,
+            nextcloudClients = clients,
+            health =
+                io.github.tycho991.openframe.core.health.Health
+                    .safe(0),
+        ).use { frame ->
+            Thread.sleep(200)
+            assertTrue(File(state, "nextcloud.json").isFile, "no clean-up while the sources do not run")
+            assertEquals(0, (clients.login as FakeLoginFlow).revoked)
+            assertEquals(204, frame.send("DELETE", "/api/v1/sources/nextcloud").statusCode())
+            val deadline = System.currentTimeMillis() + 10_000
+            while ((clients.login as FakeLoginFlow).revoked < 2) {
+                check(System.currentTimeMillis() < deadline) { "the app passwords were not revoked" }
+                Thread.sleep(25)
+            }
+            assertEquals(setOf("app-pw-old-Tz55", "app-pw-new-Qx81"), (clients.login as FakeLoginFlow).revokedPasswords.toSet())
+            assertFalse(File(state, "nextcloud.json").exists())
+        }
+    }
+
+    @Test
     fun `A leftover file of a disconnected first version is deleted without a revocation`() {
         oldFrame()
         TestFrame(dir, nextcloudClients = clients).close()
