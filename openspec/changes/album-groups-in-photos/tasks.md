@@ -4,8 +4,8 @@
 
 - [ ] 1.1 In `api/openapi.yaml` add `Album.visibleCount` (required integer), the schema `AlbumCounts` (`count`,
   `visibleCount`, both required, `additionalProperties: false`), `AlbumList.noAlbum` (required `AlbumCounts`) and the
-  boolean query parameter `noalbum` of `listPhotos` (only photos without an album, 400 together with `album`, no
-  effect of `subalbums`); describe `Album.cover` as the newest photo that is not quarantined; verify `npm run lint`
+  boolean query parameter `noalbum` of `listPhotos` (`true`: only photos without an album; `noalbum=true` together
+  with `album` is 400; `noalbum=false` changes nothing; no effect of `subalbums`); describe `Album.cover` as the newest photo that is not quarantined; verify `npm run lint`
   in `webadmin/` (Redocly) passes
 - [ ] 1.2 Build one private lazy summary in `Library` (`PhotoIndex.kt`) in one pass over the photos, from which
   `albums` and a new `noAlbum` read: effective album state from `AlbumPaths.isHidden(albumStates, …)` cached per
@@ -14,10 +14,11 @@
   photo", "Quarantined photo" (photo-library, "Album list through the API") and "Counts without an album"
   (photo-library, "Photos without an album in the API"), plus a check that `visibleCount` equals the number of photos
   of the branch for which `isVisible` is true
-- [ ] 1.3 Handle `noalbum` in `GET /photos` (`booleanParam`, only `album: null`, `400 bad_request` together with
-  `album`); verify with `LibraryApiTest` cases through `TestFrame` for "List the photos without an album" (with a
-  photo of a second source, a hidden one with `visible=false`, and paging) and "Without an album and an album at
-  once"
+- [ ] 1.3 Handle `noalbum` in `GET /photos` (`booleanParam`, `true` keeps only `album: null`, `noalbum=true` with
+  `album` is `400 bad_request`, `noalbum=false` changes nothing); verify with `LibraryApiTest` cases through
+  `TestFrame` for "List the photos without an album" (with a photo of a second source, a hidden one with
+  `visible=false`, and paging), "Without an album and an album at once" (`noalbum=true&album=holiday` is 400), and
+  that `noalbum=false` with and without `album` answers as the same request without `noalbum`
 - [ ] 1.4 Add to `PhotoListPerformanceTest` a `GET /api/v1/albums` case at 10,000 photos in four levels with the same
   budget as the pages; if signing the covers of thousands of albums misses it, note the
   measured time in design.md before changing the budget; verify the test passes
@@ -31,9 +32,10 @@
 - [ ] 2.2 Add a pure function in `lib/albums.ts` that turns album list, `noAlbum`, open set, visibility filter and a
   pinned path into heading rows (path, title, depth, count for the filter, own count as count minus the direct
   children's counts, open, album) and grid slots: own photos before sub-album headings, the heading without an album
-  last and without a switch, albums with a filtered count of 0 left out unless pinned, no grid slot for an own count
-  of 0; verify with `albums.test.ts` cases for nesting, ordering, own counts, the filter, the pinned path and the
-  empty library
+  last and without a switch, albums with a filtered count of 0 left out unless they are the pinned path or one of its
+  ancestors, no grid slot for an own count of 0; verify with `albums.test.ts` cases for nesting, ordering, own
+  counts, the filter, the pinned path, a pinned `holiday/2024` under "only hidden" whose parent `holiday` without own
+  photos has dropped to 0 (both stay), and the empty library
 - [ ] 2.3 Add the open-state store (`openframe.photos.openAlbums` in `localStorage`, `""` for photos without an
   album, every access in `try/catch`, no pruning of unknown paths, capped at 1,000 with the oldest dropped, a
   function that opens a path with its ancestors); verify with unit tests for first visit (all folded), a stored
@@ -42,14 +44,21 @@
 ## 3. Grid layout and requests
 
 - [ ] 3.1 Make `VirtualGrid` controlled (`top`, `width`, `scrollY`, `viewport` as props, no `ResizeObserver` and no
-  window listeners of its own) and let `gridLayout` report `nearEnd` only when the viewport plus overscan overlaps
-  the grid's box, with a reserved height of `min(ownCount, 60)` tiles before the first page; verify with
-  `grid.test.ts` cases that a grid entirely above or below the viewport does not ask for more and that an unloaded
-  grid has the reserved height
-- [ ] 3.2 Add the shared request queue to `lib/photos.ts` (at most two `GET /photos` at a time for first pages,
-  `loadMore`, `reload`, `refreshStale` and `onImageError`, grids on screen first) and a first page size of 60 with
-  200 for further pages, kept by `reload()`; verify with `photos.test.ts` cases with a fake API that counts
-  requests in flight and checks the `limit` of each page
+  window listeners of its own) and name both thresholds in `lib/grid.ts`: `nearEnd` only when the viewport extended
+  by the overscan rows overlaps the grid's box, and the first page when the reserved box of `min(ownCount, 60)`
+  tiles comes within one viewport height of the screen; verify with `grid.test.ts` cases for each threshold (a grid
+  just beyond the overscan rows does not ask for more, one inside them does; an unloaded grid just beyond one
+  viewport height is not requested, one inside it is), the reserved height, and that at 1280 × 800 px a first page
+  of 60 at the top reports `nearEnd` at once (page 2 follows, which the e2e request counts allow for)
+- [ ] 3.2 Add the shared request queue to `lib/photos.ts`: at most two `GET /photos` at a time; it holds single page
+  requests (a `reload()` or `refreshStale()` queues its pages one after another, not as one chain); priority (grids
+  on screen first) decided when a slot takes a request; requests of a folded grid or of an outdated query dropped;
+  a generation number per `PhotoPages`, increased by `setQuery()`, fold and `reload()`, so a late answer of an older
+  generation is discarded. Derive the limit per page in `fetchPage` (no cursor: 60, otherwise 200); verify with
+  `photos.test.ts` cases with a fake API that counts requests in flight and checks the `limit` of each request for
+  first pages, `loadMore`, `reload()`, `refreshStale()` and `onImageError()` on the first and on a later page, that a
+  folded grid's queued requests are dropped, and that two quick `setQuery()` calls whose first answer arrives last
+  leave the pages of the second query
 
 ## 4. Grouped photo overview
 
@@ -59,22 +68,30 @@
   album), pages dropped on fold, album dropdown and "only this album" removed, visibility filter and sort applied to
   every open album, the empty-library hint kept; verify in the browser against the dev server with nested albums,
   an album without own photos and photos without an album
-- [ ] 4.2 Add the one measurement in `PhotosView` (one scroll and one resize listener, one `ResizeObserver` on the
-  list, every grid and the elements above the list, re-measure after row changes) and move `focusPhoto` there with a
-  re-measure first; verify with an e2e case for "Fold a heading above an open album" and "Grid above grows"
-  (web-admin, "Grids follow the layout") and the existing "Close the photo detail" case with two open albums
+- [ ] 4.2 Add the one measurement in `PhotosView`: the list's top read with one `getBoundingClientRect()` per scroll
+  frame and on window resize, the grids' offsets relative to the list from one `ResizeObserver` on the list and every
+  grid plus a re-measure after row changes, a grid's `top` as their sum; move `focusPhoto` there with a re-measure
+  first; verify with e2e cases for "Fold a heading above an open album" and "Grid above grows" (web-admin, "Grids
+  follow the layout"), a case that closes the paired banner above the overview (and one that shows an error above
+  the list) and then scrolls, checking that the grid shows the thumbnails of the rows on screen, and the existing
+  "Close the photo detail" case with two open albums
 - [ ] 4.3 After a switch, replace the album list from the answer, call `refreshState()`, and pin the switched heading
-  while a filter is set until filter or sort change; verify with e2e cases for "Grids follow the switch" and "Switch
+  and its ancestors while a filter is set until filter or sort change; verify with e2e cases for "Grids follow the switch" and "Switch
   with a filter" (focus on the switch afterwards)
 - [ ] 4.4 Keep the selection as a map from ID to source, so folding keeps it and "can delete" never offers Delete for
   a Nextcloud photo; keep batch actions, delete confirmation, detail view, library version reload, settings version
   reload, stale-URL refresh and image-error reload working across all open grids; verify with an e2e case for
   "Selection in a folded album" (web-admin, "Photos from Nextcloud in the overview") and the photo e2e tests adapted
   in 6.1
-- [ ] 4.5 Let `UploadPanel` pass the target album to `onuploaded` and open that heading with its ancestors; verify
-  with e2e cases for "Upload on the first visit" and "Upload into a folded sub-album"
-- [ ] 4.6 Headings with `role="heading"` and `aria-level` = depth + 2, fold button with `aria-expanded` and
-  `aria-controls`, names of fold button and switch with the album's path, indentation capped at depth 4, long names
+- [ ] 4.5 Let `UploadPanel` pass to `onuploaded` the album paths from the answers of the successful uploads
+  (`UploadResult.photos[].album`, `null` for the heading without an album), not the typed path, and nothing if every
+  upload failed; open those headings with their ancestors; verify with e2e cases for "Upload on the first visit",
+  "Upload into a folded sub-album", an upload into a new album typed with a leading space and dot that opens the
+  cleaned album, and an upload that fails completely and opens nothing
+- [ ] 4.6 Headings with `role="heading"` and `aria-level` = depth + 2 holding the fold button, the switch next to the
+  heading element and not inside it, a content container with a stable `id` below every heading (empty while
+  folded), fold button with `aria-expanded` and `aria-controls` pointing to it, names of fold button and switch with
+  the album's path, indentation capped at depth 4, long names
   wrapping; verify with the checks of 6.2
 - [ ] 4.7 Add the strings for the heading without an album (`photos.noAlbumHeading`), the fold labels with the path
   and the count to `de.json` and `en.json`, and remove `photos.filterAlbum`, `photos.allAlbums`,

@@ -69,36 +69,70 @@ for a list of headings that does not need virtualizing).
 ### 2. One measurement in `PhotosView`, grids without listeners
 
 `VirtualGrid` becomes controlled: it takes `top` (its offset in the page), `width`, `scrollY` and `viewport` as
-props and has no `ResizeObserver` and no window listeners of its own. `PhotosView` owns the measurement:
+props and has no `ResizeObserver` and no window listeners of its own. `PhotosView` owns the measurement in two parts:
 
-- One window `scroll` listener (passive, read in one `requestAnimationFrame` per frame) sets `scrollY`; one `resize`
-  listener sets `viewport`. Offsets in the page do not change while scrolling, so scrolling measures nothing.
-- One `ResizeObserver` observes the list of headings and grids, every grid box and the elements above the list
-  (toolbar, skipped-files notice, error). Every callback, every change of the rendered rows (after `tick()`) and
-  every window resize re-measures, in one frame, `top` and `width` of every open grid with one
-  `getBoundingClientRect()` each. A fold, a grid that grows, a notice that appears or a heading that wraps resizes
-  one of the observed boxes, so the grids below get their new `top` before the next paint.
-- `focusPhoto(id)` lives in `PhotosView`: it re-measures, finds the grid that holds the photo and asks that grid to
-  scroll its tile into view and focus it.
+- The list's own position. Content outside `PhotosView` can move the whole list without resizing anything inside
+  it: `SafeModeBanner`, `ReloadBanner` and `PairedBanner` sit above it in `App.svelte`, the paired banner closes on a
+  click and its rename form changes its height, and a `{#if error}` element does not exist to be observed before it
+  appears. So the list's top in the page is read with one `getBoundingClientRect()` of the list element in every
+  scroll frame (one passive `scroll` listener, at most one `requestAnimationFrame` per frame) and on every window
+  resize, as today's grid does for itself, but once for the page instead of once per grid. The same frame sets
+  `scrollY` and `viewport`.
+- The grids' offsets relative to the list. These change only with content inside the list: one `ResizeObserver`
+  observes the list and every grid box, and every callback and every change of the rendered rows (after `tick()`)
+  re-measures `width` and the offset to the list of every open grid, one `getBoundingClientRect()` each. A fold, a
+  grid that grows or a heading that wraps resizes one of the observed boxes, so the grids below get their new offset
+  before the next paint.
+- A grid's `top` is the list's top plus its offset. A banner that closes or an error that appears thus moves every
+  grid at the next scroll frame at the latest, and at once when it also changes the list's size or the window.
+- `focusPhoto(id)` lives in `PhotosView`: it re-measures both parts, finds the grid that holds the photo and asks
+  that grid to scroll its tile into view and focus it.
 
 Alternatives: per-grid scroll listeners plus a re-measure event (one `getBoundingClientRect` per grid per scroll
 event, heavy on phones with many open albums); an `IntersectionObserver` per grid (tells whether a grid is on screen,
-not its offset, which the row range needs).
+not its offset, which the row range needs); observing the main column in `App.svelte` instead of reading the list's
+top per scroll frame (would work for the banners, but ties `PhotosView` to the app's layout, while one rectangle per
+scroll frame is cheap).
 
 ### 3. Loading only near the screen, with a reserved height
 
-`gridLayout` gets the grid's box and reports `nearEnd` only when the viewport plus the overscan rows overlaps it, so
-a grid entirely above or below the screen never asks for more. Before its first page a grid reserves the height of
-`min(ownCount, 60)` tiles at the current width, so unloaded grids do not stack at height 0 and all count as on
-screen; the first page is requested when that box comes within one viewport height of the screen. After loading,
-the height is that of the loaded rows, as today; a grid that grows only moves content below it.
+Two thresholds, both named in `lib/grid.ts`:
+
+- Next page: `gridLayout` gets the grid's box and reports `nearEnd` only when the viewport extended by the overscan
+  rows (2 rows above and below) overlaps it and the visible rows reach the last loaded rows, as today. A grid entirely
+  above or below the screen never asks for more.
+- First page: before it, a grid reserves the height of `min(ownCount, 60)` tiles at the current width, so unloaded
+  grids do not stack at height 0 and all count as on screen. The first page is requested when that reserved box comes
+  within one viewport height above or below the screen.
+
+After loading, the height is that of the loaded rows, as today; a grid that grows only moves content below it. A
+first page of 60 is less than a screen with overscan at large widths: at 1280 × 800 px the grid has about six
+columns, 60 photos are about ten rows, and the visible rows plus overscan already reach the end, so page 2 of an album
+at the top follows at once. That is intended (the second request is queued behind the first pages of the other grids
+on screen) and means tests count requests in flight, not requests per album.
 
 ### 4. At most two photo list requests at a time, smaller first page
 
 All `PhotoPages` of the overview share one request queue (`lib/photos.ts`) that lets at most two `GET /photos` run
-at a time: first pages, `loadMore`, reloads, the stale-URL refresh and the reload after an image error. Requests of
-grids that intersect the viewport go first, the rest in page order. The first page of an album has 60 photos, every
-further page 200; `reload()` keeps the sizes of the pages it reloads.
+at a time. It holds single page requests, not whole operations: `reload()` reloads its pages one after another
+(`photos.ts`, each page needs the previous page's cursor), so it puts one request into the queue, waits for it and
+then puts the next; the same holds for `refreshStale()`. First pages, `loadMore`, the pages of a reload, the stale-URL
+refresh and the reload after an image error all go through it.
+
+- Priority is decided when a free slot takes the next request, not when it is queued: requests of grids that
+  intersect the viewport at that moment go first, then the rest in page order. A grid scrolled into view meanwhile
+  thus overtakes requests that were queued earlier.
+- Requests that are no longer needed are dropped from the queue: those of a grid that was folded and those queued
+  for an outdated query (filter or sort order changed since).
+- Stale answers: today two quick `setQuery()` calls start two reloads, and the older one can finish last and
+  overwrite the newer pages. Each `PhotoPages` gets a generation number that `setQuery()`, a fold and `reload()`
+  increase; a request carries the generation it was made for, and an answer for an older generation is neither
+  applied nor followed by the next page of its chain. A request already in flight runs to its end, but its answer
+  is discarded.
+
+The limit is derived per page: a request without a cursor (the first page) asks for 60, every other page for 200.
+`reload()`, `refreshStale()` and `onImageError()` refetch a page with the limit of its own position, so the first
+page stays 60 on every refetch and the pages keep their boundaries.
 
 Each page makes the frame filter the library and sign the URLs of every photo on it, and a frame with a slow network
 stack answers late under many parallel connections (residual risk in the README). With 20 open albums after a
@@ -118,8 +152,8 @@ not queued: the browser loads only those of rendered tiles, as today.
   reads `albums` and would re-enter the lazy initializer. `isVisible` stays a map lookup afterwards. The core class
   `Album` gets `visibleCount`; `AlbumDto` and `AlbumListDto` in `LibraryRoutes.kt` get the new fields.
 - `GET /photos?noalbum=true`: a new boolean query parameter, written like `subalbums`. With `true` the list holds only
-  the photos with `album: null`; `false` or missing changes nothing. Together with `album` the answer is
-  `400 bad_request`; `subalbums` has no effect with it. The client sends it as `noalbum: true` in `PhotoQuery`,
+  the photos with `album: null`; `noalbum=false` or no `noalbum` changes nothing, also together with `album`.
+  `noalbum=true` together with `album` is `400 bad_request`; `subalbums` has no effect with it. The client sends it as `noalbum: true` in `PhotoQuery`,
   which `query()` keeps (it drops only `undefined`, `null` and `""`).
 
 Why not `album=""`: the client drops empty values on purpose, an empty value is easy to lose in other clients and
@@ -138,7 +172,9 @@ is tested by behaviour in `LibraryApiTest` (through `TestFrame`, which checks ev
 `lib/albums.ts` already builds the tree in the frame's order (case-insensitive). A new pure function turns tree,
 `noAlbum`, open set, filter and the pinned path (decision 9) into the rows to render: heading rows (path, title,
 depth, count for the filter, own count, open, album) and grid slots. With a visibility filter an album whose filtered
-count is 0 is left out with its branch, unless it is pinned. The heading for photos without an album comes after all
+count is 0 is left out with its branch, unless it is the pinned path or one of its ancestors: with "only hidden",
+`holiday` without own photos drops to 0 as soon as `holiday/2024` is shown, and leaving it out would take the pinned
+`holiday/2024` with it. The heading for photos without an album comes after all
 albums, as in the preview the user approved, has no switch, uses the text "No album" (`photos.noAlbumHeading`, same
 wording as the detail view and the upload choice), and is left out when its count for the filter is 0.
 
@@ -157,8 +193,11 @@ origin, so per frame address.
 
 ### 8. Uploads open their target
 
-`UploadPanel`'s `onuploaded` passes the album path the photos went to (`""` without an album). `PhotosView` opens
-that heading and every heading above it, stores the state and scrolls the heading into view. A new user who uploads
+`UploadPanel`'s `onuploaded` passes the album paths the photos went to, taken from the answers of the uploads
+(`UploadResult.photos[].album`, `null` meaning the heading for photos without an album), not from the typed path:
+the frame cleans every level of the name (`PhotoLibrary.sanitizeAlbum`: forbidden characters, leading dots, spaces,
+64 characters per level), so `" holiday/ .2024"` lands in `holiday/2024`. If every upload failed, nothing is opened.
+`PhotosView` opens that heading and every heading above it, stores the state and scrolls the heading into view. A new user who uploads
 without choosing an album thus sees the photos at once, although the overview started folded. Photos that arrive
 over USB or from a source keep the remembered state; their heading shows the new count.
 
@@ -168,9 +207,10 @@ The switch, its one-at-a-time `busy` lock and the rollback on error move from `A
 the `PATCH /albums` answer the album list is replaced from it and `refreshState()` reads the library version at once,
 so the version change reloads the open grids through the queue immediately instead of after up to 10 s.
 
-While a visibility filter is set, the switched heading is pinned: it stays in the rows with its count (possibly 0)
-and its grid until the filter or the sort order changes, so it neither vanishes under the pointer nor takes the
-focus with it. Headings are keyed by path, so the switch element and its focus survive the reload.
+While a visibility filter is set, the switched heading is pinned with its ancestors (decision 6): it stays in the
+rows with its count (possibly 0) and its grid until the filter or the sort order changes, so it does not vanish
+under the pointer. The switch keeps the focus after it is used: headings are keyed by path, so the switch element
+survives the reload of the album list and the grids.
 
 ### 10. Selection, detail and changes across grids
 
@@ -194,10 +234,14 @@ only compares the keys of both catalogs, so unused or missing keys are checked b
 
 ### 12. Narrow screens and assistive technology
 
-Headings are `role="heading"` with `aria-level` = depth + 2, so levels deeper than `h6` keep their level. Indentation
+Each heading row holds an element with `role="heading"` and `aria-level` = depth + 2 (so levels deeper than `h6`
+keep their level) that contains only the fold button with the name and count; the switch sits next to it in the row,
+not inside the heading, so a heading's text is not mixed with a control. Below each heading there is always a content
+container with a stable `id` (from the path), empty while folded, so the fold button's `aria-controls` resolves in
+both states. Indentation
 grows by 12 px per level up to depth 4 and stays there; the name wraps (`overflow-wrap: anywhere`) instead of
 widening the row; count and switch stay on the heading's row or wrap below the name. The fold button has
-`aria-expanded` and `aria-controls` for the album's content; the names of fold button and switch contain the album's
+`aria-expanded` and `aria-controls` for that container; the names of fold button and switch contain the album's
 path as `displayPath` shows it ("holiday / 2024"). Fold buttons and switches have touch targets of 44 × 44 px.
 
 ## Risks / Trade-offs

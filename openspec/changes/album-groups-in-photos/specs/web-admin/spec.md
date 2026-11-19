@@ -69,7 +69,7 @@ The interface SHALL show the photos as grids of thumbnails grouped under album h
 - **THEN** the overview shows no heading but the hint to upload photos or copy them over USB
 
 ### Requirement: Grids follow the layout
-Every open grid SHALL show the thumbnails of its rows that are on screen, without the user scrolling, also right after a heading above it was folded or opened, a grid above it loaded more photos or the window changed its size. Returning from the detail view SHALL bring the tile of that photo into view at its current place.
+Every open grid SHALL show the thumbnails of its rows that are on screen, without the user scrolling, also right after a heading above it was folded or opened, a grid above it loaded more photos, a notice above the overview appeared or closed, or the window changed its size. Returning from the detail view SHALL bring the tile of that photo into view at its current place.
 
 #### Scenario: Fold a heading above an open album
 - **WHEN** `family` and `holiday` are open, the user has scrolled to the grid of `holiday` and folds `family`
@@ -78,6 +78,10 @@ Every open grid SHALL show the thumbnails of its rows that are on screen, withou
 #### Scenario: Grid above grows
 - **WHEN** the grid of an upper open album loads more photos while the user looks at a lower one
 - **THEN** the lower grid keeps showing the thumbnails of the rows on screen
+
+#### Scenario: Notice above the overview closes
+- **WHEN** an album is open, the user closes the notice above the overview that tells under which name the browser was paired, and scrolls
+- **THEN** the grid shows the thumbnails of the rows on screen, without empty rows
 
 ### Requirement: Photo requests from the overview
 The overview SHALL request the photos of an open album only when its grid comes near the visible area, with a first page of at most 60 photos. It SHALL run at most two photo list requests at a time for all albums together. An album without photos of its own that match the filter SHALL cost no photo list request.
@@ -128,7 +132,7 @@ Each album heading SHALL show the album's name and the number of photos of the a
 - **THEN** the overview shows no heading for `family`
 
 ### Requirement: Album switch in the photo overview
-After the switch on a heading has been used, the open grids SHALL show the new visibility of their photos without waiting for the regular check for library changes. While a visibility filter is set, the switched heading SHALL keep its place and the focus SHALL stay on its switch until the filter or the sort order changes, even if no photo of its branch matches the filter any more.
+After the switch on a heading has been used, the open grids SHALL show the new visibility of their photos without waiting for the regular check for library changes. The switch SHALL keep the focus after it is used. While a visibility filter is set, the switched heading SHALL stay in place until the filter or the sort order changes, even if no photo of its branch matches the filter any more.
 
 #### Scenario: Grids follow the switch
 - **WHEN** `holiday` is open and the user turns off its switch
@@ -137,6 +141,10 @@ After the switch on a heading has been used, the open grids SHALL show the new v
 #### Scenario: Switch with a filter
 - **WHEN** only hidden photos are shown, every photo of `holiday` is hidden by the album, and the user turns on its switch
 - **THEN** the heading of `holiday` stays under the pointer with its switch focused and on, and its grid shows no photos
+
+#### Scenario: Switch a sub-album with a filter
+- **WHEN** only hidden photos are shown, `holiday` has no photos of its own, every photo of `holiday/2024` is hidden by the album, and the user turns on the switch of `holiday/2024`
+- **THEN** the headings of `holiday` and `holiday/2024` both stay in place, and the switch of `holiday/2024` keeps the focus
 
 ### Requirement: Album headings for every screen and input
 At 360 px width a heading of any depth and with a long name SHALL fit without horizontal scrolling. Every heading SHALL be announced as a heading at a level that follows its depth. Its fold button SHALL tell whether it is open, and the names of fold button and switch SHALL contain the album's path. Fold buttons and switches SHALL be reachable with Tab and work with Enter and Space.
