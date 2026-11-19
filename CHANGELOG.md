@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/tycho991/openframe/compare/v0.9.0...v0.10.0) (2026-11-19)
+
+
+### Features
+
+* answer only on local addresses, log device management, fix error paths ([#109](https://github.com/tycho991/openframe/issues/109)) ([70ad5cd](https://github.com/tycho991/openframe/commit/70ad5cd818ddf8c366d9ffdb4059d4a52dca67c0))
+
 ## [0.9.0](https://github.com/tycho991/openframe/compare/v0.8.1...v0.9.0) (2026-11-18)
 
 
