@@ -23,7 +23,13 @@ class FakeNextcloud(
     bindAddress: String = "127.0.0.1",
     /** The host in [baseUrl]: with TLS the name of the test certificate, `localhost`. */
     private val host: String = bindAddress,
-) : NanoHTTPD(bindAddress, 0) {
+    port: Int = 0,
+    /**
+     * The login flow names addresses on the host that the request was sent to, so that a frame that reaches this
+     * server under another address (the emulator on `10.0.2.2`) gets addresses it can reach. For [main].
+     */
+    private val answerOnRequestHost: Boolean = false,
+) : NanoHTTPD(bindAddress, port) {
     /** The app password the server accepts; another one makes it refuse the one the login handed out. */
     @Volatile var acceptedAppPassword: String = appPassword
 
@@ -111,6 +117,9 @@ class FakeNextcloud(
 
     @Volatile var approved = false
 
+    /** A `GET` of this path approves the login, as a user would on the login page; off in the tests. */
+    @Volatile var approvalPath: String? = null
+
     @Volatile var revoked = false
 
     /** The `Authorization` headers of the revocations, in order. */
@@ -151,11 +160,15 @@ class FakeNextcloud(
         faults[path]?.let { code -> return status(code).apply { faultHeaders[path]?.forEach { (k, v) -> addHeader(k, v) } } }
         return when {
             path == "/index.php/login/v2" && session.method == Method.POST -> {
-                loginStart()
+                loginStart(baseOf(session))
             }
 
             path == "/index.php/login/v2/poll" && session.method == Method.POST -> {
-                loginPoll()
+                loginPoll(baseOf(session))
+            }
+
+            path == approvalPath && session.method == Method.GET -> {
+                approvalPage()
             }
 
             path == "/ocs/v2.php/cloud/user" -> {
@@ -199,21 +212,21 @@ class FakeNextcloud(
         }
     }
 
-    private fun loginStart(): Response =
+    /** [baseUrl], or the address the request was sent to with [answerOnRequestHost]. */
+    private fun baseOf(session: IHTTPSession): String {
+        val requested = session.headers["host"]
+        return if (answerOnRequestHost && requested != null) "${if (secure) "https" else "http"}://$requested" else baseUrl
+    }
+
+    private fun loginStart(base: String): Response =
         json(
             loginStartOverride
-                ?: """{"poll":{"token":"poll-token","endpoint":"$baseUrl/index.php/login/v2/poll"},"login":"$baseUrl/index.php/login/v2/flow/abc"}""",
+                ?: """{"poll":{"token":"poll-token","endpoint":"$base/index.php/login/v2/poll"},"login":"$base/index.php/login/v2/flow/abc"}""",
         )
 
-    private fun loginPoll(): Response =
+    private fun loginPoll(base: String): Response =
         if (approved) {
-            json(
-                loginPollOverride
-                    ?: """{"server":"${reportedServer ?: baseUrl}","loginName":"${loginName.replace(
-                        "\"",
-                        "\\\"",
-                    )}","appPassword":"$appPassword"}""",
-            )
+            json(loginPollOverride ?: """{"server":"${reportedServer ?: base}","loginName":"$loginName","appPassword":"$appPassword"}""")
         } else {
             status(404)
         }
@@ -495,9 +508,79 @@ class FakeNextcloud(
 
     private fun encode(segment: String) = URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
 
-    private companion object {
-        const val DAV = "/remote.php/dav/files"
-        const val PUBLIC_DAV = "/public.php/webdav"
-        const val SHARE_PAGE = "/index.php/s/"
+    /** The login page that [main] serves: the user "approves" by opening it. */
+    private fun approvalPage(): Response {
+        approved = true
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "text/html",
+            "<!doctype html><title>Fake Nextcloud</title><p>Approved. Return to the frame.",
+        )
+    }
+
+    companion object {
+        private const val DAV = "/remote.php/dav/files"
+        private const val PUBLIC_DAV = "/public.php/webdav"
+        private const val SHARE_PAGE = "/index.php/s/"
+
+        /** The shares that [main] serves for the device rows (design decision 17 of `nextcloud-hardening`). */
+        const val DOCTYPE_SHARE = "Doctype1"
+        const val MANY_SHARE = "Many1"
+        const val HEIC_SHARE = "Heic1"
+        const val MANY_ENTRIES = 50_000
+
+        /** A listing that declares a DOCTYPE with entities nested nine levels deep: a billion `a` if they were expanded. */
+        val NESTED_ENTITIES: String =
+            """<?xml version="1.0"?><!DOCTYPE d:multistatus [<!ENTITY a "aaaaaaaaaa">""" +
+                (1..9).joinToString("") { n -> "<!ENTITY ${'a' + n} \"" + "&${'a' + n - 1};".repeat(10) + "\">" } +
+                """]><d:multistatus xmlns:d="DAV:"><d:response><d:href>&j;</d:href></d:response></d:multistatus>"""
+
+        /** The server of [main], set up but not started. */
+        fun forDevices(
+            bind: String,
+            port: Int,
+        ): FakeNextcloud {
+            val server = FakeNextcloud(bindAddress = bind, port = port, answerOnRequestHost = true)
+
+            fun fixture(name: String) = FakeNextcloud::class.java.getResourceAsStream("/fixtures/$name")!!.use { it.readBytes() }
+            val jpg = fixture("landscape.jpg")
+            val png = fixture("image.png")
+            val heic = fixture("photo.heic") + ByteArray(4 * 1024 * 1024)
+            server.put("Photos/a.jpg", jpg, "pa")
+            server.put("Photos/holiday/b.jpg", fixture("rotated6.jpg"), "pb")
+            server.put("Doctype/a.jpg", jpg, "da")
+            server.shares[DOCTYPE_SHARE] = Share("Doctype")
+            for (i in 0 until MANY_ENTRIES) server.files["Many/p$i.png"] = Remote(png, "m$i")
+            server.shares[MANY_SHARE] = Share("Many")
+            for (i in 1..20) server.put("Heic/photo$i.heic", heic, "h$i")
+            server.shares[HEIC_SHARE] = Share("Heic")
+            server.listingOverride = { dir -> if (dir == "Doctype") NESTED_ENTITIES else null }
+            server.approvalPath = "/index.php/login/v2/flow/abc"
+            return server
+        }
+
+        /**
+         * Serves the hostile shares for the device rows on a LAN address: `./gradlew :core:runFakeNextcloud
+         * --args="<bind address> <port>"`, e.g. `192.168.100.215 8095`, or `0.0.0.0` for the LAN and the emulator
+         * (`10.0.2.2`) at once. Plain `http`; it runs until it is stopped.
+         *
+         * - `/s/Doctype1`: a share whose listing declares a DOCTYPE with nested entities;
+         * - `/s/Many1`: a share of one folder with 50,000 small images;
+         * - `/s/Heic1`: a share of HEIC photos;
+         * - an account `Anna` with the folder `/Photos`, over plain `http`: opening the login page approves.
+         */
+        @JvmStatic
+        fun main(args: Array<String>) {
+            val bind = args.getOrNull(0) ?: "127.0.0.1"
+            val port = args.getOrNull(1)?.toInt() ?: 8095
+            forDevices(bind, port).start(SOCKET_READ_TIMEOUT, false)
+            val shown = if (bind == "0.0.0.0") "<address of this PC>" else bind
+            println("Fake Nextcloud on http://$shown:$port/ (the emulator reaches it on http://10.0.2.2:$port/)")
+            println("  share with a DOCTYPE:      http://$shown:$port/s/$DOCTYPE_SHARE")
+            println("  share with $MANY_ENTRIES images: http://$shown:$port/s/$MANY_SHARE")
+            println("  share with HEIC photos:    http://$shown:$port/s/$HEIC_SHARE")
+            println("  account: server address http://$shown:$port, folder /Photos; opening the login page approves")
+            Thread.currentThread().join()
+        }
     }
 }

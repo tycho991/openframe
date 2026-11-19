@@ -225,6 +225,19 @@ class RemoteSourceTest {
         assertEquals(setOf("a.jpg", "old.jpg", "b.jpg"), photos().keys, "b.jpg arrived, old.jpg is not removed after a failure")
     }
 
+    /** Spec "Rejected access" › One file refused: only a refused listing is about the folder. */
+    @Test
+    fun `A refused download is a failure of one file, a refused listing is not`() {
+        remote.put("a.jpg", jpg(), "e1")
+        remote.beforeDownload =
+            { throw SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 403)") }
+        val download = assertThrows(SourceException::class.java) { sync() }
+        assertEquals(SourceException.Kind.UNAUTHORIZED to true, download.kind to download.fileOnly)
+        remote.listFailure = SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 401)")
+        val listing = assertThrows(SourceException::class.java) { sync() }
+        assertEquals(SourceException.Kind.UNAUTHORIZED to false, listing.kind to listing.fileOnly)
+    }
+
     @Test
     fun `A source that is gone as a whole ends the sync at once and removes nothing`() {
         remote.put("a.jpg", jpg(), "e1")

@@ -401,6 +401,7 @@ class SourcesApiTest {
         waitFor(SYNC_TIMEOUT_MS, "the sync") { synced(id) }
         val status = source(id).status
         assertEquals(1, status.added)
+        assertEquals("/", clients.accountFolders.last(), "the account syncs the folder chosen for it")
         assertNull(status.error)
         assertNull(status.errorCode, "no error code after a success")
         assertTrue(status.lastSyncAt != null)

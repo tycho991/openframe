@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -60,15 +61,20 @@ class SourceOriginalsTest {
         }
     }
     private val local by lazy { LocalPhotoSource(File(dir, "photos"), engine, index, log) }
+    private val originals by lazy { SourceOriginals(local, registry) }
+
+    /** Wired as the frame wires it: what is on the frame on the worker, a download on the download thread. */
     private val cache by lazy {
         RenderCache(
             File(dir, "renders"),
             engine,
-            SourceOriginals(local, registry)::fileOf,
+            { originals.onFrame(it) },
             { PixelSize(320, 200) },
             { FillMode.AUTO },
             { 10L * 1024 * 1024 },
             log,
+            fetch = originals::fileOf,
+            release = originals::release,
         )
     }
 
@@ -130,5 +136,34 @@ class SourceOriginalsTest {
         assertThrows(SourceException::class.java) { runBlocking { cache.get(entry, RenderSize.THUMB) } }
         val orphan = entry.copy(id = PhotoEntry.idFor("sgone", "b.jpg"), source = "sgone")
         assertThrows(SourceException::class.java) { runBlocking { cache.get(orphan, RenderSize.THUMB) } }
+    }
+
+    @Test
+    fun `An original that a rendering finds on the frame is marked as used and not the first evicted`() {
+        val older = syncedEntry("nextcloud", "a.jpg")
+        val newer = syncedEntry("nextcloud", "b.jpg")
+        val store = registry.source("nextcloud")!!.originals
+        store.fileOf(older).setLastModified(1_000_000L)
+        store.fileOf(newer).setLastModified(2_000_000L)
+        // A rendering takes the older one from the frame: it becomes the youngest.
+        assertTrue(runBlocking { cache.get(older, RenderSize.THUMB) }.isFile)
+        store.trim(store.fileOf(older).length())
+        assertTrue(store.has(older), "the original just rendered stays")
+        assertFalse(store.has(newer))
+    }
+
+    @Test
+    fun `A fetched original stays pinned until its renderings are done`() {
+        val entry = syncedEntry("nextcloud", "a.jpg")
+        val store = registry.source("nextcloud")!!.originals
+        store.fileOf(entry).delete()
+        val file = originals.fileOf(entry)
+        assertTrue(file.isFile)
+        assertEquals(0, store.trim(0), "pinned, a trim leaves it")
+        assertTrue(store.has(entry))
+        originals.release(entry)
+        store.refresh()
+        assertEquals(1, store.trim(0))
+        assertFalse(store.has(entry))
     }
 }

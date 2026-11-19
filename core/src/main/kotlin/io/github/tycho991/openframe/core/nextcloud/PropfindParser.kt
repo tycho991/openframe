@@ -180,7 +180,8 @@ object PropfindParser {
 
                 "response" -> {
                     inResponse = false
-                    if (entries.size >= maxEntries) {
+                    // The folder's own entry comes on top of the entries in it.
+                    if (entries.size > maxEntries) {
                         throw Refused(
                             SourceException(SourceException.Kind.LIMIT, "The listing has more than $maxEntries entries in one folder"),
                         )

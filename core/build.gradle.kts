@@ -88,6 +88,15 @@ tasks.named("compileKotlin") {
 }
 
 // Test server for the web UI's Playwright tests, see TestServerMain.
+// The fake Nextcloud of the tests on a LAN address, with the hostile shares for the device rows (design decision 17 of
+// nextcloud-hardening): `./gradlew :core:runFakeNextcloud --args="<bind address> <port>"`.
+tasks.register<JavaExec>("runFakeNextcloud") {
+    group = "application"
+    description = "Starts the fake Nextcloud of the tests on a given address, for the device tests."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.tycho991.openframe.core.nextcloud.FakeNextcloud")
+}
+
 tasks.register<JavaExec>("runTestServer") {
     group = "application"
     description = "Starts :core with a fake MediaEngine and the built web UI for the Playwright tests."

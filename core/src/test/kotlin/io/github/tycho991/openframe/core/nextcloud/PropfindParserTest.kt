@@ -133,10 +133,12 @@ class PropfindParserTest {
 
     @Test
     fun `More entries than the limit end the listing`() {
-        val xml = """<d:multistatus xmlns:d="DAV:">""" + (1..11).joinToString("") { response("/f$it") } + "</d:multistatus>"
-        val failure = assertThrows(SourceException::class.java) { PropfindParser.parse(xml.byteInputStream(), maxEntries = 10) }
+        // The folder's own entry and 10 entries in it pass a limit of 10, one more does not.
+        val fits = """<d:multistatus xmlns:d="DAV:">""" + (0..10).joinToString("") { response("/f$it") } + "</d:multistatus>"
+        assertEquals(11, PropfindParser.parse(fits.byteInputStream(), maxEntries = 10).size)
+        val more = """<d:multistatus xmlns:d="DAV:">""" + (0..11).joinToString("") { response("/f$it") } + "</d:multistatus>"
+        val failure = assertThrows(SourceException::class.java) { PropfindParser.parse(more.byteInputStream(), maxEntries = 10) }
         assertEquals(SourceException.Kind.LIMIT, failure.kind)
-        assertEquals(11, PropfindParser.parse(xml.byteInputStream(), maxEntries = 11).size)
     }
 }
 
