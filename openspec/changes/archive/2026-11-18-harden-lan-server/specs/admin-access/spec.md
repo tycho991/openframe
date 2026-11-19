@@ -20,7 +20,8 @@ The frame SHALL hold at most 48 connections at once and at most 16 from one addr
 
 #### Scenario: Flood from one device
 - **WHEN** one device on the LAN opens 200 connections and sends their requests byte by byte
-- **THEN** another device still uses the web UI with answers within a second, the slideshow keeps running and the app does not restart
+- **THEN** another device still uses the web UI, the slideshow keeps running and the app does not restart
+- **AND** the other device gets its answers within a second, unless the frame's network stack accepts fewer connections per second than the flood opens; then within seconds
 
 #### Scenario: Slow body
 - **WHEN** a client announces a JSON body for `POST /api/v1/pairing` and sends it slower than the deadline

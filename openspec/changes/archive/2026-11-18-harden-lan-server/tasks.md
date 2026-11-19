@@ -148,7 +148,7 @@
   - Home Assistant still reaches both frames after the update.
 
   Verify: the rows exist with their references.
-- [ ] 10.2 Run the rows of 10.1 after the release. Verify: results entered, and a finding in
+- [x] 10.2 Run the rows of 10.1 after the release. Verify: results entered, and a finding in
   `../openframe-private/FINDINGS.md` for anything that differs.
 
 ## Workflow follow-up
