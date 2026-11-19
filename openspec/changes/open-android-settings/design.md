@@ -71,9 +71,11 @@ that app disabled, not removed from the system image, so the check must not requ
 declares `<queries><package android:name="net.frameo.frame"/></queries>` for Frameo firmware on API 30 and newer.
 
 **(b) Learned signal, for firmware the check does not know.** The run journal sets `systemScreenEndsApp` at a start
-whose previous run ended as `PLANNED` by a system-screen record (decision 3) no later than `SYSTEM_SCREEN_END_WINDOW_MS`
-(60 s) after the record was made or renewed. The firmware ends the app right after the other activity starts, and the
-watchdog brings the process back within about 20 s, so the window holds that end and little else. The flag is kept
+that finds a valid system-screen record (decision 3), no Java crash, and comes no later than
+`SYSTEM_SCREEN_END_WINDOW_MS` (60 s) after the record was made or renewed. The journal cannot tell when the previous
+run ended (`lastElapsedMs` is written once a minute), only when the next one started. The firmware ends the app right
+after the other activity starts, and the watchdog brings the process back within about 20 s, so the window holds that
+end and little else. The flag is kept
 across starts, device restarts included, and cleared by a new installation or a lost `runs.json`. `HealthState` carries
 it; the device administration and brightness entries feed it as well.
 
@@ -106,17 +108,24 @@ device is noise.
 ### 3. A system-screen record that lasts until the slideshow is back
 
 All three entries that open a system screen call a new `FrameCore.systemScreenOpened(reason)` before `startActivity`,
-instead of `health.plannedExit` directly. It records a planned end marked as a system screen, valid for
-`SYSTEM_SCREEN_VALID_MS` (10 minutes, today's `ADMIN_SCREEN_VALID_MS` moved to `:core`), and starts the hold of
-decision 5. The journal then:
+instead of `health.plannedExit` directly. It records a planned end in a slot of its own in `runs.json`, next to the
+existing `planned` slot of updates and restarts, valid for `SYSTEM_SCREEN_VALID_MS` (10 minutes, today's
+`ADMIN_SCREEN_VALID_MS` moved to `:core`), and starts the hold of decision 5. `plannedExit` and `cancelPlannedExit`
+stay as they are: `UpdateManager.endInstall` calls `cancelPlannedExit` when an installation dialog ends, and with a
+shared slot it would withdraw a system-screen record too. The journal then:
 
-- **carries** a valid system-screen record into the new run at each start, renewed for 10 minutes from that start, so
-  any number of ends under the same screen count as planned; the end itself is still logged as a planned end;
+- **carries** a valid system-screen record into the new run at each start of the same boot and installation, renewed
+  for 10 minutes from that start, so any number of ends under the same screen count as planned; the end itself is
+  still logged as a planned end. A `REBOOTED` or `REPLACED` start drops it, and so does a start after its validity;
 - **lets a Java crash win** over a system-screen record in `classify`: no firmware end is a Java crash, so it is
   `CRASHED` and early. Other planned records (update, restart) keep today's order;
-- **withdraws** the record when the slideshow is back: `DisplayActivity.onResume` calls `FrameCore.systemScreenClosed()`,
-  whether the process survived or was started again under the screen. Only a system-screen record is withdrawn; an
-  update's record stays.
+- **withdraws** the record when the slideshow is back, through a new `Health.cancelSystemScreen()` that leaves the
+  `planned` slot alone. `DisplayActivity.onResume` calls it through `FrameApp.health`, not through the bound core: an
+  activity created afresh, as after a restart under the screen, gets `core` only in `onServiceConnected` after
+  `bindService` in `onStart`, so its first `onResume` sees `core == null`. Waiting for the core there would leave the
+  record renewed at every start and `CrashHandler` skipping the display restart after a real crash. Releasing the hold
+  and the HOME check (decisions 5 and 6) need the core: `onResume` does them when the core is bound, otherwise `attach`
+  does them once it arrives. `FrameCore.systemScreenClosed()` bundles the three for the bound case.
 
 *Alternative:* re-arm the record only at the start after a planned end. Rejected: the same thing with a rule that is
 harder to state; the renewal at each start is what keeps the second and third end planned.
@@ -173,6 +182,9 @@ Android 5.1 the permission needs no screen), and before "Unpair all devices": th
   access; a changed HOME app is logged on return (decision 6). The 3-second corner press stays the barrier.
 - [Settings left open for hours] → The settings stay in front and the screen follows the system's timeout; the
   schedule switches off as usual through device administration. A timer can follow as its own change if missed.
+- [The system-screen hold and the installation dialog's hold share `DisplayController`'s single `holdUntil`] → The end
+  of either ends both: an installation dialog closing during a system-screen hold releases it, and the reverse. Low
+  priority, since both are opened from the frame and rarely overlap; a second hold slot can follow if it shows.
 - [Opening the settings leaves the kiosk for anyone near the frame] → Accepted by the owner; the device menu already
   allows unpairing all devices.
 

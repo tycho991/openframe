@@ -41,12 +41,13 @@ None.
 
 - `kiosk-host`: new requirements "Android settings from the device menu", "Android settings hidden where the firmware
   ends the app", "Way back from Android's settings", "System screen from the device menu" and "Display while a system
-  screen is open"; "Self-healing" changed so that the display does not come back over a system screen.
+  screen is open"; "Self-healing" changed so that the display does not come back over a system screen while its
+  record is valid, and "Planned process end" changed to point to the renewal and withdrawal of a system-screen record.
 
 ## Impact
 
-- `:core`: `RunJournal` (system-screen records carried across starts, Java crash before such a record, the learned
-  flag), `HealthState`, `Health`, `PlatformInfo.otherActivityEndsApp`, `FrameCore.systemScreenOpened`/
+- `:core`: `RunJournal` (a separate slot for system-screen records, carried across starts, withdrawn by
+  `cancelSystemScreen`, Java crash before such a record, the learned flag), `HealthState`, `Health`, `PlatformInfo.otherActivityEndsApp`, `FrameCore.systemScreenOpened`/
   `systemScreenClosed`/`androidSettingsOffered`, the log line of `DisplayController.hold`; tests with the JVM fakes.
 - `:android`: `DisplayActivity.openDeviceMenu()` gets the entry and routes the two existing system-screen entries
   through `systemScreenOpened`; `onResume` withdraws the record and logs the HOME app; `CrashHandler` skips the display
