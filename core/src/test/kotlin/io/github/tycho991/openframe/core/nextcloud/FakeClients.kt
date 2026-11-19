@@ -37,10 +37,16 @@ class FakeClients(
 
     override fun loginFlow(): LoginFlow = login
 
+    /** The folder of every account folder asked for, in order (tests-quality-8: an account syncs its folder, not its root). */
+    val accountFolders = java.util.concurrent.CopyOnWriteArrayList<String>()
+
     override fun accountFolder(
         account: Connection.Account,
         folder: String,
-    ): RemoteFolder = remote
+    ): RemoteFolder {
+        accountFolders += folder
+        return remote
+    }
 
     override fun shareFolder(
         share: Connection.Share,
@@ -66,7 +72,7 @@ class FakeClients(
 class FakeLoginFlow(
     var serverUrl: String = "https://cloud.example.org",
     val loginName: String = "Anna",
-    val appPassword: String = "app-pw-1234",
+    @Volatile var appPassword: String = "app-pw-1234",
     @Volatile var userId: String = "anna",
 ) : LoginFlow {
     @Volatile var approved = false
@@ -81,7 +87,19 @@ class FakeLoginFlow(
     /** How long an approved poll takes, like a slow server that also has to name the user. */
     @Volatile var donePollDelayMs = 0L
 
+    /** The server an approved poll reports, by default the one the flow started at. */
+    @Volatile var reportedServer: String? = null
+
+    /** How long a revocation takes, like a server that does not answer. */
+    @Volatile var revokeDelayMs = 0L
+
     val started = ArrayList<String>()
+
+    /** The app passwords revoked, in order. */
+    val revokedPasswords = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    /** The flow of the last approved poll. */
+    @Volatile var poll: LoginStart? = null
 
     override fun start(serverUrl: String): LoginStart {
         startFailure?.let { throw it }
@@ -92,7 +110,8 @@ class FakeLoginFlow(
     override fun poll(start: LoginStart): LoginPoll {
         if (!approved) return LoginPoll.Pending
         if (donePollDelayMs > 0) Thread.sleep(donePollDelayMs)
-        return LoginPoll.Done(start.serverUrl, loginName, appPassword)
+        poll = start
+        return LoginPoll.Done(reportedServer ?: start.serverUrl, loginName, appPassword)
     }
 
     override fun userId(
@@ -109,6 +128,8 @@ class FakeLoginFlow(
         loginName: String,
         appPassword: String,
     ) {
+        if (revokeDelayMs > 0) Thread.sleep(revokeDelayMs)
+        revokedPasswords += appPassword
         revoked++
     }
 }

@@ -402,6 +402,7 @@ class SourcesApiTest {
         val status = source(id).status
         assertEquals(1, status.added)
         assertNull(status.error)
+        assertNull(status.errorCode, "no error code after a success")
         assertTrue(status.lastSyncAt != null)
         val photo = photos().items.single()
         assertEquals("holiday/a.jpg" to id, photo.path to photo.source)
@@ -424,7 +425,77 @@ class SourcesApiTest {
         frame.send("POST", "/api/v1/sources/${share.id}/sync")
         waitFor(SYNC_TIMEOUT_MS, "the failure") { source(share.id).status.let { it.ok == false && !it.syncing } }
         assertEquals("The server cloud.example.org did not answer in time", source(share.id).status.error)
+        assertEquals("unreachable", source(share.id).status.errorCode)
         assertEquals(1, photos().total)
+    }
+
+    /** Spec `remote-sources`: Status › Result from an older version. */
+    @Test
+    fun `A stored result of an older version without an error code shows its text and no code`() {
+        val state = File(dir, "state").apply { mkdirs() }
+        File(state, "sources.json").writeText(
+            """{"version":1,"sources":[{"id":"s1a2b3c4d","kind":"nextcloud-share","name":"Shared",""" +
+                """"connection":{"type":"share","serverUrl":"https://cloud.example.org","token":"AbC123"},"folder":"/"}]}""",
+        )
+        File(state, "sources-status.json").writeText(
+            """{"results":{"s1a2b3c4d":{"lastSyncAtMs":1760000000000,"lastSyncOk":false,"error":"The server was not found"}}}""",
+        )
+        clients.share("AbC123")
+        val status = source("s1a2b3c4d").status
+        assertEquals(false, status.ok)
+        assertEquals("The server was not found", status.error)
+        assertNull(status.errorCode)
+    }
+
+    @Test
+    fun `A login that fails after the approval reports its code`() {
+        login.userIdFailure = SourceException(SourceException.Kind.PROTOCOL, "The server did not name the user")
+        val started = frame.send("POST", "/api/v1/sources/login", """{"serverUrl":"https://cloud.example.org"}""")
+        val flow = ApiJson.decodeFromString(SourceLoginDto.serializer(), started.body())
+        login.approved = true
+        val failed = ApiJson.decodeFromString(SourceLoginStateDto.serializer(), frame.get("/api/v1/sources/login/${flow.flowId}").body())
+        assertEquals("failed", failed.state)
+        assertEquals("protocol", failed.errorCode)
+        assertEquals("The server did not name the user", failed.error)
+        waitFor(SYNC_TIMEOUT_MS, "the revoke of the unused app password") { login.revoked == 1 }
+    }
+
+    @Test
+    fun `A login on a full frame reports too_many_sources`() {
+        connect()
+        repeat(7) { shared("Share$it") }
+        login.approved = false
+        login.userId = "bert"
+        val started = frame.send("POST", "/api/v1/sources/login", """{"serverUrl":"https://cloud.example.org"}""")
+        val flow = ApiJson.decodeFromString(SourceLoginDto.serializer(), started.body())
+        login.approved = true
+        // A server that does not answer the revocation does not hold up the answer (design decision 9).
+        login.revokeDelayMs = 3_000
+        val askedAt = System.nanoTime()
+        val failed = ApiJson.decodeFromString(SourceLoginStateDto.serializer(), frame.get("/api/v1/sources/login/${flow.flowId}").body())
+        val tookMs = (System.nanoTime() - askedAt) / 1_000_000
+        assertTrue(tookMs < 2_000, "the answer took $tookMs ms")
+        assertEquals("failed" to "too_many_sources", failed.state to failed.errorCode)
+        waitFor(SYNC_TIMEOUT_MS, "the revoke of the unused app password") { login.revoked == 1 }
+    }
+
+    @Test
+    fun `A login answer that points to an insecure address is a 502 nextcloud_insecure_login`() {
+        login.startFailure = SourceException(SourceException.Kind.INSECURE_LOGIN, "The poll address of cloud.example.org is not on https")
+        val res = frame.send("POST", "/api/v1/sources/login", """{"serverUrl":"https://cloud.example.org"}""")
+        assertEquals(502, res.statusCode())
+        assertEquals("nextcloud_insecure_login", errorCode(res.body()))
+    }
+
+    @Test
+    fun `A port beyond 65535 is a 400 at the field, for a login and for a share link`() {
+        val login = frame.send("POST", "/api/v1/sources/login", """{"serverUrl":"https://cloud.example.org:99999"}""")
+        assertEquals(400, login.statusCode())
+        assertEquals(setOf("serverUrl"), fields(login.body()))
+        val share = addShare("https://cloud.example.org:99999/s/AbC123")
+        assertEquals(400, share.statusCode())
+        assertEquals(setOf("link"), fields(share.body()))
+        assertEquals(emptyList<SourceDto>(), list())
     }
 
     @Test

@@ -15,6 +15,15 @@ class FakeRemoteFolder : RemoteFolder {
     /** Called before every download; throws to make it fail. */
     @Volatile var beforeDownload: (RemoteFile) -> Unit = {}
 
+    /** The `ETag` header of a download of a path; by default the entity tag of the listing. */
+    val downloadEtags = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** The limits of every download, in order. */
+    val limits = java.util.Collections.synchronizedList(ArrayList<DownloadLimits>())
+
+    /** The cancel check of the last listing. */
+    @Volatile var listCancelled: () -> Boolean = { false }
+
     fun put(
         path: String,
         bytes: ByteArray,
@@ -28,7 +37,11 @@ class FakeRemoteFolder : RemoteFolder {
         content.remove(path)
     }
 
-    override fun list(recursive: Boolean): List<RemoteFile> {
+    override fun list(
+        recursive: Boolean,
+        cancelled: () -> Boolean,
+    ): List<RemoteFile> {
+        listCancelled = cancelled
         listFailure?.let { throw it }
         return content.values.map { it.first }.filter { recursive || '/' !in it.path }
     }
@@ -36,11 +49,14 @@ class FakeRemoteFolder : RemoteFolder {
     override fun download(
         file: RemoteFile,
         target: File,
-    ) {
+        limits: DownloadLimits,
+    ): String? {
+        this.limits += limits
         beforeDownload(file)
-        val (_, bytes) = content[file.path] ?: throw SourceException(SourceException.Kind.NOT_FOUND, "${file.path} was not found")
+        val (listed, bytes) = content[file.path] ?: throw SourceException(SourceException.Kind.NOT_FOUND, "${file.path} was not found")
         downloads += file.path
         target.writeBytes(bytes)
+        return downloadEtags[file.path] ?: listed.etag
     }
 }
 

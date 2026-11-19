@@ -12,13 +12,13 @@ import java.time.ZoneOffset
  * before is a restart of the device.
  */
 class TestClock(
-    var instant: Instant = Instant.parse("2026-05-01T10:15:30Z"),
+    @Volatile var instant: Instant = Instant.parse("2026-05-01T10:15:30Z"),
     var zoneId: ZoneId = ZoneOffset.UTC,
 ) : Clock {
-    var monotonic: Long = 0
+    @Volatile var monotonic: Long = 0
 
     /** The device's uptime, [Clock.elapsedRealtimeMillis]. */
-    var elapsed: Long = 0
+    @Volatile var elapsed: Long = 0
 
     override fun now(): Instant = instant
 

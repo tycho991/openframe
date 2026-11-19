@@ -19,7 +19,11 @@ class FakeNextcloud(
     val userId: String = "anna",
     val loginName: String = "Anna",
     val appPassword: String = "app-pw-4711",
-) : NanoHTTPD("127.0.0.1", 0) {
+    /** The address to bind to: loopback for the tests, a LAN address for the device rows (see [main]). */
+    bindAddress: String = "127.0.0.1",
+    /** The host in [baseUrl]: with TLS the name of the test certificate, `localhost`. */
+    private val host: String = bindAddress,
+) : NanoHTTPD(bindAddress, 0) {
     /** The app password the server accepts; another one makes it refuse the one the login handed out. */
     @Volatile var acceptedAppPassword: String = appPassword
 
@@ -27,6 +31,24 @@ class FakeNextcloud(
         var content: ByteArray,
         var etag: String,
         var modifiedMs: Long = 1_760_000_000_000L,
+        /** The size the listing names, if it is not the size of [content]: a file replaced after the listing, or a lie. */
+        @Volatile var listedSize: Long? = null,
+        /** `false` sends a download without `Content-Length` (chunked). */
+        @Volatile var sendLength: Boolean = true,
+        /** The `Content-Length` a download announces, if it is not the size of [content]. */
+        @Volatile var announcedLength: Long? = null,
+        /** The `ETag` header of a download; none by default, as for the tests before it. */
+        @Volatile var etagHeader: String? = null,
+    )
+
+    /**
+     * How a body is sent in pieces: [chunk] bytes, then [between], which may sleep or move a test clock, for every
+     * request that [appliesTo] (method and path). A [between] that throws ends the connection.
+     */
+    class Pacing(
+        val chunk: Int,
+        val appliesTo: (String, String) -> Boolean = { _, _ -> true },
+        val between: () -> Unit,
     )
 
     /** A share of [root] (a folder or a file below the user's root) with an optional password. */
@@ -58,14 +80,51 @@ class FakeNextcloud(
     /** Paths that redirect (301) to another URL. */
     val redirects = HashMap<String, String>()
 
+    /** Headers sent with a fault of [faults], by path, such as `Retry-After`. */
+    val faultHeaders = HashMap<String, Map<String, String>>()
+
     /** Waits this long before sending the body of a download. */
     @Volatile var downloadDelayMs = 0L
+
+    /** Sends bodies in pieces, see [Pacing]. */
+    @Volatile var pacing: Pacing? = null
+
+    /** The listing of a folder (its path below the user's root or the share) as this text instead of the real one. */
+    @Volatile var listingOverride: ((String) -> String?)? = null
+
+    /** Listings are sent with `Content-Encoding: gzip`. */
+    @Volatile var gzipListings = false
+
+    /** Every listing is these bytes, already gzip-compressed, sent with `Content-Encoding: gzip`. */
+    @Volatile var gzippedListing: ByteArray? = null
+
+    /** A listing breaks off after this many bytes, like a connection that is reset. */
+    @Volatile var resetListingAfter: Int? = null
+
+    /** What the login flow answers instead of its real start or poll, e.g. too large an answer or another address. */
+    @Volatile var loginStartOverride: String? = null
+
+    @Volatile var loginPollOverride: String? = null
+
+    /** The server the poll of the login reports, by default [baseUrl]. */
+    @Volatile var reportedServer: String? = null
 
     @Volatile var approved = false
 
     @Volatile var revoked = false
 
-    val baseUrl: String get() = "http://127.0.0.1:$listeningPort"
+    /** The `Authorization` headers of the revocations, in order. */
+    val revocations = java.util.concurrent.CopyOnWriteArrayList<String?>()
+
+    val baseUrl: String get() = "${if (secure) "https" else "http"}://$host:$listeningPort"
+
+    @Volatile private var secure = false
+
+    /** Serves https with [factory]; call before [start]. */
+    fun secure(factory: javax.net.ssl.SSLServerSocketFactory) {
+        makeSecure(factory, null)
+        secure = true
+    }
 
     fun put(
         path: String,
@@ -89,7 +148,7 @@ class FakeNextcloud(
                 "",
             ).apply { addHeader("Location", it) }
         }
-        faults[path]?.let { return status(it) }
+        faults[path]?.let { code -> return status(code).apply { faultHeaders[path]?.forEach { (k, v) -> addHeader(k, v) } } }
         return when {
             path == "/index.php/login/v2" && session.method == Method.POST -> {
                 loginStart()
@@ -104,6 +163,7 @@ class FakeNextcloud(
             }
 
             path == "/ocs/v2.php/core/apppassword" && session.method == Method.DELETE -> {
+                revocations += session.headers["authorization"]
                 authorized(session) {
                     revoked = true
                     status(200)
@@ -141,12 +201,19 @@ class FakeNextcloud(
 
     private fun loginStart(): Response =
         json(
-            """{"poll":{"token":"poll-token","endpoint":"$baseUrl/index.php/login/v2/poll"},"login":"$baseUrl/index.php/login/v2/flow/abc"}""",
+            loginStartOverride
+                ?: """{"poll":{"token":"poll-token","endpoint":"$baseUrl/index.php/login/v2/poll"},"login":"$baseUrl/index.php/login/v2/flow/abc"}""",
         )
 
     private fun loginPoll(): Response =
         if (approved) {
-            json("""{"server":"$baseUrl","loginName":"$loginName","appPassword":"$appPassword"}""")
+            json(
+                loginPollOverride
+                    ?: """{"server":"${reportedServer ?: baseUrl}","loginName":"${loginName.replace(
+                        "\"",
+                        "\\\"",
+                    )}","appPassword":"$appPassword"}""",
+            )
         } else {
             status(404)
         }
@@ -157,7 +224,7 @@ class FakeNextcloud(
         session: IHTTPSession,
         block: () -> Response,
     ): Response {
-        val expected = "Basic " + Base64.getEncoder().encodeToString("$loginName:$acceptedAppPassword".toByteArray())
+        val expected = "Basic " + Base64.getEncoder().encodeToString("$loginName:$acceptedAppPassword".toByteArray(Charsets.UTF_8))
         return if (session.headers["authorization"] == expected) block() else status(401)
     }
 
@@ -171,8 +238,8 @@ class FakeNextcloud(
         val path = parts.getOrElse(1) { "" }.trim('/')
         val href = { p: String -> "$DAV/$userId/" + segments(p) }
         return when (session.method.name) {
-            "PROPFIND" -> propfind(path, session.headers["depth"] == "0", href)
-            "GET" -> download(path)
+            "PROPFIND" -> propfind(path, session.headers["depth"] == "0", href, session.uri)
+            "GET" -> download(path, session.uri)
             else -> status(405)
         }
     }
@@ -196,8 +263,8 @@ class FakeNextcloud(
         val path = listOf(share.root.trim('/'), relative).filter { it.isNotEmpty() }.joinToString("/")
         val href = { p: String -> "$PUBLIC_DAV/" + segments(p.removePrefix(share.root.trim('/')).trimStart('/')) }
         return when (session.method.name) {
-            "PROPFIND" -> propfind(path, session.headers["depth"] == "0", href)
-            "GET" -> download(path)
+            "PROPFIND" -> propfind(path, session.headers["depth"] == "0", href, session.uri)
+            "GET" -> download(path, session.uri)
             else -> status(405)
         }
     }
@@ -208,13 +275,24 @@ class FakeNextcloud(
         dir: String,
         depthZero: Boolean,
         href: (String) -> String,
+        uri: String,
     ): Response {
+        gzippedListing?.let { gzipped ->
+            return newFixedLengthResponse(
+                Response.Status.lookup(207),
+                "application/xml; charset=utf-8",
+                ByteArrayInputStream(gzipped),
+                gzipped.size.toLong(),
+            ).apply { addHeader("Content-Encoding", "gzip") }
+        }
+        listingOverride?.invoke(dir)?.let { return listing(it.toByteArray(), uri) }
         files[dir]?.let { file ->
             // The share of a single file: its top is the file.
             val xml =
                 """<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">""" +
-                    entry(href(dir), false, "\"${file.etag}\"", file.content.size.toLong(), file.modifiedMs, dir) + "</d:multistatus>"
-            return newFixedLengthResponse(Response.Status.lookup(207), "application/xml; charset=utf-8", xml)
+                    entry(href(dir), false, "\"${file.etag}\"", file.listedSize ?: file.content.size.toLong(), file.modifiedMs, dir) +
+                    "</d:multistatus>"
+            return listing(xml.toByteArray(), uri)
         }
         val prefix = if (dir.isEmpty()) "" else "$dir/"
         val childFolders = LinkedHashSet<String>()
@@ -235,12 +313,106 @@ class FakeNextcloud(
             for (name in childFolders) xml.append(entry(href(prefix + name) + "/", true, "dir-$name", 0, 0, name))
             for ((name, file) in childFiles) {
                 xml.append(
-                    entry(href(prefix + name), false, "\"${file.etag}\"", file.content.size.toLong(), file.modifiedMs, name),
+                    entry(
+                        href(prefix + name),
+                        false,
+                        "\"${file.etag}\"",
+                        file.listedSize ?: file.content.size.toLong(),
+                        file.modifiedMs,
+                        name,
+                    ),
                 )
             }
         }
         xml.append("</d:multistatus>")
-        return newFixedLengthResponse(Response.Status.lookup(207), "application/xml; charset=utf-8", xml.toString())
+        return listing(xml.toString().toByteArray(), uri)
+    }
+
+    /** A `207` with [xml], gzip-encoded, paced or broken off as switched on. */
+    private fun listing(
+        xml: ByteArray,
+        uri: String,
+    ): Response {
+        val body =
+            if (gzipListings) {
+                java.io
+                    .ByteArrayOutputStream()
+                    .also { out ->
+                        java.util.zip
+                            .GZIPOutputStream(out)
+                            .use { it.write(xml) }
+                    }.toByteArray()
+            } else {
+                xml
+            }
+        val reset = resetListingAfter
+        val stream: java.io.InputStream =
+            if (reset != null) {
+                BrokenStream(body, reset)
+            } else {
+                paced("PROPFIND", uri, body)
+            }
+        return newFixedLengthResponse(Response.Status.lookup(207), "application/xml; charset=utf-8", stream, body.size.toLong()).apply {
+            if (gzipListings) addHeader("Content-Encoding", "gzip")
+        }
+    }
+
+    /** [body] through the [pacing] if it applies to the request. */
+    private fun paced(
+        method: String,
+        uri: String,
+        body: ByteArray,
+    ): java.io.InputStream {
+        val pacing = pacing?.takeIf { it.appliesTo(method, uri) } ?: return ByteArrayInputStream(body)
+        return object : java.io.InputStream() {
+            private var position = 0
+            private var inChunk = 0
+
+            override fun read(): Int {
+                val one = ByteArray(1)
+                return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+            }
+
+            override fun read(
+                b: ByteArray,
+                off: Int,
+                len: Int,
+            ): Int {
+                if (position >= body.size) return -1
+                if (inChunk >= pacing.chunk) {
+                    pacing.between()
+                    inChunk = 0
+                }
+                val n = minOf(len, pacing.chunk - inChunk, body.size - position)
+                System.arraycopy(body, position, b, off, n)
+                position += n
+                inChunk += n
+                return n
+            }
+        }
+    }
+
+    /** Sends [after] bytes of [body] and then fails, which makes NanoHTTPD close the connection. */
+    private class BrokenStream(
+        private val body: ByteArray,
+        private val after: Int,
+    ) : java.io.InputStream() {
+        private var position = 0
+
+        override fun read(): Int = throw java.io.IOException("unused")
+
+        override fun read(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
+            if (position >= after) throw java.io.IOException("Connection reset by the fake")
+            val n = minOf(len, after - position, body.size - position)
+            if (n <= 0) return -1
+            System.arraycopy(body, position, b, off, n)
+            position += n
+            return n
+        }
     }
 
     private fun entry(
@@ -271,8 +443,27 @@ class FakeNextcloud(
         return "<d:response><d:href>$href</d:href><d:propstat><d:prop>$props<d:displayname>$displayName</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
     }
 
-    private fun download(path: String): Response {
+    private fun download(
+        path: String,
+        uri: String,
+    ): Response {
         val file = files[path] ?: return status(404)
+        if (pacing?.appliesTo("GET", uri) == true || !file.sendLength || file.announcedLength != null || file.etagHeader != null) {
+            val stream = paced("GET", uri, file.content)
+            val response =
+                if (file.sendLength) {
+                    newFixedLengthResponse(
+                        Response.Status.OK,
+                        "application/octet-stream",
+                        stream,
+                        file.announcedLength ?: file.content.size.toLong(),
+                    )
+                } else {
+                    newChunkedResponse(Response.Status.OK, "application/octet-stream", stream)
+                }
+            file.etagHeader?.let { response.addHeader("ETag", it) }
+            return response
+        }
         if (downloadDelayMs > 0) {
             val stream =
                 object : java.io.InputStream() {

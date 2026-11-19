@@ -124,6 +124,13 @@ interface MediaEngine {
     fun readMetadata(file: File): ImageMetadata
 
     /**
+     * Whether this device can decode [format] at all, such as HEIC only from Android 9. Answered without the decoder and
+     * without a file, so that a download can end after the first bytes of a file (spec `remote-sources`, "Undecodable
+     * formats are not downloaded"). Never throws.
+     */
+    fun canDecode(format: ImageFormat): Boolean = true
+
+    /**
      * Renders [region] of [source], EXIF-rotated and in rotated coordinates, to exactly [width]×[height]
      * pixels as JPEG with quality [quality] to [target]. The caller determines the aspect ratio.
      */

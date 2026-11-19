@@ -7,6 +7,7 @@ import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.nextcloud.NextcloudConnector
 import io.github.tycho991.openframe.core.nextcloud.NextcloudShareKind
 import io.github.tycho991.openframe.core.sources.Connection
+import io.github.tycho991.openframe.core.sources.SourceErrorCodes
 import io.github.tycho991.openframe.core.sources.SourceRegistry
 import io.github.tycho991.openframe.core.sources.StoredSource
 import kotlinx.serialization.Serializable
@@ -31,6 +32,8 @@ data class SourceStatusDto(
     val lastSyncAt: String?,
     val ok: Boolean?,
     val error: String?,
+    /** A value of the contract's `SourceErrorCode`, `null` for a success, a result of an older version or an unknown code. */
+    val errorCode: String?,
     val added: Int,
     val updated: Int,
     val removed: Int,
@@ -77,6 +80,8 @@ data class SourceLoginStateDto(
     val user: String?,
     val sourceId: String?,
     val error: String?,
+    /** For `failed`: a value of the contract's `SourceErrorCode`. */
+    val errorCode: String?,
 )
 
 @Serializable
@@ -120,6 +125,7 @@ fun Router.sourcesRoutes(
                     lastSyncAt = last.lastSyncAtMs?.let { Instant.ofEpochMilli(it).toString() },
                     ok = last.lastSyncOk,
                     error = last.error,
+                    errorCode = if (last.lastSyncOk == false) SourceErrorCodes.served(last.errorCode) else null,
                     added = last.added,
                     updated = last.updated,
                     removed = last.removed,
@@ -161,7 +167,7 @@ fun Router.sourcesRoutes(
         val polled = nextcloud.pollLogin(req.pathParam("flowId"))
         HttpResponse.json(
             SourceLoginStateDto.serializer(),
-            SourceLoginStateDto(polled.state, polled.user, polled.sourceId, polled.error),
+            SourceLoginStateDto(polled.state, polled.user, polled.sourceId, polled.error, SourceErrorCodes.served(polled.code)),
         )
     }
 

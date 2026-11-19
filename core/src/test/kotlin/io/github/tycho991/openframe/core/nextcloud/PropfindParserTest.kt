@@ -73,6 +73,71 @@ class PropfindParserTest {
             }
         assertTrue(entries.none { "root:" in it.path })
     }
+
+    // --- Spec nextcloud-source: Bounded answers of a server (design decision 3 of nextcloud-hardening)
+
+    private val plainDoctype =
+        """<?xml version="1.0"?><!DOCTYPE multistatus [<!ELEMENT multistatus ANY>]><d:multistatus xmlns:d="DAV:"><d:response><d:href>/a</d:href></d:response></d:multistatus>"""
+
+    @Test
+    fun `A document type without entities is refused by the handler itself, as on Android`() {
+        // Without the Xerces feature, which Android's parser does not know: only the lexical handler can refuse it.
+        val failure =
+            assertThrows(
+                SourceException::class.java,
+            ) { PropfindParser.parse(plainDoctype.byteInputStream(), refuseDoctypeByFeature = false) }
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
+        assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+    }
+
+    @Test
+    fun `A document type is refused with the same text when Xerces refuses it first`() {
+        val failure = assertThrows(SourceException::class.java) { parse(plainDoctype) }
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
+        assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+    }
+
+    @Test
+    fun `Nested entities are never expanded`() {
+        val lol =
+            """<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">""" +
+                """<!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]>""" +
+                """<d:multistatus xmlns:d="DAV:"><d:response><d:href>&lol3;</d:href></d:response></d:multistatus>"""
+        for (feature in listOf(true, false)) {
+            val failure =
+                assertThrows(SourceException::class.java) { PropfindParser.parse(lol.byteInputStream(), refuseDoctypeByFeature = feature) }
+            assertEquals(PropfindParser.DOCTYPE_REFUSED, failure.message)
+        }
+    }
+
+    private fun response(href: String) =
+        "<d:response><d:href>$href</d:href><d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>"
+
+    @Test
+    fun `Text up to 16 KiB per element passes, more is a limit`() {
+        val fits = "/" + "a".repeat(16 * 1024 - 1)
+        assertEquals(fits, parse("""<d:multistatus xmlns:d="DAV:">${response(fits)}</d:multistatus>""").single().path)
+        val failure =
+            assertThrows(SourceException::class.java) {
+                parse("""<d:multistatus xmlns:d="DAV:">${response("/" + "a".repeat(16 * 1024))}</d:multistatus>""")
+            }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("16 KiB"), failure.message)
+    }
+
+    @Test
+    fun `Text outside an entry is not kept`() {
+        val padding = " ".repeat(1024 * 1024)
+        assertEquals(1, parse("""<d:multistatus xmlns:d="DAV:">$padding${response("/a")}$padding</d:multistatus>""").size)
+    }
+
+    @Test
+    fun `More entries than the limit end the listing`() {
+        val xml = """<d:multistatus xmlns:d="DAV:">""" + (1..11).joinToString("") { response("/f$it") } + "</d:multistatus>"
+        val failure = assertThrows(SourceException::class.java) { PropfindParser.parse(xml.byteInputStream(), maxEntries = 10) }
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertEquals(11, PropfindParser.parse(xml.byteInputStream(), maxEntries = 11).size)
+    }
 }
 
 class PathDecodingTest {

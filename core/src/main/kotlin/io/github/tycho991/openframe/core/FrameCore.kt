@@ -217,11 +217,16 @@ class FrameCore(
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
-    private val nextcloudClients = nextcloudClients ?: OkHttpNextcloudClients()
-    private val migration = NextcloudMigration(dirs.state, dirs.cache, sourceConfigs, syncResults, log)
+    private val nextcloudClients = nextcloudClients ?: OkHttpNextcloudClients(clock)
+    private val migration: NextcloudMigration =
+        NextcloudMigration(dirs.state, dirs.cache, sourceConfigs, syncResults, log) { old ->
+            sources.revokeLater("The app password of version 0.1.0 for ${SourceConfigStore.hostOf(old.serverUrl)}") {
+                this.nextcloudClients.loginFlow().revoke(old.serverUrl, old.loginName, old.appPassword)
+            }
+        }
 
     /** The remote sources: settings, status, sync on request, removal. */
-    val sources =
+    val sources: SourceRegistry =
         SourceRegistry(
             scope,
             sourceConfigs,
@@ -239,16 +244,19 @@ class FrameCore(
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
     val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock)
+    private val originals = SourceOriginals(localSource, sources)
     val cache: RenderCache =
         RenderCache(
             File(dirs.cache, RenderCache.FOLDER),
             engine,
-            SourceOriginals(localSource, sources)::fileOf,
+            { originals.onFrame(it) },
             { RenderSizes.screen(platform.screenWidth, platform.screenHeight, settings.settings.value.orientation) },
             { settings.settings.value.fillMode },
             { settings.settings.value.cacheBudgetMb * 1024L * 1024L },
             log,
             onCrashed = ::quarantine,
+            fetch = originals::fileOf,
+            release = originals::release,
         )
     val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
 
@@ -271,7 +279,7 @@ class FrameCore(
     val places = PlaceIndex(log)
 
     /** Reads the GPS position of photos from before it was read, once, after start, scans with changes and syncs. */
-    private val backfill: MetadataBackfill = MetadataBackfill(index, engine, SourceOriginals(localSource, sources)::onFrame, log)
+    private val backfill: MetadataBackfill = MetadataBackfill(index, engine, { originals.onFrame(it, markUsed = false) }, log)
 
     lateinit var identity: FrameIdentity
         private set
@@ -349,7 +357,7 @@ class FrameCore(
         syncResults.load()
         // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
         val loadedSources = sourceConfigs.load()
-        if (loadedSources == SourceConfigStore.Loaded.MISSING) migration.migrate()
+        val migrated = loadedSources == SourceConfigStore.Loaded.MISSING && migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         library.removePartialUploads()
         // Renderings of an older format, after an update; on the core's scope, there may be thousands of files.
@@ -397,6 +405,8 @@ class FrameCore(
         }
         update.start()
         sources.start(removeOrphans = loadedSources != SourceConfigStore.Loaded.UNREADABLE, launch = !safe)
+        // Not with a list of sources that cannot be read, and not in safe mode (design decision 9 of nextcloud-hardening).
+        if (!safe && (loadedSources == SourceConfigStore.Loaded.READ || migrated)) migration.cleanUpLeftovers()
         _ready.value = true
         if (!safe) {
             backfill.request()

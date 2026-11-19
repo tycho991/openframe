@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.nextcloud
 
 import io.github.tycho991.openframe.core.sources.RemoteFile
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.testing.TestClock
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -41,6 +42,15 @@ class NextcloudClientTest {
     ) = WebDavFolder(http, nextcloud.baseUrl, nextcloud.userId, nextcloud.loginName, password, path)
 
     private fun kindOf(block: () -> Unit) = assertThrows(SourceException::class.java, block).kind
+
+    /** Lets the client take what was sent, then moves the test clock by [seconds]. */
+    private fun pause(
+        clock: TestClock,
+        seconds: Long,
+    ) {
+        Thread.sleep(20)
+        clock.advance(java.time.Duration.ofSeconds(seconds))
+    }
 
     // --- Login flow
 
@@ -197,16 +207,68 @@ class NextcloudClientTest {
 
     @Test
     fun `A download that stalls fails and leaves no file`() {
-        nextcloud.put("Photos/slow.jpg", ByteArray(1000))
-        nextcloud.downloadDelayMs = 3_000
-        // A short read timeout of its own, so that the stalled download takes a second.
-        val impatient = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 1))
+        // 1 KiB, then a minute of the test clock without more: below 16 KiB per 60 seconds.
+        val clock = TestClock()
+        nextcloud.put("Photos/slow.jpg", ByteArray(100 * 1024))
+        nextcloud.pacing = FakeNextcloud.Pacing(1024) { pause(clock, 61) }
+        val timed = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 10), clock)
         val target = File(dir, "slow.part")
-        assertEquals(
-            SourceException.Kind.UNREACHABLE,
-            kindOf { folder("/Photos", http = impatient).download(RemoteFile("slow.jpg", "e", 1000, 0), target) },
-        )
+        val failure =
+            assertThrows(SourceException::class.java) {
+                folder("/Photos", http = timed).download(RemoteFile("slow.jpg", "e", 100 * 1024L, 0), target)
+            }
+        assertEquals(SourceException.Kind.UNREACHABLE, failure.kind)
+        assertTrue(failure.message!!.contains("too slowly"), failure.message)
         assertFalse(target.exists())
+    }
+
+    @Test
+    fun `A download that takes longer than 30 minutes fails though it is fast enough`() {
+        val clock = TestClock()
+        nextcloud.put("Photos/long.jpg", ByteArray(4 * 1024 * 1024))
+        // 32 KiB every 59 seconds is above the minimum, but 4 MiB take two hours.
+        nextcloud.pacing = FakeNextcloud.Pacing(32 * 1024) { pause(clock, 59) }
+        val timed = NextcloudHttp(NextcloudHttp.defaultClient(readTimeoutSeconds = 10), clock)
+        val target = File(dir, "long.part")
+        val failure =
+            assertThrows(SourceException::class.java) {
+                folder("/Photos", http = timed).download(RemoteFile("long.jpg", "e", 4 * 1024 * 1024L, 0), target)
+            }
+        assertEquals(SourceException.Kind.UNREACHABLE, failure.kind)
+        assertTrue(failure.message!!.contains("longer than 30 minutes"), failure.message)
+        assertFalse(target.exists())
+    }
+
+    // --- Classification (design decision 11)
+
+    @Test
+    fun `A connection reset in the middle of a listing is unreachable, not unexpected`() {
+        repeat(50) { nextcloud.put("Photos/p$it.jpg") }
+        nextcloud.resetListingAfter = 300
+        val failure = assertThrows(SourceException::class.java) { folder("/Photos").list(true) }
+        assertEquals(SourceException.Kind.UNREACHABLE, failure.kind, failure.message)
+    }
+
+    @Test
+    fun `HTTP 429 asks to wait as long as Retry-After says, at least 15 minutes and at most a day`() {
+        nextcloud.faults["/remote.php/dav/files/anna/Photos"] = 429
+        nextcloud.faultHeaders["/remote.php/dav/files/anna/Photos"] = mapOf("Retry-After" to "120")
+        val short = assertThrows(SourceException::class.java) { folder("/Photos").list(true) }
+        assertEquals(SourceException.Kind.THROTTLED, short.kind)
+        assertEquals(15 * 60_000L, short.retryAfterMs)
+        val inTwoDays =
+            java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
+                .format(
+                    java.time.ZonedDateTime
+                        .now(java.time.ZoneOffset.UTC)
+                        .plusDays(2),
+                )
+        nextcloud.faultHeaders["/remote.php/dav/files/anna/Photos"] = mapOf("Retry-After" to inTwoDays)
+        assertEquals(24 * 60 * 60_000L, assertThrows(SourceException::class.java) { folder("/Photos").list(true) }.retryAfterMs)
+        nextcloud.faultHeaders.clear()
+        val unsaid = assertThrows(SourceException::class.java) { folder("/Photos").list(true) }
+        assertEquals(SourceException.Kind.THROTTLED, unsaid.kind)
+        assertEquals(null, unsaid.retryAfterMs, "without the header the normal retry applies")
     }
 
     // --- Shares

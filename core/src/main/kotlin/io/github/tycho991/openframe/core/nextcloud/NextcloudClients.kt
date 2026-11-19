@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.sources.Connection
 import io.github.tycho991.openframe.core.sources.RemoteFolder
 
@@ -24,7 +25,9 @@ interface NextcloudClients {
 }
 
 class OkHttpNextcloudClients(
-    httpFactory: () -> NextcloudHttp = { NextcloudHttp() },
+    /** The time of the limits on every answer (spec "Bounded answers of a server"): the frame's monotonic clock. */
+    clock: Clock = Clock.System,
+    httpFactory: () -> NextcloudHttp = { NextcloudHttp(clock = clock) },
 ) : NextcloudClients {
     /** Created at the first use: reading the trust anchors and building the TLS context is not needed on a frame without Nextcloud. */
     private val http by lazy(httpFactory)

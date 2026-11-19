@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.nextcloud
 
 import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.sources.SourceLimits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -9,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Credentials
 import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -81,11 +83,10 @@ class OkHttpLoginFlow(
         if (token == null || endpoint == null || login == null) {
             throw SourceException(SourceException.Kind.PROTOCOL, "${base.host} does not answer like a Nextcloud server")
         }
-        // The frame asks only the server it was given; an answer that points elsewhere is not followed.
-        val endpointUrl = endpoint.toHttpUrlOrNull()
-        if (endpointUrl == null || endpointUrl.host != base.host) {
-            throw SourceException(SourceException.Kind.PROTOCOL, "The login of ${base.host} points to another server")
-        }
+        // The frame asks only the server it was given, and never leaves https: an answer that points elsewhere stops the
+        // login before its page opens.
+        checkOrigin(base, endpoint, "The poll address")
+        checkOrigin(base, login, "The login page")
         return LoginStart(serverUrl, login, endpoint, token)
     }
 
@@ -130,7 +131,7 @@ class OkHttpLoginFlow(
                 .url(url)
                 .header("OCS-APIRequest", "true")
                 .header("User-Agent", USER_AGENT)
-                .header("Authorization", Credentials.basic(loginName, appPassword))
+                .header("Authorization", Credentials.basic(loginName, appPassword, Charsets.UTF_8))
                 .get()
                 .build()
         val json = json(http.execute(request).also { http.requireSuccess(it, "The account") })
@@ -161,24 +162,66 @@ class OkHttpLoginFlow(
                 .url(url)
                 .header("OCS-APIRequest", "true")
                 .header("User-Agent", USER_AGENT)
-                .header("Authorization", Credentials.basic(loginName, appPassword))
+                .header("Authorization", Credentials.basic(loginName, appPassword, Charsets.UTF_8))
                 .delete()
                 .build()
         http.execute(request).use { }
     }
 
-    /** The server the answer names if it is the same host as the one given (a move from `http` to `https`), else the one given. */
+    private fun checkOrigin(
+        base: HttpUrl,
+        address: String,
+        what: String,
+    ) {
+        when (LoginOrigin.refusal(base, address.toHttpUrlOrNull())) {
+            null -> {
+                return
+            }
+
+            LoginOrigin.Refusal.Downgrade -> {
+                throw SourceException(
+                    SourceException.Kind.INSECURE_LOGIN,
+                    "$what of ${base.host} is not on https on the same port. Check overwriteprotocol and trusted_proxies " +
+                        "in the server's config.php",
+                )
+            }
+
+            LoginOrigin.Refusal.Elsewhere -> {
+                throw SourceException(
+                    SourceException.Kind.INSECURE_LOGIN,
+                    "$what of ${base.host} points to another server or is no web address",
+                )
+            }
+        }
+    }
+
+    /**
+     * The server the answer names if the login rule accepts it for the one given (a move from `http` to `https` on the
+     * same host), else the one given: `https` never becomes `http`.
+     */
     private fun upgradedServer(
         given: String,
         named: String?,
     ): String {
         val namedUrl = named?.toHttpUrlOrNull() ?: return given
-        return if (namedUrl.host == given.toHttpUrl().host) named.trimEnd('/') else given
+        return if (LoginOrigin.accepts(given.toHttpUrl(), namedUrl)) named.trimEnd('/') else given
     }
 
     private fun json(response: okhttp3.Response): JsonObject =
         response.use {
-            val text = it.body?.string().orEmpty()
+            val text =
+                try {
+                    val body = it.body ?: throw SourceException(SourceException.Kind.PROTOCOL, "${it.request.url.host} sent no answer")
+                    LimitedResponseStream(
+                        body.byteStream(),
+                        http.clock,
+                        "The answer of ${it.request.url.host}",
+                        SourceLimits.LOGIN_BYTES,
+                        SourceLimits.LOGIN_MS,
+                    ).use { input -> String(input.readBytesCompat(), Charsets.UTF_8) }
+                } catch (e: java.io.IOException) {
+                    throw http.bodyFailure(e, it.request.url)
+                }
             try {
                 ApiJson.parseToJsonElement(text) as? JsonObject
             } catch (e: kotlinx.serialization.SerializationException) {
@@ -193,5 +236,17 @@ class OkHttpLoginFlow(
     private companion object {
         const val USER_AGENT = "openframe"
         val EMPTY = ByteArray(0).toRequestBody(null)
+
+        /** The whole stream; its own limits end it. */
+        fun java.io.InputStream.readBytesCompat(): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val n = read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+            }
+            return out.toByteArray()
+        }
     }
 }

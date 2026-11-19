@@ -5,6 +5,7 @@ import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.sources.Connection
 import io.github.tycho991.openframe.core.sources.SourceConfigStore
+import io.github.tycho991.openframe.core.sources.SourceErrorCodes
 import io.github.tycho991.openframe.core.sources.SourceException
 import io.github.tycho991.openframe.core.sources.SourceRegistry
 import io.github.tycho991.openframe.core.sources.StoredSource
@@ -17,6 +18,8 @@ data class LoginState(
     val user: String? = null,
     val sourceId: String? = null,
     val error: String? = null,
+    /** For `failed`: a value of the contract's `SourceErrorCode`. */
+    val code: String? = null,
 )
 
 data class StartedLogin(
@@ -51,13 +54,23 @@ class NextcloudConnector(
      */
     @Synchronized
     fun startLogin(serverUrl: String): StartedLogin {
-        val url = SourceConfigStore.normalizeServerUrl(serverUrl)
+        val typed = SourceConfigStore.normalizeServerUrl(serverUrl)
         val all = configs.sources.value
         if (all.size >= StoredSource.MAX_SOURCES && all.none { it.connection is Connection.Account }) throw SourceConfigStore.tooMany()
+        // An account that is on https already stays there, also when its address is typed with http: the whole flow,
+        // the app password included, runs over https from its first request.
+        val url =
+            all
+                .map { it.connection }
+                .filterIsInstance<Connection.Account>()
+                .firstOrNull {
+                    it.serverUrl.startsWith("https://") && SourceConfigStore.serverKey(it.serverUrl) == SourceConfigStore.serverKey(typed)
+                }?.serverUrl ?: typed
         val start =
             try {
                 clients.loginFlow().start(url)
             } catch (e: SourceException) {
+                if (e.kind == SourceException.Kind.INSECURE_LOGIN) throw HttpException(502, "nextcloud_insecure_login", e.message.orEmpty())
                 throw HttpException(502, "nextcloud_unreachable", e.message.orEmpty())
             }
         val started = Flow(randomId(), start, clock.millis())
@@ -67,7 +80,8 @@ class NextcloudConnector(
 
     /**
      * Asks the server once whether the user has approved. On approval the account becomes a source, or a source that is the
-     * same server and user gets the new credentials and keeps its photos and settings.
+     * same server and user gets the new credentials and keeps its photos and settings. An app password the frame cannot
+     * use after the approval is revoked again in the background (spec "No orphaned app passwords").
      */
     @Synchronized
     fun pollLogin(flowId: String): LoginState {
@@ -77,40 +91,58 @@ class NextcloudConnector(
             return LoginState("expired")
         }
         val login = clients.loginFlow()
+        val polled =
+            try {
+                login.poll(current.start)
+            } catch (e: SourceException) {
+                flow = null
+                return LoginState("failed", error = e.message, code = e.kind.code)
+            }
+        if (polled == LoginPoll.Pending) return LoginState("pending")
+        val done = polled as LoginPoll.Done
+        flow = null
         return try {
-            when (val polled = login.poll(current.start)) {
-                LoginPoll.Pending -> {
-                    LoginState("pending")
-                }
-
-                is LoginPoll.Done -> {
-                    flow = null
-                    val userId = login.userId(polled.serverUrl, polled.loginName, polled.appPassword)
-                    val account = Connection.Account(polled.serverUrl, userId, polled.loginName, polled.appPassword)
-                    val known = configs.sources.value.firstOrNull { sameAccount(it.connection, account) }
-                    if (known != null) {
-                        sources.reconnect(known.id, account)
-                        LoginState("done", user = polled.loginName, sourceId = known.id)
-                    } else if (configs.sources.value.size >= StoredSource.MAX_SOURCES) {
-                        // The server issued an app password the frame cannot use: it must not stay active there.
-                        try {
-                            login.revoke(polled.serverUrl, polled.loginName, polled.appPassword)
-                        } catch (e: SourceException) {
-                            // Nothing more to do; the user can remove the login in Nextcloud's settings.
-                        }
-                        LoginState("failed", error = "The frame has ${StoredSource.MAX_SOURCES} sources already; remove one first")
-                    } else {
-                        val added =
-                            sources.add(
-                                StoredSource(configs.newId(), NextcloudAccountKind.ID, SourceConfigStore.hostOf(polled.serverUrl), account),
-                            )
-                        LoginState("done", user = polled.loginName, sourceId = added.id)
-                    }
-                }
+            val userId = login.userId(done.serverUrl, done.loginName, done.appPassword)
+            val account = Connection.Account(done.serverUrl, userId, done.loginName, done.appPassword)
+            val all = configs.sources.value
+            // By the address the server reports, else by the one the login started with: a server that moved to https on
+            // another port is still the same source.
+            val known =
+                all.firstOrNull { sameAccount(it.connection, account) }
+                    ?: all.firstOrNull { sameAccount(it.connection, account.copy(serverUrl = current.start.serverUrl)) }
+            if (known != null) {
+                sources.reconnect(known.id, account)
+                LoginState("done", user = done.loginName, sourceId = known.id)
+            } else if (all.size >= StoredSource.MAX_SOURCES) {
+                // The server issued an app password the frame cannot use: it must not stay active there.
+                revokeNew(done)
+                LoginState(
+                    "failed",
+                    error = "The frame has ${StoredSource.MAX_SOURCES} sources already; remove one first",
+                    code = SourceErrorCodes.TOO_MANY_SOURCES,
+                )
+            } else {
+                val added =
+                    sources.add(
+                        StoredSource(configs.newId(), NextcloudAccountKind.ID, SourceConfigStore.hostOf(done.serverUrl), account),
+                    )
+                LoginState("done", user = done.loginName, sourceId = added.id)
             }
         } catch (e: SourceException) {
-            flow = null
-            LoginState("failed", error = e.message)
+            revokeNew(done)
+            LoginState("failed", error = e.message, code = e.kind.code)
+        } catch (e: HttpException) {
+            revokeNew(done)
+            val code = if (e.code == "too_many_sources") SourceErrorCodes.TOO_MANY_SOURCES else SourceErrorCodes.UNEXPECTED
+            LoginState("failed", error = e.message, code = code)
+        }
+    }
+
+    /** The app password of [done] is not used: revoked in the background, as a silent server would hold the request up. */
+    private fun revokeNew(done: LoginPoll.Done) {
+        val login = clients.loginFlow()
+        sources.revokeLater("The unused app password for ${SourceConfigStore.hostOf(done.serverUrl)}") {
+            login.revoke(done.serverUrl, done.loginName, done.appPassword)
         }
     }
 

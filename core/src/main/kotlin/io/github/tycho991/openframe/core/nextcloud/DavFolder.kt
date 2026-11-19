@@ -1,8 +1,13 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import io.github.tycho991.openframe.core.platform.ImageException
+import io.github.tycho991.openframe.core.platform.SkipReason
+import io.github.tycho991.openframe.core.readFully
+import io.github.tycho991.openframe.core.sources.DownloadLimits
 import io.github.tycho991.openframe.core.sources.RemoteFile
 import io.github.tycho991.openframe.core.sources.RemoteFolder
 import io.github.tycho991.openframe.core.sources.SourceException
+import io.github.tycho991.openframe.core.sources.SourceLimits
 import okhttp3.Credentials
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -12,11 +17,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
 /**
  * A folder of a Nextcloud server over WebDAV. One `PROPFIND` with `Depth: 1` per folder, because Nextcloud refuses
  * `Depth: infinity`; subfolders are walked here. What differs between an account and a share is where the WebDAV
- * tree starts and how the frame identifies itself.
+ * tree starts and how the frame identifies itself. Every answer is read within the limits of [SourceLimits].
  */
 abstract class DavFolder(
     protected val http: NextcloudHttp,
@@ -39,16 +45,75 @@ abstract class DavFolder(
         what: String,
     ) = http.requireSuccess(response, what)
 
-    override fun list(recursive: Boolean): List<RemoteFile> {
+    override fun list(
+        recursive: Boolean,
+        cancelled: () -> Boolean,
+    ): List<RemoteFile> {
         val files = ArrayList<RemoteFile>()
-        walk("", recursive, files)
+        // A queue instead of recursion: the depth and the number of folders and files of a sync stay bounded.
+        val queue = ArrayDeque<Pair<String, Int>>()
+        queue.add("" to 0)
+        var folders = 1
+        while (queue.isNotEmpty()) {
+            if (cancelled()) throw SourceException(SourceException.Kind.UNREACHABLE, "The listing was ended: the source was removed")
+            val (dir, depth) = queue.removeFirst()
+            for (entry in children(dir, cancelled)) {
+                val path = if (dir.isEmpty()) entry.name else "$dir/${entry.name}"
+                if (entry.isFolder) {
+                    if (!recursive) continue
+                    if (depth + 1 > SourceLimits.DEPTH) {
+                        throw SourceException(
+                            SourceException.Kind.LIMIT,
+                            "The folder has more than ${SourceLimits.DEPTH} levels of subfolders",
+                        )
+                    }
+                    if (++folders > SourceLimits.FOLDERS) {
+                        throw SourceException(SourceException.Kind.LIMIT, "The folder has more than ${SourceLimits.FOLDERS} subfolders")
+                    }
+                    queue.add(path to depth + 1)
+                } else {
+                    if (files.size >= SourceLimits.FILES) {
+                        throw SourceException(SourceException.Kind.LIMIT, "The folder has more than ${SourceLimits.FILES} files")
+                    }
+                    files += RemoteFile(path, entry.etag, entry.size, entry.modifiedMs)
+                }
+            }
+        }
         return files
+    }
+
+    /**
+     * The entries of [dir] without the folder itself, each checked to be a direct child of it (spec "Listings stay inside
+     * the folder"). The reference is the folder's own entry: the one with the path asked for, else the first, which
+     * Nextcloud always lists first. Anything else fails the whole listing, which promises all or nothing.
+     */
+    private fun children(
+        dir: String,
+        cancelled: () -> Boolean,
+    ): List<DavEntry> {
+        val (own, entries) = propfind(dir, 1, cancelled)
+        val reference = entries.firstOrNull { it.path == own } ?: entries.firstOrNull() ?: return emptyList()
+        val out = ArrayList<DavEntry>(entries.size)
+        for (entry in entries) {
+            if (entry === reference) continue
+            val name = entry.name
+            val parent = entry.path.substring(0, maxOf(0, entry.path.length - name.length - 1))
+            if (name.isEmpty() || name == "." || name == ".." || parent != reference.path) {
+                throw SourceException(
+                    SourceException.Kind.PROTOCOL,
+                    "The listing of the folder ${shown(dir)} names an entry outside of it; nothing of it is taken",
+                )
+            }
+            out += entry
+        }
+        return out
     }
 
     override fun download(
         file: RemoteFile,
         target: File,
-    ) {
+        limits: DownloadLimits,
+    ): String? {
         val request =
             Request
                 .Builder()
@@ -61,28 +126,81 @@ abstract class DavFolder(
             requireSuccess(response, "The file ${file.path}")
             val body =
                 response.body ?: throw SourceException(SourceException.Kind.PROTOCOL, "The server sent no content for ${file.path}")
+            val tolerance = SourceLimits.DOWNLOAD_TOLERANCE_BYTES
+            val announced = body.contentLength()
+            // A size of 0 is unknown: the listing had no `getcontentlength`.
+            if (file.size > 0 && announced > file.size + tolerance) {
+                throw SourceException(SourceException.Kind.CHANGED, "${file.path} was replaced on the server after the listing")
+            }
+            val cap =
+                when {
+                    file.size > 0 -> file.size + tolerance
+                    announced >= 0 -> announced + tolerance
+                    else -> limits.unknownSizeBytes
+                }
+            val room = limits.roomBytes()
+            if (announced >
+                room
+            ) {
+                throw SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame for ${file.path}")
+            }
+            val stream =
+                LimitedResponseStream(
+                    body.byteStream(),
+                    http.clock,
+                    "The download of ${file.path}",
+                    cap,
+                    SourceLimits.DOWNLOAD_MS,
+                    room,
+                    limits.cancelled,
+                )
             try {
-                body.byteStream().use { input ->
+                stream.use { input ->
+                    // The first bytes tell the format; one that the device cannot decode is not downloaded further.
+                    val header = ByteArray(HEADER_BYTES)
+                    val n = input.readFully(header)
+                    if (!limits.acceptHeader(header.copyOf(n))) {
+                        throw ImageException(SkipReason.UNSUPPORTED, "The format of ${file.path} cannot be decoded on this device")
+                    }
                     FileOutputStream(target).use { output ->
+                        output.write(header, 0, n)
                         val buffer = ByteArray(BUFFER)
                         while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            output.write(buffer, 0, n)
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
                         }
                     }
                 }
-            } catch (e: java.io.IOException) {
+            } catch (e: ImageException) {
                 target.delete()
-                throw SourceException(SourceException.Kind.UNREACHABLE, "The download of ${file.path} broke off", e)
+                throw e
+            } catch (e: IOException) {
+                target.delete()
+                if (LimitedResponseStream.failureIn(e) is LimitedResponseStream.LimitExceeded) {
+                    val what = if (file.size > 0) "more than its listed size" else "more than the frame takes"
+                    throw SourceException(SourceException.Kind.LIMIT, "The server sent $what for ${file.path}", e)
+                }
+                if (LimitedResponseStream.failureIn(e) == null) {
+                    throw SourceException(SourceException.Kind.UNREACHABLE, "The download of ${file.path} broke off", e)
+                }
+                throw http.bodyFailure(e, request.url)
+            } finally {
+                lastDownloadBytes = stream.bytesRead
             }
+            return response.header("ETag")
         }
     }
 
-    /** The entries of [relative] (empty for the folder itself) with the given `Depth`, the folder's own entry first. */
+    /** The bytes the frame took from the body of the last download, for the tests. */
+    @Volatile
+    internal var lastDownloadBytes = 0L
+
+    /** The entries of [relative] (empty for the folder itself) with the given `Depth`, and the path asked for. */
     protected fun propfind(
         relative: String,
         depth: Int,
+        cancelled: () -> Boolean = { false },
     ): Pair<String, List<DavEntry>> {
         val url = urlOf(relative)
         val own = PathDecoding.decode(url.encodedPath).trimEnd('/')
@@ -99,34 +217,31 @@ abstract class DavFolder(
         val entries =
             http.execute(request).use { response ->
                 if (response.code != 207) {
-                    val shown = "${folder.trimEnd('/')}/$relative".replace("//", "/").let { if (it.length > 1) it.trimEnd('/') else it }
-                    requireSuccess(response, "The folder $shown")
+                    requireSuccess(response, "The folder ${shown(relative)}")
                     throw SourceException(SourceException.Kind.PROTOCOL, "The folder was not listed (HTTP ${response.code})")
                 }
-                PropfindParser.parse(
-                    response.body?.byteStream() ?: throw SourceException(SourceException.Kind.PROTOCOL, "Empty listing"),
-                )
+                val stream = response.body?.byteStream() ?: throw SourceException(SourceException.Kind.PROTOCOL, "Empty listing")
+                try {
+                    PropfindParser.parse(
+                        LimitedResponseStream(
+                            stream,
+                            http.clock,
+                            "The listing of ${shown(relative)}",
+                            SourceLimits.LISTING_BYTES,
+                            SourceLimits.LISTING_MS,
+                            cancelled = cancelled,
+                        ),
+                    )
+                } catch (e: IOException) {
+                    throw http.bodyFailure(e, url)
+                }
             }
         return own to entries
     }
 
-    private fun walk(
-        dir: String,
-        recursive: Boolean,
-        out: MutableList<RemoteFile>,
-    ) {
-        val (own, entries) = propfind(dir, 1)
-        for (entry in entries) {
-            // The first entry of a listing is the folder itself.
-            if (entry.path == own) continue
-            val path = if (dir.isEmpty()) entry.name else "$dir/${entry.name}"
-            if (entry.isFolder) {
-                if (recursive) walk(path, recursive, out)
-            } else {
-                out += RemoteFile(path, entry.etag, entry.size, entry.modifiedMs)
-            }
-        }
-    }
+    /** [relative] as the user knows it: below the configured folder. */
+    private fun shown(relative: String): String =
+        "${folder.trimEnd('/')}/$relative".replace("//", "/").let { if (it.length > 1) it.trimEnd('/') else it }
 
     /** The URL of [relative] (a path below the configured folder, empty for the folder itself). */
     private fun urlOf(relative: String): HttpUrl {
@@ -139,6 +254,9 @@ abstract class DavFolder(
     protected companion object {
         const val USER_AGENT = "openframe"
         private const val BUFFER = 16 * 1024
+
+        /** What the format of a file is told by. */
+        private const val HEADER_BYTES = 32
         private const val PROPFIND_BODY =
             """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop>""" +
                 "<d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><d:displayname/></d:prop></d:propfind>"
@@ -161,7 +279,7 @@ class WebDavFolder(
             .addPathSegments("remote.php/dav/files")
             .addPathSegment(userId)
 
-    override fun authorization(): String = Credentials.basic(loginName, appPassword)
+    override fun authorization(): String = Credentials.basic(loginName, appPassword, Charsets.UTF_8)
 }
 
 /** What the top of a share is. */

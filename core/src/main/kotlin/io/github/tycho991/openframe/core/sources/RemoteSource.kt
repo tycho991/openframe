@@ -34,9 +34,32 @@ class RemoteSource(
     /** A photo left the library: its renderings are not needed any more. */
     private val onRemoved: (PhotoEntry) -> Unit,
     private val log: AppLog,
+    /**
+     * An original fetched for a rendering did not match the index (spec "Refetched original matches the index"): the
+     * source is to sync soon.
+     */
+    private val onStale: () -> Unit = {},
+    /** The most a file without a listed size and without `Content-Length` may send; smaller in a test. */
+    private val unknownSizeBytes: Long = SourceLimits.DOWNLOAD_UNKNOWN_SIZE_BYTES,
 ) : PhotoSource {
-    /** Only one download writes at a time: the sync and a rendering that needs an original must not share a `.part` file. */
-    private val downloadLock = Any()
+    /**
+     * One download per photo at a time: the sync and a rendering that need the same original must not share a `.part`
+     * file. Striped by the photo ID, so that the number of locks stays fixed.
+     */
+    private val locks = Array(LOCKS) { Any() }
+
+    private fun lockOf(entryId: String) = locks[(entryId.hashCode() and Int.MAX_VALUE) % LOCKS]
+
+    /** The source was removed: its listings and downloads end at their next read. */
+    private val cancelled: () -> Boolean = { config() == null }
+
+    private fun limits() =
+        DownloadLimits(
+            roomBytes = originals::roomOnDisk,
+            cancelled = cancelled,
+            acceptHeader = { header -> ImageFormats.detect(header)?.let(engine::canDecode) ?: true },
+            unknownSizeBytes = unknownSizeBytes,
+        )
 
     override suspend fun scan(): ScanResult =
         withContext(Dispatchers.IO) {
@@ -51,36 +74,91 @@ class RemoteSource(
             }
         }
 
-    /** The original of [entry] for a rendering, fetched again from the server if it was removed from the cache. */
-    fun original(entry: PhotoEntry): File {
+    /**
+     * The original of [entry] for a rendering, fetched again from the server if it was removed from the cache. With [pin]
+     * it stays through every trim until [unpin], while the renderings that wait for it are queued. A fetched original
+     * whose `ETag` differs is checked by its dimensions: one that does not match the index is discarded, the rendering
+     * fails, and [onStale] lets the source sync soon.
+     */
+    fun original(
+        entry: PhotoEntry,
+        pin: Boolean = false,
+    ): File {
         val file = originals.fileOf(entry)
-        if (file.isFile) {
-            originals.touch(entry)
+        if (pin) originals.pin(entry)
+        try {
+            if (file.isFile) {
+                originals.touch(entry)
+                return file
+            }
+            val config = config() ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source $id was removed")
+            synchronized(lockOf(entry.id)) {
+                if (!file.isFile) fetchForRendering(entry, config)
+            }
             return file
+        } catch (e: Throwable) {
+            if (pin) originals.unpin(entry)
+            throw e
         }
-        val config = config() ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source $id was removed")
-        synchronized(downloadLock) {
-            if (!file.isFile) {
-                if (!originals.hasRoomOnDisk(entry.fileSize)) {
-                    throw SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame for ${entry.path}")
+    }
+
+    /** Ends the pin of [original] with `pin`. */
+    fun unpin(entry: PhotoEntry) = originals.unpin(entry)
+
+    private fun fetchForRendering(
+        entry: PhotoEntry,
+        config: StoredSource,
+    ) {
+        if (!originals.hasRoomOnDisk(entry.fileSize)) {
+            throw SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame for ${entry.path}")
+        }
+        val remote = kind.remoteFolder(config)
+        val part = originals.partOf(entry)
+        val etag =
+            try {
+                remote.download(RemoteFile(entry.path, entry.etag.orEmpty(), entry.fileSize, entry.modifiedMs), part, limits())
+            } catch (e: Throwable) {
+                part.delete()
+                if (e is SourceException && e.kind == SourceException.Kind.CHANGED) stale(entry, "is larger on the server than listed")
+                throw e
+            }
+        // The same entity tag: the file is the one in the index. Another one may come from a proxy, so the dimensions tell.
+        if (normalizedEtag(etag) != normalizedEtag(entry.etag)) {
+            val info =
+                try {
+                    engine.probe(part)
+                } catch (e: Throwable) {
+                    part.delete()
+                    throw e
                 }
-                val remote = kind.remoteFolder(config)
-                remote.download(RemoteFile(entry.path, entry.etag.orEmpty(), entry.fileSize, entry.modifiedMs), originals.partOf(entry))
-                originals.commit(entry)
-                originals.trim(config.budgetBytes, keep = file)
+            if (info.width != entry.width || info.height != entry.height) {
+                part.delete()
+                stale(entry, "has other dimensions on the server")
             }
         }
-        return file
+        originals.commit(entry)
+        originals.trim(config.budgetBytes, keep = originals.fileOf(entry))
+    }
+
+    private fun stale(
+        entry: PhotoEntry,
+        why: String,
+    ): Nothing {
+        log.i(TAG, "The original of ${entry.path} in $id $why; the source syncs again")
+        onStale()
+        throw SourceException(SourceException.Kind.CHANGED, "${entry.path} was changed on the server; the source syncs again")
     }
 
     private suspend fun sync(): ScanResult {
         val config = config()
         if (config == null || !config.ready) return ScanResult(0, 0, 0, 0)
+        // Android may have trimmed the cache folder since the last sync.
+        originals.refresh()
         val remote = kind.remoteFolder(config)
         // The whole listing or an exception: nothing below runs on a part of it.
         val listing =
             remote
-                .list(config.includeSubfolders || kind.listsFlat)
+                .list(config.includeSubfolders || kind.listsFlat, cancelled)
                 .filter {
                     ImageFormats.hasImageExtension(it.path)
                 }.sortedBy { it.path }
@@ -108,7 +186,8 @@ class RemoteSource(
                 originals.trim(budget)
             }
         } catch (e: SourceException) {
-            failure = e
+            // The folder was listed: whatever a download says, it is about a file, not about access to the folder.
+            failure = e.ofFile()
         }
 
         val onServer = listing.mapTo(HashSet()) { it.path }
@@ -212,16 +291,39 @@ class RemoteSource(
             )
         // The same ETag as before: only the original is gone from the cache, the photo is the one in the index.
         val unchanged = previous != null && previous.etag == file.etag
-        synchronized(downloadLock) {
+        synchronized(lockOf(draft.id)) {
             val part = originals.partOf(draft)
             try {
-                remote.download(file, part)
+                remote.download(file, part, limits())
+            } catch (e: ImageException) {
+                // A format the device cannot decode, told by the first bytes: skipped like a file whose probe says so.
+                part.delete()
+                return Result.failure(e)
             } catch (e: SourceException) {
                 part.delete()
-                // A file that vanished since the listing is the next sync's business, not a reason to stop. A source that is
-                // gone as a whole (a withdrawn share) is: every further download would fail the same way.
-                if (e.kind == SourceException.Kind.NOT_FOUND) return Result.failure(e)
-                throw e
+                when (e.kind) {
+                    // A file that vanished since the listing is the next sync's business, not a reason to stop. A source
+                    // that is gone as a whole (a withdrawn share) is: every further download would fail the same way.
+                    SourceException.Kind.NOT_FOUND -> {
+                        return Result.failure(e)
+                    }
+
+                    // Replaced since the listing: the next sync lists and fetches the new version.
+                    SourceException.Kind.CHANGED -> {
+                        log.i(TAG, "${file.path} in $id was replaced after the listing; the next sync fetches it")
+                        return Result.failure(e)
+                    }
+
+                    // More than listed: a new file is skipped as too large, a photo in the library stays as it is.
+                    SourceException.Kind.LIMIT -> {
+                        log.w(TAG, "${e.message}")
+                        return Result.failure(if (previous == null) ImageException(SkipReason.TOO_LARGE, e.message.orEmpty(), e) else e)
+                    }
+
+                    else -> {
+                        throw e
+                    }
+                }
             }
             val info =
                 try {
@@ -237,24 +339,43 @@ class RemoteSource(
                 }
             originals.commit(draft)
             if (unchanged) {
+                // The same entity tag but other dimensions: the file was replaced without a new tag, the photo is changed.
+                if (info.width != previous!!.width || info.height != previous.height) {
+                    log.i(TAG, "${file.path} in $id has other dimensions than in the library; it counts as changed")
+                    return Result.success(fresh(draft, info, file))
+                }
                 // A photo from before the GPS position was read gets it with this download (spec "Metadata of photos
                 // already in the index"); otherwise the entry stays as it is.
-                if (previous!!.metadataVersion >= PhotoEntry.METADATA_VERSION) return Result.success(previous)
+                if (previous.metadataVersion >= PhotoEntry.METADATA_VERSION) return Result.success(previous)
                 return Result.success(previous.copy(gps = info.gps, metadataVersion = PhotoEntry.METADATA_VERSION))
             }
-            return Result.success(
-                draft.copy(
-                    width = info.width,
-                    height = info.height,
-                    takenAtMs =
-                        info.takenAt?.toEpochMilli() ?: file.modifiedMs,
-                    gps = info.gps,
-                ),
-            )
+            return Result.success(fresh(draft, info, file))
         }
     }
 
-    private companion object {
-        const val TAG = "sources"
+    private fun fresh(
+        draft: PhotoEntry,
+        info: io.github.tycho991.openframe.core.platform.ImageInfo,
+        file: RemoteFile,
+    ) = draft.copy(
+        width = info.width,
+        height = info.height,
+        takenAtMs = info.takenAt?.toEpochMilli() ?: file.modifiedMs,
+        gps = info.gps,
+    )
+
+    companion object {
+        private const val TAG = "sources"
+        private const val LOCKS = 16
+
+        /** An entity tag as it is compared: without `W/`, quotes and the suffix a compressing proxy adds. */
+        fun normalizedEtag(raw: String?): String? =
+            raw
+                ?.trim()
+                ?.removePrefix("W/")
+                ?.trim('"')
+                ?.removeSuffix("-gzip")
+                ?.removeSuffix("-br")
+                ?.takeIf { it.isNotEmpty() }
     }
 }

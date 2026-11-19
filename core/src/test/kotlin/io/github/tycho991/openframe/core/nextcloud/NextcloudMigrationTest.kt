@@ -80,8 +80,11 @@ class NextcloudMigrationTest {
 
             assertTrue(File(cache, "sources/nextcloud/$photoId.jpg").isFile, "the original moved")
             assertFalse(File(cache, "nextcloud").exists())
-            assertTrue(File(state, "nextcloud.json").isFile, "the old file stays for going back")
+            assertFalse(File(state, "nextcloud.json").exists(), "the files of 0.1.0 are gone after the first start")
+            assertFalse(File(state, "nextcloud-status.json").exists())
             assertTrue(File(state, "sources.json").isFile)
+            Thread.sleep(200)
+            assertEquals(0, (clients.login as FakeLoginFlow).revoked, "the password of 0.1.0 is the one the source uses")
 
             // Rendering takes the moved original; a sync needs no new login and downloads nothing that did not change.
             assertEquals(200, frame.get("/api/v1/photos/$photoId/image?size=thumb").statusCode())
@@ -109,7 +112,7 @@ class NextcloudMigrationTest {
     }
 
     @Test
-    fun `The migration runs once, and removing the source deletes the old file`() {
+    fun `The migration runs once, and removing the source revokes its password`() {
         oldFrame()
         TestFrame(dir, nextcloudClients = clients).close()
         TestFrame(dir, nextcloudClients = clients).use { frame ->
@@ -120,6 +123,7 @@ class NextcloudMigrationTest {
                 check(System.currentTimeMillis() < deadline) { "the app password was not revoked" }
                 Thread.sleep(25)
             }
+            assertEquals(listOf("app-pw-old-Tz55"), (clients.login as FakeLoginFlow).revokedPasswords)
             assertFalse(File(state, "nextcloud.json").exists())
             assertFalse(File(state, "nextcloud-status.json").exists())
             assertEquals(emptyList<Any>(), frame.photos())
@@ -127,6 +131,55 @@ class NextcloudMigrationTest {
         }
         TestFrame(dir, nextcloudClients = clients).use { frame ->
             assertEquals(emptyList<Any>(), frame.sources(), "a removed source does not come back")
+        }
+    }
+
+    /** Spec `nextcloud-source`: No orphaned app passwords › Leftover of version 0.1.0. */
+    @Test
+    fun `A leftover password of the first version that the source does not use is revoked, and the files are deleted`() {
+        oldFrame()
+        TestFrame(dir, nextcloudClients = clients).close()
+        // The account logged in again since: the source has another app password than the file of 0.1.0.
+        val sources = File(state, "sources.json")
+        sources.writeText(sources.readText().replace("app-pw-old-Tz55", "app-pw-new-Qx81"))
+        oldFrame()
+        File(state, "index.json").delete()
+        TestFrame(dir, nextcloudClients = clients).use {
+            val deadline = System.currentTimeMillis() + 10_000
+            while ((clients.login as FakeLoginFlow).revoked == 0) {
+                check(System.currentTimeMillis() < deadline) { "the leftover app password was not revoked" }
+                Thread.sleep(25)
+            }
+            assertEquals(listOf("app-pw-old-Tz55"), (clients.login as FakeLoginFlow).revokedPasswords)
+            assertFalse(File(state, "nextcloud.json").exists())
+            assertFalse(File(state, "nextcloud-status.json").exists())
+        }
+    }
+
+    @Test
+    fun `A leftover file of a disconnected first version is deleted without a revocation`() {
+        oldFrame()
+        TestFrame(dir, nextcloudClients = clients).close()
+        oldFrame(connected = false)
+        File(state, "index.json").delete()
+        TestFrame(dir, nextcloudClients = clients).use {
+            assertFalse(File(state, "nextcloud.json").exists())
+            Thread.sleep(200)
+            assertEquals(0, (clients.login as FakeLoginFlow).revoked)
+        }
+    }
+
+    /** Spec `nextcloud-source`: No orphaned app passwords › List of sources unreadable. */
+    @Test
+    fun `With a sources json that cannot be read nothing is revoked and the file of 0 1 0 stays`() {
+        oldFrame()
+        TestFrame(dir, nextcloudClients = clients).close()
+        oldFrame()
+        File(state, "sources.json").writeText("{ not json")
+        TestFrame(dir, nextcloudClients = clients).use {
+            Thread.sleep(200)
+            assertEquals(0, (clients.login as FakeLoginFlow).revoked)
+            assertTrue(File(state, "nextcloud.json").isFile)
         }
     }
 

@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.nextcloud
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.net.URISyntaxException
 
@@ -42,7 +43,10 @@ data class ShareLink(
             val prefix = segments.dropLast(2).let { if (it.lastOrNull() == "index.php") it.dropLast(1) else it }
             val port = if (uri.port == -1) "" else ":${uri.port}"
             val path = prefix.joinToString("") { "/$it" }
-            return ShareLink("$scheme://${host.lowercase()}$port$path", token)
+            val server = "$scheme://${host.lowercase()}$port$path"
+            // OkHttp is what sends the requests: an address it refuses, such as a port over 65535, is no share.
+            if (server.toHttpUrlOrNull() == null) return null
+            return ShareLink(server, token)
         }
     }
 }

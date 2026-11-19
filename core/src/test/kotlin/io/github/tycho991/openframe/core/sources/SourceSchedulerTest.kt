@@ -337,6 +337,136 @@ class SourceSchedulerTest {
         assertEquals(3, source.scans)
     }
 
+    // --- Absolute deadlines, rejected access, Retry-After (design decision 8 of nextcloud-hardening)
+
+    /** The test scheduler's time as the monotonic time and the wall clock, as the frame's clock moves with real time. */
+    private val virtual =
+        object : io.github.tycho991.openframe.core.platform.Clock {
+            override fun now(): java.time.Instant =
+                java.time.Instant
+                    .parse("2026-05-01T10:15:30Z")
+                    .plusMillis(scope.testScheduler.currentTime)
+
+            override fun monotonicMillis(): Long = scope.testScheduler.currentTime
+        }
+
+    private fun timed(source: Source = this.source) =
+        SourceScheduler(scope, source, { configs.get(source.id) }, results, syncLock, virtual, log).also { it.start() }
+
+    private val hour = 60 * 60_000L
+
+    private val refused = SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 401)")
+
+    @Test
+    fun `After refused access to the folder there is no try for a day, also with a network change or a restart`() {
+        val first = timed()
+        source.failure = refused
+        advance(30_000)
+        assertEquals(1, source.scans)
+        assertTrue(first.status.value.last.rejected)
+        assertEquals("unauthorized", first.status.value.last.errorCode)
+        advance(12 * hour)
+        first.networkChanged()
+        scope.runCurrent()
+        advance(12 * hour - 60_000)
+        assertEquals(1, source.scans, "no try within 23 h 59 min, the network change moved nothing")
+        // A restart: a new scheduler that knows the refusal only from the stored result.
+        first.stop()
+        val again = timed()
+        advance(59_999)
+        assertEquals(1, source.scans, "the rest of the day after the restart")
+        advance(1)
+        assertEquals(2, source.scans, "one try after a day")
+        again.stop()
+    }
+
+    @Test
+    fun `A refused download of one file is tried again after 60 seconds`() {
+        timed()
+        source.failure = refused.ofFile()
+        advance(30_000)
+        assertEquals(1, source.scans)
+        advance(60_000)
+        assertEquals(2, source.scans)
+    }
+
+    @Test
+    fun `A change of the configuration or a request tries at once after refused access, also before a network change`() {
+        val scheduler = timed()
+        source.failure = refused
+        advance(30_000)
+        assertEquals(1, source.scans)
+        source.failure = null
+        scheduler.configChanged()
+        scheduler.networkChanged()
+        scope.runCurrent()
+        advance(2_000)
+        assertEquals(2, source.scans, "the login again syncs at once")
+        source.failure = refused
+        advance(20 * 60_000L)
+        assertEquals(3, source.scans)
+        assertTrue(scheduler.status.value.last.rejected)
+        assertTrue(scheduler.requestSync())
+        scheduler.networkChanged()
+        scope.runCurrent()
+        assertEquals(4, source.scans, "Sync now tries at once")
+    }
+
+    @Test
+    fun `After HTTP 429 the next try waits as long as asked, also with a network change in between`() {
+        val scheduler = timed()
+        source.failure = SourceException(SourceException.Kind.THROTTLED, "The server asks to wait (HTTP 429)", retryAfterMs = 15 * 60_000L)
+        advance(30_000)
+        assertEquals(1, source.scans)
+        assertEquals("throttled", scheduler.status.value.last.errorCode)
+        assertFalse(scheduler.status.value.last.rejected)
+        advance(5 * 60_000L)
+        scheduler.networkChanged()
+        scope.runCurrent()
+        advance(10 * 60_000L - 1)
+        assertEquals(1, source.scans)
+        advance(1)
+        assertEquals(2, source.scans)
+    }
+
+    @Test
+    fun `A network change does not restart the wait for the interval`() {
+        val scheduler = timed()
+        advance(30_000)
+        assertEquals(1, source.scans)
+        advance(10 * 60_000L)
+        scheduler.networkChanged()
+        scope.runCurrent()
+        advance(10 * 60_000L)
+        assertEquals(2, source.scans, "20 minutes after the last sync, not 20 minutes after the network change")
+    }
+
+    @Test
+    fun `A refusal of credentials that were replaced during the sync is no rejected access`() {
+        val scheduler = timed()
+        source.gate = CompletableDeferred()
+        source.failure = refused
+        advance(30_000)
+        assertEquals(1, source.scans)
+        // The user logs in again while the sync with the old credentials runs.
+        configs.reconnect("nextcloud", Connection.Share("https://cloud.example.org", "token-new"))
+        source.gate!!.complete(Unit)
+        scope.runCurrent()
+        assertFalse(scheduler.status.value.last.rejected)
+        assertEquals("unauthorized", scheduler.status.value.last.errorCode)
+        source.gate = null
+        advance(60_000)
+        assertEquals(2, source.scans, "an ordinary retry")
+    }
+
+    @Test
+    fun `An unexpected failure is stored with the code unexpected`() {
+        val scheduler = timed()
+        source.failure = IllegalStateException("boom")
+        advance(30_000)
+        assertEquals("unexpected", scheduler.status.value.last.errorCode)
+    }
+
     @Test
     fun `The result survives a restart`() {
         scheduler

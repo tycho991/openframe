@@ -28,14 +28,24 @@ class TrustAnchorsTest {
 
     private fun testRoot(name: String): X509Certificate = resource(name).use(TrustAnchors::parse)
 
-    /** An HTTPS server on the loopback address whose certificate is in [keystore]. */
-    private fun start(keystore: String): String {
+    /** An HTTPS server on the loopback address whose certificate is in [keystore], speaking only [protocols] if given. */
+    private fun start(
+        keystore: String,
+        protocols: Array<String>? = null,
+    ): String {
         val store = KeyStore.getInstance("PKCS12")
         resource(keystore).use { store.load(it, "test".toCharArray()) }
         val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, "test".toCharArray()) }
         val context = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, null, null) }
         val https = HttpsServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        https.httpsConfigurator = HttpsConfigurator(context)
+        https.httpsConfigurator =
+            object : HttpsConfigurator(context) {
+                override fun configure(params: com.sun.net.httpserver.HttpsParameters) {
+                    val ssl = context.defaultSSLParameters
+                    if (protocols != null) ssl.protocols = protocols
+                    params.setSSLParameters(ssl)
+                }
+            }
         https.createContext("/") { exchange ->
             val body = "hello".toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
@@ -76,6 +86,29 @@ class TrustAnchorsTest {
         val url = start("server.p12")
         val failure = assertThrows(SourceException::class.java) { get(url, TrustAnchors.delivered()) }
         assertEquals(SourceException.Kind.TLS, failure.kind)
+    }
+
+    /** Design decision 11 of `nextcloud-hardening`: only a certificate problem is an untrusted certificate. */
+    @Test
+    fun `A handshake that fails for another reason than the certificate is a failed handshake`() {
+        val url = start("server.p12", protocols = arrayOf("TLSv1.3"))
+        val onlyTls12 =
+            NextcloudHttp
+                .defaultClient(TrustAnchors.trustManager(listOf(testRoot("root.pem"))))
+                .newBuilder()
+                .connectionSpecs(
+                    listOf(
+                        okhttp3.ConnectionSpec
+                            .Builder(okhttp3.ConnectionSpec.MODERN_TLS)
+                            .tlsVersions(okhttp3.TlsVersion.TLS_1_2)
+                            .build(),
+                    ),
+                ).build()
+        val failure =
+            assertThrows(SourceException::class.java) {
+                NextcloudHttp(onlyTls12).execute(Request.Builder().url(url).build()).close()
+            }
+        assertEquals(SourceException.Kind.TLS_HANDSHAKE, failure.kind, failure.message)
     }
 
     @Test
