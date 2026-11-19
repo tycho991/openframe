@@ -2,7 +2,7 @@
   import { ApiError, type Source } from "../lib/api/client";
   import { errorMessage, errorText } from "../lib/i18n/errors";
   import { t } from "../lib/i18n/i18n.svelte";
-  import { isPlainHttp, isShareLink, MAX_SOURCES } from "../lib/sources";
+  import { isPlainHttp, isShareLink, isWebAddress, MAX_SOURCES, sourceError } from "../lib/sources";
   import { api } from "../lib/session.svelte";
   import SourceCard from "./SourceCard.svelte";
 
@@ -23,6 +23,9 @@
   let serverError = $state<string | null>(null);
   let login = $state<{ flowId: string; loginUrl: string } | null>(null);
   let loginMessage = $state<string | null>(null);
+  let loginDetail = $state<string | null>(null);
+  // While a login is being started: one click and a double click start one login (spec web-admin).
+  let connecting = $state(false);
 
   const full = $derived((sources?.length ?? 0) >= MAX_SOURCES);
 
@@ -59,9 +62,13 @@
         }
         login = null;
         if (polled.state === "expired") loginMessage = t("sources.loginExpired");
-        else if (polled.state === "failed")
-          loginMessage = t("sources.loginFailed", { message: polled.error ?? "" });
-        else {
+        else if (polled.state === "failed") {
+          const failure = sourceError(polled.errorCode, polled.error);
+          loginMessage = t("sources.loginFailed", {
+            message: failure.reason ? t(failure.reason) : failure.text,
+          });
+          loginDetail = failure.detail;
+        } else {
           loginMessage = null;
           serverUrl = "";
           await load();
@@ -109,15 +116,25 @@
 
   async function connect(event: SubmitEvent) {
     event.preventDefault();
+    if (connecting || login) return;
+    connecting = true;
     serverError = null;
     loginMessage = null;
+    loginDetail = null;
     try {
       const started = await api.startSourceLogin(serverUrl.trim());
+      // A second guard after the frame's own: only a web address is opened.
+      if (!isWebAddress(started.loginUrl)) {
+        loginMessage = t("sources.loginUrlInvalid");
+        return;
+      }
       login = { flowId: started.flowId, loginUrl: started.loginUrl };
       window.open(started.loginUrl, "_blank", "noopener");
     } catch (e) {
       if (e instanceof ApiError && e.fields["serverUrl"]) serverError = t("sources.serverInvalid");
       else loginMessage = errorText(e);
+    } finally {
+      connecting = false;
     }
   }
 </script>
@@ -231,7 +248,7 @@
               autocomplete="url"
               placeholder="https://cloud.example.org"
               bind:value={serverUrl}
-              disabled={login !== null}
+              disabled={login !== null || connecting}
               aria-invalid={!!serverError}
               aria-describedby="nc-server-hint"
             />
@@ -248,12 +265,18 @@
             </p>
           {:else}
             <div class="actions">
-              <button type="submit" class="primary" disabled={serverUrl.trim() === ""}
+              <button type="submit" class="primary" disabled={serverUrl.trim() === "" || connecting}
                 >{t("sources.connect")}</button
               >
             </div>
           {/if}
-          {#if loginMessage}<p class="error" role="alert">{loginMessage}</p>{/if}
+          {#if loginMessage}
+            <p class="error" role="alert">
+              {loginMessage}
+              {#if loginDetail}<span class="detail">{t("sources.errorDetail", { detail: loginDetail })}</span
+                >{/if}
+            </p>
+          {/if}
         </form>
       </div>
     {/if}
@@ -304,5 +327,10 @@
   }
   .warn {
     color: var(--warning);
+  }
+  .detail {
+    display: block;
+    font-size: 0.85em;
+    opacity: 0.85;
   }
 </style>

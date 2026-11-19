@@ -93,9 +93,14 @@ export const nextcloudPut = (fixture: string, to: string, { etag = "etag-" + to,
 export const nextcloudRemove = (from: string, { share = "" } = {}) =>
   control(`/nextcloud/remove?path=${encodeURIComponent(from)}` + (share ? `&share=${share}` : ""));
 
-/** Lets listing the folder of the account (or of a share) fail like a server that is down. */
-export const nextcloudFail = (on: boolean, { share = "" } = {}) =>
-  control(`/nextcloud/fail?on=${on ? 1 : 0}` + (share ? `&share=${share}` : ""));
+/**
+ * Lets listing the folder of the account (or of a share) fail like a server that is down, or with another [kind], a
+ * value of the contract's `SourceErrorCode`.
+ */
+export const nextcloudFail = (on: boolean, { share = "", kind = "" } = {}) =>
+  control(
+    `/nextcloud/fail?on=${on ? 1 : 0}` + (share ? `&share=${share}` : "") + (kind ? `&kind=${kind}` : ""),
+  );
 
 /** The frame's display found its GPU too slow to fade, so it changes photos instantly from now on. */
 export const slowDisplay = () => control("/transitions/slow");

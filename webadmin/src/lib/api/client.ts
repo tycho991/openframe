@@ -26,6 +26,7 @@ export type SourceKind = S["SourceKind"];
 export type SourceSettings = S["SourceSettings"];
 export type SourceSettingsPatch = S["SourceSettingsPatch"];
 export type SourceStatus = S["SourceStatus"];
+export type SourceErrorCode = S["SourceErrorCode"];
 export type ShareRequest = S["ShareRequest"];
 export type SourceLogin = S["SourceLogin"];
 export type SourceLoginState = S["SourceLoginState"];
