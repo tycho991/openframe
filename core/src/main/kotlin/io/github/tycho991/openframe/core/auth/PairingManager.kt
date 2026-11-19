@@ -143,7 +143,7 @@ class PairingManager(
             }
             consumeSession()
         }
-        return create(deviceName, "Paired")
+        return create(deviceName, null)
     }
 
     /**
@@ -155,14 +155,15 @@ class PairingManager(
         input: String,
         deviceName: String,
     ): Pair<String, StoredClient> {
-        val how =
+        // The inviting device's ID for a pairing by invitation, else null.
+        val inviter =
             synchronized(this) {
                 val now = clock.monotonicMillis()
                 expireIfDue(now)
                 val current = secret
                 if (current != null && equal(input, current)) {
                     consumeSession()
-                    return@synchronized "Paired"
+                    return@synchronized null
                 }
                 val invite = invites.entries.firstOrNull { equal(input, it.value.secret) }
                 if (invite == null) {
@@ -175,9 +176,9 @@ class PairingManager(
                 if (now >= invite.value.expiresAt) throw expiredError()
                 endProtection()
                 refresh()
-                "Paired by invitation"
+                invite.key
             }
-        return create(deviceName, how)
+        return create(deviceName, inviter)
     }
 
     /**
@@ -230,12 +231,23 @@ class PairingManager(
         wrongCodes.clear()
     }
 
+    /** Creates the client outside the lock and logs it (spec `admin-access`, "Log of device management"). */
     private fun create(
         deviceName: String,
-        how: String,
+        inviter: String?,
     ): Pair<String, StoredClient> {
         val result = clients.create(deviceName)
-        log.i(TAG, "$how: ${result.second.name}")
+        val client = result.second
+        log.i(
+            TAG,
+            if (inviter ==
+                null
+            ) {
+                "Paired ${client.id}: ${client.name}"
+            } else {
+                "Paired ${client.id} by invitation of $inviter: ${client.name}"
+            },
+        )
         return result
     }
 

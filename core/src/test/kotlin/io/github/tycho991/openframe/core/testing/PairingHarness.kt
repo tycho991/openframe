@@ -33,7 +33,7 @@ class PairingHarness(
     val pairing = PairingManager(clients, clock, log, { adminUrl })
     val http =
         TestHttp(
-            HttpPipeline(Router().apply { pairingRoutes(pairing, clients) { adminUrl } }, AccessControl(clients, signer), log)::handle,
+            HttpPipeline(Router().apply { pairingRoutes(pairing, clients, log) { adminUrl } }, AccessControl(clients, signer), log)::handle,
             checkContract = true,
             limits = limits,
         )

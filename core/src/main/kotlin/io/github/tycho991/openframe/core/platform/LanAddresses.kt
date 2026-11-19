@@ -1,5 +1,8 @@
 package io.github.tycho991.openframe.core.platform
 
+import java.net.Inet4Address
+import java.net.InetAddress
+
 /** What kind of connection an interface belongs to, as the system reports it. */
 enum class ConnectionKind {
     WIFI,
@@ -28,6 +31,35 @@ fun lanAddresses(candidates: List<AddressCandidate>): List<String> {
     val preferred = usable.filter { it.kind in order }.sortedBy { order.indexOf(it.kind) }
     val others = usable.filter { it.kind == ConnectionKind.OTHER }
     return (preferred + others).map { it.address }.distinct()
+}
+
+/** An address of this device, IPv4 or IPv6, together with the kind of connection it is on. */
+data class InterfaceAddress(
+    val address: InetAddress,
+    val kind: ConnectionKind,
+)
+
+/**
+ * The addresses on which the frame answers connections (spec `admin-access`, "Connections only on local addresses"),
+ * and those on which it closes them without an answer: mobile data and its 464XLAT addresses.
+ */
+data class LocalAddresses(
+    val accepted: List<InetAddress>,
+    val refused: List<InetAddress>,
+) {
+    companion object {
+        val NONE = LocalAddresses(emptyList(), emptyList())
+    }
+}
+
+/**
+ * Splits the device's addresses: everything but mobile data is accepted, Wi-Fi, Ethernet, hotspot, tethering and VPN,
+ * IPv4 and IPv6 (finish-lan-hardening, design decisions 2 to 4).
+ */
+fun localAddresses(candidates: List<InterfaceAddress>): LocalAddresses {
+    val (refused, accepted) =
+        candidates.partition { it.kind == ConnectionKind.CELLULAR || (it.address is Inet4Address && isClatAddress(it.address.hostAddress)) }
+    return LocalAddresses(accepted.map { it.address }.distinct(), refused.map { it.address }.distinct())
 }
 
 /**

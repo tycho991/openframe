@@ -7,6 +7,8 @@ import io.github.tycho991.openframe.core.platform.ConnectionKind.VPN
 import io.github.tycho991.openframe.core.platform.ConnectionKind.WIFI
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import java.net.Inet6Address
+import java.net.InetAddress
 
 class LanAddressesTest {
     private fun pick(vararg candidates: Pair<String, ConnectionKind>) =
@@ -80,5 +82,36 @@ class LanAddressesTest {
         assertEquals(OTHER, kindOfInterfaceName("ap0"))
         assertEquals(OTHER, kindOfInterfaceName("wlan1"))
         assertEquals(OTHER, kindOfInterfaceName("rndis0"))
+    }
+
+    private fun ip(literal: String): InetAddress = InetAddress.getByName(literal)
+
+    @Test
+    fun `Accepted are Wi-Fi, Ethernet, hotspot, VPN and IPv6, refused mobile data and 464XLAT`() {
+        val linkLocal = Inet6Address.getByAddress(null, ip("fe80::1").address, 3)
+        val result =
+            localAddresses(
+                listOf(
+                    InterfaceAddress(ip("192.168.100.7"), WIFI),
+                    InterfaceAddress(linkLocal, WIFI),
+                    InterfaceAddress(ip("fd00::7"), WIFI),
+                    InterfaceAddress(ip("192.168.100.8"), ETHERNET),
+                    InterfaceAddress(ip("192.168.43.1"), OTHER),
+                    InterfaceAddress(ip("100.64.0.7"), VPN),
+                    InterfaceAddress(ip("10.100.200.100"), CELLULAR),
+                    InterfaceAddress(ip("2001:db8::7"), CELLULAR),
+                    InterfaceAddress(ip("192.0.0.4"), OTHER),
+                ),
+            )
+        assertEquals(
+            listOf(ip("192.168.100.7"), linkLocal, ip("fd00::7"), ip("192.168.100.8"), ip("192.168.43.1"), ip("100.64.0.7")),
+            result.accepted,
+        )
+        assertEquals(listOf(ip("10.100.200.100"), ip("2001:db8::7"), ip("192.0.0.4")), result.refused)
+    }
+
+    @Test
+    fun `The shown address does not change with VPN and IPv6 around`() {
+        assertEquals(listOf("192.168.100.7"), pick("100.64.0.7" to VPN, "192.168.100.7" to WIFI))
     }
 }

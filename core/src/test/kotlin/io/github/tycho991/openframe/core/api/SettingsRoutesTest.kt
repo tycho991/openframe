@@ -49,6 +49,18 @@ class SettingsRoutesTest {
     }
 
     @Test
+    fun `Unknown field, wrong type and oversized body`() {
+        val unknown = http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":60,"localOnly":true}""", auth.header)
+        assertEquals(400, unknown.statusCode(), unknown.body())
+        val text = http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":60}""", auth.header, contentType = "text/plain")
+        assertEquals(415, text.statusCode(), text.body())
+        val big = """{"name":"${"x".repeat(1024 * 1024)}"}"""
+        val large = http.request("PATCH", "/api/v1/settings", big, auth.header)
+        assertEquals(413, large.statusCode(), large.body())
+        assertEquals(0, repo.version.value)
+    }
+
+    @Test
     fun `Change only the interval`() {
         val res = http.request("PATCH", "/api/v1/settings", """{"intervalSeconds":60}""", auth.header)
         assertEquals(200, res.statusCode())

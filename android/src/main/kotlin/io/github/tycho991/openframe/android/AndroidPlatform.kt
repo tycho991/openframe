@@ -14,15 +14,17 @@ import android.view.WindowManager
 import io.github.tycho991.openframe.core.platform.AddressCandidate
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.ConnectionKind
+import io.github.tycho991.openframe.core.platform.InterfaceAddress
+import io.github.tycho991.openframe.core.platform.LocalAddresses
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import io.github.tycho991.openframe.core.platform.kindOfInterfaceName
 import io.github.tycho991.openframe.core.platform.lanAddresses
+import io.github.tycho991.openframe.core.platform.localAddresses
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.NetworkInterface
 import java.util.Locale
 
@@ -58,7 +60,14 @@ class AndroidPlatformInfo(
     @Suppress("DEPRECATION")
     override val systemLocale: Locale get() = Resources.getSystem().configuration.locale
 
-    override fun ipAddresses(): List<String> = lanAddresses(addressCandidates())
+    override fun ipAddresses(): List<String> =
+        lanAddresses(
+            interfaceAddresses().mapNotNull { a ->
+                (a.address as? Inet4Address)?.hostAddress?.let { AddressCandidate(it, a.kind) }
+            },
+        )
+
+    override fun localAddresses(): LocalAddresses = localAddresses(interfaceAddresses())
 
     /** The app's internal folder always is; a folder on shared storage only while that is mounted. */
     override fun storageMounted(dir: File): Boolean =
@@ -66,18 +75,18 @@ class AndroidPlatformInfo(
             Environment.getExternalStorageState(dir) == Environment.MEDIA_MOUNTED
 
     /**
-     * Every IPv4 address of the device with the kind of connection it is on. The system says what a network is
+     * Every address of the device, IPv4 and IPv6, with the kind of connection it is on. The system says what a network is
      * (Wi-Fi, mobile data, VPN); interface names differ by vendor and cannot tell. Interfaces that no network of the
      * device owns, such as a Wi-Fi hotspot or USB tethering, are classified by their name ([kindOfInterfaceName]), so
      * that a stacked 464XLAT interface (`v4-rmnet_data0`) or a mobile data interface of a network the system did not
      * describe still counts as mobile data. The same holds if the system cannot be asked at all.
      */
-    private fun addressCandidates(): List<AddressCandidate> {
+    private fun interfaceAddresses(): List<InterfaceAddress> {
         val interfaces = runCatching { NetworkInterface.getNetworkInterfaces().toList() }.getOrDefault(emptyList())
         val fromInterfaces = { skip: Set<String> ->
             interfaces
                 .filter { !it.isLoopback && it.isUp && it.name !in skip }
-                .flatMap { iface -> ipv4(iface.inetAddresses.toList()).map { AddressCandidate(it, kindOfInterfaceName(iface.name)) } }
+                .flatMap { iface -> iface.inetAddresses.toList().map { InterfaceAddress(it, kindOfInterfaceName(iface.name)) } }
         }
         return runCatching {
             val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -96,7 +105,7 @@ class AndroidPlatformInfo(
                     properties?.interfaceName?.let { owned += it }
                     if (capabilities == null || properties == null) return@flatMap emptyList()
                     val kind = connectionKind(capabilities)
-                    ipv4(properties.linkAddresses.map { it.address }).map { AddressCandidate(it, kind) }
+                    properties.linkAddresses.map { InterfaceAddress(it.address, kind) }
                 }
             classified + fromInterfaces(owned)
         }.getOrElse { fromInterfaces(emptySet()) }
@@ -110,8 +119,6 @@ class AndroidPlatformInfo(
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionKind.ETHERNET
             else -> ConnectionKind.OTHER
         }
-
-    private fun ipv4(addresses: List<InetAddress>): List<String> = addresses.filterIsInstance<Inet4Address>().mapNotNull { it.hostAddress }
 
     /** Resolution in the device's natural orientation, independent of the current rotation. */
     @Suppress("DEPRECATION")

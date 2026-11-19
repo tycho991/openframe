@@ -25,6 +25,7 @@ import io.github.tycho991.openframe.core.health.RunEnd
 import io.github.tycho991.openframe.core.health.RunJournal
 import io.github.tycho991.openframe.core.http.FrameServer
 import io.github.tycho991.openframe.core.http.HttpPipeline
+import io.github.tycho991.openframe.core.http.LocalAddressFilter
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.http.StaticAssets
@@ -318,7 +319,15 @@ class FrameCore(
 
     val router = Router()
     private val pipeline = HttpPipeline(router, AccessControl(clients, signer), log, StaticAssets(assets)::handle)
-    val server = FrameServer(port, Dispatchers.IO.limitedParallelism(HANDLER_THREADS), log, pipeline::handle)
+    private val localAddresses = LocalAddressFilter(clock, platform::localAddresses)
+    val server =
+        FrameServer(
+            port,
+            Dispatchers.IO.limitedParallelism(HANDLER_THREADS),
+            log,
+            pipeline::handle,
+            acceptsLocal = localAddresses::accepts,
+        )
 
     private val scanSignal = Channel<Unit>(Channel.CONFLATED)
     private val bindSignal = Channel<Unit>(Channel.CONFLATED)
@@ -542,6 +551,7 @@ class FrameCore(
     /** After a network change, so that the server accepts on the new address. */
     fun onNetworkChanged() {
         lanAddressCache = null
+        localAddresses.clear()
         if (!health.safe) sources.networkChanged()
         update.networkChanged()
         // Bound to loopback, local-only mode does not care about the network, unless it could not bind at all.
@@ -576,7 +586,7 @@ class FrameCore(
 
     private fun registerRoutes() {
         router.infoRoutes(identity, settings, platform)
-        router.pairingRoutes(pairing, clients, ::adminUrl)
+        router.pairingRoutes(pairing, clients, log, ::adminUrl)
         router.settingsRoutes(settings)
         val photos = PhotoDtos(library, settings, signer, places, platform)
         router.libraryRoutes(library, settings, photos, transitions, platform, health::safe)

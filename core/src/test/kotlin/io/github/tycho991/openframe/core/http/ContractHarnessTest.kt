@@ -41,6 +41,60 @@ class ContractHarnessTest {
     }
 
     @Test
+    fun `A body where the contract has none fails`() {
+        assertThrows<AssertionError> { Contract.check("POST", "/api/v1/pairing/code", 204, "text/plain", "hello") }
+        assertThrows<AssertionError> {
+            Contract.check("POST", "/api/v1/pairing/code", 204, "application/octet-stream", "", bodyBytes = 3)
+        }
+    }
+
+    @Test
+    fun `Required headers are checked`() {
+        val locked = """{"error":{"code":"locked","message":"x"}}"""
+        assertThrows<AssertionError> {
+            Contract.check("POST", "/api/v1/pairing", 429, "application/json", locked, headers = emptyMap())
+        }
+        assertThrows<AssertionError> {
+            Contract.check("POST", "/api/v1/pairing", 429, "application/json", locked, headers = mapOf("retry-after" to listOf("soon")))
+        }
+        assertDoesNotThrow {
+            Contract.check("POST", "/api/v1/pairing", 429, "application/json", locked, headers = mapOf("retry-after" to listOf("60")))
+        }
+    }
+
+    @Test
+    fun `Formats are checked`() {
+        val client = """{"id":"a","name":"b","pairedAt":"yesterday","lastSeenAt":"2026-11-18T20:00:00Z","current":true}"""
+        assertThrows<AssertionError> { Contract.check("PATCH", "/api/v1/clients/a", 200, "application/json", client) }
+        assertDoesNotThrow {
+            Contract.check(
+                "PATCH",
+                "/api/v1/clients/a",
+                200,
+                "application/json",
+                client.replace("yesterday", "2026-11-18T19:00:00Z"),
+            )
+        }
+    }
+
+    @Test
+    fun `A 2xx answer to a request body outside the contract fails`() {
+        val client = """{"id":"a","name":"b","pairedAt":"2026-11-18T19:00:00Z","lastSeenAt":"2026-11-18T20:00:00Z","current":true}"""
+        assertThrows<AssertionError> {
+            Contract.check("PATCH", "/api/v1/clients/a", 200, "application/json", client, requestBody = """{"name":"b","admin":true}""")
+        }
+        assertDoesNotThrow {
+            Contract.check("PATCH", "/api/v1/clients/a", 200, "application/json", client, requestBody = """{"name":"b"}""")
+        }
+    }
+
+    @Test
+    fun `Methods outside the contract are not checked`() {
+        assertDoesNotThrow { Contract.check("HEAD", "/api/v1/info", 405, "application/json", "{}") }
+        assertDoesNotThrow { Contract.check("TRACE", "/api/v1/info", 405, "application/json", "{}") }
+    }
+
+    @Test
     fun `Operations and public routes`() {
         assertTrue("GET /api/v1/info" in Contract.operations())
         assertTrue(Contract.isPublic("GET", "/api/v1/info"))

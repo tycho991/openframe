@@ -293,7 +293,14 @@ Read this before you install it.
   tablet) accepts only a few dozen connections per second: while a device on the LAN floods it with new
   connections, the web UI answers within seconds instead of a fraction of a second. The slideshow keeps running
   meanwhile.
+- **Local addresses only.** The frame answers only connections that arrive on the device itself (`127.0.0.1`, for
+  example through `adb forward`) or on its Wi-Fi, Ethernet, hotspot, tethering or VPN addresses, IPv4 and IPv6. A
+  VPN such as Tailscale or WireGuard therefore reaches the frame. On a mobile data address it closes the connection
+  without an answer, so a frame with a SIM is not reachable from the carrier's network.
 - **Local only.** "Local only" in the device menu binds the server to `127.0.0.1`, so nothing on the LAN reaches it.
+- **Changes to the paired devices are logged.** Each pairing, rename, revocation and invitation writes a line with
+  the IDs of the device that made it and of the device it concerns, readable with `GET /api/v1/logs`. Tokens,
+  pairing secrets and invitation links never appear there.
 - **Stored credentials.** App passwords, share links and share passwords of Nextcloud sources are stored
   unencrypted in the app's private storage. They never appear in an API answer or in the log, but anyone who can
   read the app's data (root, or `run-as` on a debug build) can read them.
