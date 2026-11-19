@@ -9,11 +9,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
+import kotlin.concurrent.thread
 
 /** Spec `nextcloud-source`: Trusted connections on old devices. */
 class TrustAnchorsTest {
@@ -28,24 +31,14 @@ class TrustAnchorsTest {
 
     private fun testRoot(name: String): X509Certificate = resource(name).use(TrustAnchors::parse)
 
-    /** An HTTPS server on the loopback address whose certificate is in [keystore], speaking only [protocols] if given. */
-    private fun start(
-        keystore: String,
-        protocols: Array<String>? = null,
-    ): String {
+    /** An HTTPS server on the loopback address whose certificate is in [keystore]. */
+    private fun start(keystore: String): String {
         val store = KeyStore.getInstance("PKCS12")
         resource(keystore).use { store.load(it, "test".toCharArray()) }
         val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, "test".toCharArray()) }
         val context = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, null, null) }
         val https = HttpsServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        https.httpsConfigurator =
-            object : HttpsConfigurator(context) {
-                override fun configure(params: com.sun.net.httpserver.HttpsParameters) {
-                    val ssl = context.defaultSSLParameters
-                    if (protocols != null) ssl.protocols = protocols
-                    params.setSSLParameters(ssl)
-                }
-            }
+        https.httpsConfigurator = HttpsConfigurator(context)
         https.createContext("/") { exchange ->
             val body = "hello".toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
@@ -88,27 +81,34 @@ class TrustAnchorsTest {
         assertEquals(SourceException.Kind.TLS, failure.kind)
     }
 
-    /** Design decision 11 of `nextcloud-hardening`: only a certificate problem is an untrusted certificate. */
+    /**
+     * Design decision 11 of `nextcloud-hardening`: only a certificate problem is an untrusted certificate. The server
+     * answers the client's hello with plain text and keeps the connection open, so the client fails in its own TLS
+     * layer, whatever the timing.
+     */
     @Test
     fun `A handshake that fails for another reason than the certificate is a failed handshake`() {
-        val url = start("server.p12", protocols = arrayOf("TLSv1.3"))
-        val onlyTls12 =
-            NextcloudHttp
-                .defaultClient(TrustAnchors.trustManager(listOf(testRoot("root.pem"))))
-                .newBuilder()
-                .connectionSpecs(
-                    listOf(
-                        okhttp3.ConnectionSpec
-                            .Builder(okhttp3.ConnectionSpec.MODERN_TLS)
-                            .tlsVersions(okhttp3.TlsVersion.TLS_1_2)
-                            .build(),
-                    ),
-                ).build()
-        val failure =
-            assertThrows(SourceException::class.java) {
-                NextcloudHttp(onlyTls12).execute(Request.Builder().url(url).build()).close()
-            }
-        assertEquals(SourceException.Kind.TLS_HANDSHAKE, failure.kind, failure.message)
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { listener ->
+            val answer =
+                thread(isDaemon = true) {
+                    runCatching {
+                        listener.accept().use { socket ->
+                            socket.getInputStream().read(ByteArray(512))
+                            socket.getOutputStream().apply {
+                                write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                                flush()
+                            }
+                            Thread.sleep(2_000)
+                        }
+                    }
+                }
+            val failure =
+                assertThrows(SourceException::class.java) {
+                    get("https://127.0.0.1:${listener.localPort}/", listOf(testRoot("root.pem")))
+                }
+            assertEquals(SourceException.Kind.TLS_HANDSHAKE, failure.kind, failure.message)
+            answer.interrupt()
+        }
     }
 
     @Test
