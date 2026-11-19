@@ -233,7 +233,7 @@
 
 ## 8. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 8.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
+- [x] 8.1 Rows in `../openframe-private/DEVICE_TEST.md` with their references:
   - Lenovo and Frameo: a source on the DOCTYPE share fails with a readable error, the app keeps running, and its heap
     stays bounded (`dumpsys meminfo`); the source is removed afterwards (`nextcloud-source` › Bounded answers of a
     server › Listing with a DOCTYPE);
