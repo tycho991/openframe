@@ -145,6 +145,18 @@ class RemoteMediaEngineTest {
         watchdogMs: Long = 60_000,
     ) = RemoteMediaEngine(connector, idleMs = idleMs, watchdogMs = watchdogMs)
 
+    /** Design decision 14 of `nextcloud-hardening`: HEIC is told from the SDK level, without the decoder process. */
+    @Test
+    fun `Whether HEIC can be decoded is answered without the decoder, at SDK 23 and 28`() {
+        connector.available = false
+        val old = RemoteMediaEngine(connector, sdkInt = 23)
+        val new = RemoteMediaEngine(connector, sdkInt = 28)
+        assertFalse(old.canDecode(ImageFormat.HEIF))
+        assertTrue(old.canDecode(ImageFormat.JPEG))
+        assertTrue(new.canDecode(ImageFormat.HEIF))
+        assertEquals(0, connector.decoders.size)
+    }
+
     private fun reason(block: () -> Unit): SkipReason {
         try {
             block()

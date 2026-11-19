@@ -14,6 +14,7 @@ import io.github.tycho991.openframe.core.platform.Region
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.settings.FillMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -54,6 +55,15 @@ class AndroidMediaEngineTest {
         }
         fail("ImageException expected")
         throw AssertionError()
+    }
+
+    /** Design decision 14 of `nextcloud-hardening`: a HEIC download ends after its first bytes before Android 9. */
+    @Test
+    fun `HEIC can be decoded from SDK 28, not at SDK 23`() {
+        assertFalse(AndroidMediaEngine(sdkInt = 23).canDecode(ImageFormat.HEIF))
+        assertTrue(AndroidMediaEngine(sdkInt = 23).canDecode(ImageFormat.JPEG))
+        assertTrue(AndroidMediaEngine(sdkInt = 28).canDecode(ImageFormat.HEIF))
+        assertTrue(engine.canDecode(ImageFormat.HEIF))
     }
 
     @Test

@@ -40,6 +40,9 @@ class AndroidMediaEngine(
     /** Off in tests that check the pixels of the fallback: Robolectric's region decoder returns empty bitmaps. */
     private val regionDecoding: Boolean = true,
 ) : MediaEngine {
+    /** BitmapFactory decodes HEIC only from API 28; a download of one ends after its first bytes before that. */
+    override fun canDecode(format: ImageFormat): Boolean = canDecode(format, sdkInt)
+
     override fun probe(file: File): ImageInfo =
         try {
             probeWithinLimits(file)
@@ -209,6 +212,12 @@ class AndroidMediaEngine(
 
     companion object {
         private const val HEIF_MIN_SDK = 28
+
+        /** Whether a device with [sdkInt] decodes [format] at all, without a file and without the decoder process. */
+        fun canDecode(
+            format: ImageFormat,
+            sdkInt: Int,
+        ): Boolean = format != ImageFormat.HEIF || sdkInt >= HEIF_MIN_SDK
 
         /**
          * [region] in whole pixels of an image of [width]×[height]: the corner rounded to the nearest pixel and the size
