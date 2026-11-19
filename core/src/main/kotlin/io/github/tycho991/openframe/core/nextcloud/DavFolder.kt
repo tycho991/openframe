@@ -54,11 +54,26 @@ abstract class DavFolder(
         val queue = ArrayDeque<Pair<String, Int>>()
         queue.add("" to 0)
         var folders = 1
+        // What the listing keeps of the paths and entity tags, so that its memory stays bounded on the smallest frame.
+        var chars = 0L
         while (queue.isNotEmpty()) {
             if (cancelled()) throw SourceException(SourceException.Kind.UNREACHABLE, "The listing was ended: the source was removed")
             val (dir, depth) = queue.removeFirst()
             for (entry in children(dir, cancelled)) {
                 val path = if (dir.isEmpty()) entry.name else "$dir/${entry.name}"
+                if (path.length > SourceLimits.PATH_CHARS) {
+                    throw SourceException(
+                        SourceException.Kind.LIMIT,
+                        "A path in the folder is longer than ${SourceLimits.PATH_CHARS} characters",
+                    )
+                }
+                chars += path.length + entry.etag.length
+                if (chars > SourceLimits.LISTING_CHARS) {
+                    throw SourceException(
+                        SourceException.Kind.LIMIT,
+                        "The paths in the folder are longer than ${SourceLimits.LISTING_CHARS / 1_000_000} million characters together",
+                    )
+                }
                 if (entry.isFolder) {
                     if (!recursive) continue
                     if (depth + 1 > SourceLimits.DEPTH) {
@@ -85,14 +100,22 @@ abstract class DavFolder(
     /**
      * The entries of [dir] without the folder itself, each checked to be a direct child of it (spec "Listings stay inside
      * the folder"). The reference is the folder's own entry: the one with the path asked for, else the first, which
-     * Nextcloud always lists first. Anything else fails the whole listing, which promises all or nothing.
+     * Nextcloud always lists first, if it is a folder of the same name (a proxy with a path of its own before the WebDAV
+     * tree). Anything else fails the whole listing, which promises all or nothing.
      */
     private fun children(
         dir: String,
         cancelled: () -> Boolean,
     ): List<DavEntry> {
         val (own, entries) = propfind(dir, 1, cancelled)
-        val reference = entries.firstOrNull { it.path == own } ?: entries.firstOrNull() ?: return emptyList()
+        if (entries.isEmpty()) return emptyList()
+        val reference =
+            entries.firstOrNull { it.path == own }
+                ?: entries.first().takeIf { it.isFolder && it.name == own.substringAfterLast('/') }
+                ?: throw SourceException(
+                    SourceException.Kind.PROTOCOL,
+                    "The listing of the folder ${shown(dir)} does not start with the folder itself; nothing of it is taken",
+                )
         val out = ArrayList<DavEntry>(entries.size)
         for (entry in entries) {
             if (entry === reference) continue
@@ -122,7 +145,7 @@ abstract class DavFolder(
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
-        http.execute(request).use { response ->
+        http.execute(request, http.times.downloadMs).use { response ->
             requireSuccess(response, "The file ${file.path}")
             val body =
                 response.body ?: throw SourceException(SourceException.Kind.PROTOCOL, "The server sent no content for ${file.path}")
@@ -150,7 +173,7 @@ abstract class DavFolder(
                     http.clock,
                     "The download of ${file.path}",
                     cap,
-                    SourceLimits.DOWNLOAD_MS,
+                    http.times.downloadMs,
                     room,
                     limits.cancelled,
                 )
@@ -162,19 +185,30 @@ abstract class DavFolder(
                     if (!limits.acceptHeader(header.copyOf(n))) {
                         throw ImageException(SkipReason.UNSUPPORTED, "The format of ${file.path} cannot be decoded on this device")
                     }
-                    FileOutputStream(target).use { output ->
-                        output.write(header, 0, n)
+                    // A failure to write is the frame's own, such as a full storage, not one of the server.
+                    val output = local { FileOutputStream(target) }
+                    try {
+                        local { output.write(header, 0, n) }
                         val buffer = ByteArray(BUFFER)
                         while (true) {
                             val read = input.read(buffer)
                             if (read < 0) break
-                            output.write(buffer, 0, read)
+                            local { output.write(buffer, 0, read) }
                         }
+                    } finally {
+                        local { output.close() }
                     }
                 }
             } catch (e: ImageException) {
                 target.delete()
                 throw e
+            } catch (e: LocalWriteFailure) {
+                target.delete()
+                throw SourceException(
+                    SourceException.Kind.STORAGE,
+                    "The frame could not store ${file.path} (${e.cause?.javaClass?.simpleName}: ${e.cause?.message})",
+                    e.cause,
+                )
             } catch (e: IOException) {
                 target.delete()
                 if (LimitedResponseStream.failureIn(e) is LimitedResponseStream.LimitExceeded) {
@@ -191,6 +225,18 @@ abstract class DavFolder(
             return response.header("ETag")
         }
     }
+
+    /** A failure to write a download on the frame. */
+    private class LocalWriteFailure(
+        cause: IOException,
+    ) : IOException(cause.message, cause)
+
+    private inline fun <T> local(block: () -> T): T =
+        try {
+            block()
+        } catch (e: IOException) {
+            throw LocalWriteFailure(e)
+        }
 
     /** The bytes the frame took from the body of the last download, for the tests. */
     @Volatile
@@ -215,7 +261,7 @@ abstract class DavFolder(
                 .header("User-Agent", USER_AGENT)
                 .build()
         val entries =
-            http.execute(request).use { response ->
+            http.execute(request, http.times.listingMs).use { response ->
                 if (response.code != 207) {
                     requireSuccess(response, "The folder ${shown(relative)}")
                     throw SourceException(SourceException.Kind.PROTOCOL, "The folder was not listed (HTTP ${response.code})")
@@ -228,7 +274,7 @@ abstract class DavFolder(
                             http.clock,
                             "The listing of ${shown(relative)}",
                             SourceLimits.LISTING_BYTES,
-                            SourceLimits.LISTING_MS,
+                            http.times.listingMs,
                             cancelled = cancelled,
                         ),
                     )

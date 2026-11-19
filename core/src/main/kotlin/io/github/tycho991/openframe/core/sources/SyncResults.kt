@@ -22,6 +22,11 @@ data class StoredSyncResult(
      * once a day, and no original is fetched for a rendering until a sync succeeds.
      */
     val rejected: Boolean = false,
+    /**
+     * The source got other credentials since this result: a refusal in it was of the old ones, so the current ones may
+     * be revoked when they are replaced or the source is removed.
+     */
+    val credentialsReplaced: Boolean = false,
 )
 
 /** The content of `sources-status.json`: the last result of each source by its ID. */

@@ -75,7 +75,7 @@ class OkHttpLoginFlow(
                 .header("User-Agent", USER_AGENT)
                 .post(EMPTY)
                 .build()
-        val json = json(http.execute(request).also { http.requireSuccess(it, "The login page") })
+        val json = json(http.execute(request, redirectAllowed = redirectRule(base)).also { http.requireSuccess(it, "The login page") })
         val poll = json["poll"]?.jsonObject
         val token = poll?.get("token")?.jsonPrimitive?.contentOrNull
         val endpoint = poll?.get("endpoint")?.jsonPrimitive?.contentOrNull
@@ -99,7 +99,7 @@ class OkHttpLoginFlow(
                 .header("User-Agent", USER_AGENT)
                 .post(FormBody.Builder().add("token", start.pollToken).build())
                 .build()
-        http.execute(request).use { response ->
+        http.execute(request, redirectAllowed = redirectRule(start.serverUrl.toHttpUrl())).use { response ->
             if (response.code == 404) return LoginPoll.Pending
             http.requireSuccess(response, "The login")
             val json = json(response)
@@ -168,6 +168,20 @@ class OkHttpLoginFlow(
         http.execute(request).use { }
     }
 
+    /** A redirect during the login follows the same rule as the addresses the server names (spec "No downgrade during the login"). */
+    private fun redirectRule(base: HttpUrl): (HttpUrl) -> SourceException? =
+        { target ->
+            if (LoginOrigin.accepts(base, target)) {
+                null
+            } else {
+                SourceException(
+                    SourceException.Kind.INSECURE_LOGIN,
+                    "The login of ${base.host} redirects to another port or away from https. Check overwriteprotocol and " +
+                        "trusted_proxies in the server's config.php",
+                )
+            }
+        }
+
     private fun checkOrigin(
         base: HttpUrl,
         address: String,
@@ -217,7 +231,7 @@ class OkHttpLoginFlow(
                         http.clock,
                         "The answer of ${it.request.url.host}",
                         SourceLimits.LOGIN_BYTES,
-                        SourceLimits.LOGIN_MS,
+                        http.times.loginMs,
                     ).use { input -> String(input.readBytesCompat(), Charsets.UTF_8) }
                 } catch (e: java.io.IOException) {
                     throw http.bodyFailure(e, it.request.url)

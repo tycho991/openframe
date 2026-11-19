@@ -427,7 +427,23 @@ class SourcesApiTest {
         waitFor(SYNC_TIMEOUT_MS, "the failure") { source(share.id).status.let { it.ok == false && !it.syncing } }
         assertEquals("The server cloud.example.org did not answer in time", source(share.id).status.error)
         assertEquals("unreachable", source(share.id).status.errorCode)
+        assertFalse(source(share.id).status.rejected, "an unreachable server is no rejected access")
         assertEquals(1, photos().total)
+    }
+
+    /** Review finding 8 of `nextcloud-hardening`: the status says when the frame waits a day. */
+    @Test
+    fun `Refused access to the folder is reported as rejected until the account logs in again`() {
+        val id = connect()
+        clients.remote.listFailure = SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 401)")
+        frame.send("POST", "/api/v1/sources/$id/sync")
+        waitFor(SYNC_TIMEOUT_MS, "the refused sync") { source(id).status.let { it.ok == false && !it.syncing } }
+        assertTrue(source(id).status.rejected)
+        assertEquals("unauthorized", source(id).status.errorCode)
+        login.approved = false
+        login.appPassword = "app-pw-renewed-9876"
+        connect(folder = null)
+        assertFalse(source(id).status.rejected, "the refusal was of the old password")
     }
 
     /** Spec `remote-sources`: Status › Result from an older version. */

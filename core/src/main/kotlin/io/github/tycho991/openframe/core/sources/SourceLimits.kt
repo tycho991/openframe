@@ -27,6 +27,15 @@ object SourceLimits {
     /** Files listed in one sync. */
     const val FILES = 100_000
 
+    /** One path relative to the folder of the source. */
+    const val PATH_CHARS = 1_024
+
+    /** The paths and entity tags of all folders and files of one sync together. */
+    const val LISTING_CHARS = 8_000_000L
+
+    /** One sync: listing and downloads together, after which the sync stops and the next one goes on. */
+    const val SYNC_MS = 2 * 60 * 60_000L
+
     /** One JSON answer of the login flow. */
     const val LOGIN_BYTES = 64 * KIB
 

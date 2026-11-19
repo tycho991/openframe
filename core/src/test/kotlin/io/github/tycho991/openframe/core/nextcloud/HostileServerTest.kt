@@ -293,6 +293,60 @@ class HostileServerTest {
         assertTrue(nextcloud.requests.none { "Private" in it }, "${nextcloud.requests}")
     }
 
+    /** Review finding 3 of `nextcloud-hardening`: the memory of a listing stays bounded. */
+    @Test
+    fun `A path longer than 1024 characters fails the sync as a limit`() {
+        synced()
+        nextcloud.put("Photos/" + "n".repeat(1_100) + ".jpg", jpg(), "e9")
+        val failure = failedSync()
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("1024 characters"), failure.message)
+        assertPhotosStay()
+    }
+
+    @Test
+    fun `Paths of more than 8 million characters in one sync fail it as a limit`() {
+        synced()
+        val name = "n".repeat(1_000)
+        val many = (0 until 8_100).map { response("$own$name$it.txt") }.toTypedArray()
+        nextcloud.listingOverride = { dir -> if (dir == "Photos") multistatus(response(own, true), *many) else null }
+        val failure = failedSync()
+        assertEquals(SourceException.Kind.LIMIT, failure.kind)
+        assertTrue(failure.message!!.contains("8 million characters"), failure.message)
+        assertPhotosStay()
+    }
+
+    @Test
+    fun `A listing whose first entry is another folder is refused, one behind a proxy with a path is read`() {
+        synced()
+        nextcloud.listingOverride = { dir ->
+            if (dir ==
+                "Photos"
+            ) {
+                multistatus(response("/remote.php/dav/files/anna/Other/", true), response("/remote.php/dav/files/anna/Other/x.jpg"))
+            } else {
+                null
+            }
+        }
+        val failure = failedSync()
+        assertEquals(SourceException.Kind.PROTOCOL, failure.kind)
+        assertTrue(failure.message!!.contains("does not start with the folder itself"), failure.message)
+        assertPhotosStay()
+        // A proxy that serves Nextcloud below a path of its own: the folder is the first entry and has the same name.
+        nextcloud.listingOverride = { dir ->
+            if (dir == "Photos") {
+                multistatus(
+                    response("/cloud/remote.php/dav/files/anna/Photos/", true),
+                    response("/cloud/remote.php/dav/files/anna/Photos/a.jpg"),
+                )
+            } else {
+                null
+            }
+        }
+        assertEquals(1, sync().removed, "a.jpg is still listed, b.jpg is not")
+        assertEquals(setOf("a.jpg"), photos().keys)
+    }
+
     @Test
     fun `More than 32 levels of subfolders fail the sync as a limit`() {
         synced()
@@ -487,6 +541,19 @@ class HostileServerTest {
         assertTrue(renderSource.original(entry).isFile)
         assertEquals(0, stale)
         assertEquals(2, engine.probes.get(), "one probe by the sync, one for the other tag")
+    }
+
+    /** Review finding 5: a server without entity tags is checked by the dimensions. */
+    @Test
+    fun `A replaced file of a server without entity tags is checked by its dimensions`() {
+        nextcloud.put("Photos/a.jpg", jpg(), "")
+        sync()
+        val entry = photos().getValue("a.jpg")
+        assertEquals("", entry.etag.orEmpty())
+        originals.remove(entry.id)
+        nextcloud.files.getValue("Photos/a.jpg").content = Fixtures.file("rotated6.jpg").readBytes()
+        assertEquals(SourceException.Kind.CHANGED, assertThrows(SourceException::class.java) { renderSource.original(entry) }.kind)
+        assertEquals(1, stale)
     }
 
     @Test

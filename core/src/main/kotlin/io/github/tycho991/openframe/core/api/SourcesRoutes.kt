@@ -34,6 +34,8 @@ data class SourceStatusDto(
     val error: String?,
     /** A value of the contract's `SourceErrorCode`, `null` for a success, a result of an older version or an unknown code. */
     val errorCode: String?,
+    /** The state of rejected access: the next try is at most once a day unless the user acts. */
+    val rejected: Boolean,
     val added: Int,
     val updated: Int,
     val removed: Int,
@@ -126,6 +128,7 @@ fun Router.sourcesRoutes(
                     ok = last.lastSyncOk,
                     error = last.error,
                     errorCode = if (last.lastSyncOk == false) SourceErrorCodes.served(last.errorCode) else null,
+                    rejected = last.lastSyncOk == false && last.rejected && !last.credentialsReplaced,
                     added = last.added,
                     updated = last.updated,
                     removed = last.removed,

@@ -199,6 +199,82 @@ class NextcloudClientTest {
         assertArrayEquals(content, target.readBytes())
     }
 
+    /** A server that sends its status line one byte at a time, each well within the read timeout. */
+    private fun tricklingHeaders(): java.net.ServerSocket {
+        val server = java.net.ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
+        Thread {
+            while (!server.isClosed) {
+                val socket =
+                    try {
+                        server.accept()
+                    } catch (e: java.io.IOException) {
+                        break
+                    }
+                Thread {
+                    try {
+                        socket.use {
+                            val out = it.getOutputStream()
+                            for (c in "HTTP/1.1 207 Multi-Status\r\nX-Pad: " + "a".repeat(10_000)) {
+                                out.write(c.code)
+                                out.flush()
+                                Thread.sleep(200)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // The client gave up.
+                    }
+                }.apply { isDaemon = true }.start()
+            }
+        }.apply { isDaemon = true }.start()
+        return server
+    }
+
+    /** Review finding 1 of `nextcloud-hardening`: the total time of a call covers the status line and the headers. */
+    @Test
+    fun `A server that trickles its status line and headers is ended at the total time of the call`() {
+        tricklingHeaders().use { server ->
+            val base = "http://127.0.0.1:${server.localPort}"
+            val short =
+                NextcloudHttp(
+                    NextcloudHttp.defaultClient(readTimeoutSeconds = 10),
+                    times = NextcloudHttp.TimeLimits(listingMs = 1_500, downloadMs = 1_500, loginMs = 1_500),
+                )
+            for (call in listOf<() -> Unit>(
+                { WebDavFolder(short, base, "anna", "Anna", "pw", "/Photos").list(true) },
+                {
+                    WebDavFolder(
+                        short,
+                        base,
+                        "anna",
+                        "Anna",
+                        "pw",
+                        "/Photos",
+                    ).download(RemoteFile("a.jpg", "e", 10, 0), File(dir, "a.part"))
+                },
+                { OkHttpLoginFlow(short).start(base) },
+            )) {
+                val started = System.nanoTime()
+                val failure = assertThrows(SourceException::class.java) { call() }
+                val tookMs = (System.nanoTime() - started) / 1_000_000
+                assertEquals(SourceException.Kind.UNREACHABLE, failure.kind, failure.message)
+                assertTrue(tookMs < 6_000, "ended after $tookMs ms")
+            }
+        }
+    }
+
+    /** Review finding 6: a download that cannot be written on the frame is a failure of the storage, not of the server. */
+    @Test
+    fun `A download that cannot be written on the frame is a storage failure`() {
+        nextcloud.put("Photos/a.jpg", ByteArray(1000))
+        val target = File(dir, "missing-folder/a.part")
+        val failure =
+            assertThrows(SourceException::class.java) {
+                folder("/Photos").download(RemoteFile("a.jpg", "e", 1000, 0), target)
+            }
+        assertEquals(SourceException.Kind.STORAGE, failure.kind, failure.message)
+        assertFalse(target.exists())
+    }
+
     @Test
     fun `A file that is gone`() {
         val target = File(dir, "x.part")

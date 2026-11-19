@@ -71,7 +71,7 @@ class SourceErrorCodesTest {
         """{"id":"s1a2b3c4d","kind":"nextcloud-share","serverUrl":"https://cloud.example.org","user":null,""" +
             """"settings":{"name":"Shared","enabled":true,"folder":"/","includeSubfolders":true,"removeVanished":true,""" +
             """"intervalMinutes":20,"originalsBudgetMb":2000},"status":{"syncing":false,"waiting":false,""" +
-            """"lastSyncAt":"2026-05-01T10:15:30Z","ok":false,"error":"x","errorCode":$errorCode,"added":0,"updated":0,"removed":0}}"""
+            """"lastSyncAt":"2026-05-01T10:15:30Z","ok":false,"error":"x","errorCode":$errorCode,"rejected":false,"added":0,"updated":0,"removed":0}}"""
 
     @Test
     fun `The contract takes a known code and null, and refuses any other`() {

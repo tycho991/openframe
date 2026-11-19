@@ -142,6 +142,37 @@ class PropfindParserTest {
     }
 }
 
+/** Review finding 9 of `nextcloud-hardening`: names, namespaces and attribute values are bounded as the text is. */
+class PropfindParserNamesTest {
+    private val long = "a".repeat(16 * 1024 + 1)
+
+    /** Without the JDK's own limit of 1000 characters per name (raised here), which Android's parser does not have. */
+    private fun limitOf(xml: String): SourceException {
+        val before = System.getProperty("jdk.xml.maxXMLNameLimit")
+        System.setProperty("jdk.xml.maxXMLNameLimit", "100000")
+        try {
+            return assertThrows(SourceException::class.java) { PropfindParser.parse(xml.byteInputStream()) }
+        } finally {
+            if (before == null) System.clearProperty("jdk.xml.maxXMLNameLimit") else System.setProperty("jdk.xml.maxXMLNameLimit", before)
+        }
+    }
+
+    @Test
+    fun `A long attribute value, element name or namespace is a limit`() {
+        for (xml in listOf(
+            """<d:multistatus xmlns:d="DAV:"><d:response x="$long"><d:href>/a</d:href></d:response></d:multistatus>""",
+            """<d:multistatus xmlns:d="DAV:"><d:response><d:$long/><d:href>/a</d:href></d:response></d:multistatus>""",
+            """<d:multistatus xmlns:d="DAV:" xmlns:x="urn:$long"><d:response><d:href>/a</d:href></d:response></d:multistatus>""",
+        )) {
+            val failure = limitOf(xml)
+            assertEquals(SourceException.Kind.LIMIT, failure.kind, "${failure.message} ${failure.cause}")
+        }
+        // Short ones pass.
+        val fine = """<d:multistatus xmlns:d="DAV:" xmlns:x="urn:x"><d:response x="1"><d:href>/a</d:href></d:response></d:multistatus>"""
+        assertEquals(1, PropfindParser.parse(fine.byteInputStream()).size)
+    }
+}
+
 class PathDecodingTest {
     @Test
     fun `Escapes become characters and a plus stays a plus`() {

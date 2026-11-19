@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -143,6 +144,12 @@ class SourceScheduler(
      */
     fun staleOriginal() {
         if (stale.compareAndSet(false, true)) configChanged()
+    }
+
+    /** The source got other credentials: a refusal in the last result was of the old ones. */
+    fun credentialsReplaced() {
+        val replaced = _status.updateAndGet { it.copy(last = it.last.copy(credentialsReplaced = true)) }.last
+        if (config() != null && replaced.lastSyncAtMs != null) results.put(source.id, replaced)
     }
 
     /** Returns once no sync of this source runs, for new credentials that would make a running sync fail. */

@@ -108,6 +108,17 @@ object PropfindParser {
             qName: String?,
             attributes: Attributes?,
         ) {
+            // Names, namespaces and attribute values are bounded like the text of an element.
+            limited(uri)
+            limited(localName)
+            limited(qName)
+            if (attributes != null) {
+                for (i in 0 until attributes.length) {
+                    limited(attributes.getQName(i))
+                    limited(attributes.getURI(i))
+                    limited(attributes.getValue(i))
+                }
+            }
             text.setLength(0)
             when (localName) {
                 "response" -> {
@@ -126,6 +137,26 @@ object PropfindParser {
             }
         }
 
+        override fun startPrefixMapping(
+            prefix: String?,
+            uri: String?,
+        ) {
+            limited(prefix)
+            limited(uri)
+        }
+
+        private fun limited(value: String?) {
+            if (value != null && value.length > SourceLimits.ELEMENT_CHARS) throw elementTooLong()
+        }
+
+        private fun elementTooLong() =
+            Refused(
+                SourceException(
+                    SourceException.Kind.LIMIT,
+                    "An element of the listing is longer than ${SourceLimits.ELEMENT_CHARS / 1024} KiB",
+                ),
+            )
+
         override fun startDTD(
             name: String?,
             publicId: String?,
@@ -139,14 +170,7 @@ object PropfindParser {
         ) {
             // Text outside an entry is never used, so it is not kept either.
             if (!inResponse) return
-            if (text.length + length > SourceLimits.ELEMENT_CHARS) {
-                throw Refused(
-                    SourceException(
-                        SourceException.Kind.LIMIT,
-                        "An element of the listing is longer than ${SourceLimits.ELEMENT_CHARS / 1024} KiB",
-                    ),
-                )
-            }
+            if (text.length + length > SourceLimits.ELEMENT_CHARS) throw elementTooLong()
             text.append(ch, start, length)
         }
 

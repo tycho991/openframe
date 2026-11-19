@@ -310,7 +310,8 @@ Read this before you install it.
 - **Answers of a source are bounded.** A Nextcloud server, or anything a source points at, can send at most fixed
   amounts: a listing of 64 MiB after decompression, 50,000 entries per folder answer, 32 levels of subfolders,
   5,000 folders and 100,000 files per sync, 64 KiB per login answer, and per download the listed size plus 1 MiB.
-  Every answer has a total time and a minimum speed. A listing with a `DOCTYPE` or with an entry outside its folder
+  Every answer has a total time, the status line and headers included, and a minimum speed; a sync as a whole ends
+  after 2 hours and goes on at the next one. Paths are at most 1,024 characters long. A listing with a `DOCTYPE` or with an entry outside its folder
   fails the sync instead of being read. Such a failure keeps the photos of the source.
 - **Plain http.** A Nextcloud address with `http` works on every Android version, also from Android 9 on. The web UI
   warns at the address field and on the card of every source with `http`: its app password, share password and

@@ -1102,7 +1102,7 @@ components:
     SourceStatus:
       type: object
       additionalProperties: false
-      required: [syncing, waiting, lastSyncAt, ok, error, errorCode, added, updated, removed]
+      required: [syncing, waiting, lastSyncAt, ok, error, errorCode, rejected, added, updated, removed]
       properties:
         syncing: { type: boolean, description: "A sync of this source runs, or is asked for and about to start." }
         waiting:
@@ -1116,6 +1116,12 @@ components:
           anyOf:
             - { $ref: "#/components/schemas/SourceErrorCode" }
             - { type: "null" }
+        rejected:
+          type: boolean
+          description: >-
+            The last sync failed because the server refused access to the folder (refused credentials, a withdrawn or
+            upload-only share): the frame tries again at most once a day, a new login, a change or a sync on request at
+            once. `false` again once the source has other credentials.
         added: { type: integer }
         updated: { type: integer }
         removed: { type: integer }

@@ -6,6 +6,7 @@ import io.github.tycho991.openframe.core.library.PhotoSource
 import io.github.tycho991.openframe.core.library.ScanResult
 import io.github.tycho991.openframe.core.library.SkippedFile
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
@@ -41,6 +42,10 @@ class RemoteSource(
     private val onStale: () -> Unit = {},
     /** The most a file without a listed size and without `Content-Length` may send; smaller in a test. */
     private val unknownSizeBytes: Long = SourceLimits.DOWNLOAD_UNKNOWN_SIZE_BYTES,
+    /** For the time limit of a sync, on [Clock.monotonicMillis]. */
+    private val clock: Clock = Clock.System,
+    /** How long one sync may take, listing and downloads together; see [SourceLimits.SYNC_MS]. */
+    private val syncLimitMs: Long = SourceLimits.SYNC_MS,
 ) : PhotoSource {
     /**
      * One download per photo at a time: the sync and a rendering that need the same original must not share a `.part`
@@ -53,10 +58,10 @@ class RemoteSource(
     /** The source was removed: its listings and downloads end at their next read. */
     private val cancelled: () -> Boolean = { config() == null }
 
-    private fun limits() =
+    private fun limits(ended: () -> Boolean = cancelled) =
         DownloadLimits(
             roomBytes = originals::roomOnDisk,
-            cancelled = cancelled,
+            cancelled = ended,
             acceptHeader = { header -> ImageFormats.detect(header)?.let(engine::canDecode) ?: true },
             unknownSizeBytes = unknownSizeBytes,
         )
@@ -122,8 +127,10 @@ class RemoteSource(
                 if (e is SourceException && e.kind == SourceException.Kind.CHANGED) stale(entry, "is larger on the server than listed")
                 throw e
             }
-        // The same entity tag: the file is the one in the index. Another one may come from a proxy, so the dimensions tell.
-        if (normalizedEtag(etag) != normalizedEtag(entry.etag)) {
+        // The same entity tag: the file is the one in the index. Another one, or none at all, may come from a proxy or a
+        // server without entity tags, so the dimensions tell.
+        val sameTag = normalizedEtag(etag)?.let { it == normalizedEtag(entry.etag) } ?: false
+        if (!sameTag) {
             val info =
                 try {
                     engine.probe(part)
@@ -155,13 +162,20 @@ class RemoteSource(
         // Android may have trimmed the cache folder since the last sync.
         originals.refresh()
         val remote = kind.remoteFolder(config)
+        // A sync has a time limit as a whole, so that a slow server cannot hold the lock of all sources for days: its
+        // listing and its downloads end like those of a removed source, and the next sync goes on.
+        val deadline = clock.monotonicMillis() + syncLimitMs
+        val overTime = { clock.monotonicMillis() > deadline }
+        val ended = { cancelled() || overTime() }
         // The whole listing or an exception: nothing below runs on a part of it.
         val listing =
-            remote
-                .list(config.includeSubfolders || kind.listsFlat, cancelled)
-                .filter {
-                    ImageFormats.hasImageExtension(it.path)
-                }.sortedBy { it.path }
+            try {
+                remote.list(config.includeSubfolders || kind.listsFlat, ended)
+            } catch (e: SourceException) {
+                throw if (overTime() && config() != null) tooLong(e) else e
+            }.filter {
+                ImageFormats.hasImageExtension(it.path)
+            }.sortedBy { it.path }
         val library = index.library.value
         val known =
             library.photos.values
@@ -176,7 +190,13 @@ class RemoteSource(
             for (file in listing) {
                 currentCoroutineContext().ensureActive()
                 if (!needsDownload(file, known[file.path], skippedKnown[file.path], budget)) continue
-                val result = fetch(remote, file, known[file.path])
+                if (overTime()) throw tooLong(null)
+                val result =
+                    try {
+                        fetch(remote, file, known[file.path], ended)
+                    } catch (e: SourceException) {
+                        throw if (overTime() && config() != null) tooLong(e) else e
+                    }
                 if (result.exceptionOrNull() is DecoderUnavailableException) {
                     // Says nothing about the file, which is downloaded again at the next sync.
                     log.w(TAG, "The decoder is not available; the remaining files of $id are checked at the next sync")
@@ -273,6 +293,7 @@ class RemoteSource(
         remote: RemoteFolder,
         file: RemoteFile,
         previous: PhotoEntry?,
+        ended: () -> Boolean,
     ): Result<PhotoEntry> {
         val draft =
             PhotoEntry(
@@ -294,7 +315,7 @@ class RemoteSource(
         synchronized(lockOf(draft.id)) {
             val part = originals.partOf(draft)
             try {
-                remote.download(file, part, limits())
+                remote.download(file, part, limits(ended))
             } catch (e: ImageException) {
                 // A format the device cannot decode, told by the first bytes: skipped like a file whose probe says so.
                 part.delete()
@@ -364,8 +385,26 @@ class RemoteSource(
         gps = info.gps,
     )
 
+    private fun tooLong(cause: SourceException?) =
+        SourceException(
+            SourceException.Kind.LIMIT,
+            "The sync of $id took longer than ${duration(syncLimitMs)}; the next sync goes on where it stopped",
+            cause,
+        )
+
     companion object {
         private const val TAG = "sources"
+
+        /** `2 hours`, `90 minutes`: a time limit for a message. */
+        private fun duration(ms: Long): String {
+            val minutes = ms / 60_000
+            return if (minutes % 60 == 0L && minutes > 0) {
+                "${minutes / 60} hour${if (minutes == 60L) "" else "s"}"
+            } else {
+                "$minutes minute${if (minutes == 1L) "" else "s"}"
+            }
+        }
+
         private const val LOCKS = 16
 
         /** An entity tag as it is compared: without `W/`, quotes and the suffix a compressing proxy adds. */

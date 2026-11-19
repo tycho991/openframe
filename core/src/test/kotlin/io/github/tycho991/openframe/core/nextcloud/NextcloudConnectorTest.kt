@@ -218,6 +218,25 @@ class NextcloudConnectorTest {
         assertEquals(emptyList<String>(), login.revokedPasswords)
     }
 
+    /** Review finding 4 of `nextcloud-hardening`: a refusal of old credentials does not protect the new ones from a revoke. */
+    @Test
+    fun `Credentials that replaced refused ones are revoked when they are replaced in turn or the source goes`() {
+        val id = login("https://cloud.example.org", "pw-0000")
+        registry.patch(id, kotlinx.serialization.json.buildJsonObject { put("folder", kotlinx.serialization.json.JsonPrimitive("/")) })
+        clients.remote.listFailure = SourceException(SourceException.Kind.UNAUTHORIZED, "The server refused the credentials (HTTP 401)")
+        sync(id)
+        assertTrue(registry.refusedCredentials(id))
+        // A new login before any sync with it: the refusal was of the old password.
+        login("https://cloud.example.org", "pw-1111")
+        assertEquals(emptyList<String>(), login.revokedPasswords, "the refused password is not sent again")
+        assertTrue(!registry.refusedCredentials(id))
+        login("https://cloud.example.org", "pw-2222")
+        assertEquals(listOf("pw-1111"), login.revokedPasswords, "the password that was never refused is revoked")
+        registry.remove(id)
+        background()
+        assertEquals(listOf("pw-1111", "pw-2222"), login.revokedPasswords)
+    }
+
     @Test
     fun `Removing an account whose password works revokes it`() {
         val id = login("https://cloud.example.org", "pw-old-1111")

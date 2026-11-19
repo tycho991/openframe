@@ -99,7 +99,14 @@ class SourceRegistry(
         val scheduler = running[id]?.scheduler
         scheduler?.configChanged()
         log.i(TAG, "Source $id has new credentials")
-        if (old.connection == connection || refused) return
+        if (old.connection == connection) return
+        // A refusal of the old credentials says nothing about these: they are revoked when they are replaced in turn.
+        if (scheduler != null) {
+            scheduler.credentialsReplaced()
+        } else {
+            results.get(id).takeIf { it.lastSyncAtMs != null }?.let { results.put(id, it.copy(credentialsReplaced = true)) }
+        }
+        if (refused) return
         val kind = kindOf(old) ?: return
         scope.launch {
             scheduler?.awaitNoSync()
@@ -123,7 +130,7 @@ class SourceRegistry(
 
     /** The last sync of [id] failed because the server refused its credentials for the folder: sending them again is useless. */
     fun refusedCredentials(id: String): Boolean =
-        status(id).last.let { it.rejected && it.errorCode == SourceException.Kind.UNAUTHORIZED.code }
+        status(id).last.let { it.rejected && it.errorCode == SourceException.Kind.UNAUTHORIZED.code && !it.credentialsReplaced }
 
     private fun revoke(
         id: String,
@@ -249,6 +256,7 @@ class SourceRegistry(
                 onPhotoRemoved,
                 log,
                 onStale = { running[id]?.scheduler?.staleOriginal() },
+                clock = clock,
             )
         val scheduler = SourceScheduler(scope, source, { configs.get(id) }, results, syncLock, clock, log, onSynced)
         val started = Running(source, scheduler)

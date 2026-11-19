@@ -137,6 +137,19 @@ class LoginSecurityTest {
         assertTrue(server.requests.none { it.contains("poll") }, "${server.requests}")
     }
 
+    /** Review finding 7: a redirect during the login follows the same rule as the addresses the server names. */
+    @Test
+    fun `A redirect of an https login to another port stops the login`() {
+        val server = server(secure = true)
+        server.redirects["/index.php/login/v2"] = "https://localhost:1/index.php/login/v2"
+        val failure = assertThrows(SourceException::class.java) { OkHttpLoginFlow(trusting).start(server.baseUrl) }
+        assertEquals(SourceException.Kind.INSECURE_LOGIN, failure.kind, failure.message)
+        // A redirect of an http login to https on the same host is a move to https and is followed.
+        val plain = server(secure = false)
+        plain.redirects["/old"] = plain.baseUrl.replace("http://", "https://") + "/index.php/login/v2"
+        assertEquals(null, LoginOrigin.refusal(plain.baseUrl.toHttpUrl(), plain.redirects.getValue("/old").toHttpUrl()))
+    }
+
     @Test
     fun `An http login may move to https on the same host, an https one never moves to http`() {
         val plain = server(secure = false)
