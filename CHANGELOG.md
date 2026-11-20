@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/tycho991/openframe/compare/v0.11.0...v0.11.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* refuse a DOCTYPE in the bytes of a listing before the parser sees them ([#115](https://github.com/tycho991/openframe/issues/115)) ([9777c1f](https://github.com/tycho991/openframe/commit/9777c1f6d7b64c8e505b9d20a826407a10e25459))
+* remove the renderings of a removed source with one folder listing ([#116](https://github.com/tycho991/openframe/issues/116)) ([c2717d1](https://github.com/tycho991/openframe/commit/c2717d1a4c806986de81c4e120db6dd2e17fbc92))
+
 ## [0.11.0](https://github.com/tycho991/openframe/compare/v0.10.0...v0.11.0) (2026-11-19)
 
 
