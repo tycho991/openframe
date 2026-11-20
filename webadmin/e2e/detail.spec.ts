@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { detailSettled, many, pairInUi, photoDetail, reset } from "./helpers";
+import { albumTiles, detailSettled, many, openAlbum, pairInUi, photoDetail, reset, usb } from "./helpers";
 
 // Spec web-admin: "Detail views by width", "Layout follows width and orientation", "Keyboard operation";
 // spec visual-design: "Motion".
@@ -9,23 +9,35 @@ test.beforeEach(async () => {
   await many(120);
 });
 
+/** Pairs and opens the album of the photos of [many]. */
+async function pairAndOpen(page: Page) {
+  await pairInUi(page);
+  await openAlbum(page, "viele");
+  // Loaded before the tests scroll: a grid reserves the height of its first page before it arrives.
+  await expect(albumTiles(page, "viele").first()).toBeVisible();
+}
+
 interface VisibleTile {
   id: string;
   path: string;
 }
 
-/** The tiles fully inside the window and not covered by the top bar or the navigation, sorted by path. */
+/**
+ * The tiles fully inside the window and not covered by the top bar or the navigation, sorted by path. Read after two
+ * frames, so that a scroll just made has reached the grid: the overview reads the scroll position once per frame.
+ */
 function visibleTiles(page: Page): Promise<VisibleTile[]> {
-  return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>(".tile")]
+  return page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return [...document.querySelectorAll<HTMLElement>(".tile")]
       .filter((tile) => {
         const r = tile.getBoundingClientRect();
         const centre = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
         return r.top >= 0 && r.bottom <= innerHeight && centre?.closest(".tile") === tile;
       })
       .map((tile) => ({ id: tile.dataset.photo!, path: tile.querySelector("img")!.alt }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
-  );
+      .sort((a, b) => a.path.localeCompare(b.path));
+  });
 }
 
 /** The visible tiles once the grid shows more than four of them after loading or scrolling. */
@@ -57,7 +69,7 @@ async function scrollGrid(page: Page, y: number) {
 
 test("Detail as a panel", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await pairInUi(page);
+  await pairAndOpen(page);
   const first = await tile(page, 0).locator("img").getAttribute("alt");
   const second = await tile(page, 1).locator("img").getAttribute("alt");
   await tile(page, 0).click();
@@ -77,7 +89,7 @@ test("Detail as a panel", async ({ page }) => {
 
 test("Detail on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await pairInUi(page);
+  await pairAndOpen(page);
   await scrollGrid(page, 900);
   const before = await settledTiles(page);
 
@@ -95,7 +107,7 @@ test("Detail on a phone", async ({ page }) => {
 
 test("Rotate a tablet", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await pairInUi(page);
+  await pairAndOpen(page);
   await scrollGrid(page, 1500);
   const { id, path } = (await settledTiles(page))[3]!;
   await tileOf(page, id).click();
@@ -131,10 +143,14 @@ test("Unsaved input", async ({ page }) => {
 });
 
 for (const width of [390, 1280]) {
-  test(`Close the photo detail with Escape at ${width} px`, async ({ page }) => {
+  test(`Close the photo detail with Escape at ${width} px, with two open albums`, async ({ page }) => {
+    // An album above viele, so that the grid of the photo is not the first on the page.
+    for (const name of ["a", "b", "c"]) await usb("landscape.jpg", `family/${name}.jpg`);
     await page.setViewportSize({ width, height: 800 });
-    await pairInUi(page);
-    const opener = tile(page, 2);
+    await pairAndOpen(page);
+    await openAlbum(page, "family");
+    await expect(albumTiles(page, "family")).toHaveCount(3);
+    const opener = albumTiles(page, "viele").nth(2);
     const id = await opener.getAttribute("data-photo");
     await opener.focus();
     await page.keyboard.press("Enter");
@@ -151,7 +167,7 @@ test("Reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const width of [390, 800, 1280]) {
     await page.setViewportSize({ width, height: 800 });
-    if (width === 390) await pairInUi(page);
+    if (width === 390) await pairAndOpen(page);
     await tile(page, 0).click();
     const durations = await photoDetail(page).evaluate((el) => getComputedStyle(el).transitionDuration);
     expect(

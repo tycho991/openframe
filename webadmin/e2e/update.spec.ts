@@ -6,6 +6,7 @@ import {
   installAllowed,
   installedVersion,
   officialBuild,
+  openAlbum,
   pairInUi,
   publishRelease,
   reset,
@@ -142,6 +143,7 @@ test("A version change reloads on the photo page as well", async ({ page }) => {
 test("With an unsaved comment the interface keeps the input and offers to reload", async ({ page }) => {
   await usb("landscape.jpg", "a.jpg");
   await pairInUi(page);
+  await openAlbum(page, "");
   await page.locator(".tile").first().click();
   const field = page.getByLabel("Kommentar");
   await field.fill("Noch nicht gespeichert");

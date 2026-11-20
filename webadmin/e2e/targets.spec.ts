@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
-import { nextcloudPut, nextcloudShare, pairInUi, reset, usb } from "./helpers";
+import {
+  albumSwitch,
+  foldButton,
+  nextcloudPut,
+  nextcloudShare,
+  openAllAlbums,
+  pairInUi,
+  reset,
+  usb,
+} from "./helpers";
 
 // Spec web-admin, "Touch targets": every control offers at least 44 × 44 px, its own box or the label around it.
 
@@ -57,6 +66,9 @@ test("Controls on a phone at 360 px", async ({ page }) => {
   await pairInUi(page);
   const nav = page.getByRole("navigation");
 
+  // The overview with its nested headings open: fold buttons and switches of every level.
+  await openAllAlbums(page);
+  await expect(foldButton(page, "holiday/winter")).toBeVisible();
   await expect(page.getByRole("main").getByRole("button", { name: /a\.jpg/ })).toBeVisible();
   await audit(page, "Fotos");
   await page.getByRole("button", { name: "Auswählen" }).click();
@@ -76,12 +88,6 @@ test("Controls on a phone at 360 px", async ({ page }) => {
   await expect(page.getByRole("radio", { name: "Hell" })).toBeVisible();
   await audit(page, "Darstellung");
   await page.keyboard.press("Escape");
-
-  await nav.getByRole("link", { name: "Alben" }).click();
-  if (await page.getByRole("button", { name: /holiday aufklappen/ }).isVisible())
-    await page.getByRole("button", { name: /holiday aufklappen/ }).click();
-  await expect(page.getByRole("heading", { name: "winter" })).toBeVisible();
-  await audit(page, "Alben");
 
   await nav.getByRole("link", { name: "Quellen" }).click();
   await expect(page.getByRole("heading", { name: "Quelle hinzufügen" })).toBeVisible();
@@ -105,4 +111,36 @@ test("Controls on a phone at 360 px", async ({ page }) => {
   await page.getByRole("listitem").getByRole("button", { name: "Umbenennen" }).click();
   await expect(page.getByLabel("Neuer Name")).toBeVisible();
   await audit(page, "Umbenennen");
+});
+
+// Spec web-admin, "Album headings for every screen and input".
+test("Fold with the keyboard: fold buttons and switches by Tab, Enter and Space", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await pairInUi(page);
+  const fold = foldButton(page, "holiday");
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  const focusedIs = (target: typeof fold) => target.evaluate((el) => el === document.activeElement);
+  for (let i = 0; i < 40 && !(await focusedIs(fold)); i++) await page.keyboard.press("Tab");
+  await expect(fold).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  await expect(fold).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Enter");
+  await expect(foldButton(page, "holiday/winter")).toBeVisible();
+
+  // The switch comes next to the heading, and works with Space and Enter.
+  const toggle = albumSwitch(page, "holiday");
+  await page.keyboard.press("Tab");
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeFocused();
+  // One switch at a time: the next press counts once the frame has answered.
+  await expect(toggle).toHaveAttribute("aria-disabled", "false");
+  await page.keyboard.press("Enter");
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeFocused();
 });

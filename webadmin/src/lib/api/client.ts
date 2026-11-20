@@ -15,6 +15,8 @@ export type FillMode = S["FillMode"];
 export type Orientation = S["Orientation"];
 export type PhotoPage = S["PhotoPage"];
 export type Album = S["Album"];
+export type AlbumList = S["AlbumList"];
+export type AlbumCounts = S["AlbumCounts"];
 export type Client = S["Client"];
 export type Invite = S["Invite"];
 export type SkippedFile = S["SkippedFile"];
@@ -58,6 +60,8 @@ export interface PhotoQuery {
   album?: string;
   /** With `false`, only the photos directly in `album`, not those of its sub-albums. */
   subalbums?: boolean;
+  /** With `true`, only the photos that belong to no album; not together with `album`. */
+  noalbum?: boolean;
   visible?: boolean;
   sort?: PhotoSort;
   cursor?: string | null;
@@ -152,10 +156,10 @@ export function createApi(options: ApiOptions) {
     batch: (action: "hide" | "show" | "delete", ids: string[]) =>
       call<BatchResult>("POST", "/photos:batch", { action, ids }),
     skippedFiles: () => call<S["SkippedFileList"]>("GET", "/skipped-files").then((r) => r.items),
-    albums: () => call<S["AlbumList"]>("GET", "/albums").then((r) => r.albums),
-    /** Switches an album with its whole branch; answers with all albums, since sub-albums change too. */
-    setAlbumHidden: (name: string, hidden: boolean) =>
-      call<S["AlbumList"]>("PATCH", "/albums", { name, hidden }).then((r) => r.albums),
+    /** Every album with the counts of its branch, and the counts of the photos without an album. */
+    albums: () => call<AlbumList>("GET", "/albums"),
+    /** Switches an album with its whole branch; answers with the whole list, since sub-albums change too. */
+    setAlbumHidden: (name: string, hidden: boolean) => call<AlbumList>("PATCH", "/albums", { name, hidden }),
     state: () => call<State>("GET", "/state"),
     exitSafeMode: () => call<Record<string, never>>("POST", "/safe-mode/exit"),
     sources: () => call<S["SourceList"]>("GET", "/sources").then((r) => r.sources),

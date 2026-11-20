@@ -9,7 +9,8 @@
     albums: Album[];
     initialFiles?: File[];
     onclose: () => void;
-    onuploaded: () => void;
+    /** After the uploads, with the albums the photos went to as the frame answered (`null`: no album). */
+    onuploaded: (albums: (string | null)[]) => void;
   }
 
   let { albums, initialFiles = [], onclose, onuploaded }: Props = $props();
@@ -68,12 +69,16 @@
   async function start() {
     running = true;
     const queue = items.filter((i) => i.status === "waiting");
+    // From the answers, not the typed path: the frame cleans every level of the name (design decision 8 of
+    // album-groups-in-photos).
+    const targets: (string | null)[] = [];
     // Two at a time: faster than one by one, without overloading the frame.
     const worker = async () => {
       for (let item = queue.shift(); item; item = queue.shift()) {
         item.status = "uploading";
         try {
-          await api.upload(item.file, album, (p) => (item.progress = p));
+          const result = await api.upload(item.file, album, (p) => (item.progress = p));
+          for (const photo of result.photos) if (!targets.includes(photo.album)) targets.push(photo.album);
           item.status = "done";
         } catch (e) {
           item.status = "error";
@@ -83,7 +88,7 @@
     };
     await Promise.all([worker(), worker()]);
     running = false;
-    onuploaded();
+    onuploaded(targets);
   }
 
   function onDrop(event: DragEvent) {

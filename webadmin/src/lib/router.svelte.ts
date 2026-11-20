@@ -1,9 +1,9 @@
-export type Route = "photos" | "albums" | "sources" | "settings" | "devices";
+export type Route = "photos" | "sources" | "settings" | "devices";
 
-export const ROUTES: Route[] = ["photos", "albums", "sources", "settings", "devices"];
+export const ROUTES: Route[] = ["photos", "sources", "settings", "devices"];
 
-/** Paths of earlier versions that bookmarks may still hold. */
-const MOVED: Record<string, Route> = { nextcloud: "sources" };
+/** Paths of earlier versions that bookmarks may still hold. The albums are headings of the photo overview now. */
+const MOVED: Record<string, Route> = { nextcloud: "sources", albums: "photos" };
 
 function parse(pathname: string): Route {
   const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";

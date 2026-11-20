@@ -1,15 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
-import { chooseLanguage, pairInUi, reset, usb } from "./helpers";
+import {
+  albumHeading,
+  albumSwitch,
+  chooseLanguage,
+  foldButton,
+  openAllAlbums,
+  pairInUi,
+  reset,
+  usb,
+} from "./helpers";
 
 test.beforeEach(async () => {
   await reset();
   await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "holiday/2024/c.jpg");
   await usb("rotated6.jpg", "b.jpg");
 });
 
+// The photo overview with its nested headings open, the other sections as they come.
 const SECTIONS = [
-  { nav: "Fotos", ready: (page: Page) => page.getByRole("main").getByRole("button", { name: /a\.jpg/ }) },
-  { nav: "Alben", ready: (page: Page) => page.getByRole("heading", { name: "holiday" }) },
+  {
+    nav: "Fotos",
+    ready: async (page: Page) => {
+      await openAllAlbums(page);
+      return page.getByRole("main").getByRole("button", { name: /2024\/c\.jpg/ });
+    },
+  },
   { nav: "Quellen", ready: (page: Page) => page.getByRole("heading", { name: "Quelle hinzufügen" }) },
   { nav: "Einstellungen", ready: (page: Page) => page.getByLabel("Uhr anzeigen") },
   { nav: "Geräte", ready: (page: Page) => page.getByRole("listitem") },
@@ -25,18 +41,54 @@ for (const width of [360, 390, 800, 1280]) {
     await pairInUi(page);
     for (const { nav, ready } of SECTIONS) {
       await page.getByRole("navigation").getByRole("link", { name: nav }).click();
-      await expect(ready(page).first()).toBeVisible();
+      await expect((await ready(page)).first()).toBeVisible();
       expect(await horizontalOverflow(page), `${nav} at ${width} px`).toBeLessThanOrEqual(0);
     }
   });
 }
+
+// Spec web-admin, "Album headings for every screen and input".
+test("Deep album on a phone: heading, count and switch on screen", async ({ page }) => {
+  const name = "Sommerurlaub-an-der-Nordsee-mit-der-ganzen-Familie-und-Hunde";
+  expect(name).toHaveLength(60);
+  const deep = `eins/zwei/drei/vier/${name}`;
+  await usb("landscape.jpg", `${deep}/x.jpg`, { scan: false });
+  await usb("landscape.jpg", `${deep}/sechs/y.jpg`);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await pairInUi(page);
+  await openAllAlbums(page);
+  await expect(foldButton(page, deep)).toBeVisible();
+  expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  for (const part of [
+    foldButton(page, deep),
+    albumHeading(page, deep).locator(".album-count"),
+    albumSwitch(page, deep),
+  ]) {
+    const box = (await part.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+  }
+  // Indented by depth up to depth 4, deeper albums stay there.
+  const indent = async (path: string) => (await albumHeading(page, path).boundingBox())!.x;
+  expect(await indent("eins/zwei")).toBeGreaterThan(await indent("eins"));
+  expect(await indent(deep)).toBeGreaterThan(await indent("eins/zwei/drei/vier"));
+  expect(await indent(`${deep}/sechs`)).toBe(await indent(deep));
+  // Announced at a level that follows the depth, also below h6.
+  const level = (path: string) =>
+    page
+      .getByRole("main")
+      .getByRole("heading")
+      .filter({ has: foldButton(page, path) });
+  await expect(level(deep)).toHaveAttribute("aria-level", "6");
+  await expect(level(`${deep}/sechs`)).toHaveAttribute("aria-level", "7");
+});
 
 test("Phone in landscape: no horizontal scrolling, the navigation covers no content", async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await pairInUi(page);
   for (const { nav, ready } of SECTIONS) {
     await page.getByRole("navigation").getByRole("link", { name: nav }).click();
-    await expect(ready(page).first()).toBeVisible();
+    await expect((await ready(page)).first()).toBeVisible();
     expect(await horizontalOverflow(page), nav).toBeLessThanOrEqual(0);
     // Scrolled to the end, the last element of the section is fully visible and beside the navigation.
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -86,7 +138,7 @@ test("Offline on the home network", async ({ page, baseURL }) => {
       foreign.push(r.url());
   });
   await pairInUi(page);
-  for (const nav of ["Alben", "Einstellungen", "Geräte", "Fotos"])
+  for (const nav of ["Quellen", "Einstellungen", "Geräte", "Fotos"])
     await page.getByRole("link", { name: nav }).click();
   await page.waitForLoadState("networkidle");
   expect(foreign).toEqual([]);
@@ -134,8 +186,8 @@ for (const { width, form } of [
     if (form === "side") expect(link.width).toBeGreaterThan(link.height * 3);
     else expect(link.height).toBeGreaterThan(48);
 
-    await nav.getByRole("link", { name: "Alben" }).click();
-    await expect(nav.getByRole("link", { name: "Alben" })).toHaveAttribute("aria-current", "page");
+    await nav.getByRole("link", { name: "Quellen" }).click();
+    await expect(nav.getByRole("link", { name: "Quellen" })).toHaveAttribute("aria-current", "page");
     await expect(current).not.toHaveAttribute("aria-current");
   });
 }

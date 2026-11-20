@@ -1,11 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  albumTiles,
+  foldButton,
   FRAME_ORIGIN,
   nextcloudApprove,
   nextcloudFail,
   nextcloudPut,
   nextcloudRemove,
   nextcloudShare,
+  openAlbum,
+  openAllAlbums,
   pairInUi,
   reset,
   usb,
@@ -15,6 +19,12 @@ import {
 test.beforeEach(async () => {
   await reset();
 });
+
+/** The photo overview with every heading open. */
+async function openPhotos(page: Page) {
+  await page.getByRole("link", { name: "Fotos" }).click();
+  await openAllAlbums(page);
+}
 
 async function openSources(page: Page) {
   await page.getByRole("link", { name: "Quellen" }).click();
@@ -98,11 +108,10 @@ test("Two share links side by side: a password at its field, one album from both
   await expect(urlaub.getByText(/2 neu, 0 geändert, 0 entfernt/)).toBeVisible();
 
   // Both are in the overview next to the local photo, the folder of the same name is one album.
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(4);
-  await page.getByRole("link", { name: "Alben" }).click();
-  await expect(page.getByText("Strand")).toBeVisible();
-  await expect(page.getByText("3 Fotos")).toBeVisible();
+  await expect(foldButton(page, "Strand")).toHaveAccessibleName("Strand, 3 Fotos");
+  await expect(albumTiles(page, "Strand")).toHaveCount(3);
 
   // Syncing one leaves the other as it is.
   await nextcloudRemove("Strand/c.jpg", { share: "Familie2" });
@@ -117,7 +126,7 @@ test("Two share links side by side: a password at its field, one album from both
   await page.getByRole("dialog").getByRole("button", { name: "Entfernen" }).click();
   await expect(urlaub).toHaveCount(0);
   await expect(familie).toBeVisible();
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(2);
 });
 
@@ -161,7 +170,7 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
   await expect(account.getByText(/2 neu, 0 geändert, 0 entfernt/)).toBeVisible({ timeout: 20_000 });
 
   // The photos are in the overview next to the local one.
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(3);
 
   // Deleted on the server: gone after the next sync.
@@ -169,7 +178,7 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
   await openSources(page);
   await account.getByRole("button", { name: "Jetzt abgleichen" }).click();
   await expect(account.getByText(/0 neu, 0 geändert, 1 entfernt/)).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(2);
 
   // A server that is down: a readable error in the interface language, the frame's text as a detail, and the
@@ -186,7 +195,7 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
     account.getByText("Der Server ist nicht erreichbar oder hat zu langsam geantwortet."),
   ).toBeVisible();
   await expect(account.getByText("did not answer in time")).toBeVisible();
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(2);
   await nextcloudFail(false);
 
@@ -195,7 +204,7 @@ test("An account: connect, first sync, a photo deleted on the server, a failing 
   await account.getByRole("button", { name: "Entfernen" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Entfernen" }).click();
   await expect(page.getByText("Noch keine Quelle.")).toBeVisible();
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(1);
 });
 
@@ -208,7 +217,7 @@ test("A photo of a source cannot be deleted, only hidden", async ({ page }) => {
   // Without a name of its own the source is called after the shared folder.
   await addShare(page, "Fern1");
   await expect(card(page, "Fernweh").getByText(/1 neu/)).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("link", { name: "Fotos" }).click();
+  await openPhotos(page);
   await expect(page.locator(".tile")).toHaveCount(2);
 
   // In the selection: hiding is offered, deleting is not.
@@ -222,6 +231,7 @@ test("A photo of a source cannot be deleted, only hidden", async ({ page }) => {
 
   // In the detail view: the local photo can be deleted, the one of the source shows the hint instead.
   await page.reload();
+  await openAlbum(page, "");
   await expect(page.locator(".tile")).toHaveCount(2);
   let deletable = 0;
   let hints = 0;
@@ -234,6 +244,35 @@ test("A photo of a source cannot be deleted, only hidden", async ({ page }) => {
     await detail.getByRole("button", { name: "Schließen" }).click();
   }
   expect({ deletable, hints }).toEqual({ deletable: 1, hints: 1 });
+});
+
+// Spec web-admin, "Photos from Nextcloud in the overview".
+test("Selection in a folded album: both photos stay selected, deleting is not offered", async ({ page }) => {
+  await usb("image.png", "Zuhause/meins.png");
+  await nextcloudShare("Fern2", { name: "Fernweh" });
+  await nextcloudPut("landscape.jpg", "Reise/fern.jpg", { share: "Fern2" });
+  await pairInUi(page);
+  await openSources(page);
+  await addShare(page, "Fern2");
+  await expect(card(page, "Fernweh").getByText(/1 neu/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("link", { name: "Fotos" }).click();
+  await openAlbum(page, "Reise");
+  await openAlbum(page, "Zuhause");
+
+  await page.getByRole("button", { name: "Auswählen" }).click();
+  await albumTiles(page, "Reise").first().click();
+  await albumTiles(page, "Zuhause").first().click();
+  const bar = page.getByRole("toolbar");
+  await expect(bar.getByText("2 ausgewählt")).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Löschen" })).toHaveCount(0);
+
+  // Folding the album of the Nextcloud photo drops its tiles, not the selection.
+  await foldButton(page, "Reise").click();
+  await expect(albumTiles(page, "Reise")).toHaveCount(0);
+  await expect(bar.getByText("2 ausgewählt")).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Ausblenden" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Löschen" })).toHaveCount(0);
+  await expect(bar.getByText("lassen sich hier nicht löschen")).toBeVisible();
 });
 
 test("A slow approval is not reported as expired", async ({ page }) => {

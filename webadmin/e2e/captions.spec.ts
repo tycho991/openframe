@@ -5,6 +5,7 @@ import {
   frameCaption,
   nextcloudPut,
   nextcloudShare,
+  openAllAlbums,
   pairInUi,
   photoDetail,
   reset,
@@ -34,6 +35,7 @@ function foreignRequests(page: Page, baseURL: string): string[] {
 }
 
 async function openPhoto(page: Page, index = 0) {
+  await openAllAlbums(page);
   await page.locator(".tile").nth(index).click();
   const detail = photoDetail(page);
   await expect(detail).toBeVisible();

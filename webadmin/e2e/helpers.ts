@@ -141,6 +141,56 @@ export async function pairInUi(page: Page): Promise<void> {
   await expect(page.getByRole("navigation")).toBeVisible();
 }
 
+/** `holiday/2024` as the photo overview names it; `""` is the heading for photos without an album. */
+function albumName(path: string): RegExp {
+  return path === "" ? /(Kein Album|No album)/ : new RegExp(escapeRegExp(path.split("/").join(" / ")));
+}
+
+/** The fold button of an album heading in the photo overview, named with the path and the count. */
+export const foldButton = (page: Page, path: string) =>
+  page.getByRole("button", {
+    name: new RegExp(`^${albumName(path).source}, (1 (Foto|photo)|\\d+ (Fotos|photos))$`),
+  });
+
+/** The "Show in slideshow" switch on the heading of album [path]. */
+export const albumSwitch = (page: Page, path: string) =>
+  page.getByRole("switch", {
+    name: new RegExp(`^(In der Slideshow zeigen|Show in slideshow): ${albumName(path).source}$`),
+  });
+
+/** The ids the photo overview gives a heading and what is below it. */
+const headingId = (path: string) => (path === "" ? "photos-no-album" : "album-" + encodeURIComponent(path));
+
+/** The row of an album heading: fold button, count, exception mark and switch. */
+export const albumHeading = (page: Page, path: string) => page.locator(`[id="${headingId(path)}"]`);
+
+/** What is below a heading while it is open: the album's grid, then its sub-albums. */
+export const albumContent = (page: Page, path: string) => page.locator(`[id="${headingId(path)}-content"]`);
+
+/** The tiles of the photos directly in album [path], not those of its sub-albums. */
+export const albumTiles = (page: Page, path: string) =>
+  albumContent(page, path).locator(":scope > .grid-box .tile");
+
+/** Opens the heading of album [path] and every heading above it in the photo overview, those that are folded. */
+export async function openAlbum(page: Page, path: string): Promise<void> {
+  const levels = path.split("/").map((_, i, all) => all.slice(0, i + 1).join("/"));
+  for (const level of levels) {
+    const button = foldButton(page, level);
+    await expect(button).toBeVisible();
+    if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+  }
+}
+
+/** Opens every folded heading of the photo overview, sub-albums included, once the headings are there. */
+export async function openAllAlbums(page: Page): Promise<void> {
+  const headings = page.getByRole("main").getByRole("heading");
+  await expect(headings.getByRole("button").first()).toBeVisible();
+  const folded = headings.getByRole("button", { expanded: false });
+  for (let i = 0; i < 100 && (await folded.count()) > 0; i++) await folded.first().click();
+  await expect(folded).toHaveCount(0);
+}
+
 /** The photo detail: a panel next to the grid from 1200 px, a modal dialog (layer or sheet) below. */
 export const photoDetail = (page: Page, name?: string) =>
   page.getByRole("complementary", { name }).or(page.getByRole("dialog", { name }));
