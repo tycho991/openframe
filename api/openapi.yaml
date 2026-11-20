@@ -262,6 +262,13 @@ paths:
           in: query
           description: With `false`, `album` matches only the photos that lie directly in the album.
           schema: { type: boolean, default: true }
+        - name: noalbum
+          in: query
+          description: |
+            With `true`, only the photos that belong to no album (they lie directly in the photo folder of their
+            source), from every source; `subalbums` has no effect then. Together with `album` the request is refused
+            with 400 `bad_request`. `false` changes nothing.
+          schema: { type: boolean, default: false }
         - name: visible
           in: query
           description: Only visible (`true`) or only hidden (`false`) photos.
@@ -1728,14 +1735,19 @@ components:
     Album:
       type: object
       additionalProperties: false
-      required: [name, count, hidden, overridesParent, cover]
+      required: [name, count, visibleCount, hidden, overridesParent, cover]
       properties:
         name: { type: string, description: "Folder path of the album (`holiday/2024`). The list is sorted by path." }
         count: { type: integer, description: "Photos of the album and all its sub-albums." }
+        visibleCount:
+          type: integer
+          description: |
+            Photos of the album and all its sub-albums that are visible: not hidden themselves and their album not
+            hidden, the same rule as `visible=true` of the photo list. A quarantined photo counts by this rule alone.
         hidden: { type: boolean, description: "Effective state: by the album's own setting or inherited from its parent." }
         overridesParent: { type: boolean, description: "A sub-album whose state differs from its parent's." }
         cover:
-          description: Cover image, the newest photo of the album and its sub-albums.
+          description: Cover image, the newest photo of the album and its sub-albums that is not quarantined; `null` if all are.
           oneOf:
             - $ref: "#/components/schemas/ImageUrls"
             - type: "null"
@@ -1743,11 +1755,22 @@ components:
     AlbumList:
       type: object
       additionalProperties: false
-      required: [albums]
+      required: [albums, noAlbum]
       properties:
         albums:
           type: array
           items: { $ref: "#/components/schemas/Album" }
+        noAlbum:
+          $ref: "#/components/schemas/AlbumCounts"
+          description: The photos that belong to no album, from every source.
+
+    AlbumCounts:
+      type: object
+      additionalProperties: false
+      required: [count, visibleCount]
+      properties:
+        count: { type: integer, description: "Number of photos." }
+        visibleCount: { type: integer, description: "Number of visible photos, by the rule of `Album.visibleCount`." }
 
     AlbumPatch:
       type: object

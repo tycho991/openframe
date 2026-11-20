@@ -25,7 +25,19 @@ class AlbumTreeTest {
         path: String,
         taken: Long = 0,
         source: String = "local",
-    ) = PhotoEntry(PhotoEntry.idFor(source, path), source, path, 4, 3, taken, 10, 1, 1)
+        hidden: Boolean = false,
+    ) = PhotoEntry(PhotoEntry.idFor(source, path), source, path, 4, 3, taken, 10, 1, 1, hidden)
+
+    private fun quarantined(entry: PhotoEntry) = entry.copy(quarantinedVersion = entry.version)
+
+    /** [count] photos in [album], the first [hidden] of them hidden themselves. */
+    private fun putPhotos(
+        album: String,
+        count: Int,
+        hidden: Int = 0,
+    ) = store.edit { edit -> for (i in 0 until count) edit.put(entry("$album/$i.jpg", hidden = i < hidden)) }
+
+    private fun counts(album: String) = library().albums.getValue(album).let { it.count to it.visibleCount }
 
     private fun library() = store.library.value
 
@@ -157,5 +169,107 @@ class AlbumTreeTest {
     fun `Tree order with names that differ only in case`() {
         putAll("a/1.jpg", "A/x/2.jpg", "A/3.jpg")
         assertEquals(listOf("A", "A/x", "a"), library().albums.keys.toList())
+    }
+
+    /** Spec `photo-library`: Album list through the API › Counts of a branch. */
+    @Test
+    fun `Counts of a branch`() {
+        putPhotos("holiday", 10, hidden = 2)
+        putPhotos("holiday/2024", 30, hidden = 3)
+        assertEquals(40 to 35, counts("holiday"))
+        assertEquals(30 to 27, counts("holiday/2024"))
+    }
+
+    /** Spec `photo-library`: Album list through the API › Hidden by the album and by the photo. */
+    @Test
+    fun `Hidden by the album and by the photo`() {
+        putPhotos("holiday", 10)
+        putPhotos("holiday/2024", 30, hidden = 2)
+        hide("holiday")
+        hide("holiday/2024", false)
+        assertEquals(40 to 28, counts("holiday"))
+        assertEquals(30 to 28, counts("holiday/2024"))
+    }
+
+    /** Spec `photo-library`: Album list through the API › Quarantined photo. */
+    @Test
+    fun `Quarantined photo`() {
+        store.edit {
+            it.put(entry("holiday/old.jpg", taken = 1))
+            it.put(quarantined(entry("holiday/new.jpg", taken = 2)))
+            it.put(quarantined(entry("holiday/hidden.jpg", taken = 3, hidden = true)))
+        }
+        assertEquals(3 to 2, counts("holiday"), "counted by its hidden state alone")
+        assertEquals(
+            "holiday/old.jpg",
+            library()
+                .albums
+                .getValue("holiday")
+                .newest
+                ?.path,
+            "the newest photo that is not quarantined",
+        )
+    }
+
+    /** Spec `photo-library`: Album list through the API › Album with only quarantined photos. */
+    @Test
+    fun `Album with only quarantined photos`() {
+        store.edit {
+            it.put(quarantined(entry("holiday/a.jpg", taken = 1)))
+            it.put(quarantined(entry("holiday/2024/b.jpg", taken = 2)))
+            it.put(entry("home/c.jpg"))
+        }
+        assertNull(library().albums.getValue("holiday").newest)
+        assertNull(library().albums.getValue("holiday/2024").newest)
+        assertEquals(
+            "home/c.jpg",
+            library()
+                .albums
+                .getValue("home")
+                .newest
+                ?.path,
+        )
+    }
+
+    /** Spec `photo-library`: Photos without an album in the API › Counts without an album. */
+    @Test
+    fun `Counts without an album`() {
+        assertEquals(AlbumCounts(0, 0), library().noAlbum, "empty library")
+        store.edit {
+            it.put(entry("a.jpg"))
+            it.put(entry("b.jpg", hidden = true))
+            it.put(entry("c.jpg", source = "s1"))
+            it.put(entry("holiday/d.jpg"))
+        }
+        hide("holiday")
+        assertEquals(AlbumCounts(3, 2), library().noAlbum)
+    }
+
+    /** The counts follow [Library.isVisible] in a mixed library with exceptions, hidden and quarantined photos. */
+    @Test
+    fun `visibleCount counts the photos for which isVisible is true`() {
+        store.edit { edit ->
+            for (i in 0 until 200) {
+                val path = "level${i % 3}/sub${i % 4}/deeper${i % 5}/$i.jpg".let { if (i % 11 == 0) "$i.jpg" else it }
+                val e = entry(path, taken = i.toLong(), source = if (i % 2 == 0) "local" else "s1", hidden = i % 7 == 0)
+                edit.put(if (i % 13 == 0) quarantined(e) else e)
+            }
+        }
+        hide("level1")
+        hide("level1/sub2", false)
+        hide("level1/sub2/deeper3")
+        hide("level2/sub0")
+        val lib = library()
+        val photos = lib.photos.values
+        // isVisible before anything else reads the albums builds the summary from inside isVisible.
+        assertTrue(photos.count { lib.isVisible(it) } in 1 until photos.size)
+        assertTrue(lib.albums.size > 30)
+        for (album in lib.albums.values) {
+            val branch = photos.filter { AlbumPaths.inBranch(it.album, album.name) }
+            assertEquals(branch.size, album.count, album.name)
+            assertEquals(branch.count { lib.isVisible(it) }, album.visibleCount, album.name)
+        }
+        val loose = photos.filter { it.album == null }
+        assertEquals(AlbumCounts(loose.size, loose.count { lib.isVisible(it) }), lib.noAlbum)
     }
 }

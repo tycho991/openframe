@@ -1,5 +1,4 @@
 <script lang="ts">
-  import AlbumsView from "./components/AlbumsView.svelte";
   import AppearanceMenu from "./components/AppearanceMenu.svelte";
   import DevicesView from "./components/DevicesView.svelte";
   import Icon from "./components/Icon.svelte";
@@ -31,7 +30,6 @@
 
   const sections: Record<Route, { label: Key; icon: IconName }> = {
     photos: { label: "nav.photos", icon: "photoLibrary" },
-    albums: { label: "nav.albums", icon: "photoAlbum" },
     sources: { label: "nav.sources", icon: "cloud" },
     settings: { label: "nav.settings", icon: "settings" },
     devices: { label: "nav.devices", icon: "devices" },
@@ -111,8 +109,6 @@
         {#if session.pairedAs}<PairedBanner client={session.pairedAs} />{/if}
         {#if router.route === "photos"}
           <PhotosView />
-        {:else if router.route === "albums"}
-          <AlbumsView />
         {:else if router.route === "sources"}
           <SourcesView />
         {:else if router.route === "settings"}

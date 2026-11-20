@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { pairInUi, photoDetail, quarantine, reset, usb } from "./helpers";
+import { albumTiles, openAlbum, pairInUi, photoDetail, quarantine, reset, usb } from "./helpers";
 
 // Spec web-admin: "Quarantined photos in the interface", "Skipped files".
 
@@ -19,6 +19,7 @@ test("A quarantined photo: a placeholder without an image request, no section ed
   });
   await page.setViewportSize({ width: 1280, height: 800 });
   await pairInUi(page);
+  await openAlbum(page, "holiday");
 
   const tile = page.locator(`.tile[data-photo="${id}"]`);
   await expect(tile.getByRole("img", { name: "holiday/a.jpg: nicht angezeigt", exact: false })).toBeVisible();
@@ -37,4 +38,22 @@ test("A quarantined photo: a placeholder without an image request, no section ed
   await expect(detail.getByRole("button", { name: "Ausschnitt wählen" })).toBeVisible();
   await expect.poll(() => requested.length).toBeGreaterThan(0);
   await expect(tile.locator("img")).toHaveCount(1);
+});
+
+test("Album with only quarantined photos: placeholders, no image request", async ({ page }) => {
+  await usb("landscape.jpg", "crashed/a.jpg");
+  await usb("gps-siena.jpg", "crashed/b.jpg");
+  const ids = [await quarantine("crashed/a.jpg"), await quarantine("crashed/b.jpg")];
+  const requested: string[] = [];
+  page.on("request", (r) => {
+    if (ids.some((id) => r.url().includes(`/photos/${id}/image`))) requested.push(r.url());
+  });
+  await pairInUi(page);
+  await openAlbum(page, "crashed");
+  const tiles = albumTiles(page, "crashed");
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.locator("img")).toHaveCount(0);
+  await expect(tiles.getByRole("img", { name: /nicht angezeigt/ })).toHaveCount(2);
+  await page.waitForLoadState("networkidle");
+  expect(requested).toEqual([]);
 });

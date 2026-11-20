@@ -1,56 +1,69 @@
 <script lang="ts">
   import QuarantinedPlaceholder from "./QuarantinedPlaceholder.svelte";
-  import { tick } from "svelte";
+  import { untrack } from "svelte";
   import type { Photo } from "../lib/api/client";
-  import { gridLayout } from "../lib/grid";
+  import { gridLayout, reservedLayout } from "../lib/grid";
   import { t } from "../lib/i18n/i18n.svelte";
   import Icon from "./Icon.svelte";
 
+  // Controlled by the photo overview, which owns the one measurement of the page (design decision 2 of
+  // album-groups-in-photos): the grid has no observer and no window listener of its own.
   interface Props {
     items: Photo[];
     hasMore: boolean;
+    /** Whether the first page has arrived; before it, the grid reserves the height of [reserve] tiles. */
+    loaded: boolean;
+    /** The photos the album list counts for the grid. */
+    reserve: number;
+    /** A page is on its way or the last one failed: the grid asks for no more. */
+    paused: boolean;
+    /** The grid's offset in the page. */
+    top: number;
+    /** The grid's height when [top] was measured; until it matches the rendered height, [top] may be stale. */
+    measured: number;
+    width: number;
+    scrollY: number;
+    viewport: number;
     selecting: boolean;
-    selected: Set<string>;
+    selected: { has(id: string): boolean };
     onloadmore: () => void;
     ontoggle: (photo: Photo) => void;
     onopen: (photo: Photo) => void;
     onimageerror: (photo: Photo) => void;
   }
 
-  let { items, hasMore, selecting, selected, onloadmore, ontoggle, onopen, onimageerror }: Props = $props();
+  let {
+    items,
+    hasMore,
+    loaded,
+    reserve,
+    paused,
+    top,
+    measured,
+    width,
+    scrollY,
+    viewport,
+    selecting,
+    selected,
+    onloadmore,
+    ontoggle,
+    onopen,
+    onimageerror,
+  }: Props = $props();
 
   let container: HTMLDivElement;
-  let width = $state(0);
-  let scrollY = $state(0);
-  let viewport = $state(800);
-  let top = $state(0);
 
   const layout = $derived(gridLayout({ width, count: items.length, scrollY: scrollY - top, viewport }));
-  const visible = $derived(items.slice(layout.first, layout.last));
+  const reserved = $derived(reservedLayout({ width, count: reserve, scrollY: scrollY - top, viewport }));
+  const visible = $derived(loaded ? items.slice(layout.first, layout.last) : []);
+  const height = $derived(loaded ? layout.height : reserved.height);
 
   $effect(() => {
-    const update = () => {
-      scrollY = window.scrollY;
-      viewport = window.innerHeight;
-      top = container.getBoundingClientRect().top + window.scrollY;
-    };
-    const observer = new ResizeObserver(() => {
-      width = container.clientWidth;
-      update();
-    });
-    observer.observe(container);
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    update();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
-  });
-
-  $effect(() => {
-    if (hasMore && layout.nearEnd) onloadmore();
+    // A grid whose height changed since the measurement has not been measured at its new place yet, nor have the
+    // grids below it: they wait for the overview's next measurement, which the resize brings before the next paint.
+    if (paused || width <= 0 || Math.abs(measured - height) > 1) return;
+    // Untracked: what the callback reads (the overview's grids) is not a reason to ask again.
+    if (loaded ? hasMore && layout.nearEnd : reserved.wanted) untrack(onloadmore);
   });
 
   // The photo whose tile has the focus. A tile that leaves the visible range is removed without a focus event, and
@@ -74,29 +87,22 @@
     container.querySelector<HTMLElement>(`[data-photo="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
   });
 
-  /** Brings the tile of photo [id] into view if it is not, and focuses it: the element that opened a detail may
-   *  have been recycled for another photo meanwhile (spec web-admin, "Keyboard operation"). */
-  export async function focusPhoto(id: string): Promise<void> {
+  /** Where the tile of photo [id] is, relative to the grid; `null` if the grid does not hold it. */
+  export function tileBox(id: string): { y: number; size: number } | null {
     const index = items.findIndex((p) => p.id === id);
-    if (index < 0) return;
-    const tileTop = top + layout.position(index).y;
-    const bars = container.closest("main")?.getBoundingClientRect().top ?? 0;
-    if (
-      tileTop < window.scrollY + Math.max(0, bars) ||
-      tileTop + layout.tile > window.scrollY + window.innerHeight
-    ) {
-      window.scrollTo({
-        top: Math.max(0, tileTop - (window.innerHeight - layout.tile) / 2),
-        behavior: "instant",
-      });
-      scrollY = window.scrollY;
-    }
-    await tick();
+    if (index < 0) return null;
+    return { y: layout.position(index).y, size: layout.tile };
+  }
+
+  /** Focuses the tile of photo [id], once the overview has scrolled it into the rendered range (spec web-admin,
+   *  "Keyboard operation"): the element that opened a detail may have been recycled for another photo meanwhile. */
+  export function focusTile(id: string): void {
+    focusedId = id;
     container.querySelector<HTMLElement>(`[data-photo="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
   }
 </script>
 
-<div class="grid" bind:this={container} style:height="{layout.height}px" {onfocusin} {onfocusout}>
+<div class="grid" bind:this={container} style:height="{height}px" {onfocusin} {onfocusout}>
   {#each visible as photo, i (photo.id)}
     {@const pos = layout.position(layout.first + i)}
     <button

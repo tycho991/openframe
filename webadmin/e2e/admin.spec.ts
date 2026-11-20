@@ -1,8 +1,13 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
+  albumHeading,
+  albumSwitch,
+  albumTiles,
   apiAsBrowser,
   escapeRegExp,
+  foldButton,
   FRAME_ORIGIN,
+  openAlbum,
   pairInUi,
   pairOtherDevice,
   reset,
@@ -18,20 +23,14 @@ test("Hide album", async ({ page }) => {
   await usb("landscape.jpg", "holiday/a.jpg");
   await usb("landscape.jpg", "family/b.jpg");
   await pairInUi(page);
-  await page.getByRole("link", { name: "Alben" }).click();
-  const holiday = page.getByRole("listitem").filter({ hasText: "holiday" });
-  await holiday.getByRole("switch", { name: "In der Slideshow zeigen" }).uncheck();
-  await expect(holiday.getByRole("switch")).not.toBeChecked();
+  await albumSwitch(page, "holiday").uncheck();
+  await expect(albumSwitch(page, "holiday")).not.toBeChecked();
+  await expect(albumSwitch(page, "family")).toBeChecked();
   const albums = await apiAsBrowser<{ albums: { name: string; hidden: boolean }[] }>(page, "/albums");
   expect(albums.albums.find((a) => a.name === "holiday")?.hidden).toBe(true);
   const photos = await apiAsBrowser<{ items: { visible: boolean }[] }>(page, "/photos?album=holiday");
   expect(photos.items.every((p) => !p.visible)).toBe(true);
 });
-
-/** A row of the albums page by its title, the last level of the album's path. */
-function albumRow(page: Page, title: string): Locator {
-  return page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
-}
 
 async function visiblePaths(page: Page): Promise<string[]> {
   const res = await apiAsBrowser<{ items: { path: string }[] }>(page, "/photos?visible=true&sort=name_asc");
@@ -43,35 +42,32 @@ test("Show a sub-album of a hidden album", async ({ page }) => {
   await usb("landscape.jpg", "holiday/2024/b.jpg");
   await usb("landscape.jpg", "holiday/2024/may/c.jpg");
   await pairInUi(page);
-  await page.getByRole("link", { name: "Alben" }).click();
-  await expect(albumRow(page, "holiday").getByText("3 Fotos")).toBeVisible();
-  // The second level is shown, deeper ones only after opening.
-  await expect(albumRow(page, "2024")).toBeVisible();
-  await expect(albumRow(page, "may")).toHaveCount(0);
-  await page.getByRole("button", { name: "Unteralben von holiday/2024 aufklappen" }).click();
-  await expect(albumRow(page, "may")).toBeVisible();
+  await expect(foldButton(page, "holiday")).toHaveAccessibleName("holiday, 3 Fotos");
+  // Sub-albums appear when the album above is opened.
+  await expect(foldButton(page, "holiday/2024")).toHaveCount(0);
+  await openAlbum(page, "holiday/2024");
+  await expect(foldButton(page, "holiday/2024/may")).toBeVisible();
 
-  await albumRow(page, "holiday").getByRole("switch").uncheck();
-  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
-  await expect(albumRow(page, "may").getByRole("switch")).not.toBeChecked();
-  await albumRow(page, "2024").getByRole("switch").check();
-  await expect(albumRow(page, "2024").getByText("Ausnahme")).toBeVisible();
-  await expect(albumRow(page, "may").getByRole("switch")).toBeChecked();
-  await expect(albumRow(page, "may").getByText("Ausnahme")).toHaveCount(0);
-  await expect(albumRow(page, "holiday").getByRole("switch")).not.toBeChecked();
+  await albumSwitch(page, "holiday").uncheck();
+  await expect(albumSwitch(page, "holiday/2024")).not.toBeChecked();
+  await expect(albumSwitch(page, "holiday/2024/may")).not.toBeChecked();
+  await albumSwitch(page, "holiday/2024").check();
+  await expect(albumHeading(page, "holiday/2024").getByText("Ausnahme")).toBeVisible();
+  await expect(albumSwitch(page, "holiday/2024/may")).toBeChecked();
+  await expect(albumHeading(page, "holiday/2024/may").getByText("Ausnahme")).toHaveCount(0);
+  await expect(albumSwitch(page, "holiday")).not.toBeChecked();
   expect(await visiblePaths(page)).toEqual(["holiday/2024/b.jpg", "holiday/2024/may/c.jpg"]);
 });
 
 test("A switch that fails shows the album's state again", async ({ page }) => {
   await usb("landscape.jpg", "holiday/a.jpg");
   await pairInUi(page);
-  await page.getByRole("link", { name: "Alben" }).click();
   await page.route("**/api/v1/albums", (route) =>
     route.request().method() === "PATCH"
       ? route.fulfill({ status: 503, contentType: "application/json", body: "{}" })
       : route.fallback(),
   );
-  const toggle = albumRow(page, "holiday").getByRole("switch");
+  const toggle = albumSwitch(page, "holiday");
   await toggle.click();
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(toggle).toBeChecked();
@@ -82,19 +78,76 @@ test("Switching a parent removes exceptions", async ({ page }) => {
   await usb("landscape.jpg", "holiday/a.jpg");
   await usb("landscape.jpg", "holiday/2024/b.jpg");
   await pairInUi(page);
-  await page.getByRole("link", { name: "Alben" }).click();
-  await albumRow(page, "holiday").getByRole("switch").uncheck();
-  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
-  await albumRow(page, "2024").getByRole("switch").check();
-  await expect(albumRow(page, "2024").getByText("Ausnahme")).toBeVisible();
+  await openAlbum(page, "holiday");
+  await albumSwitch(page, "holiday").uncheck();
+  await expect(albumSwitch(page, "holiday/2024")).not.toBeChecked();
+  await albumSwitch(page, "holiday/2024").check();
+  await expect(albumHeading(page, "holiday/2024").getByText("Ausnahme")).toBeVisible();
 
-  await albumRow(page, "holiday").getByRole("switch").check();
-  await expect(albumRow(page, "2024").getByText("Ausnahme")).toHaveCount(0);
-  await expect(albumRow(page, "2024").getByRole("switch")).toBeChecked();
-  await albumRow(page, "holiday").getByRole("switch").uncheck();
-  await expect(albumRow(page, "2024").getByRole("switch")).not.toBeChecked();
-  await expect(albumRow(page, "2024").getByText("Ausnahme")).toHaveCount(0);
+  await albumSwitch(page, "holiday").check();
+  await expect(albumHeading(page, "holiday/2024").getByText("Ausnahme")).toHaveCount(0);
+  await expect(albumSwitch(page, "holiday/2024")).toBeChecked();
+  await albumSwitch(page, "holiday").uncheck();
+  await expect(albumSwitch(page, "holiday/2024")).not.toBeChecked();
+  await expect(albumHeading(page, "holiday/2024").getByText("Ausnahme")).toHaveCount(0);
   expect(await visiblePaths(page)).toEqual([]);
+});
+
+// Spec web-admin, "Album switch in the photo overview".
+test("Grids follow the switch before the next regular check", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await pairInUi(page);
+  await openAlbum(page, "holiday");
+  const tiles = albumTiles(page, "holiday");
+  await expect(tiles).toHaveCount(1);
+  await expect(tiles.locator(".badge")).toHaveCount(0);
+  await albumSwitch(page, "holiday").uncheck();
+  // The regular check runs every 10 seconds.
+  await expect(tiles.locator(".badge")).toHaveText("Ausgeblendet", { timeout: 5_000 });
+});
+
+/** Hides [album] by its switch through the API, so that every photo in it is hidden by the album. */
+const hideAlbum = (page: Page, album: string) =>
+  apiAsBrowser(page, "/albums", { method: "PATCH", body: { name: album, hidden: true } });
+
+test("Switch with a filter: the heading stays in place with its switch focused", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("landscape.jpg", "holiday/b.jpg");
+  await usb("landscape.jpg", "family/c.jpg");
+  await pairInUi(page);
+  await hideAlbum(page, "holiday");
+  await page.reload();
+  await page.getByRole("combobox", { name: "Sichtbarkeit" }).selectOption("hidden");
+  await expect(foldButton(page, "family")).toHaveCount(0);
+  await openAlbum(page, "holiday");
+  await expect(albumTiles(page, "holiday")).toHaveCount(2);
+  const toggle = albumSwitch(page, "holiday");
+  const before = (await albumHeading(page, "holiday").boundingBox())!;
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeFocused();
+  await expect(foldButton(page, "holiday")).toHaveAccessibleName("holiday, 0 Fotos");
+  await expect(albumTiles(page, "holiday")).toHaveCount(0);
+  expect((await albumHeading(page, "holiday").boundingBox())!.y).toBe(before.y);
+  // A new filter lets it go.
+  await page.getByRole("combobox", { name: "Sortierung" }).selectOption("name_asc");
+  await expect(foldButton(page, "holiday")).toHaveCount(0);
+});
+
+test("Switch a sub-album with a filter: it and the album above stay", async ({ page }) => {
+  await usb("landscape.jpg", "holiday/2024/a.jpg");
+  await usb("landscape.jpg", "family/b.jpg");
+  await pairInUi(page);
+  await hideAlbum(page, "holiday/2024");
+  await page.reload();
+  await page.getByRole("combobox", { name: "Sichtbarkeit" }).selectOption("hidden");
+  await openAlbum(page, "holiday/2024");
+  const toggle = albumSwitch(page, "holiday/2024");
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeFocused();
+  await expect(foldButton(page, "holiday")).toHaveAccessibleName("holiday, 0 Fotos");
+  await expect(foldButton(page, "holiday/2024")).toHaveAccessibleName("holiday / 2024, 0 Fotos");
 });
 
 test("Error at the field", async ({ page }) => {

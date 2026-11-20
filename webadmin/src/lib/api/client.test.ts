@@ -108,11 +108,53 @@ describe("API client", () => {
     );
   });
 
-  it("switches an album by its path in the body and returns the whole list", async () => {
-    const albums = [{ name: "holiday/2024", count: 1, hidden: false, overridesParent: true, cover: null }];
-    const fetch = vi.fn(async () => respond(200, { albums }));
+  it("asks for the photos without an album with an explicit flag", async () => {
+    const fetch = vi.fn(async () => respond(200, { items: [], total: 0, nextCursor: null }));
     const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
-    expect(await api.setAlbumHidden("holiday/2024", false)).toEqual(albums);
+    await api.photos({ noalbum: true, visible: false });
+    expect((fetch.mock.calls[0] as unknown as [string])[0]).toBe("/api/v1/photos?noalbum=true&visible=false");
+  });
+
+  it("hands the signal of a photo list request to fetch, so that it can be aborted", async () => {
+    const fetch = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal);
+      return respond(200, { items: [], total: 0, nextCursor: null });
+    });
+    const controller = new AbortController();
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    await api.photos({ album: "holiday" }, controller.signal);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("returns the whole album list with the counts without an album", async () => {
+    const list = {
+      albums: [
+        { name: "holiday", count: 3, visibleCount: 2, hidden: false, overridesParent: false, cover: null },
+      ],
+      noAlbum: { count: 4, visibleCount: 1 },
+    };
+    const fetch = vi.fn(async () => respond(200, list));
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    expect(await api.albums()).toEqual(list);
+  });
+
+  it("switches an album by its path in the body and returns the whole list", async () => {
+    const list = {
+      albums: [
+        {
+          name: "holiday/2024",
+          count: 1,
+          visibleCount: 1,
+          hidden: false,
+          overridesParent: true,
+          cover: null,
+        },
+      ],
+      noAlbum: { count: 2, visibleCount: 2 },
+    };
+    const fetch = vi.fn(async () => respond(200, list));
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    expect(await api.setAlbumHidden("holiday/2024", false)).toEqual(list);
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/albums");
     expect(init.method).toBe("PATCH");

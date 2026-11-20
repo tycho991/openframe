@@ -213,12 +213,20 @@ data class StoredIndex(
 class Album(
     val name: String,
     val count: Int,
+    /** Photos of the branch for which [Library.isVisible] is true; quarantine does not count. */
+    val visibleCount: Int,
     /** The newest photo of the branch that is not quarantined, the cover image; `null` if all are. */
     val newest: PhotoEntry?,
     /** Effective state, by its own setting or inherited. */
     val hidden: Boolean,
     /** A sub-album with a setting of its own, which differs from its parent's state by the invariant of [LibraryEdit.setAlbumHidden]. */
     val overridesParent: Boolean,
+)
+
+/** Number of photos and of those for which [Library.isVisible] is true. */
+data class AlbumCounts(
+    val count: Int,
+    val visibleCount: Int,
 )
 
 /** Immutable state of the library. */
@@ -236,30 +244,73 @@ class Library(
     }
 
     /**
-     * Every album that holds a photo in its branch, in the tree order of [AlbumPaths.sorted], with count, cover and
-     * effective state. One pass over the photos per state, so [isVisible] is a map lookup.
+     * Every album that holds a photo in its branch, in the tree order of [AlbumPaths.sorted], with counts, cover and
+     * effective state, so [isVisible] is a map lookup.
      */
-    val albums: Map<String, Album> by lazy {
-        val counts = HashMap<String, Int>()
-        val newest = HashMap<String, PhotoEntry>()
+    val albums: Map<String, Album> get() = summary.albums
+
+    /** The photos that belong to no album, from every source. */
+    val noAlbum: AlbumCounts get() = summary.noAlbum
+
+    private class Summary(
+        val albums: Map<String, Album>,
+        val noAlbum: AlbumCounts,
+    )
+
+    private class Branch {
+        var count = 0
+        var visibleCount = 0
+        var newest: PhotoEntry? = null
+    }
+
+    /** The branches a photo of one album counts in (the album and its ancestors) and the album's effective state. */
+    private class Folder(
+        val branches: List<Branch>,
+        val hidden: Boolean,
+    )
+
+    /**
+     * One pass over the photos for [albums] and [noAlbum]. The effective state comes from [AlbumPaths.isHidden], once
+     * per album path; [isVisible] must not be called here, since it reads [albums] and would re-enter this initializer.
+     */
+    private val summary: Summary by lazy {
+        val branches = HashMap<String, Branch>()
+        val folders = HashMap<String, Folder>()
+        var noAlbumCount = 0
+        var noAlbumVisible = 0
         for (photo in photos.values) {
-            val album = photo.album ?: continue
-            for (path in AlbumPaths.withAncestors(album)) {
-                counts[path] = (counts[path] ?: 0) + 1
+            val album = photo.album
+            if (album == null) {
+                noAlbumCount++
+                if (!photo.hidden) noAlbumVisible++
+                continue
+            }
+            val folder =
+                folders.getOrPut(album) {
+                    Folder(AlbumPaths.withAncestors(album).map { branches.getOrPut(it, ::Branch) }, AlbumPaths.isHidden(albumStates, album))
+                }
+            val visible = !photo.hidden && !folder.hidden
+            for (branch in folder.branches) {
+                branch.count++
+                if (visible) branch.visibleCount++
                 if (photo.quarantined) continue
-                val current = newest[path]
-                if (current == null || DATE_ORDER.compare(photo, current) > 0) newest[path] = photo
+                val current = branch.newest
+                if (current == null || DATE_ORDER.compare(photo, current) > 0) branch.newest = photo
             }
         }
-        AlbumPaths.sorted(counts.keys).associateWith { path ->
-            Album(
-                name = path,
-                count = counts.getValue(path),
-                newest = newest[path],
-                hidden = AlbumPaths.isHidden(albumStates, path),
-                overridesParent = path in albumStates && AlbumPaths.parent(path) != null,
-            )
-        }
+        val albums =
+            AlbumPaths.sorted(branches.keys).associateWith { path ->
+                val branch = branches.getValue(path)
+                Album(
+                    name = path,
+                    count = branch.count,
+                    visibleCount = branch.visibleCount,
+                    newest = branch.newest,
+                    hidden = folders[path]?.hidden ?: AlbumPaths.isHidden(albumStates, path),
+                    overridesParent = path in albumStates && AlbumPaths.parent(path) != null,
+                )
+            }
+        Summary(albums, AlbumCounts(noAlbumCount, noAlbumVisible))
     }
 
     /** All photos by capture date ascending, by path on a tie. Computed once per state. */

@@ -15,6 +15,8 @@ export type FillMode = S["FillMode"];
 export type Orientation = S["Orientation"];
 export type PhotoPage = S["PhotoPage"];
 export type Album = S["Album"];
+export type AlbumList = S["AlbumList"];
+export type AlbumCounts = S["AlbumCounts"];
 export type Client = S["Client"];
 export type Invite = S["Invite"];
 export type SkippedFile = S["SkippedFile"];
@@ -58,6 +60,8 @@ export interface PhotoQuery {
   album?: string;
   /** With `false`, only the photos directly in `album`, not those of its sub-albums. */
   subalbums?: boolean;
+  /** With `true`, only the photos that belong to no album; not together with `album`. */
+  noalbum?: boolean;
   visible?: boolean;
   sort?: PhotoSort;
   cursor?: string | null;
@@ -78,7 +82,13 @@ export function createApi(options: ApiOptions) {
   const base = options.base ?? "/api/v1";
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
 
-  async function call<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
+  async function call<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    auth = true,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     const token = options.tokens.get();
     if (auth && token) headers["Authorization"] = `Bearer ${token}`;
@@ -87,6 +97,7 @@ export function createApi(options: ApiOptions) {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
     if (res.status === 204) return undefined as T;
     const text = await res.text();
@@ -144,7 +155,9 @@ export function createApi(options: ApiOptions) {
     createInvite: () => call<Invite>("POST", "/pairing/invites"),
     settings: () => call<Settings>("GET", "/settings"),
     patchSettings: (patch: SettingsPatch) => call<Settings>("PATCH", "/settings", patch),
-    photos: (q: PhotoQuery = {}) => call<PhotoPage>("GET", "/photos" + query({ ...q })),
+    /** A page of the photo list; [signal] aborts it, for example when the overview gives up waiting. */
+    photos: (q: PhotoQuery = {}, signal?: AbortSignal) =>
+      call<PhotoPage>("GET", "/photos" + query({ ...q }), undefined, true, signal),
     /** Hides or shows a photo, or sets its section (`crop: null` removes it). */
     patchPhoto: (id: string, patch: PhotoPatch) => call<Photo>("PATCH", `/photos/${id}`, patch),
     setPhotoHidden: (id: string, hidden: boolean) => call<Photo>("PATCH", `/photos/${id}`, { hidden }),
@@ -152,10 +165,10 @@ export function createApi(options: ApiOptions) {
     batch: (action: "hide" | "show" | "delete", ids: string[]) =>
       call<BatchResult>("POST", "/photos:batch", { action, ids }),
     skippedFiles: () => call<S["SkippedFileList"]>("GET", "/skipped-files").then((r) => r.items),
-    albums: () => call<S["AlbumList"]>("GET", "/albums").then((r) => r.albums),
-    /** Switches an album with its whole branch; answers with all albums, since sub-albums change too. */
-    setAlbumHidden: (name: string, hidden: boolean) =>
-      call<S["AlbumList"]>("PATCH", "/albums", { name, hidden }).then((r) => r.albums),
+    /** Every album with the counts of its branch, and the counts of the photos without an album. */
+    albums: () => call<AlbumList>("GET", "/albums"),
+    /** Switches an album with its whole branch; answers with the whole list, since sub-albums change too. */
+    setAlbumHidden: (name: string, hidden: boolean) => call<AlbumList>("PATCH", "/albums", { name, hidden }),
     state: () => call<State>("GET", "/state"),
     exitSafeMode: () => call<Record<string, never>>("POST", "/safe-mode/exit"),
     sources: () => call<S["SourceList"]>("GET", "/sources").then((r) => r.sources),

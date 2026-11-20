@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { apiAsBrowser, detailSettled, pairInUi, photoDetail, reset, usb } from "./helpers";
+import { apiAsBrowser, detailSettled, openAlbum, pairInUi, photoDetail, reset, usb } from "./helpers";
 
 // Spec `web-admin`: Edit photos (detail view as the frame shows the photo), Choose a section, Section editor on the
 // phone. The test server's screen is 1024×600 in `landscape`; `rotated6.jpg` is a portrait photo of 300×400.
@@ -22,6 +22,7 @@ async function onlyPhoto(page: Page): Promise<Photo> {
 async function openDetail(page: Page) {
   await usb("rotated6.jpg", "hoch.jpg");
   await pairInUi(page);
+  await openAlbum(page, "");
   await page.locator(".tile").first().click();
   await expect(photoDetail(page, "hoch.jpg")).toBeVisible();
   await detailSettled(page);
@@ -153,6 +154,7 @@ test("Back to automatic", async ({ page }) => {
   const id = (await onlyPhoto(page)).id;
   await apiAsBrowser(page, `/photos/${id}`, { method: "PATCH", body: { crop: { x: 0.5, y: 0, zoom: 1 } } });
   await page.reload();
+  await openAlbum(page, "");
   await page.locator(".tile").first().click();
   await expect(page.getByText("Von Hand gewählt")).toBeVisible();
   await openEditor(page);
