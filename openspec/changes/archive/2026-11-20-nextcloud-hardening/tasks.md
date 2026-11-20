@@ -259,8 +259,9 @@
   Verify: 0.11.0 answers only after the expansion; the build with the filter answers within a few seconds with the
   same error, same PID. Result: 0.11.0 after 159.3 s, the debug build with the filter after 0.1 s, same PID in each;
   the fake's HEIC share still lists its 20 entries with the filter.
-- [ ] 9.3 After the release with the filter, rerun the DOCTYPE row on Lenovo and Frameo with the owner's consent.
+- [x] 9.3 After the release with the filter, rerun the DOCTYPE row on Lenovo and Frameo with the owner's consent.
   Verify: the refusal within a few seconds, entered in `../openframe-private/DEVICE_TEST.md`, finding 96 closed.
+  Result with 0.11.1: refused after 0.08 s on the Frameo and 0.15 s on the Lenovo, same PID, memory unchanged.
 
 ## Workflow follow-up
 
