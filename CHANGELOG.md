@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0](https://github.com/tycho991/openframe/compare/v0.11.1...v0.12.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* group the photo overview by album ([#119](https://github.com/tycho991/openframe/issues/119))
+
+### Features
+
+* group the photo overview by album ([#119](https://github.com/tycho991/openframe/issues/119)) ([13c7b87](https://github.com/tycho991/openframe/commit/13c7b87bc47df4101b79879d56dc0f1853574d7a))
+
 ## [0.11.1](https://github.com/tycho991/openframe/compare/v0.11.0...v0.11.1) (2026-11-20)
 
 
