@@ -250,6 +250,50 @@ class RenderCacheTest {
         }
 
     @Test
+    fun `Removing many photos at once lists the folder once and deletes exactly their renderings`() {
+        val folder = CountingDir(File(dir, "cache"))
+        folder.mkdirs()
+        // IDs contain '-', and one ID is a prefix of another: only the renderings of the removed IDs may go.
+        val ids = (0 until 300).map { PhotoEntry.idFor("source-$it", "photo.jpg") }
+        val prefixed = ids.first().dropLast(1)
+        val longer = ids.first() + "0"
+        for (id in ids + prefixed + longer) {
+            File(folder, "$id-v1-400x300.jpg").writeBytes(ByteArray(1))
+            File(folder, "$id-v2-pr1-abc.jpg").writeBytes(ByteArray(1))
+        }
+        val c =
+            RenderCache(folder, engine, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
+        try {
+            val removed = ids.filterIndexed { i, _ -> i % 2 == 0 }
+            val listings = folder.listings
+            c.removeAll(removed)
+            assertEquals(listings + 1, folder.listings, "one listing for all photos")
+            val left = folder.list()!!.toSet()
+            val expected = (ids - removed.toSet() + prefixed + longer).flatMap { listOf("$it-v1-400x300.jpg", "$it-v2-pr1-abc.jpg") }
+            assertEquals(expected.toSet(), left)
+
+            c.removeAll(emptyList())
+            assertEquals(listings + 1, folder.listings, "nothing to remove, no listing")
+            c.remove(prefixed)
+            assertEquals(left - setOf("$prefixed-v1-400x300.jpg", "$prefixed-v2-pr1-abc.jpg"), folder.list()!!.toSet())
+        } finally {
+            c.close()
+        }
+    }
+
+    /** A folder that counts how often it is listed. */
+    private class CountingDir(
+        file: File,
+    ) : File(file.path) {
+        var listings = 0
+
+        override fun listFiles(): Array<File>? {
+            listings++
+            return super.listFiles()
+        }
+    }
+
+    @Test
     fun `Error while rendering`() {
         val e = entry("b.jpg", "broken.jpg")
         val result = runCatching { runBlocking { cache().get(e, RenderSize.THUMB) } }

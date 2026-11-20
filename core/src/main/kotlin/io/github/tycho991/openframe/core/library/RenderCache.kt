@@ -299,8 +299,22 @@ class RenderCache(
     }
 
     /** Removes all rendered sizes of a photo, for example after deleting. */
-    fun remove(photoId: String) {
-        deleteMatching { it.startsWith("$photoId-") }
+    fun remove(photoId: String) = removeAll(listOf(photoId))
+
+    /**
+     * Removes all rendered sizes of the photos with [photoIds], for example those of a removed source, with one listing of
+     * the folder: one listing per photo made the removal of a source with tens of thousands of photos take minutes.
+     */
+    fun removeAll(photoIds: Collection<String>) {
+        if (photoIds.isEmpty()) return
+        val ids = photoIds.toHashSet()
+        // A file belongs to a photo if its name starts with the ID and a '-' (see [target]). IDs contain '-' themselves,
+        // so every prefix that ends before a '-' is looked up.
+        deleteMatching { name ->
+            var dash = name.indexOf('-')
+            while (dash >= 0 && name.substring(0, dash) !in ids) dash = name.indexOf('-', dash + 1)
+            dash >= 0
+        }
     }
 
     /** Stays within the budget. [keep] is kept in any case, for example the image just rendered. */

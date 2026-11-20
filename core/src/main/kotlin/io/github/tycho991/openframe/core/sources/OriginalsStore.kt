@@ -130,11 +130,25 @@ class OriginalsStore(
     }
 
     /** Removes the original of the photo with [id], whatever its extension. */
+    fun remove(id: String) = removeAll(listOf(id))
+
+    /**
+     * Removes the originals of the photos with [ids], whatever their extension, with one listing of the folder: a sync
+     * that removes thousands of vanished photos would otherwise list it once per photo.
+     */
     @Synchronized
-    fun remove(id: String) {
+    fun removeAll(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val set = ids.toHashSet()
+        // A file is an original of a photo if its name starts with the ID and a '.'. Every prefix that ends before a '.' is
+        // looked up, so an ID that contains '.' itself is matched as well.
         files()
-            .filter { it.name.startsWith("$id.") }
-            .forEach { file ->
+            .filter { file ->
+                val name = file.name
+                var dot = name.indexOf('.')
+                while (dot >= 0 && name.substring(0, dot) !in set) dot = name.indexOf('.', dot + 1)
+                dot >= 0
+            }.forEach { file ->
                 val length = if (file.name.endsWith(PART)) 0L else file.length()
                 if (file.delete()) total?.let { total = it - length }
             }
