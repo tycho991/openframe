@@ -28,8 +28,11 @@ class SourceRegistry(
     private val engine: MediaEngine,
     /** `cache/sources`: the originals of each source are in a folder named by its ID. */
     private val originalsDir: File,
-    /** A photo left the library: its renderings are not needed any more. */
-    private val onPhotoRemoved: (PhotoEntry) -> Unit,
+    /**
+     * Photos left the library: their renderings are not needed any more. Called once with all photos removed together,
+     * never with an empty list.
+     */
+    private val onPhotosRemoved: (List<PhotoEntry>) -> Unit,
     private val clock: Clock,
     private val log: AppLog,
     /** Called after a source was removed, for files that an older version kept for it. */
@@ -185,7 +188,7 @@ class SourceRegistry(
                 edit.skipped(id).forEach { edit.unskip(id, it.path) }
                 photos
             }
-        removed.forEach(onPhotoRemoved)
+        if (removed.isNotEmpty()) onPhotosRemoved(removed)
         (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes)).delete()
         onSourceRemoved(config)
         log.i(TAG, "Source $id removed, ${removed.size} photos removed")
@@ -229,7 +232,7 @@ class SourceRegistry(
                     .forEach { edit.unskip(it.source, it.path) }
                 photos
             }
-        orphans.forEach(onPhotoRemoved)
+        if (orphans.isNotEmpty()) onPhotosRemoved(orphans)
         originalsDir
             .listFiles()
             .orEmpty()
@@ -253,7 +256,7 @@ class SourceRegistry(
                 index,
                 engine,
                 OriginalsStore(File(originalsDir, id), freeBytes),
-                onPhotoRemoved,
+                onPhotosRemoved,
                 log,
                 onStale = { running[id]?.scheduler?.staleOriginal() },
                 clock = clock,

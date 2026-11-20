@@ -129,4 +129,23 @@ class OriginalsStoreTest {
         store.clear()
         assertEquals(0, store.totalBytes())
     }
+
+    @Test
+    fun `Removing many originals at once lists the folder once and keeps the others and the total right`() {
+        val store = store(File(dir, "many"))
+        // `nextcloud-1` is a prefix of `nextcloud-10`: only the originals of the removed IDs may go.
+        for (n in 1..20) {
+            store.partOf(entry(n)).writeBytes(ByteArray(10))
+            store.commit(entry(n))
+        }
+        store.partOf(entry(21)).writeBytes(ByteArray(10))
+        assertEquals(200, store.totalBytes())
+        val before = listings.get()
+
+        store.removeAll((1..9).map { entry(it).id } + entry(21).id)
+
+        assertEquals(before + 1, listings.get())
+        assertEquals((10..20).map { store.fileOf(entry(it)).name }.toSet(), File(dir, "many").list()!!.toSet())
+        assertEquals(110, store.totalBytes())
+    }
 }

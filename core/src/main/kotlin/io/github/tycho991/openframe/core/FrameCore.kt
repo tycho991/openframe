@@ -235,7 +235,7 @@ class FrameCore(
             index,
             engine,
             File(dirs.cache, "sources"),
-            { cache.remove(it.id) },
+            { removed -> cache.removeAll(removed.map { it.id }) },
             clock,
             log,
             migration::sourceRemoved,

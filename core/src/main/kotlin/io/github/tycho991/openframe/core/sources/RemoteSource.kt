@@ -32,8 +32,8 @@ class RemoteSource(
     private val index: PhotoIndexStore,
     private val engine: MediaEngine,
     val originals: OriginalsStore,
-    /** A photo left the library: its renderings are not needed any more. */
-    private val onRemoved: (PhotoEntry) -> Unit,
+    /** Photos left the library: their renderings are not needed any more. Called once per sync, never with an empty list. */
+    private val onRemoved: (List<PhotoEntry>) -> Unit,
     private val log: AppLog,
     /**
      * An original fetched for a rendering did not match the index (spec "Refetched original matches the index"): the
@@ -257,9 +257,9 @@ class RemoteSource(
                 }
             }
         }
-        removed.forEach {
-            originals.remove(it.id)
-            onRemoved(it)
+        if (removed.isNotEmpty()) {
+            originals.removeAll(removed.map { it.id })
+            onRemoved(removed)
         }
         originals.trim(budget)
         val result = ScanResult(added, updated, removed.size, skipped)

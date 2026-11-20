@@ -34,6 +34,7 @@ class SourceRegistryTest {
     private val folders = HashMap<String, FakeRemoteFolder>()
     private val kind = FakeKind { folders.getOrPut(it.id) { FakeRemoteFolder() } }
     private val removedPhotos = ArrayList<PhotoEntry>()
+    private var removalCalls = 0
     private val removedSources = ArrayList<String>()
 
     private val index by lazy {
@@ -52,7 +53,10 @@ class SourceRegistryTest {
             index,
             JvmMediaEngine(),
             File(dir, "sources"),
-            { removedPhotos += it },
+            {
+                removedPhotos += it
+                removalCalls++
+            },
             TestClock(),
             log,
             { removedSources += it.id },
@@ -162,6 +166,20 @@ class SourceRegistryTest {
         assertEquals(listOf(gone.id), removedPhotos.map { it.id })
         assertEquals(listOf("sa"), removedSources)
         assertFalse(registry.remove("nope"), "an unknown source")
+    }
+
+    @Test
+    fun `Removing a source with many photos hands all of them over at once`() {
+        registry.add(FakeKind.source("sa"))
+        val photos = (0 until 2000).map { PhotoEntry(PhotoEntry.idFor("sa", "p$it.jpg"), "sa", "p$it.jpg", 1, 1, 0, 1, 1, 1) }
+        index.edit { edit -> photos.forEach { edit.put(it) } }
+
+        assertTrue(registry.remove("sa"))
+
+        // One call, so that the renderings are removed with one listing of their folder, not one per photo.
+        assertEquals(1, removalCalls)
+        assertEquals(photos.map { it.id }.toSet(), removedPhotos.map { it.id }.toSet())
+        assertEquals(photos.size, removedPhotos.size)
     }
 
     @Test
