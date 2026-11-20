@@ -265,7 +265,10 @@ path as `displayPath` shows it ("holiday / 2024"). Fold buttons and switches hav
 - [Content jumps when an upper grid reloads with fewer photos] → acceptable; the same happens today with the flat
   grid. The measurement (decision 2) keeps every grid's rows right, and `focusPhoto` re-measures before scrolling.
 - [`GET /albums` with thousands of albums] → it signs one cover URL per album on every call, and the overview calls
-  it on every library change. A performance case at 10,000 photos in four levels guards it.
+  it on every library change. A performance case at 10,000 photos in four levels guards it. Measured with about 5,400
+  albums of two photos each: median 35 ms on a desktop but 123 ms (at most 167 ms) on the CI runner, mostly for
+  signing the covers, which the code before this change signed as well. The case's budget is therefore a median under
+  200 ms and none over 500 ms instead of the 50 ms of a page; a library of a few hundred albums stays far below it.
 - [Clients with strict schema checks of `GET /albums`] → the fields are additive; the Home Assistant integration
   reads the answer as plain dictionaries and takes only the fields it knows.
 - [Users who relied on the flat "all photos by date" view] → the user decided to drop it; the implementation's pull
