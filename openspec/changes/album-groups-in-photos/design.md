@@ -105,6 +105,10 @@ Two thresholds, both named in `lib/grid.ts`:
   grids do not stack at height 0 and all count as on screen. The first page is requested when that reserved box comes
   within one viewport height above or below the screen.
 
+A grid decides to load only once the height the overview measured for it equals its rendered height. Before the
+first measurement every unloaded grid has height 0 and would count as on screen, so a reload with 20 open albums
+would request all of them at once (found by the e2e case "Reload with many open albums").
+
 After loading, the height is that of the loaded rows, as today; a grid that grows only moves content below it. A
 first page of 60 is less than a screen with overscan at large widths: at 1280 × 800 px the grid has about six
 columns, 60 photos are about ten rows, and the visible rows plus overscan already reach the end, so page 2 of an album
@@ -124,6 +128,10 @@ refresh and the reload after an image error all go through it.
   thus overtakes requests that were queued earlier.
 - Requests that are no longer needed are dropped from the queue: those of a grid that was folded and those queued
   for an outdated query (filter or sort order changed since).
+- `setQuery()` does not fetch: it increases the generation, drops the pages and marks the grid unloaded, so a
+  changed filter or sort order loads first pages only for grids near the screen, like a reload (decision 3).
+- After a failed page request a `PhotoPages` is marked stalled and asks again only at the next 60-second refresh or
+  reload; otherwise the grid's effect would retry at once in a loop.
 - Stale answers: today two quick `setQuery()` calls start two reloads, and the older one can finish last and
   overwrite the newer pages. Each `PhotoPages` gets a generation number that `setQuery()`, a fold and `reload()`
   increase; a request carries the generation it was made for, and an answer for an older generation is neither
@@ -170,9 +178,9 @@ is tested by behaviour in `LibraryApiTest` (through `TestFrame`, which checks ev
 ### 6. Headings from `albumTree()`; photos without an album last
 
 `lib/albums.ts` already builds the tree in the frame's order (case-insensitive). A new pure function turns tree,
-`noAlbum`, open set, filter and the pinned path (decision 9) into the rows to render: heading rows (path, title,
+`noAlbum`, open set, filter and the pinned paths (decision 9) into the rows to render: heading rows (path, title,
 depth, count for the filter, own count, open, album) and grid slots. With a visibility filter an album whose filtered
-count is 0 is left out with its branch, unless it is the pinned path or one of its ancestors: with "only hidden",
+count is 0 is left out with its branch, unless it is a pinned path or one of their ancestors: with "only hidden",
 `holiday` without own photos drops to 0 as soon as `holiday/2024` is shown, and leaving it out would take the pinned
 `holiday/2024` with it. The heading for photos without an album comes after all
 albums, as in the preview the user approved, has no switch, uses the text "No album" (`photos.noAlbumHeading`, same
@@ -207,10 +215,12 @@ The switch, its one-at-a-time `busy` lock and the rollback on error move from `A
 the `PATCH /albums` answer the album list is replaced from it and `refreshState()` reads the library version at once,
 so the version change reloads the open grids through the queue immediately instead of after up to 10 s.
 
-While a visibility filter is set, the switched heading is pinned with its ancestors (decision 6): it stays in the
+While a visibility filter is set, every switched heading is pinned with its ancestors (decision 6), a set of paths
+rather than one, so switching a second album does not let the first vanish under the rows: it stays in the
 rows with its count (possibly 0) and its grid until the filter or the sort order changes, so it does not vanish
 under the pointer. The switch keeps the focus after it is used: headings are keyed by path, so the switch element
-survives the reload of the album list and the grids.
+survives the reload of the album list and the grids. While a request runs the switch is `aria-disabled` and ignores
+clicks instead of being `disabled`, since a disabled control loses the focus; it toggles with Enter as well as Space.
 
 ### 10. Selection, detail and changes across grids
 

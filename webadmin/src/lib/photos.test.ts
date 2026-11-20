@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Photo, PhotoPage, PhotoQuery } from "./api/client";
-import { FIRST_PAGE_LIMIT, MAX_PAGE_AGE_MS, PAGE_LIMIT, PhotoPages, PhotoRequestQueue } from "./photos";
+import {
+  FIRST_PAGE_LIMIT,
+  MAX_PAGE_AGE_MS,
+  PAGE_LIMIT,
+  PHOTO_REQUEST_DEADLINE_MS,
+  PhotoPages,
+  PhotoRequestQueue,
+} from "./photos";
 
 function ids(prefix: string, total: number): string[] {
   return Array.from({ length: total }, (_, i) => `${prefix}-${String(i).padStart(40, "0")}`);
@@ -210,6 +217,88 @@ describe("PhotoPages", () => {
   });
 });
 
+describe("PhotoPages while pages change", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-05-01T10:15:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  /** A fake API over a list that the test can change, whose answers wait until the test sends them. */
+  function changingApi(initial: string[]) {
+    let all = initial;
+    const held: { query: PhotoQuery; answer: () => void }[] = [];
+    const photos = vi.fn(
+      (q: PhotoQuery = {}): Promise<PhotoPage> =>
+        new Promise((resolve) => held.push({ query: q, answer: () => resolve(pageOf(all, q, Date.now())) })),
+    );
+    return {
+      photos,
+      held,
+      set: (list: string[]) => (all = list),
+      /** Answers the held request for [cursor] (the first page for `null`). */
+      async answer(cursor: string | null) {
+        const i = held.findIndex((h) => (h.query.cursor ?? null) === cursor);
+        expect(i, `a request for ${cursor}`).toBeGreaterThanOrEqual(0);
+        held.splice(i, 1)[0]!.answer();
+        await settle();
+      },
+    };
+  }
+
+  it("a stale-URL refresh during a reload leaves the reloaded pages as they came", async () => {
+    const old = ids("old", 300);
+    const api = changingApi(old);
+    const pages = new PhotoPages(api, {});
+    void pages.loadMore();
+    await settle();
+    await api.answer(null);
+    void pages.loadMore();
+    await settle();
+    await api.answer(old[59]!);
+    expect(pages.items).toHaveLength(260);
+
+    // Five new photos at the start, and the URLs are stale: a reload and a refresh run at the same time.
+    const now = [...ids("new", 5), ...old];
+    api.set(now);
+    vi.setSystemTime(Date.now() + MAX_PAGE_AGE_MS);
+    const reload = pages.reload();
+    const refresh = pages.refreshStale();
+    await settle();
+    expect(api.held.map((h) => h.query.cursor ?? null)).toEqual([null, null]);
+    // The reload's first page, then the refresh's, which asks next for the second page with the old cursor.
+    await api.answer(null);
+    await api.answer(null);
+    expect(api.held.map((h) => h.query.cursor ?? null).sort()).toEqual([now[59], old[59]].sort());
+    // The reload completes first; the refresh's late page with the old cursor must not go into the new pages.
+    await api.answer(now[59]!);
+    await reload;
+    await api.answer(old[59]!);
+    await refresh;
+    expect(pages.items.map((p) => p.id)).toEqual(now.slice(0, 260));
+  });
+
+  it("overlapping stale-URL refreshes ask for each stale page once", async () => {
+    const api = changingApi(ids("a", 300));
+    const pages = new PhotoPages(api, {});
+    void pages.loadMore();
+    await settle();
+    await api.answer(null);
+    void pages.loadMore();
+    await settle();
+    await api.answer(pages.items[59]!.id);
+    api.photos.mockClear();
+    vi.setSystemTime(Date.now() + MAX_PAGE_AGE_MS);
+    const first = pages.refreshStale();
+    const second = pages.refreshStale();
+    await settle();
+    await api.answer(null);
+    await api.answer(pages.items[59]!.id);
+    await Promise.all([first, second]);
+    expect(api.photos).toHaveBeenCalledTimes(2);
+    // Once that refresh has ended, the next one runs again (nothing is stale now, so it asks for nothing).
+    await pages.refreshStale();
+    expect(api.photos).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("PhotoRequestQueue", () => {
   /** A grid with its own pages in the shared queue, on screen or not. */
   function grid(api: ReturnType<typeof heldApi>, queue: PhotoRequestQueue, album: string, place: number) {
@@ -318,5 +407,66 @@ describe("PhotoRequestQueue", () => {
     expect(pages.stalled).toBe(false);
     await pages.loadMore();
     expect(pages.items).toHaveLength(FIRST_PAGE_LIMIT);
+  });
+});
+
+describe("PhotoRequestQueue deadline and close", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** A frame that never answers; it records the query and the signal of every request. */
+  function silentApi() {
+    const signals: AbortSignal[] = [];
+    const queries: PhotoQuery[] = [];
+    const photos = vi.fn((q: PhotoQuery = {}, signal?: AbortSignal) => {
+      queries.push(q);
+      signals.push(signal!);
+      return new Promise<PhotoPage>(() => {});
+    });
+    return { photos, signals, queries };
+  }
+
+  it("a request without an answer is aborted after the deadline, frees its slot and fails", async () => {
+    const api = silentApi();
+    const queue = new PhotoRequestQueue();
+    const [a, b, c] = ["a", "b", "c"].map((album) => new PhotoPages(api, { album }, { queue }));
+    const loads = [a!, b!].map((p) => p.loadMore().catch((e: unknown) => e));
+    void c!.loadMore().catch(() => {});
+    await settle();
+    expect(queue.inFlight).toBe(2);
+    expect(api.photos).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(PHOTO_REQUEST_DEADLINE_MS - 1);
+    expect(api.photos).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(api.signals.slice(0, 2).every((s) => s.aborted)).toBe(true);
+    expect(await loads[0]).toMatchObject({ code: "network" });
+    // Counted as failed: the grid waits for the next refresh or reload.
+    expect(a!.stalled).toBe(true);
+    expect(a!.loading).toBe(false);
+    // The freed slot takes the next request.
+    expect(api.photos).toHaveBeenCalledTimes(3);
+    expect(api.queries[2]).toMatchObject({ album: "c" });
+    expect(queue.inFlight).toBe(1);
+  });
+
+  it("close() aborts the running requests and drops the queued ones", async () => {
+    const api = silentApi();
+    const queue = new PhotoRequestQueue();
+    const grids = ["a", "b", "c"].map((album) => new PhotoPages(api, { album }, { queue }));
+    for (const g of grids) void g.loadMore();
+    await settle();
+    expect(queue.inFlight).toBe(2);
+    expect(queue.queued).toBe(1);
+    for (const g of grids) g.close();
+    queue.close();
+    await settle();
+    expect(api.signals.every((s) => s.aborted)).toBe(true);
+    expect(queue.inFlight).toBe(0);
+    expect(queue.queued).toBe(0);
+    expect(api.photos).toHaveBeenCalledTimes(2);
+    // Nothing fails: the grids are gone, not stalled.
+    expect(grids.every((g) => !g.stalled)).toBe(true);
   });
 });

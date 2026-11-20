@@ -1,4 +1,4 @@
-import type { Api, Photo, PhotoPage, PhotoQuery } from "./api/client";
+import { ApiError, type Api, type Photo, type PhotoPage, type PhotoQuery } from "./api/client";
 
 interface Page {
   cursor: string | null;
@@ -16,6 +16,12 @@ export const PAGE_LIMIT = 200;
 /** Photo list requests that run at a time for the whole overview. */
 export const MAX_PHOTO_REQUESTS = 2;
 
+/**
+ * A photo list request that has not answered after this long is aborted and counts as failed, so that a request the
+ * frame never answers cannot hold a slot of the queue for ever.
+ */
+export const PHOTO_REQUEST_DEADLINE_MS = 30_000;
+
 /** Signed image URLs are valid for one to two hours. Pages are reloaded after this time at the latest. */
 export const MAX_PAGE_AGE_MS = 50 * 60 * 1000;
 
@@ -30,28 +36,40 @@ export interface RequestOwner {
 interface Job {
   owner: RequestOwner;
   wanted: () => boolean;
-  run: () => Promise<PhotoPage>;
+  run: (signal: AbortSignal) => Promise<PhotoPage>;
   seq: number;
   resolve: (page: PhotoPage | null) => void;
   reject: (error: unknown) => void;
 }
 
+/** A request that holds a slot: [finish] frees the slot once, whatever ends the request first. */
+interface Running {
+  job: Job;
+  controller: AbortController;
+  finish: () => boolean;
+}
+
 /**
  * The photo list requests of the whole overview, at most [MAX_PHOTO_REQUESTS] at a time (design decision 4 of
  * album-groups-in-photos). It holds single page requests. Which one runs next is decided when a slot frees: grids
- * on screen first, then the rest in page order. A request that is no longer wanted is dropped and answers `null`.
+ * on screen first, then the rest in page order. A request that is no longer wanted is dropped and answers `null`;
+ * one that runs longer than the deadline is aborted and fails.
  */
 export class PhotoRequestQueue {
   private waiting: Job[] = [];
-  private running = 0;
+  private running = new Set<Running>();
   private seq = 0;
   private scheduled = false;
+  private closed = false;
 
-  constructor(readonly maxInFlight = MAX_PHOTO_REQUESTS) {}
+  constructor(
+    readonly maxInFlight = MAX_PHOTO_REQUESTS,
+    readonly deadlineMs = PHOTO_REQUEST_DEADLINE_MS,
+  ) {}
 
   /** Requests running now. */
   get inFlight(): number {
-    return this.running;
+    return this.running.size;
   }
 
   /** Requests waiting for a slot. */
@@ -63,9 +81,10 @@ export class PhotoRequestQueue {
   request(
     owner: RequestOwner,
     wanted: () => boolean,
-    run: () => Promise<PhotoPage>,
+    run: (signal: AbortSignal) => Promise<PhotoPage>,
   ): Promise<PhotoPage | null> {
     return new Promise((resolve, reject) => {
+      if (this.closed) return resolve(null);
       this.waiting.push({ owner, wanted, run, seq: this.seq++, resolve, reject });
       this.schedule();
     });
@@ -74,6 +93,18 @@ export class PhotoRequestQueue {
   /** Drops the requests that are no longer wanted, for example after a fold. */
   prune(): void {
     this.schedule();
+  }
+
+  /** The overview is gone: queued requests are dropped and running ones aborted, so their slots are free at once. */
+  close(): void {
+    this.closed = true;
+    for (const job of this.waiting) job.resolve(null);
+    this.waiting = [];
+    for (const r of [...this.running])
+      if (r.finish()) {
+        r.controller.abort();
+        r.job.resolve(null);
+      }
   }
 
   // In a microtask, so that the requests queued together (a reload of every open album) are ordered together.
@@ -92,20 +123,45 @@ export class PhotoRequestQueue {
       job.resolve(null);
       return false;
     });
-    while (this.running < this.maxInFlight && this.waiting.length > 0) {
-      const job = this.next();
-      this.running++;
-      let run: Promise<PhotoPage>;
-      try {
-        run = job.run();
-      } catch (e) {
-        run = Promise.reject(e);
-      }
-      run.then(job.resolve, job.reject).finally(() => {
-        this.running--;
+    while (this.running.size < this.maxInFlight && this.waiting.length > 0) this.start(this.next());
+  }
+
+  private start(job: Job): void {
+    const controller = new AbortController();
+    let done = false;
+    const entry: Running = {
+      job,
+      controller,
+      finish: () => {
+        if (done) return false;
+        done = true;
+        clearTimeout(timer);
+        this.running.delete(entry);
         this.schedule();
-      });
+        return true;
+      },
+    };
+    // A timer and abort() rather than AbortSignal.timeout(), which older phone browsers lack.
+    const timer = setTimeout(() => {
+      if (!entry.finish()) return;
+      controller.abort();
+      job.reject(new ApiError(0, "network", "The frame did not answer in time"));
+    }, this.deadlineMs);
+    this.running.add(entry);
+    let run: Promise<PhotoPage>;
+    try {
+      run = job.run(controller.signal);
+    } catch (e) {
+      run = Promise.reject(e);
     }
+    run.then(
+      (page) => {
+        if (entry.finish()) job.resolve(page);
+      },
+      (e: unknown) => {
+        if (entry.finish()) job.reject(e);
+      },
+    );
   }
 
   private next(): Job {
@@ -143,6 +199,7 @@ export class PhotoPages implements RequestOwner {
   private pages: Page[] = [];
   private listeners = new Set<() => void>();
   private loadingMore: Promise<void> | null = null;
+  private refreshing: Promise<void> | null = null;
   private generation = 0;
   private pending = 0;
   private closed = false;
@@ -262,8 +319,20 @@ export class PhotoPages implements RequestOwner {
     return loading;
   }
 
-  /** Reload pages whose URLs are about to expire. Call regularly, for example every minute. */
-  async refreshStale(): Promise<void> {
+  /**
+   * Reload pages whose URLs are about to expire. Call regularly, for example every minute. A call while one runs
+   * joins it instead of asking for the same pages again.
+   */
+  refreshStale(): Promise<void> {
+    if (this.refreshing) return this.refreshing;
+    const refreshing = this.refreshStalePages().finally(() => {
+      if (this.refreshing === refreshing) this.refreshing = null;
+    });
+    this.refreshing = refreshing;
+    return refreshing;
+  }
+
+  private async refreshStalePages(): Promise<void> {
     if (this.stalled) {
       // A page that failed is asked for again at this pace, not in a loop.
       this.stalled = false;
@@ -271,14 +340,17 @@ export class PhotoPages implements RequestOwner {
     }
     const gen = this.generation;
     const now = this.now();
+    // The pages as they were when the refresh started: a reload that completes meanwhile replaces the array, and a
+    // page fetched with an old cursor must not land in the new one.
+    const pages = this.pages;
     let changed = false;
     try {
-      for (let i = 0; i < this.pages.length; i++) {
-        const page = this.pages[i]!;
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i]!;
         if (now - page.loadedAt < this.maxAgeMs) continue;
         const fresh = await this.fetchPage(page.cursor, gen);
-        if (!fresh) return;
-        this.pages[i] = fresh;
+        if (!fresh || this.pages !== pages || pages[i] !== page) return;
+        pages[i] = fresh;
         changed = true;
       }
     } finally {
@@ -323,6 +395,7 @@ export class PhotoPages implements RequestOwner {
     this.generation++;
     this.pending = 0;
     this.loadingMore = null;
+    this.refreshing = null;
     this.stalled = false;
   }
 
@@ -352,7 +425,7 @@ export class PhotoPages implements RequestOwner {
     const res = await this.queue.request(
       this,
       () => this.current(gen),
-      () => this.api.photos(query),
+      (signal) => this.api.photos(query, signal),
     );
     if (res === null || !this.current(gen)) return null;
     this.total = res.total;

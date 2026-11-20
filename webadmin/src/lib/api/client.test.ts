@@ -115,6 +115,17 @@ describe("API client", () => {
     expect((fetch.mock.calls[0] as unknown as [string])[0]).toBe("/api/v1/photos?noalbum=true&visible=false");
   });
 
+  it("hands the signal of a photo list request to fetch, so that it can be aborted", async () => {
+    const fetch = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal);
+      return respond(200, { items: [], total: 0, nextCursor: null });
+    });
+    const controller = new AbortController();
+    const api = createApi({ tokens: memoryTokens("t"), onUnauthorized: () => {}, fetch });
+    await api.photos({ album: "holiday" }, controller.signal);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it("returns the whole album list with the counts without an album", async () => {
     const list = {
       albums: [

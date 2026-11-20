@@ -38,6 +38,25 @@
   let albumList = $state.raw<AlbumList | null>(null);
   let skipped = $state<SkippedFile[]>([]);
   let error = $state<string | null>(null);
+  /**
+   * What the error came from: `null` for an action of the user, which only the next action clears; otherwise the
+   * background work (a grid's pages, the library, the settings) whose next success clears it. Background work never
+   * clears or replaces an error it did not cause.
+   */
+  let errorSource: object | null = null;
+  const LIBRARY = {};
+  const SETTINGS = {};
+
+  function showError(text: string, source: object | null): void {
+    if (source !== null && error !== null && errorSource === null) return;
+    error = text;
+    errorSource = source;
+  }
+
+  function clearError(): void {
+    error = null;
+    errorSource = null;
+  }
 
   // Open headings, remembered per browser (design decision 7 of album-groups-in-photos).
   const openAlbums = new OpenAlbums();
@@ -130,8 +149,10 @@
     });
   });
 
+  // Leaving the overview aborts its running requests too, so that coming back keeps to two at a time.
   $effect(() => () => {
     for (const pages of pagesByPath.values()) pages.close();
+    queue.close();
   });
 
   // One measurement for the whole page (decision 2): the list's top in every scroll frame and on resize, the grids'
@@ -278,12 +299,23 @@
   let uploadFiles = $state<File[] | null>(null);
   let dragging = $state(false);
 
+  /** An action of the user: clears the error, and shows its own if it fails. */
   async function guard(fn: () => Promise<unknown>) {
     try {
-      error = null;
+      clearError();
       await fn();
     } catch (e) {
-      error = errorText(e);
+      showError(errorText(e), null);
+    }
+  }
+
+  /** Background work for [source]: shows its failure, and clears only the error it caused once it succeeds. */
+  async function background(source: object, fn: () => Promise<unknown>) {
+    try {
+      await fn();
+      if (error !== null && errorSource === source) clearError();
+    } catch (e) {
+      showError(errorText(e), source);
     }
   }
 
@@ -297,7 +329,7 @@
 
   /** Reloads the loaded pages of every open grid through the queue, the grids on screen first. */
   async function reloadGrids(): Promise<void> {
-    await Promise.all([...pagesByPath.values()].map((pages) => guard(() => pages.reload())));
+    await Promise.all([...pagesByPath.values()].map((pages) => background(pages, () => pages.reload())));
     refreshDetail();
   }
 
@@ -315,7 +347,7 @@
     const v = session.libraryVersion;
     const changed = seenVersion !== -1 && v !== seenVersion;
     seenVersion = v;
-    void guard(async () => {
+    void background(LIBRARY, async () => {
       if (changed) await reloadLibrary();
       else albumList = await api.albums();
       skipped = await api.skippedFiles();
@@ -331,7 +363,7 @@
     if (v === -1) return;
     const changed = seenSettings !== -1 && v !== seenSettings;
     seenSettings = v;
-    void guard(async () => {
+    void background(SETTINGS, async () => {
       settings = await api.settings();
       if (changed) await reloadGrids();
     });
@@ -340,7 +372,7 @@
   // Renew signed URLs before they expire, per grid through the queue.
   $effect(() => {
     const timer = setInterval(() => {
-      for (const pages of pagesByPath.values()) void guard(() => pages.refreshStale());
+      for (const pages of pagesByPath.values()) void background(pages, () => pages.refreshStale());
     }, 60_000);
     return () => clearInterval(timer);
   });
@@ -365,11 +397,11 @@
     try {
       // Switching resets the sub-albums, so the whole list comes back.
       albumList = await api.setAlbumHidden(album.name, !album.hidden);
-      error = null;
+      clearError();
       // The new library version reloads the open grids now instead of at the next regular check.
       void refreshState();
     } catch (e) {
-      error = errorText(e);
+      showError(errorText(e), null);
       // Nothing changed on the frame, so the switch must show the album's state again.
       input.checked = !album.hidden;
     } finally {
@@ -393,7 +425,7 @@
       const result = await api.batch(action, ids);
       endSelection();
       await reloadLibrary();
-      if (result.failed.length > 0) error = t("photos.batchFailed", { count: result.failed.length });
+      if (result.failed.length > 0) showError(t("photos.batchFailed", { count: result.failed.length }), null);
     });
   }
 
@@ -408,7 +440,8 @@
         detail = null;
         endSelection();
         await reloadLibrary();
-        if (result.failed.length > 0) error = t("photos.batchFailed", { count: result.failed.length });
+        if (result.failed.length > 0)
+          showError(t("photos.batchFailed", { count: result.failed.length }), null);
       },
     };
   }
@@ -539,11 +572,16 @@
             {viewport}
             {selecting}
             {selected}
-            onloadmore={() =>
-              void guard(() => pagesByPath.get(heading.path)?.loadMore() ?? Promise.resolve())}
+            onloadmore={() => {
+              const pages = pagesByPath.get(heading.path);
+              if (pages) void background(pages, () => pages.loadMore());
+            }}
             ontoggle={toggle}
             onopen={(p) => (detail = p)}
-            onimageerror={(p) => void pagesByPath.get(heading.path)?.onImageError(p.id)}
+            onimageerror={(p) => {
+              const pages = pagesByPath.get(heading.path);
+              if (pages) void background(pages, () => pages.onImageError(p.id));
+            }}
           />
         </div>
       {/if}

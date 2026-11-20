@@ -82,7 +82,13 @@ export function createApi(options: ApiOptions) {
   const base = options.base ?? "/api/v1";
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
 
-  async function call<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
+  async function call<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    auth = true,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     const token = options.tokens.get();
     if (auth && token) headers["Authorization"] = `Bearer ${token}`;
@@ -91,6 +97,7 @@ export function createApi(options: ApiOptions) {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
     if (res.status === 204) return undefined as T;
     const text = await res.text();
@@ -148,7 +155,9 @@ export function createApi(options: ApiOptions) {
     createInvite: () => call<Invite>("POST", "/pairing/invites"),
     settings: () => call<Settings>("GET", "/settings"),
     patchSettings: (patch: SettingsPatch) => call<Settings>("PATCH", "/settings", patch),
-    photos: (q: PhotoQuery = {}) => call<PhotoPage>("GET", "/photos" + query({ ...q })),
+    /** A page of the photo list; [signal] aborts it, for example when the overview gives up waiting. */
+    photos: (q: PhotoQuery = {}, signal?: AbortSignal) =>
+      call<PhotoPage>("GET", "/photos" + query({ ...q }), undefined, true, signal),
     /** Hides or shows a photo, or sets its section (`crop: null` removes it). */
     patchPhoto: (id: string, patch: PhotoPatch) => call<Photo>("PATCH", `/photos/${id}`, patch),
     setPhotoHidden: (id: string, hidden: boolean) => call<Photo>("PATCH", `/photos/${id}`, { hidden }),
