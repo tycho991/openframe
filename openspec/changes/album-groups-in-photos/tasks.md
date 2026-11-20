@@ -2,24 +2,24 @@
 
 ## 1. API contract and core
 
-- [ ] 1.1 In `api/openapi.yaml` add `Album.visibleCount` (required integer), the schema `AlbumCounts` (`count`,
+- [x] 1.1 In `api/openapi.yaml` add `Album.visibleCount` (required integer), the schema `AlbumCounts` (`count`,
   `visibleCount`, both required, `additionalProperties: false`), `AlbumList.noAlbum` (required `AlbumCounts`) and the
   boolean query parameter `noalbum` of `listPhotos` (`true`: only photos without an album; `noalbum=true` together
   with `album` is 400; `noalbum=false` changes nothing; no effect of `subalbums`); describe `Album.cover` as the newest photo that is not quarantined; verify `npm run lint`
   in `webadmin/` (Redocly) passes
-- [ ] 1.2 Build one private lazy summary in `Library` (`PhotoIndex.kt`) in one pass over the photos, from which
+- [x] 1.2 Build one private lazy summary in `Library` (`PhotoIndex.kt`) in one pass over the photos, from which
   `albums` and a new `noAlbum` read: effective album state from `AlbumPaths.isHidden(albumStates, …)` cached per
   path, never `isVisible`; add `visibleCount` to `Album` and the fields to `AlbumDto`/`AlbumListDto` in
   `LibraryRoutes.kt`; verify with new `AlbumTreeTest` cases for "Counts of a branch", "Hidden by the album and by the
   photo", "Quarantined photo" (photo-library, "Album list through the API") and "Counts without an album"
   (photo-library, "Photos without an album in the API"), plus a check that `visibleCount` equals the number of photos
   of the branch for which `isVisible` is true
-- [ ] 1.3 Handle `noalbum` in `GET /photos` (`booleanParam`, `true` keeps only `album: null`, `noalbum=true` with
+- [x] 1.3 Handle `noalbum` in `GET /photos` (`booleanParam`, `true` keeps only `album: null`, `noalbum=true` with
   `album` is `400 bad_request`, `noalbum=false` changes nothing); verify with `LibraryApiTest` cases through
   `TestFrame` for "List the photos without an album" (with a photo of a second source, a hidden one with
   `visible=false`, and paging), "Without an album and an album at once" (`noalbum=true&album=holiday` is 400), and
   that `noalbum=false` with and without `album` answers as the same request without `noalbum`
-- [ ] 1.4 Add to `PhotoListPerformanceTest` a `GET /api/v1/albums` case at 10,000 photos in four levels with the same
+- [x] 1.4 Add to `PhotoListPerformanceTest` a `GET /api/v1/albums` case at 10,000 photos in four levels with the same
   budget as the pages; if signing the covers of thousands of albums misses it, note the
   measured time in design.md before changing the budget; verify the test passes
 - [ ] 1.5 Run `npm run gen:api` and verify `npm run typecheck` passes and `./gradlew :core:check` is green

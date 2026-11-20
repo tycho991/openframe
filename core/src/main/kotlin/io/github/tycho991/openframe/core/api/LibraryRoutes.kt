@@ -115,6 +115,7 @@ data class SkippedFileListDto(
 data class AlbumDto(
     val name: String,
     val count: Int,
+    val visibleCount: Int,
     val hidden: Boolean,
     val overridesParent: Boolean,
     val cover: ImageUrlsDto?,
@@ -123,6 +124,13 @@ data class AlbumDto(
 @Serializable
 data class AlbumListDto(
     val albums: List<AlbumDto>,
+    val noAlbum: AlbumCountsDto,
+)
+
+@Serializable
+data class AlbumCountsDto(
+    val count: Int,
+    val visibleCount: Int,
 )
 
 @Serializable
@@ -209,10 +217,18 @@ fun Router.libraryRoutes(
         val visible = req.booleanParam("visible")
         val album = req.queryParam("album")
         val subalbums = req.booleanParam("subalbums") ?: true
+        val noAlbum = req.booleanParam("noalbum") ?: false
+        if (noAlbum && album != null) throw HttpException.badRequest("noalbum and album exclude each other")
         val lib = index.library.value
         val filtered =
             sort.list(lib).filter {
-                val inAlbum = album == null || (if (subalbums) AlbumPaths.inBranch(it.album, album) else it.album == album)
+                val inAlbum =
+                    when {
+                        noAlbum -> it.album == null
+                        album == null -> true
+                        subalbums -> AlbumPaths.inBranch(it.album, album)
+                        else -> it.album == album
+                    }
                 inAlbum && (visible == null || lib.isVisible(it) == visible)
             }
         val start =
@@ -325,12 +341,14 @@ fun Router.libraryRoutes(
     }
 
     fun albumList(clientId: String): HttpResponse {
+        val lib = index.library.value
         val albums =
-            index.library.value.albums.values
+            lib.albums.values
                 .map {
                     AlbumDto(
                         it.name,
                         it.count,
+                        it.visibleCount,
                         it.hidden,
                         it.overridesParent,
                         it.newest?.let { cover ->
@@ -338,7 +356,8 @@ fun Router.libraryRoutes(
                         },
                     )
                 }
-        return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums))
+        val noAlbum = AlbumCountsDto(lib.noAlbum.count, lib.noAlbum.visibleCount)
+        return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums, noAlbum))
     }
 
     get("/api/v1/albums") { req -> albumList(req.clientId!!) }

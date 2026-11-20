@@ -185,6 +185,68 @@ class LibraryApiTest {
         assertEquals(400, frame.get("/api/v1/photos?album=holiday&subalbums=maybe").statusCode())
     }
 
+    /** Spec `photo-library`: Photos without an album in the API › List the photos without an album. */
+    @Test
+    fun `List the photos without an album`() {
+        listOf("a.jpg", "b.jpg", "c.jpg", "holiday/d.jpg", "holiday/2024/e.jpg").forEach { put(it) }
+        frame.scan()
+        putRemote("r.jpg")
+        assertEquals(200, frame.send("PATCH", "/api/v1/photos/${id("b.jpg")}", """{"hidden":true}""").statusCode())
+
+        val all = page("?noalbum=true")
+        assertEquals(setOf("a.jpg", "b.jpg", "c.jpg", "r.jpg"), all.items.map { it.path }.toSet())
+        assertEquals(4, all.total)
+        assertEquals(setOf("local", "nextcloud"), all.items.map { it.source }.toSet(), "from every source")
+        assertTrue(all.items.all { it.album == null })
+        assertEquals(listOf("b.jpg"), page("?noalbum=true&visible=false").items.map { it.path })
+        assertEquals(3, page("?noalbum=true&visible=true").total)
+        assertEquals(all.items.map { it.id }, page("?noalbum=true&subalbums=false").items.map { it.id }, "subalbums has no effect")
+
+        val first = page("?noalbum=true&sort=name_asc&limit=3")
+        assertEquals(listOf("a.jpg", "b.jpg", "c.jpg"), first.items.map { it.path })
+        assertEquals(4, first.total)
+        val second = page("?noalbum=true&sort=name_asc&limit=3&cursor=${first.nextCursor}")
+        assertEquals(listOf("r.jpg"), second.items.map { it.path })
+        assertNull(second.nextCursor)
+
+        val counts = ApiJson.decodeFromString(AlbumListDto.serializer(), frame.get("/api/v1/albums").body()).noAlbum
+        assertEquals(AlbumCountsDto(4, 3), counts)
+    }
+
+    /** Spec `photo-library`: Photos without an album in the API › Without an album and an album at once. */
+    @Test
+    fun `Without an album and an album at once`() {
+        put("a.jpg")
+        put("holiday/b.jpg")
+        frame.scan()
+        val res = frame.get("/api/v1/photos?noalbum=true&album=holiday")
+        assertEquals(400, res.statusCode())
+        assertEquals(
+            "bad_request",
+            Json
+                .parseToJsonElement(res.body())
+                .jsonObject["error"]!!
+                .jsonObject["code"]!!
+                .jsonPrimitive.content,
+        )
+        assertFalse(res.body().contains("items"), "no photos")
+        assertEquals(400, frame.get("/api/v1/photos?noalbum=maybe").statusCode())
+    }
+
+    @Test
+    fun `noalbum=false changes nothing, with and without an album`() {
+        listOf("a.jpg", "b.jpg", "holiday/c.jpg", "holiday/d.jpg", "holiday/2024/e.jpg").forEach { put(it) }
+        frame.scan()
+        for (query in listOf("?limit=2", "?album=holiday&limit=2", "?album=holiday&subalbums=false")) {
+            val without = page(query)
+            val with = page("$query&noalbum=false")
+            assertEquals(without.items.map { it.id }, with.items.map { it.id }, query)
+            assertEquals(without.total, with.total, query)
+            assertEquals(without.nextCursor, with.nextCursor, query)
+        }
+        assertEquals(5, page("?noalbum=false").total)
+    }
+
     @Test
     fun `A photo in a shown sub-album of a hidden album is visible`() {
         put("holiday/a.jpg")
