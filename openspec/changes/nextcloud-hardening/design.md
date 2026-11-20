@@ -123,9 +123,12 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **How:** `PropfindParser` gets an `XMLReader` from the `SAXParser` and sets
   `http://xml.org/sax/properties/lexical-handler` on that reader. `SAXParser.parse(InputSource, DefaultHandler)` does
   not install a LexicalHandler, so parsing goes through `XMLReader.parse`. Its `startDTD` throws.
-- **Why it holds on Android:** Expat reports `startDTD` before it reads the internal subset, so nested entities are
-  never expanded. Setting `disallow-doctype-decl` stays for Xerces, but a failure to set it is no longer the only
-  defence.
+- **What the device rows showed:** Expat reports `startDTD` before it reads the internal subset, but on Android 5 and
+  6 a Java exception thrown there only takes effect once Expat has parsed the whole buffer it was given. It expands
+  every entity on the way: the fake's billion `a` took about 300 s on the Lenovo and 888 s on the Frameo, with the
+  right error at the end, a bounded heap and one busy core (finding 96 in the private findings list). So the handler
+  alone is not enough on Android, and the fallback below is built. Setting `disallow-doctype-decl` stays for Xerces,
+  and the handler's `startDTD` stays as a second line.
 - **Text and entries:** text is collected only inside `<response>`, up to the cap per element. Element names,
   namespace URIs, prefixes and attribute values have the same cap. More entries than the
   cap end the parse with `LIMIT`.
@@ -133,9 +136,13 @@ All limits live in one object (`SourceLimits`), named in the tests:
   and it asserts the handler's own error and the kind `PROTOCOL`. With `disallow-doctype-decl` set, Xerces refuses
   the DOCTYPE before it calls `startDTD`, so this test parses through an internal switch that leaves the feature
   off, as Android's parser does. A refusal by the feature is reported with the same text as the handler's.
-- **Fallback:** a streaming filter in front of the parser that refuses `<!DOCTYPE` and `<!ENTITY` before the root
-  element, skipping comments and processing instructions. It is built only if the device row shows that Expat does
-  not call `startDTD`.
+- **Byte filter (built after the device rows):** `DoctypeGuardStream` sits between the response stream and the
+  parser and scans the prolog byte by byte, across reads. A `<!` before the first element that does not open a
+  comment ends the read with the handler's text, so no byte of a document type reaches Expat. Comments, processing
+  instructions and a UTF-8 byte order mark pass. A NUL byte or a byte from `0x80` up outside a comment or processing
+  instruction ends the read as "not encoded in UTF-8": in UTF-16 a byte scan would not see `<!DOCTYPE`, and
+  Nextcloud answers in UTF-8. From the first element on the bytes pass unscanned; a document type there is not
+  well-formed and the parser stops at it itself.
 
 ### 4. Listings are read iteratively and checked against the folder's own entry
 
@@ -410,8 +417,9 @@ All limits live in one object (`SourceLimits`), named in the tests:
 - **Total time too short for a slow line:** 30 min per download needs about 290 KiB/s for a 512 MiB file.
   → Photos are rarely that large. A file that times out is retried like any other unreachable failure.
 - **The DOCTYPE refusal on Expat is proven only on a device.**
-  → The device row on Lenovo and Frameo is mandatory. The fallback filter of decision 3 is ready if Expat does not
-  call `startDTD`.
+  → The device row on Lenovo and Frameo is mandatory. It showed that the handler's refusal comes only after the
+  expansion, so the byte filter of decision 3 is built; the API 21 emulator checks it before the next release, the
+  row on both frames after it.
 - **Stricter listings fail on inconsistent servers,** such as a proxy with a subpath and no `overwritewebroot`.
   → The reference point is the folder's own entry, so only answers that contradict themselves fail, and the message
   names the cause.

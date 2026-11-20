@@ -27,7 +27,8 @@ data class DavEntry(
 
 /**
  * Reads the answer of a `PROPFIND` with a SAX parser, which streams and keeps only the five properties of each
- * entry. `javax.xml.parsers` is on the JVM and on Android alike. It refuses a document type, collects text only
+ * entry. `javax.xml.parsers` is on the JVM and on Android alike. It refuses a document type (in the bytes, through
+ * [DoctypeGuardStream], and again in the handler), collects text only
  * inside `<response>` and up to [SourceLimits.ELEMENT_CHARS] per element, and at most [maxEntries] entries (spec
  * `nextcloud-source`, "Bounded answers of a server"). The byte and time limits are the caller's stream's.
  */
@@ -51,11 +52,16 @@ object PropfindParser {
             reader.errorHandler = handler
             // Called before the internal subset of a DOCTYPE is read, so no entity in it is ever expanded.
             reader.setProperty("http://xml.org/sax/properties/lexical-handler", handler)
-            reader.parse(InputSource(input))
+            // The bytes are checked for a document type before the parser sees them: Expat would expand its entities
+            // before the handler's refusal in startDTD takes effect (finding on Android 5 and 6).
+            reader.parse(InputSource(DoctypeGuardStream(input)))
         } catch (e: Refused) {
+            throw e.failure
+        } catch (e: DoctypeGuardStream.Refused) {
             throw e.failure
         } catch (e: org.xml.sax.SAXException) {
             (e.exception as? Refused)?.let { throw it.failure }
+            (e.exception as? DoctypeGuardStream.Refused)?.let { throw it.failure }
             if (LimitedResponseStream.failureIn(e) != null) throw java.io.IOException(e.message, e)
             if (e.message.orEmpty().contains(DOCTYPE_FEATURE)) throw SourceException(SourceException.Kind.PROTOCOL, DOCTYPE_REFUSED, e)
             throw SourceException(SourceException.Kind.PROTOCOL, "The listing of the folder could not be read", e)

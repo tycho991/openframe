@@ -245,10 +245,23 @@
     version).
 
   Verify: the rows exist with their references.
-- [ ] 8.2 Run the rows of 8.1 after the release, updating through the updater, with the owner's consent for the update
+- [x] 8.2 Run the rows of 8.1 after the release, updating through the updater, with the owner's consent for the update
   and for each test source. Adjust the limits in design.md if the Frameo needs it. Verify: results are entered, and
   anything that differs gets a finding in `../openframe-private/FINDINGS.md`.
 
+## 9. Byte filter for a DOCTYPE (after the device rows of 8.2, design decision 3)
+
+- [x] 9.1 `DoctypeGuardStream` in front of the parser in `PropfindParser.parse`: refuses a `<!` before the first
+  element that does not open a comment, and a prolog that is not UTF-8, before the bytes reach the parser; tests with
+  one byte per read, a byte order mark, comments and processing instructions, other markup declarations, UTF-16 with
+  and without a byte order mark, and the parser reporting the refusal. Verify: `DoctypeGuardStreamTest` passes.
+- [x] 9.2 API 21 emulator, release build 0.11.0 and then a build with the filter: a share on the fake's DOCTYPE share.
+  Verify: 0.11.0 answers only after the expansion; the build with the filter answers within a few seconds with the
+  same error, same PID. Result: 0.11.0 after 159.3 s, the debug build with the filter after 0.1 s, same PID in each;
+  the fake's HEIC share still lists its 20 entries with the filter.
+- [ ] 9.3 After the release with the filter, rerun the DOCTYPE row on Lenovo and Frameo with the owner's consent.
+  Verify: the refusal within a few seconds, entered in `../openframe-private/DEVICE_TEST.md`, finding 96 closed.
+
 ## Workflow follow-up
 
-- Archive the change after the device rows of 8.2 have run.
+- Archive the change after 9.3.
