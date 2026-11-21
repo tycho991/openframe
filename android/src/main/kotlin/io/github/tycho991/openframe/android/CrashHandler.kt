@@ -2,14 +2,16 @@ package io.github.tycho991.openframe.android
 
 import android.content.Context
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import io.github.tycho991.openframe.core.health.RunJournal
 
 /**
  * Self-healing of the app process (design decision 5 of `crash-resilience`): every step in its own `try`, in this
  * order: the restart of the display, with a growing delay from the third early end in a row so that the display does
- * not cover an open installation dialog; the Java crash in the [journal]; the log entry, only if the core exists
- * ([log]); then the end of the process. The service comes back through `START_STICKY` and its watchdog anyway.
+ * not cover an open installation dialog, and none while a system screen from the device menu has a valid record, so that
+ * the slideshow does not come over it (design decision 4 of `open-android-settings`); the Java crash in the [journal];
+ * the log entry, only if the core exists ([log]); then the end of the process. The service comes back through `START_STICKY` and its watchdog anyway.
  *
  * The default handler is not called: it reports the crash to the system, and on some devices (Frameo) that shows an
  * error dialog that keeps the process alive until "OK" is tapped, so the restart would never come.
@@ -21,13 +23,14 @@ internal class CrashHandler(
     private val earlyEnds: () -> Int,
     private val log: (Thread, Throwable) -> Unit,
     private val kill: () -> Unit = { Process.killProcess(Process.myPid()) },
+    private val elapsedMs: () -> Long = { SystemClock.elapsedRealtime() },
 ) : Thread.UncaughtExceptionHandler {
     override fun uncaughtException(
         thread: Thread,
         error: Throwable,
     ) {
         try {
-            FrameApp.scheduleRestart(context, restartDelayMs(earlyEnds()))
+            if (!journal.systemScreenOpen(elapsedMs())) FrameApp.scheduleRestart(context, restartDelayMs(earlyEnds()))
         } catch (ignored: Throwable) {
             // Do not risk anything more during a crash.
         }

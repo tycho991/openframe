@@ -94,6 +94,37 @@ class SelfHealingAlarmsTest {
         assertRestartIn(30_000L)
     }
 
+    /** Spec `kiosk-host`: Self-healing › Crash under a system screen (design decision 4 of `open-android-settings`). */
+    @Test
+    fun `No display restart after a crash under a system screen, the crash still recorded`() {
+        val journal = journal().also { it.onProcessStart(0, 1_000, "boot", "1") }
+        journal.systemScreenOpened("android settings", 1_000)
+        var killed = false
+        CrashHandler(context, journal, { 0 }, log = { _, _ -> }, kill = { killed = true }, elapsedMs = { 2_000 })
+            .uncaughtException(Thread.currentThread(), IllegalStateException("boom"))
+        assertNull("the settings stay in front", nextAlarm())
+        assertTrue(killed)
+        val next = RunJournal(File(context.filesDir, "test-runs.json")).onProcessStart(0, 3_000, "boot", "1")
+        assertEquals(RunEnd.CRASHED, next.previousEnd)
+    }
+
+    @Test
+    fun `The display restart comes as before once the system screen is withdrawn or expired`() {
+        val journal = journal().also { it.onProcessStart(0, 1_000, "boot", "1") }
+        journal.systemScreenOpened("android settings", 1_000)
+        journal.cancelSystemScreen()
+        CrashHandler(context, journal, { 0 }, log = { _, _ -> }, kill = {}, elapsedMs = { 2_000 })
+            .uncaughtException(Thread.currentThread(), IllegalStateException("boom"))
+        assertRestartIn(FrameApp.RESTART_DELAY_MS)
+        FrameApp.cancelRestart(context)
+
+        journal.systemScreenOpened("android settings", 1_000)
+        CrashHandler(context, journal, { 0 }, log = { _, _ -> }, kill = {}, elapsedMs = { 1_000 + 11 * 60_000L })
+            .uncaughtException(Thread.currentThread(), IllegalStateException("boom"))
+        assertRestartIn(FrameApp.RESTART_DELAY_MS)
+        FrameApp.cancelRestart(context)
+    }
+
     /** Spec `kiosk-host`: Self-healing › Display after an unexplained end. */
     @Test
     fun `After an unexplained end the start schedules the display, after a growing delay from the third`() {

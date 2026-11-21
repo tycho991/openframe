@@ -41,6 +41,12 @@ interface PlatformInfo {
     /** The installed app is a debug build. */
     val appDebuggable: Boolean get() = false
 
+    /**
+     * The device's firmware ends the app when another app's activity starts, as the Frameo's does (design decision 1a
+     * of `open-android-settings`): the device menu then does not offer Android's settings.
+     */
+    val otherActivityEndsApp: Boolean get() = false
+
     /** Resolution in the device's natural orientation, without system bars. */
     val screenWidth: Int
     val screenHeight: Int

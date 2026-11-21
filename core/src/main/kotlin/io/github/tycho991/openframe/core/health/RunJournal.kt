@@ -15,7 +15,7 @@ enum class RunEnd(
     /** Another installation: another version code or another `lastUpdateTime`. */
     REPLACED("a new installation"),
 
-    /** Announced by [RunJournal.plannedExit] and still valid. */
+    /** Announced by [RunJournal.plannedExit] or [RunJournal.systemScreenOpened] and still valid. */
     PLANNED("a planned end"),
 
     /** Another `boot_id`, or without one a lower uptime than the previous run recorded. */
@@ -48,6 +48,13 @@ data class HealthState(
     /** The first run after leaving safe mode: an early end in it leads straight back. */
     val probation: Boolean = false,
     val bootIdReadable: Boolean = false,
+    /** A system screen from the device menu has a record that is still open (see [RunJournal.systemScreenOpened]). */
+    val systemScreenOpen: Boolean = false,
+    /**
+     * Learned: a start came within [RunJournal.SYSTEM_SCREEN_END_WINDOW_MS] after a system-screen record was made or
+     * renewed, without a Java crash, so this device's firmware ends the app when another activity starts.
+     */
+    val systemScreenEndsApp: Boolean = false,
 )
 
 /**
@@ -59,6 +66,11 @@ data class HealthState(
  * a row lead to safe mode; a stable run and the ends [RunEnd.REBOOTED], [RunEnd.PLANNED] and [RunEnd.REPLACED] reset
  * the count. Safe mode ends with a new installation, or with [requestNormalStart] before a restart (from the device
  * menu, the API or the probe); the run after that is a probation run.
+ *
+ * A system screen opened from the device menu has a record of its own next to the planned end of an update or a
+ * restart (design decision 3 of `open-android-settings`): each start of the same boot and installation carries a valid
+ * one into the new run, renewed for [SYSTEM_SCREEN_VALID_MS], so any number of ends under the screen count as planned;
+ * [cancelSystemScreen] withdraws it when the slideshow is back, and a Java crash wins over it.
  */
 class RunJournal(
     private val file: File?,
@@ -111,6 +123,16 @@ class RunJournal(
             }
         }
         val mode = if (safe != null && !probation) HealthMode.SAFE else HealthMode.NORMAL
+        // A valid system-screen record of the same boot and installation goes on, renewed from this start.
+        val screen = previous?.systemScreen?.takeIf { previous.sameRun(elapsedMs, bootId, installId) && it.validAt(elapsedMs) }
+        // Learned only from an end that the system screen alone explains: not a Java crash, and not one that a planned
+        // update or restart explains, such as "Start normally" pressed within the minute.
+        val learned =
+            screen != null &&
+                end == RunEnd.PLANNED &&
+                previous?.planned?.validAt(elapsedMs) != true &&
+                elapsedMs - screen.atElapsedMs <= SYSTEM_SCREEN_END_WINDOW_MS
+        val endsApp = learned || (previous?.systemScreenEndsApp == true && end != RunEnd.REPLACED)
         stored =
             Stored(
                 bootId = bootId,
@@ -122,9 +144,21 @@ class RunJournal(
                 inSafeMode = mode == HealthMode.SAFE,
                 probeIndex = probeIndex,
                 probation = probation,
+                systemScreen = screen?.copy(atElapsedMs = elapsedMs, validForMs = SYSTEM_SCREEN_VALID_MS),
+                systemScreenEndsApp = endsApp,
             )
         write()
-        return HealthState(mode, safe.takeIf { mode == HealthMode.SAFE }, earlyEnds, end, previous?.javaCrash, probation, bootId != null)
+        return HealthState(
+            mode,
+            safe.takeIf { mode == HealthMode.SAFE },
+            earlyEnds,
+            end,
+            previous?.javaCrash,
+            probation,
+            bootId != null,
+            systemScreenOpen = screen != null,
+            systemScreenEndsApp = endsApp,
+        )
     }
 
     private fun classify(
@@ -133,14 +167,19 @@ class RunJournal(
         bootId: String?,
         installId: String,
     ): RunEnd {
-        val sameBoot =
-            if (bootId != null && previous.bootId != null) bootId == previous.bootId else elapsedMs >= previous.lastElapsedMs
-        val planned = previous.planned
+        val sameBoot = previous.sameBoot(elapsedMs, bootId)
         return when {
             previous.installId != installId -> RunEnd.REPLACED
-            planned != null && sameBoot && elapsedMs in planned.atElapsedMs..planned.atElapsedMs + planned.validForMs -> RunEnd.PLANNED
+
+            previous.planned?.validAt(elapsedMs) == true && sameBoot -> RunEnd.PLANNED
+
             !sameBoot -> RunEnd.REBOOTED
+
+            // No firmware end is a Java crash, so a crash under a system screen still counts (design decision 3).
             previous.javaCrash != null -> RunEnd.CRASHED
+
+            previous.systemScreen?.validAt(elapsedMs) == true -> RunEnd.PLANNED
+
             else -> RunEnd.DIED
         }
     }
@@ -184,6 +223,32 @@ class RunJournal(
         write()
     }
 
+    /**
+     * The device menu opens a system screen for [reason] at [elapsedMs]: ends of the process count as planned while the
+     * record is valid, [validForMs] from now and renewed at each start. It leaves the planned end of an update alone.
+     */
+    @Synchronized
+    fun systemScreenOpened(
+        reason: String,
+        elapsedMs: Long,
+        validForMs: Long = SYSTEM_SCREEN_VALID_MS,
+    ) {
+        stored = stored.copy(systemScreen = Planned(reason, elapsedMs, validForMs))
+        write()
+    }
+
+    /** The slideshow is back in front: withdraws the system-screen record, not the planned end of an update. */
+    @Synchronized
+    fun cancelSystemScreen() {
+        if (stored.systemScreen == null) return
+        stored = stored.copy(systemScreen = null)
+        write()
+    }
+
+    /** A system-screen record exists and is valid at [elapsedMs]: the crash handler then does not restart the display. */
+    @Synchronized
+    fun systemScreenOpen(elapsedMs: Long): Boolean = stored.systemScreen?.validAt(elapsedMs) == true
+
     /** Before a restart that leaves safe mode: the next start runs in normal mode, as a probation run. */
     @Synchronized
     fun requestNormalStart() {
@@ -225,7 +290,9 @@ class RunJournal(
         val reason: String,
         val atElapsedMs: Long,
         val validForMs: Long,
-    )
+    ) {
+        fun validAt(elapsedMs: Long) = elapsedMs in atElapsedMs..atElapsedMs + validForMs
+    }
 
     @Serializable
     private data class Stored(
@@ -242,12 +309,33 @@ class RunJournal(
         val probeIndex: Int = 0,
         val probation: Boolean = false,
         val normalStartRequested: Boolean = false,
-    )
+        /** The record of a system screen opened from the device menu, apart from [planned] (design decision 3). */
+        val systemScreen: Planned? = null,
+        /** Learned at a start: the firmware ends the app when another activity starts (design decision 1b). */
+        val systemScreenEndsApp: Boolean = false,
+    ) {
+        fun sameBoot(
+            elapsedMs: Long,
+            bootId: String?,
+        ) = if (bootId != null && this.bootId != null) bootId == this.bootId else elapsedMs >= lastElapsedMs
+
+        fun sameRun(
+            elapsedMs: Long,
+            bootId: String?,
+            installId: String,
+        ) = installId == this.installId && sameBoot(elapsedMs, bootId)
+    }
 
     companion object {
         const val EARLY_ENDS_FOR_SAFE_MODE = 3
         const val STABLE_AFTER_MS = 10 * 60_000L
         const val HOUR_MS = 3_600_000L
+
+        /** How long a system-screen record stays valid, from its making and from each start that renews it. */
+        const val SYSTEM_SCREEN_VALID_MS = 10 * 60_000L
+
+        /** A start this soon after a system-screen record was made or renewed teaches that the firmware ended the app. */
+        const val SYSTEM_SCREEN_END_WINDOW_MS = 60_000L
 
         /** The waits of the probe in hours: 1, 2, 4, 8, 16, then 24. */
         val PROBE_HOURS = listOf(1L, 2L, 4L, 8L, 16L, 24L)

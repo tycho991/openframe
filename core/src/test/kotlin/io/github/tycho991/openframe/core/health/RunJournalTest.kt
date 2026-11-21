@@ -10,7 +10,10 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.time.Duration
 
-/** Spec `kiosk-host`: Self-healing, Safe mode after repeated crashes, Leaving safe mode, Planned process end. */
+/**
+ * Spec `kiosk-host`: Self-healing, Safe mode after repeated crashes, Leaving safe mode, Planned process end, System
+ * screen from the device menu, Android settings hidden where the firmware ends the app.
+ */
 class RunJournalTest {
     @TempDir
     lateinit var dir: File
@@ -154,6 +157,136 @@ class RunJournalTest {
         assertEquals(0, after.recentEarlyEnds, "a crash after a stable run is no early end")
     }
 
+    /** `kiosk-host` › System screen from the device menu › Several ends under a system screen. */
+    @Test
+    fun `Ends under a system screen count as planned however many there are`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        var elapsed = 100_000L
+        repeat(3) {
+            // Each end comes minutes after its start, later than the learning window, and before the record expires.
+            elapsed += 5 * 60_000
+            val state = start(elapsedMs = elapsed)
+            assertEquals(RunEnd.PLANNED, state.previousEnd, "end ${it + 1}")
+            assertEquals(0, state.recentEarlyEnds)
+            assertEquals(HealthMode.NORMAL, state.mode)
+            assertTrue(state.systemScreenOpen, "the record is carried into run ${it + 2}")
+            assertFalse(state.systemScreenEndsApp)
+        }
+    }
+
+    /** `kiosk-host` › System screen from the device menu › Back from a system screen. */
+    @Test
+    fun `An end after the slideshow is back is unexplained and early`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        journal.cancelSystemScreen()
+        val state = start(elapsedMs = 160_000)
+        assertEquals(RunEnd.DIED, state.previousEnd)
+        assertEquals(1, state.recentEarlyEnds)
+        assertFalse(state.systemScreenOpen)
+    }
+
+    /** `kiosk-host` › System screen from the device menu › Java crash under a system screen. */
+    @Test
+    fun `A Java crash under a system screen counts, and the record is still carried`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        crash()
+        val state = start(elapsedMs = 200_000)
+        assertEquals(RunEnd.CRASHED, state.previousEnd)
+        assertEquals("java.lang.IllegalStateException", state.previousCrash)
+        assertEquals(1, state.recentEarlyEnds)
+        assertTrue(state.systemScreenOpen)
+        assertFalse(state.systemScreenEndsApp, "a Java crash teaches nothing about the firmware")
+        assertEquals(RunEnd.PLANNED, start(elapsedMs = 260_000).previousEnd, "the carried record covers the next end")
+    }
+
+    @Test
+    fun `The records of a system screen and of an update are withdrawn apart`() {
+        start(elapsedMs = 100_000)
+        journal.plannedExit("update", 100_000, validForMs = 15 * 60_000)
+        journal.systemScreenOpened("device administration", 100_000)
+        journal.cancelSystemScreen()
+        crash()
+        assertEquals(RunEnd.PLANNED, start(elapsedMs = 200_000).previousEnd, "the update's record still counts before a Java crash")
+
+        journal.systemScreenOpened("android settings", 200_000)
+        journal.plannedExit("update", 200_000, validForMs = 15 * 60_000)
+        journal.cancelPlannedExit()
+        assertEquals(RunEnd.PLANNED, start(elapsedMs = 400_000).previousEnd, "cancelPlannedExit leaves the system screen's record")
+    }
+
+    @Test
+    fun `A device restart, a new installation and the end of the validity drop the record`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        assertFalse(start(elapsedMs = 5_000, bootId = "boot-2").systemScreenOpen, "not after a device restart")
+
+        journal.systemScreenOpened("android settings", 5_000)
+        val replaced = start(elapsedMs = 300_000, bootId = "boot-2", installId = "101:1")
+        assertEquals(RunEnd.REPLACED, replaced.previousEnd)
+        assertFalse(replaced.systemScreenOpen, "not after a new installation")
+
+        journal.systemScreenOpened("android settings", 300_000)
+        val late = start(elapsedMs = 300_000 + 11 * 60_000, bootId = "boot-2", installId = "101:1")
+        assertEquals(RunEnd.DIED, late.previousEnd, "11 minutes later without a start in between")
+        assertFalse(late.systemScreenOpen)
+        assertFalse(journal.systemScreenOpen(300_000 + 11 * 60_000))
+    }
+
+    /** `kiosk-host` › Android settings hidden where the firmware ends the app › Firmware not recognized. */
+    @Test
+    fun `A start within a minute of the record teaches that the firmware ends the app`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        assertFalse(start(elapsedMs = 190_000).systemScreenEndsApp, "not at 90 s")
+
+        // The record was renewed at 190 s; the next end comes 30 s after that.
+        val learned = start(elapsedMs = 220_000)
+        assertEquals(RunEnd.PLANNED, learned.previousEnd)
+        assertTrue(learned.systemScreenEndsApp, "at 30 s")
+
+        journal.cancelSystemScreen()
+        assertTrue(start(elapsedMs = 5_000, bootId = "boot-2").systemScreenEndsApp, "kept across a device restart")
+        assertTrue(start(elapsedMs = 6_000, bootId = "boot-2").systemScreenEndsApp, "and further starts")
+        assertFalse(start(elapsedMs = 7_000, bootId = "boot-2", installId = "101:1").systemScreenEndsApp, "cleared by a new installation")
+    }
+
+    @Test
+    fun `A planned restart within the minute teaches nothing about the firmware`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        // "Start normally" or the probe restarts the app 20 s later, with the settings still in front.
+        journal.plannedExit("restart: menu", 120_000, validForMs = 60_000)
+        val state = start(elapsedMs = 125_000)
+        assertEquals(RunEnd.PLANNED, state.previousEnd)
+        assertTrue(state.systemScreenOpen, "the record goes on")
+        assertFalse(state.systemScreenEndsApp)
+    }
+
+    @Test
+    fun `A runs json written by 0_10_0 reads without loss`() {
+        file.parentFile.mkdirs()
+        file.writeText(
+            """{"bootId":"boot-1","installId":"100:1700000000000","lastElapsedMs":60000,"stable":false,""" +
+                """"planned":{"reason":"update","atElapsedMs":60000,"validForMs":900000},"earlyEnds":2,"probeIndex":0}""",
+        )
+        val planned = start(elapsedMs = 120_000)
+        assertEquals(RunEnd.PLANNED, planned.previousEnd)
+        assertFalse(planned.systemScreenOpen)
+        assertFalse(planned.systemScreenEndsApp)
+
+        file.writeText(
+            """{"bootId":"boot-1","installId":"100:1700000000000","lastElapsedMs":60000,"stable":false,""" +
+                """"javaCrash":"java.lang.IllegalStateException","earlyEnds":2}""",
+        )
+        val crashed = start(elapsedMs = 120_000)
+        assertEquals(RunEnd.CRASHED, crashed.previousEnd)
+        assertEquals(3, crashed.recentEarlyEnds, "the count of early ends goes on")
+        assertEquals(HealthMode.SAFE, crashed.mode)
+    }
+
     @Test
     fun `A broken or unwritable runs json gives normal mode without throwing`() {
         file.parentFile.mkdirs()
@@ -166,6 +299,8 @@ class RunJournalTest {
         blocked.onJavaCrash("x")
         blocked.markStable()
         blocked.plannedExit("x", 0, 1)
+        blocked.systemScreenOpened("x", 0)
+        blocked.cancelSystemScreen()
         blocked.requestNormalStart()
     }
 }
