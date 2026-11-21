@@ -180,7 +180,9 @@ present, so the position after device administration without a brightness entry 
 - [The firmware check misses a Frameo variant without `net.frameo.frame`, or another firmware with the same
   behaviour] → The learned signal hides the entry after the first end; that end and any further ones under the screen
   count as planned, so no safe mode. Below API 31 the watchdog brings the server back.
-- [False positive of the learned signal after a force-stop within a minute] → Hidden until the next installation.
+- [False positive of the learned signal after a force-stop within a minute] → Hidden until the next installation. A
+  restart of Android's system process within a minute of the opening ends openframe in the same way and teaches it too;
+  it happened on the API 37 emulator (see the emulator note below).
 - [A native crash or a kill by the system while a system screen is in front counts as planned] → Accepted: the record
   ends when the slideshow is back, and the decoder, where native crashes happen, runs in its own process.
 - [Someone changes a setting openframe relies on (HOME app, Wi-Fi, screen timeout)] → The same risk as today's adb
@@ -197,3 +199,14 @@ present, so the position after device administration without a brightness entry 
 
 None for data: `runs.json` gains optional fields with defaults, and `StoreJson` ignores unknown keys, so an older APK
 reads a newer file. Rollback is an older APK.
+
+## Emulator note (tasks 3.1 to 3.3)
+
+On the API 37 emulator image with emulator 37.2.12, every window change out of Android's settings (a subpage, the Home
+button) aborted `system_server` with the graphics assertion `!rcEnc->featureInfo()->hasReadColorBufferDma` (also
+`screencap`), with each of the GPU modes `swiftshader_indirect`, `swangle_indirect` and `guest`. Task 3.1 was therefore
+split: on API 37 the entry (the `<queries>`), the start page with `GET /info` answering, the settings lit for 5 minutes
+with a 30-second screen timeout and the settings in front 30 s after a Java crash, with the server back after 2 s; the
+subpage, Home, the start page again and Back on the API 21 emulator. The debug crash broadcast reaches the app on API 21
+only without `-p`.
+
