@@ -69,10 +69,14 @@ Frameo firmware, also when it is disabled or uninstalled for the user: `getPacka
 (`MATCH_UNINSTALLED_PACKAGES` from API 24), read once per process. A frame that runs openframe as its kiosk usually has
 that app disabled, not removed from the system image, so the check must not require it to be enabled. The manifest
 declares `<queries><package android:name="net.frameo.frame"/></queries>` for Frameo firmware on API 30 and newer.
+The implementation also passes `MATCH_DISABLED_COMPONENTS` (`GET_DISABLED_COMPONENTS` below API 24), so that a disabled
+frame app is found on every Android version, whatever the package manager does with disabled packages.
 
 **(b) Learned signal, for firmware the check does not know.** The run journal sets `systemScreenEndsApp` at a start
 that finds a valid system-screen record (decision 3), no Java crash, and comes no later than
-`SYSTEM_SCREEN_END_WINDOW_MS` (60 s) after the record was made or renewed. The journal cannot tell when the previous
+`SYSTEM_SCREEN_END_WINDOW_MS` (60 s) after the record was made or renewed, and only when the system-screen record alone
+explains the end: a valid planned record of an update or a restart ("Start normally" or the probe within that minute)
+teaches nothing. The journal cannot tell when the previous
 run ended (`lastElapsedMs` is written once a minute), only when the next one started. The firmware ends the app right
 after the other activity starts, and the watchdog brings the process back within about 20 s, so the window holds that
 end and little else. The flag is kept
@@ -125,7 +129,10 @@ shared slot it would withdraw a system-screen record too. The journal then:
   `bindService` in `onStart`, so its first `onResume` sees `core == null`. Waiting for the core there would leave the
   record renewed at every start and `CrashHandler` skipping the display restart after a real crash. Releasing the hold
   and the HOME check (decisions 5 and 6) need the core: `onResume` does them when the core is bound, otherwise `attach`
-  does them once it arrives. `FrameCore.systemScreenClosed()` bundles the three for the bound case.
+  does them once it arrives. `FrameCore.systemScreenClosed()` bundles the three for the bound case. A record carried in
+from the previous run is withdrawn the same way, but this run holds no display for it and the core's start has checked
+the HOME app already, so neither is done again; an expired record has ended its hold, so it releases nothing either,
+since a release would end another hold, such as the installation dialog's.
 
 *Alternative:* re-arm the record only at the start after a planned end. Rejected: the same thing with a rule that is
 harder to state; the renewal at each start is what keeps the second and third end planned.
@@ -147,7 +154,8 @@ an update is a new installation, and the update path owns that screen.
 `systemScreenOpened` calls `display.hold(now + 10 minutes)`, the mechanism of the installation dialog: `keepOn` holds
 the screen against the system's timeout, also in an off period, and a screen-off meanwhile is no manual off.
 `systemScreenClosed` calls `display.release()`. The log line of the hold names its reason instead of always "the
-installation dialog". After the 10 minutes the device's own screen timeout applies with the settings still in front; a
+installation dialog": `DisplayController.hold` takes it, the installation dialog passes "the installation dialog" and a
+system screen "a system screen (<reason>)"; the line for a screen-off during the hold names it as well. After the 10 minutes the device's own screen timeout applies with the settings still in front; a
 screen-off then counts as switched off by hand until the next switching time, and a scheduled "on" wakes only for
 `turnOn`'s 5 s. Touches in the settings keep the screen on through the system's own timeout. The hold is not restored
 in a process started again under the screen (only on firmware that decision 1 did not recognize).
@@ -168,14 +176,18 @@ themselves offer the way to choose openframe again.
 
 The entry stands after the brightness entry, or after device administration where there is no brightness entry (up to
 Android 5.1 the permission needs no screen), and before "Unpair all devices": the system screens stay together. Label
-"Android settings" / "Android-Einstellungen".
+"Android settings" / "Android-Einstellungen". Robolectric offers no SDK below 23, where the brightness entry is always
+present, so the position after device administration without a brightness entry is checked on the API 21 emulator
+(tasks 3.2 and 3.3) instead of in a unit test.
 
 ## Risks / Trade-offs
 
 - [The firmware check misses a Frameo variant without `net.frameo.frame`, or another firmware with the same
   behaviour] → The learned signal hides the entry after the first end; that end and any further ones under the screen
   count as planned, so no safe mode. Below API 31 the watchdog brings the server back.
-- [False positive of the learned signal after a force-stop within a minute] → Hidden until the next installation.
+- [False positive of the learned signal after a force-stop within a minute] → Hidden until the next installation. A
+  restart of Android's system process within a minute of the opening ends openframe in the same way and teaches it too;
+  it happened on the API 37 emulator (see the emulator note below).
 - [A native crash or a kill by the system while a system screen is in front counts as planned] → Accepted: the record
   ends when the slideshow is back, and the decoder, where native crashes happen, runs in its own process.
 - [Someone changes a setting openframe relies on (HOME app, Wi-Fi, screen timeout)] → The same risk as today's adb
@@ -192,3 +204,14 @@ Android 5.1 the permission needs no screen), and before "Unpair all devices": th
 
 None for data: `runs.json` gains optional fields with defaults, and `StoreJson` ignores unknown keys, so an older APK
 reads a newer file. Rollback is an older APK.
+
+## Emulator note (tasks 3.1 to 3.3)
+
+On the API 37 emulator image with emulator 37.2.12, every window change out of Android's settings (a subpage, the Home
+button) aborted `system_server` with the graphics assertion `!rcEnc->featureInfo()->hasReadColorBufferDma` (also
+`screencap`), with each of the GPU modes `swiftshader_indirect`, `swangle_indirect` and `guest`. Task 3.1 was therefore
+split: on API 37 the entry (the `<queries>`), the start page with `GET /info` answering, the settings lit for 5 minutes
+with a 30-second screen timeout and the settings in front 30 s after a Java crash, with the server back after 2 s; the
+subpage, Home, the start page again and Back on the API 21 emulator. The debug crash broadcast reaches the app on API 21
+only without `-p`.
+

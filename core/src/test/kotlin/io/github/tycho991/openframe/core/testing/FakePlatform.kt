@@ -12,6 +12,7 @@ class FakePlatform(
     override var appVersion: String = "0.1.0-test",
     override var appVersionCode: Long? = 100,
     override var appDebuggable: Boolean = false,
+    override var otherActivityEndsApp: Boolean = false,
     var free: Long? = null,
     var ips: List<String> = listOf("192.168.100.215"),
     override var systemLocale: Locale = Locale.ENGLISH,

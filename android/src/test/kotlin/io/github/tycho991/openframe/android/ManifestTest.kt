@@ -12,7 +12,11 @@ import java.io.File
 import java.util.Properties
 import javax.xml.parsers.DocumentBuilderFactory
 
-/** Spec `nextcloud-source`: Plain http on every Android version (design decision 13 of `nextcloud-hardening`). */
+/**
+ * Spec `nextcloud-source`: Plain http on every Android version (design decision 13 of `nextcloud-hardening`); spec
+ * `kiosk-host`: Android settings from the device menu (the `<queries>` of design decisions 1a and 2 of
+ * `open-android-settings`).
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class ManifestTest {
@@ -37,6 +41,37 @@ class ManifestTest {
         assertEquals("true", application.getAttributeNS(android, "usesCleartextTraffic"))
         // No network security configuration that could say otherwise.
         assertEquals("", application.getAttributeNS(android, "networkSecurityConfig"))
+    }
+
+    @Test
+    fun `The merged manifest lets the app see the Frameo's frame app and Android's settings`() {
+        val document =
+            DocumentBuilderFactory
+                .newInstance()
+                .apply { isNamespaceAware = true }
+                .newDocumentBuilder()
+                .parse(mergedManifest())
+        val queries = document.getElementsByTagName("queries")
+        val packages =
+            (0 until queries.length).flatMap { q ->
+                (queries.item(q) as org.w3c.dom.Element).getElementsByTagName("package").let { l ->
+                    (
+                        0 until
+                            l.length
+                    ).map { (l.item(it) as org.w3c.dom.Element).getAttributeNS(android, "name") }
+                }
+            }
+        val actions =
+            (0 until queries.length).flatMap { q ->
+                (queries.item(q) as org.w3c.dom.Element).getElementsByTagName("action").let { l ->
+                    (
+                        0 until
+                            l.length
+                    ).map { (l.item(it) as org.w3c.dom.Element).getAttributeNS(android, "name") }
+                }
+            }
+        assertTrue(packages.toString(), "net.frameo.frame" in packages)
+        assertTrue(actions.toString(), "android.settings.SETTINGS" in actions)
     }
 
     @Test

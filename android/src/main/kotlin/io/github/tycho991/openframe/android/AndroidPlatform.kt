@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.android
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.res.Resources
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
@@ -50,6 +51,9 @@ class AndroidPlatformInfo(
         }.getOrNull()
 
     override val appDebuggable: Boolean = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    /** Read once per process (design decision 1a of `open-android-settings`). */
+    override val otherActivityEndsApp: Boolean by lazy { frameoFirmware(context.packageManager) }
 
     private val natural: Pair<Int, Int> by lazy { naturalSize() }
 
@@ -129,6 +133,32 @@ class AndroidPlatformInfo(
         display.getRealMetrics(metrics)
         val rotated = display.rotation == Surface.ROTATION_90 || display.rotation == Surface.ROTATION_270
         return if (rotated) metrics.heightPixels to metrics.widthPixels else metrics.widthPixels to metrics.heightPixels
+    }
+
+    companion object {
+        /** The frame app of the Frameo firmware, which ends openframe whenever another app's activity starts. */
+        const val FRAMEO_FRAME_APP = "net.frameo.frame"
+
+        /**
+         * The package manager knows the Frameo's frame app, also disabled or uninstalled for the user: a frame that runs
+         * openframe as its kiosk usually has it disabled, not removed from the system image. The manifest declares the
+         * package in `<queries>` for API 30 and newer.
+         */
+        @Suppress("DEPRECATION")
+        fun frameoFirmware(packageManager: PackageManager): Boolean {
+            val flags =
+                if (Build.VERSION.SDK_INT >= 24) {
+                    PackageManager.MATCH_UNINSTALLED_PACKAGES or PackageManager.MATCH_DISABLED_COMPONENTS
+                } else {
+                    PackageManager.GET_UNINSTALLED_PACKAGES or PackageManager.GET_DISABLED_COMPONENTS
+                }
+            return try {
+                packageManager.getPackageInfo(FRAMEO_FRAME_APP, flags)
+                true
+            } catch (e: PackageManager.NameNotFoundException) {
+                false
+            }
+        }
     }
 }
 

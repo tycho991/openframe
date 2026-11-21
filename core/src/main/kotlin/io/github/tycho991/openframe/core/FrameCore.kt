@@ -397,7 +397,7 @@ class FrameCore(
                 .collect { until ->
                     if (until != null) {
                         display.wake()
-                        display.hold(until)
+                        display.hold(until, "the installation dialog")
                     } else {
                         display.release()
                     }
@@ -460,6 +460,30 @@ class FrameCore(
         delay((at - clock.millis()).coerceIn(0, RunJournal.PROBE_HOURS.last() * RunJournal.HOUR_MS))
         log.i(TAG, "Safe mode: trying normal mode again")
         restartNormally("probe")
+    }
+
+    /**
+     * Whether the device menu offers Android's settings (spec `kiosk-host`, "Android settings hidden where the firmware
+     * ends the app"): not when the firmware is known to end the app when another activity starts, nor when a start
+     * taught it. The menu also checks that the device has an activity for them.
+     */
+    val androidSettingsOffered: Boolean
+        get() = !platform.otherActivityEndsApp && !health.state.value.systemScreenEndsApp
+
+    /**
+     * Before the device menu opens a system screen for [reason] (spec `kiosk-host`, "System screen from the device
+     * menu"): the record that keeps ends under the screen planned, and the display held on for
+     * [RunJournal.SYSTEM_SCREEN_VALID_MS] ("Display while a system screen is open").
+     */
+    fun systemScreenOpened(reason: String) {
+        health.systemScreenOpened(reason)
+        display.hold(clock.monotonicMillis() + RunJournal.SYSTEM_SCREEN_VALID_MS, "a system screen ($reason)")
+    }
+
+    /** The slideshow is back in front, or the system screen did not start: withdraws the record and ends the hold. */
+    fun systemScreenClosed() {
+        health.cancelSystemScreen()
+        display.release()
     }
 
     /**
