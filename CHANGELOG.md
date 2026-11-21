@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/tycho991/openframe/compare/v0.12.0...v0.13.0) (2026-11-21)
+
+
+### Features
+
+* open Android's settings from the device menu ([#122](https://github.com/tycho991/openframe/issues/122)) ([91d0062](https://github.com/tycho991/openframe/commit/91d00626c73bd65b0162b7a0fb1c04baee31c63b))
+
 ## [0.12.0](https://github.com/tycho991/openframe/compare/v0.11.1...v0.12.0) (2026-11-20)
 
 
