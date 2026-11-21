@@ -759,7 +759,7 @@ class DisplayControllerTest {
         assertFalse(power.screenOn)
         val until = clock.monotonic + Duration.ofMinutes(10).toMillis()
         controller.wake()
-        controller.hold(until)
+        controller.hold(until, "the installation dialog")
         scope.runCurrent()
         return until
     }
@@ -817,7 +817,7 @@ class DisplayControllerTest {
     fun `A hold by day keeps the screen awake without switching anything`() {
         start()
         controller.wake()
-        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis())
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis(), "the installation dialog")
         scope.runCurrent()
         assertTrue(power.keptOn)
         assertEquals(DisplayCause.SCHEDULE, state.cause)
@@ -834,11 +834,60 @@ class DisplayControllerTest {
         power.setAvailable(false)
         start()
         controller.wake()
-        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis())
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis(), "the installation dialog")
         scope.runCurrent()
         assertTrue(power.keptOn)
         controller.release()
         scope.runCurrent()
         assertFalse(power.keptOn)
+    }
+
+    // Display while a system screen is open (spec `kiosk-host`, design decision 5 of `open-android-settings`)
+
+    /** `kiosk-host` › Display while a system screen is open › Short screen timeout under the settings. */
+    @Test
+    fun `A system screen holds the screen against the timeout, and a screen-off then is no manual off`() {
+        start()
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis(), "a system screen (android settings)")
+        scope.runCurrent()
+        assertTrue(power.keptOn, "keepOn holds off the system's screen timeout")
+        assertEquals(listOf(Duration.ofMinutes(10).toMillis()), power.keepOnTimeouts)
+        assertTrue(logged("Display held on for a system screen (android settings)").isNotEmpty())
+        minutes(5)
+        assertTrue(power.screenOn)
+        power.powerButton()
+        scope.runCurrent()
+        assertTrue(logged("Display switched off during a system screen (android settings)").isNotEmpty())
+        assertTrue(logged("Display switched off by hand").isEmpty())
+    }
+
+    /** `kiosk-host` › Display while a system screen is open › Off period under the settings. */
+    @Test
+    fun `An off period that begins under a system screen switches off after the hold and the minutes after waking`() {
+        clock.instant = Instant.parse("2026-10-21T21:58:00Z")
+        start()
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis(), "a system screen (android settings)")
+        scope.runCurrent()
+        // The off period begins at 22:00, two minutes after the opening.
+        until("2026-10-21T22:07")
+        assertTrue(power.screenOn, "held until 10 minutes after the opening")
+        assertTrue(power.keptOn)
+        until("2026-10-21T22:08")
+        assertFalse(power.keptOn, "the hold ended at its deadline")
+        assertTrue(power.screenOn, "the minutes after waking follow")
+        advance(Duration.ofMinutes(5).plusSeconds(90))
+        assertFalse(power.screenOn, "off by the schedule after the minutes after waking")
+        assertEquals(listOf("off"), power.calls)
+    }
+
+    @Test
+    fun `Closing the system screen releases the hold`() {
+        start()
+        controller.hold(clock.monotonic + Duration.ofMinutes(10).toMillis(), "a system screen (android settings)")
+        scope.runCurrent()
+        controller.release()
+        scope.runCurrent()
+        assertFalse(power.keptOn)
+        assertTrue(logged("Display hold ended").isNotEmpty())
     }
 }

@@ -18,6 +18,16 @@
          user in "Modify system settings" from API 23. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- From API 30 the package manager shows other apps only when they are declared here (spec `kiosk-host`, "Android
+         settings from the device menu"): the Frameo's frame app for the firmware check, and Android's settings for the
+         device menu's entry. -->
+    <queries>
+        <package android:name="net.frameo.frame" />
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
+        </intent>
+    </queries>
+
     <application
         android:name=".android.FrameApp"
         android:allowBackup="false"

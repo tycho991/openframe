@@ -3,11 +3,13 @@ package io.github.tycho991.openframe.android
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.Bitmap
@@ -57,6 +59,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
+import android.provider.Settings as AndroidSettings
 
 /**
  * The display on the frame. Gets the core through the binder of the
@@ -102,6 +105,9 @@ class DisplayActivity : Activity() {
     private var hintVisible = false
     private var showingEmpty = false
     private var menuOpen = false
+
+    /** The display came back over a system screen from the device menu: the core still ends the hold and checks HOME. */
+    private var backFromSystemScreen = false
     private var arrangedPortrait: Boolean? = null
     private var qrUrl: String? = null
     private var qrImage: Bitmap? = null
@@ -118,6 +124,7 @@ class DisplayActivity : Activity() {
             ) {
                 val c = (binder as FrameService.LocalBinder).core
                 core = c
+                finishSystemScreen(c)
                 attach(c)
             }
 
@@ -205,6 +212,29 @@ class DisplayActivity : Activity() {
         enterImmersive()
         // Back from the system's screen for modifying system settings: no event reports the permission.
         core?.display?.recheck()
+        withdrawSystemScreen()
+    }
+
+    /**
+     * The slideshow is in front again (design decision 3 of `open-android-settings`): an open system-screen record is
+     * withdrawn at once through the app's health, also before the service connection brings the core, so that an end
+     * from now on counts as unexplained and a crash restarts the display. The core's part follows when it is there.
+     */
+    private fun withdrawSystemScreen() {
+        val health = (application as FrameApp).health
+        if (health.state.value.systemScreenOpen) {
+            health.cancelSystemScreen()
+            backFromSystemScreen = true
+        }
+        core?.let(::finishSystemScreen)
+    }
+
+    /** Ends the display hold of the system screen and logs when openframe is no longer the HOME app (decision 6). */
+    private fun finishSystemScreen(core: FrameCore) {
+        if (!backFromSystemScreen) return
+        backFromSystemScreen = false
+        core.systemScreenClosed()
+        BootReceiver.logHome(this)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -619,6 +649,26 @@ class DisplayActivity : Activity() {
         if (portrait) hint.addView(hintQr, 0) else hintRow.addView(hintQr)
     }
 
+    /** The start page of Android's settings in a task of its own, cleared each time; `null` without an activity for it. */
+    private fun androidSettingsIntent(): Intent? =
+        Intent(AndroidSettings.ACTION_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            .takeIf { packageManager.resolveActivity(it, PackageManager.MATCH_DEFAULT_ONLY) != null }
+
+    private fun openAndroidSettings(
+        core: FrameCore,
+        intent: Intent,
+    ) {
+        core.systemScreenOpened("android settings")
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            // Gone between the check and the start: nothing opened, so nothing is held.
+            core.systemScreenClosed()
+            core.log.w("app", "Android's settings could not be opened: ${e.message}")
+        }
+    }
+
     private fun openDeviceMenu() {
         val c = core ?: return
         if (menuOpen) return
@@ -641,16 +691,20 @@ class DisplayActivity : Activity() {
                         confirmAdminOff(power)
                     } else {
                         // The Frameo's firmware may end the app when another activity starts: a planned end, not a crash.
-                        c.health.plannedExit("device administration", ADMIN_SCREEN_VALID_MS)
+                        c.systemScreenOpened("device administration")
                         startActivity(power.activationIntent(text(R.string.admin_explanation)))
                     }
                 },
                 brightness.permissionIntent()?.let { intent ->
                     text(if (brightness.available) R.string.menu_brightness_on else R.string.menu_brightness_off) to {
                         // As for device administration, the Frameo's firmware may end the app when the screen opens.
-                        c.health.plannedExit("brightness permission", ADMIN_SCREEN_VALID_MS)
+                        c.systemScreenOpened("brightness permission")
                         startActivity(intent)
                     }
+                },
+                // Android's settings (spec `kiosk-host`, "Android settings from the device menu"), also in safe mode.
+                androidSettingsIntent().takeIf { c.androidSettingsOffered }?.let { intent ->
+                    text(R.string.menu_android_settings) to { openAndroidSettings(c, intent) }
                 },
                 text(R.string.menu_reset) to { confirmReset(c) },
                 (text(R.string.menu_update, update.readyVersion.orEmpty()) to { installUpdate(c) })
@@ -792,8 +846,6 @@ class DisplayActivity : Activity() {
     }
 
     private companion object {
-        /** How long the device administration screen may be open before its end counts as unexplained. */
-        const val ADMIN_SCREEN_VALID_MS = 10 * 60_000L
         const val OVERLAY_Z = 10f
         const val DARK_Z = 20f
         const val DARK_BRIGHTNESS = 0.01f

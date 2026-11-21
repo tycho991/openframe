@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
  *   run ended. A new installation always counts as the planned end [RunEnd.REPLACED] and ends safe mode.
  * - [plannedExit] announces an end of the process, for example before committing a `PackageInstaller` session, valid
  *   for [plannedExit]'s `validForMs`; [cancelPlannedExit] withdraws it on cancel, failure or abandon.
+ * - [systemScreenOpened] and [cancelSystemScreen] do the same for a system screen from the device menu, in a record of
+ *   its own that lasts until the slideshow is back.
  *
  * [elapsedMs] is the device's uptime (`SystemClock.elapsedRealtime` on Android), which the journal compares across
  * runs. [bootId] is the `boot_id` the journal read at the start, `null` where the kernel does not let the app read it;
@@ -35,6 +37,21 @@ class Health(
     ) = journal.plannedExit(reason, elapsedMs(), validForMs)
 
     fun cancelPlannedExit() = journal.cancelPlannedExit()
+
+    /**
+     * The device menu opens a system screen for [reason]: ends of the process under it count as planned until
+     * [cancelSystemScreen] (design decision 3 of `open-android-settings`).
+     */
+    fun systemScreenOpened(reason: String) {
+        journal.systemScreenOpened(reason, elapsedMs())
+        _state.value = _state.value.copy(systemScreenOpen = true)
+    }
+
+    /** The slideshow is back in front: withdraws the system-screen record, never the planned end of an update. */
+    fun cancelSystemScreen() {
+        journal.cancelSystemScreen()
+        _state.value = _state.value.copy(systemScreenOpen = false)
+    }
 
     /** After [RunJournal.STABLE_AFTER_MS] in normal mode. */
     fun markStable() {

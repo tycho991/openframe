@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.android
 
 import io.github.tycho991.openframe.core.FrameCore
 import io.github.tycho991.openframe.core.FrameDirs
+import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.platform.ApkVerdict
 import io.github.tycho991.openframe.core.platform.AppInstaller
 import io.github.tycho991.openframe.core.platform.AssetSource
@@ -31,6 +32,7 @@ internal object TestCore {
         dir: File,
         installer: AppInstaller = RecordingInstaller(),
         platform: PlatformInfo = Platform(),
+        health: Health = Health.normal(),
     ): FrameCore =
         FrameCore(
             FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"), File(dir, "update")),
@@ -42,11 +44,13 @@ internal object TestCore {
             bindLoopback = true,
             installer = installer,
             releases = NoReleases,
+            health = health,
         )
 
     class Platform(
         override val appVersion: String = "0.3.0",
         override val appVersionCode: Long? = 300,
+        override val otherActivityEndsApp: Boolean = false,
     ) : PlatformInfo {
         override val model = "Robolectric"
         override val androidVersion = "6.0.1"

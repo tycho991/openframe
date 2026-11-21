@@ -69,6 +69,8 @@ Frameo firmware, also when it is disabled or uninstalled for the user: `getPacka
 (`MATCH_UNINSTALLED_PACKAGES` from API 24), read once per process. A frame that runs openframe as its kiosk usually has
 that app disabled, not removed from the system image, so the check must not require it to be enabled. The manifest
 declares `<queries><package android:name="net.frameo.frame"/></queries>` for Frameo firmware on API 30 and newer.
+The implementation also passes `MATCH_DISABLED_COMPONENTS` (`GET_DISABLED_COMPONENTS` below API 24), so that a disabled
+frame app is found on every Android version, whatever the package manager does with disabled packages.
 
 **(b) Learned signal, for firmware the check does not know.** The run journal sets `systemScreenEndsApp` at a start
 that finds a valid system-screen record (decision 3), no Java crash, and comes no later than
@@ -147,7 +149,8 @@ an update is a new installation, and the update path owns that screen.
 `systemScreenOpened` calls `display.hold(now + 10 minutes)`, the mechanism of the installation dialog: `keepOn` holds
 the screen against the system's timeout, also in an off period, and a screen-off meanwhile is no manual off.
 `systemScreenClosed` calls `display.release()`. The log line of the hold names its reason instead of always "the
-installation dialog". After the 10 minutes the device's own screen timeout applies with the settings still in front; a
+installation dialog": `DisplayController.hold` takes it, the installation dialog passes "the installation dialog" and a
+system screen "a system screen (<reason>)"; the line for a screen-off during the hold names it as well. After the 10 minutes the device's own screen timeout applies with the settings still in front; a
 screen-off then counts as switched off by hand until the next switching time, and a scheduled "on" wakes only for
 `turnOn`'s 5 s. Touches in the settings keep the screen on through the system's own timeout. The hold is not restored
 in a process started again under the screen (only on firmware that decision 1 did not recognize).
@@ -168,7 +171,9 @@ themselves offer the way to choose openframe again.
 
 The entry stands after the brightness entry, or after device administration where there is no brightness entry (up to
 Android 5.1 the permission needs no screen), and before "Unpair all devices": the system screens stay together. Label
-"Android settings" / "Android-Einstellungen".
+"Android settings" / "Android-Einstellungen". Robolectric offers no SDK below 23, where the brightness entry is always
+present, so the position after device administration without a brightness entry is checked on the API 21 emulator
+(tasks 3.2 and 3.3) instead of in a unit test.
 
 ## Risks / Trade-offs
 
