@@ -210,6 +210,34 @@ class AndroidSettingsMenuTest {
         waitForLog("Display held on for a system screen (brightness permission)")
     }
 
+    /**
+     * A process started again under the screen carries the record in: the display withdraws it, but has no hold of this
+     * run to release, and the core's start has checked the HOME app already.
+     */
+    @Test
+    fun `A record carried in from the previous run is withdrawn without releasing a hold or a second HOME check`() {
+        // The previous run opened the settings and ended under them; this start of the app carries the record in.
+        app.journal.systemScreenOpened("android settings", SystemClock.elapsedRealtime())
+        app.start(app.packageName)
+        val health = app.health
+        assertTrue(health.state.value.systemScreenOpen)
+        assertFalse(health.systemScreenOpenedInThisRun)
+        startCore()
+        core.display.hold(Long.MAX_VALUE, "the installation dialog")
+        waitForLog("Display held on for the installation dialog")
+        shadowOf(app.packageManager).removeResolveInfosForIntent(home, app.packageName)
+        resolves(home, "com.example.launcher")
+
+        Robolectric.buildActivity(DisplayActivity::class.java).setup()
+        idle()
+        Thread.sleep(200)
+        idle()
+        assertFalse(health.state.value.systemScreenOpen)
+        assertFalse(app.journal.systemScreenOpen(SystemClock.elapsedRealtime()))
+        assertTrue("the installation dialog's hold goes on", logged("Display hold ended").isEmpty())
+        assertTrue(logged("openframe is not the HOME app").isEmpty())
+    }
+
     /** Design decision 3: a display created afresh under the screen gets its core only after its first resume. */
     @Test
     fun `A fresh display withdraws the record at its first resume and ends the hold once the core is there`() {

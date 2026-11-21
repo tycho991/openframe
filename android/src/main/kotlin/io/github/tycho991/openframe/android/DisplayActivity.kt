@@ -106,8 +106,11 @@ class DisplayActivity : Activity() {
     private var showingEmpty = false
     private var menuOpen = false
 
-    /** The display came back over a system screen from the device menu: the core still ends the hold and checks HOME. */
-    private var backFromSystemScreen = false
+    /** The display came back over a system screen from the device menu: the core still ends the display hold. */
+    private var releaseSystemScreenHold = false
+
+    /** … and still checks whether openframe is the HOME app. */
+    private var checkHomeAfterSystemScreen = false
     private var arrangedPortrait: Boolean? = null
     private var qrUrl: String? = null
     private var qrImage: Bitmap? = null
@@ -209,10 +212,11 @@ class DisplayActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // First, so that nothing below keeps the record open while the slideshow is in front.
+        withdrawSystemScreen()
         enterImmersive()
         // Back from the system's screen for modifying system settings: no event reports the permission.
         core?.display?.recheck()
-        withdrawSystemScreen()
     }
 
     /**
@@ -223,18 +227,22 @@ class DisplayActivity : Activity() {
     private fun withdrawSystemScreen() {
         val health = (application as FrameApp).health
         if (health.state.value.systemScreenOpen) {
+            // A record carried in from the previous run has no hold in this one, and the core's start checked HOME; an
+            // expired one ended its hold already, so releasing would end another, such as the installation dialog's.
+            val openedHere = health.systemScreenOpenedInThisRun
+            releaseSystemScreenHold = releaseSystemScreenHold || (openedHere && health.systemScreenValid())
+            checkHomeAfterSystemScreen = checkHomeAfterSystemScreen || openedHere
             health.cancelSystemScreen()
-            backFromSystemScreen = true
         }
         core?.let(::finishSystemScreen)
     }
 
     /** Ends the display hold of the system screen and logs when openframe is no longer the HOME app (decision 6). */
     private fun finishSystemScreen(core: FrameCore) {
-        if (!backFromSystemScreen) return
-        backFromSystemScreen = false
-        core.systemScreenClosed()
-        BootReceiver.logHome(this)
+        if (releaseSystemScreenHold) core.systemScreenClosed()
+        if (checkHomeAfterSystemScreen) BootReceiver.logHome(this)
+        releaseSystemScreenHold = false
+        checkHomeAfterSystemScreen = false
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

@@ -254,6 +254,18 @@ class RunJournalTest {
     }
 
     @Test
+    fun `A planned restart within the minute teaches nothing about the firmware`() {
+        start(elapsedMs = 100_000)
+        journal.systemScreenOpened("android settings", 100_000)
+        // "Start normally" or the probe restarts the app 20 s later, with the settings still in front.
+        journal.plannedExit("restart: menu", 120_000, validForMs = 60_000)
+        val state = start(elapsedMs = 125_000)
+        assertEquals(RunEnd.PLANNED, state.previousEnd)
+        assertTrue(state.systemScreenOpen, "the record goes on")
+        assertFalse(state.systemScreenEndsApp)
+    }
+
+    @Test
     fun `A runs json written by 0_10_0 reads without loss`() {
         file.parentFile.mkdirs()
         file.writeText(

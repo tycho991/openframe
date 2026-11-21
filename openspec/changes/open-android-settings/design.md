@@ -74,7 +74,9 @@ frame app is found on every Android version, whatever the package manager does w
 
 **(b) Learned signal, for firmware the check does not know.** The run journal sets `systemScreenEndsApp` at a start
 that finds a valid system-screen record (decision 3), no Java crash, and comes no later than
-`SYSTEM_SCREEN_END_WINDOW_MS` (60 s) after the record was made or renewed. The journal cannot tell when the previous
+`SYSTEM_SCREEN_END_WINDOW_MS` (60 s) after the record was made or renewed, and only when the system-screen record alone
+explains the end: a valid planned record of an update or a restart ("Start normally" or the probe within that minute)
+teaches nothing. The journal cannot tell when the previous
 run ended (`lastElapsedMs` is written once a minute), only when the next one started. The firmware ends the app right
 after the other activity starts, and the watchdog brings the process back within about 20 s, so the window holds that
 end and little else. The flag is kept
@@ -127,7 +129,10 @@ shared slot it would withdraw a system-screen record too. The journal then:
   `bindService` in `onStart`, so its first `onResume` sees `core == null`. Waiting for the core there would leave the
   record renewed at every start and `CrashHandler` skipping the display restart after a real crash. Releasing the hold
   and the HOME check (decisions 5 and 6) need the core: `onResume` does them when the core is bound, otherwise `attach`
-  does them once it arrives. `FrameCore.systemScreenClosed()` bundles the three for the bound case.
+  does them once it arrives. `FrameCore.systemScreenClosed()` bundles the three for the bound case. A record carried in
+from the previous run is withdrawn the same way, but this run holds no display for it and the core's start has checked
+the HOME app already, so neither is done again; an expired record has ended its hold, so it releases nothing either,
+since a release would end another hold, such as the installation dialog's.
 
 *Alternative:* re-arm the record only at the start after a planned end. Rejected: the same thing with a rule that is
 harder to state; the renewal at each start is what keeps the second and third end planned.

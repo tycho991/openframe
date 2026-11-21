@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.core.health
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * The health of this run for the core and for app-auto-update (design decision 9 of `crash-resilience`).
@@ -44,19 +45,31 @@ class Health(
      */
     fun systemScreenOpened(reason: String) {
         journal.systemScreenOpened(reason, elapsedMs())
-        _state.value = _state.value.copy(systemScreenOpen = true)
+        systemScreenOpenedInThisRun = true
+        _state.update { it.copy(systemScreenOpen = true) }
     }
 
     /** The slideshow is back in front: withdraws the system-screen record, never the planned end of an update. */
     fun cancelSystemScreen() {
         journal.cancelSystemScreen()
-        _state.value = _state.value.copy(systemScreenOpen = false)
+        systemScreenOpenedInThisRun = false
+        _state.update { it.copy(systemScreenOpen = false) }
     }
+
+    /**
+     * The open system screen was opened in this run, not carried in from the previous one: only then does this run hold
+     * the display for it, and only then has the core's start not checked the HOME app after it.
+     */
+    @Volatile var systemScreenOpenedInThisRun = false
+        private set
+
+    /** The system-screen record is still valid now; after its 10 minutes the display hold has ended as well. */
+    fun systemScreenValid(): Boolean = journal.systemScreenOpen(elapsedMs())
 
     /** After [RunJournal.STABLE_AFTER_MS] in normal mode. */
     fun markStable() {
         journal.markStable()
-        _state.value = _state.value.copy(probation = false, recentEarlyEnds = 0)
+        _state.update { it.copy(probation = false, recentEarlyEnds = 0) }
     }
 
     /** The uptime, once a minute while the run goes on. */

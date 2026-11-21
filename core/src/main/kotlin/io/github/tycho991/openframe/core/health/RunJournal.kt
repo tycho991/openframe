@@ -125,7 +125,13 @@ class RunJournal(
         val mode = if (safe != null && !probation) HealthMode.SAFE else HealthMode.NORMAL
         // A valid system-screen record of the same boot and installation goes on, renewed from this start.
         val screen = previous?.systemScreen?.takeIf { previous.sameRun(elapsedMs, bootId, installId) && it.validAt(elapsedMs) }
-        val learned = screen != null && previous?.javaCrash == null && elapsedMs - screen.atElapsedMs <= SYSTEM_SCREEN_END_WINDOW_MS
+        // Learned only from an end that the system screen alone explains: not a Java crash, and not one that a planned
+        // update or restart explains, such as "Start normally" pressed within the minute.
+        val learned =
+            screen != null &&
+                end == RunEnd.PLANNED &&
+                previous?.planned?.validAt(elapsedMs) != true &&
+                elapsedMs - screen.atElapsedMs <= SYSTEM_SCREEN_END_WINDOW_MS
         val endsApp = learned || (previous?.systemScreenEndsApp == true && end != RunEnd.REPLACED)
         stored =
             Stored(
