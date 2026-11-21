@@ -127,5 +127,5 @@
   green
 - [x] 7.2 Title the implementation's pull request `feat!: …`, so that release-please lists the removed Albums section
   and album filter as a breaking change (with `bump-minor-pre-major` still a minor step)
-- [ ] 7.3 Run the row for the grouped photo overview in the private device checklist on a frame and enter the result
+- [x] 7.3 Run the row for the grouped photo overview in the private device checklist on a frame and enter the result
   there, not in this repository
