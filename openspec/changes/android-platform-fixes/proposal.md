@@ -53,8 +53,9 @@ None.
   idempotent registration), `FrameService.watchNetwork` and `onDestroy` (the unfiltered callback only for the rebind),
   `AndroidPlatform.connectionKind` (shared as a top-level function), `DisplayActivity` (one `syncPairingShown`), a new
   `PairingShown.kt`, `AndroidManifest.xml` (a `<property>` on `DisplayActivity`), a comment at `targetSdk` in
-  `android/build.gradle.kts`; Robolectric tests in `AndroidNetworkLinkTest`, `ManifestTest` and a new
-  `PairingShownTest`.
+  `android/build.gradle.kts`; Robolectric tests in `AndroidNetworkLinkTest` and `ManifestTest`, a Robolectric test
+  of `FrameService`'s callbacks, a Robolectric test of `DisplayActivity` with `TestCore` for local-only mode, and a
+  new plain JUnit `PairingShownTest`.
 - `:core`: KDoc only in `Platform.kt` (`NetworkLink`), `DisplaySchedule.kt` and at `DisplayController.TICK_MS`; tests
   in `DisplayScheduleTest`, `DimScheduleTest`, `DisplayControllerTest` and the test fake `FakeDisplayPower`.
 - No API, web UI, stored data or dependency changes.

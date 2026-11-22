@@ -20,7 +20,8 @@
   other callers; KDoc at `DisplayController.TICK_MS` (the tick also catches the end of device administration; deadlines
   instead of the tick need a delayed recheck after an availability event). Verify: `DisplayControllerTest` is green;
   two counter-checks run locally and not committed: with `TICK_MS = 120_000` "Deactivated at night" fails, and with
-  `setAvailable(false)` in place of `deactivateLikeAndroid` its "still off" assertion fails (`display-schedule` ›
+  `power.setAvailable(false); scope.runCurrent()` in place of `deactivateLikeAndroid` its "still off" assertion
+  fails (`display-schedule` ›
   Losing device administration › Deactivated at night)
 - [ ] 1.3 KDoc of `NetworkLink` in `Platform.kt`: in `:android` the network is a Wi-Fi or Ethernet connection, not
   mobile data or a VPN (design decision 1). Verify: `./gradlew :core:check` ends with exit 0, `checkNoAndroidImports`
@@ -32,17 +33,24 @@
   function in `AndroidPlatform.kt` (design decision 2). Verify: the existing address tests in `:android` and `:core`
   stay green unchanged
 - [ ] 2.2 `AndroidNetworkLink` per design decisions 1 and 2: internal `lanRequest()` (Wi-Fi or Ethernet transport,
-  no `INTERNET`); `register(connectivity, log)` that unregisters an earlier callback, clears the set, sets `connected`
-  from the snapshot (listener only on a change) and registers its own callback, which logs "LAN network available" and
-  "LAN network lost" only when the set changes; `unregister(connectivity)`; the snapshot from `allNetworks` with
-  `connectionKind` `WIFI`/`ETHERNET` and `getNetworkInfo(network)?.isConnected`, falling back to `activeNetworkInfo` with
-  `TYPE_WIFI`/`TYPE_ETHERNET`; KDoc of the class and of `connected` corrected. Verify: new Robolectric tests in
+  `NET_CAPABILITY_NOT_VPN` explicit, no `INTERNET`); `register(connectivity, log)` that unregisters an earlier
+  callback, clears the set, registers a freshly created callback and then applies the snapshot only while no callback
+  of this registration has arrived (listener only on a change); every callback sets `connected =
+  networks.isNotEmpty()` and logs "LAN network available" and "LAN network lost" only when the set changes;
+  `unregister(connectivity)` sets the field to `null` and does nothing when it is `null`; the snapshot from
+  `allNetworks` with `connectionKind` `WIFI`/`ETHERNET` (`null` capabilities not counted) and
+  `getNetworkInfo(network)?.isConnected`, falling back to `activeNetworkInfo` with `TYPE_WIFI`/`TYPE_ETHERNET`, also
+  used in the constructor in place of today's start value; KDoc of the class and of `connected` corrected. Verify: new Robolectric tests in
   `AndroidNetworkLinkTest` are green: at SDK 28 the request has `TRANSPORT_WIFI` and `TRANSPORT_ETHERNET`, not
   `TRANSPORT_CELLULAR`, has `NOT_VPN` and not `INTERNET`; the snapshot is false in Robolectric's default (Wi-Fi
   disconnected, mobile data connected and active; true before this change), true with a connected Wi-Fi network added
   through `shadowOf(connectivityManager)`, false with only a VPN; these snapshot cases also at SDK 23, and at 21 if
   Robolectric 4.17 loads it; `register` leaves exactly one callback in `shadowOf(cm).networkCallbacks`, a second
-  `register` replaces it, `unregister` removes it; `onAvailable(wifi)` then `onLost(wifi)` through the registered
+  `register` replaces it with a different callback object, `unregister` removes it, and "unregister twice does not
+  throw" (also at SDK 28, where a second unregister of the same callback would); a callback delivered before the
+  snapshot is applied wins over a snapshot that says otherwise; the existing test "A lost and a regained network reach
+  the listener" drives the registered callback instead of `link.available`/`link.lost`, with the same assertions;
+  `onAvailable(wifi)` then `onLost(wifi)` through the registered
   callback give `connected == false` with one listener event and both log lines; after `unregister` and `register`
   with an empty snapshot a network reported before is gone from the set (`display-schedule` › Asking for the network
   while the display is off › Mobile data stays on, › Mobile data only)
@@ -51,8 +59,10 @@
   "Network available/lost" lines through that class, no longer calls `link.available`/`link.lost`, and calls
   `link.register(connectivity) { core.log.i(TAG, it) }`; `onDestroy` unregisters both callbacks; the KDoc of
   `watchNetwork` says which callback does what. Verify: the test "A network reported available again without a loss
-  is not new" passes unchanged against the new class; a Robolectric test creates and destroys `FrameService` twice and
-  finds exactly two callbacks registered while it runs and none after `onDestroy` (`kiosk-host` › Network is optional
+  is not new" passes against the new class, without its last line `assertTrue(link.connected)`, which belongs to the
+  link; a Robolectric test with a pinned `@Config(sdk = [28])` that installs a light core through
+  `FrameApp.coreFactory` (`TestCore`, since the callbacks log through `core.log`) creates and destroys `FrameService`
+  twice and finds exactly two callbacks registered while it runs and none after `onDestroy` (`kiosk-host` › Network is optional
   › Same network reported again)
 
 ## 3. Android 16 orientation opt-out
@@ -77,8 +87,8 @@
   `false` through the sync, `attach` makes a new sync, and `updateEmptyPairing` uses `pairingInEmptyState`. Verify: a
   Robolectric test next to `UpdateOnDisplayTest` with `TestCore` is green: an empty library without paired devices
   has a code in `core.pairing.display`; after `setLocalOnly(true)` it has neither code nor URL and the empty state
-  shows none (before this change the code stayed); after `setLocalOnly(false)` a code again (`admin-access` › Code only while shown on the
-  frame › Local-only mode)
+  shows none (before this change the code stayed); after `setLocalOnly(false)` a code again (`admin-access` › Code
+  only while shown on the frame › Local-only mode)
 
 ## 5. Checks
 
@@ -91,7 +101,7 @@
 - [ ] 6.1 API 37 emulator, end to end for the network: check that it has a virtual Wi-Fi next to the cellular `eth0`;
   activate device administration there, set a schedule that puts the display off now, then turn its Wi-Fi off with
   `svc wifi disable` while the display is off; after 12 minutes turn it back on. First with the 0.13.0 release build,
-  then with the debug build of this change. Verify: with 0.13.0 there is no "Dark wake for the network" within the
+  then with the debug build of this change, switched with `adb install -r` (same certificate, data kept). Verify: with 0.13.0 there is no "Dark wake for the network" within the
   12 minutes (the finding reproduced; at most one "Network lost while the display is off" if mobile data came up only
   after the loss); with this build the log has "LAN network available" right after the start, "LAN network
   lost" and "Network lost while the display is off: asking for a reconnect" within a minute of the Wi-Fi going off,
@@ -103,11 +113,13 @@
   Verify: "Network available" appears for the mobile data network and the server answers through `adb forward`, but no
   "LAN network available" line appears (`display-schedule` › Asking for the network while the display is off › Mobile
   data only)
-- [ ] 6.3 API 37 emulator with a tablet display (smallest width of 600 dp or more, e.g. 1920×1200 at 240 dpi), the
-  device held in landscape: switch the orientation setting to `portrait` and back, first with 0.13.0, then with this
-  build. Verify: screenshots show 0.13.0 staying in landscape with the portrait setting (the finding reproduced) and
-  this build turning to portrait and back without a restart (`slideshow-display` › Orientation of the frame › Switch
-  to portrait)
+- [ ] 6.3 Emulator with a tablet display (smallest width of 600 dp or more, e.g. 1920×1200 at 240 dpi), the device
+  held in landscape, first on an API 36 image (what the opt-out property is defined for), then on API 37: switch the
+  orientation setting to `portrait` and back, first with 0.13.0, then with this build (`adb install -r`, same
+  certificate, data kept). Verify: on API 36 screenshots show 0.13.0 staying in landscape with the portrait setting
+  (the finding reproduced) and this build turning to portrait and back without a restart; the API 37 result is
+  recorded, and if API 37 ignores the opt-out for targetSdk 36 the main session enters a finding in the private
+  findings list instead of failing this task (`slideshow-display` › Orientation of the frame › Switch to portrait)
 - [ ] 6.4 API 37 emulator, pairing smoke test: an empty frame without paired devices, the hint opened, then a device
   paired, then local-only mode switched on in the device menu with the library emptied and all pairings revoked.
   Verify: screenshots show code and QR code in the empty state, the code in the hint, neither after pairing, and
@@ -122,7 +134,9 @@
   Orientation of the frame › Switch to portrait); optional while the Android 16 tablet is paused: Wi-Fi dropped at
   night with mobile data on (› Mobile data stays on) and portrait on that tablet; the open row for `display-schedule` ›
   Losing device administration › Deactivated at night stays and may be run with this release, only with the owner's
-  consent and with device administration activated again afterwards. Verify: the rows exist with their references
+  consent and with device administration activated again afterwards. It also adds two entries to the private findings
+  list: "mobile data masked a Wi-Fi loss (follow-up to finding 46)" and "Android 16 opt-out expires with targetSdk 37;
+  render-size work deferred". Verify: the rows and both findings exist with their references
 - [ ] 7.2 After the release, update through the updater with the owner's consent, the Frameo first (or the Lenovo
   watched closely), the second frame after one night without anything unusual, and run the rows of 7.1. Verify:
   results are entered, anything that differs gets a finding in `../openframe-private/FINDINGS.md`, and the optional

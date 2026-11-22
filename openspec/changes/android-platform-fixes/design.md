@@ -59,7 +59,8 @@ See proposal.md for the six issues. What the code on main (after 0.13.0) does to
 - Changing the DST behaviour (owner decision of 22 Nov 2026).
 - Changing the production timing of `DisplayController` (the tick stays 30 s).
 - A session created by `POST /api/v1/pairing/code` in local-only mode: the request can only come from the device
-  itself then, the frame shows the QR code alone, and it creates no code since nothing is shown on the frame.
+  itself then, the hint hides both code and QR code in that mode (`updateHint`), and the core makes a session without
+  a code, since the frame reports that it shows no pairing.
 - Any new API field: whether the frame has a LAN stays internal, as it is today.
 
 ## Decisions
@@ -68,9 +69,10 @@ See proposal.md for the six issues. What the code on main (after 0.13.0) does to
 
 This replaces decision 1 of `display-off-reachability` ("a network with internet or Wi-Fi transport counts"); the
 archive stays as it is. `AndroidNetworkLink` registers its own `NetworkCallback` with an internal `lanRequest()`:
-`NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).addTransportType(TRANSPORT_ETHERNET).build()`. Transports
-in a request are alternatives, so either matches. The builder's defaults keep `NOT_VPN`, `NOT_RESTRICTED` and
-`TRUSTED`; `INTERNET` is not asked for, so a Wi-Fi without an internet uplink still counts, since the LAN is what the
+`NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).addTransportType(TRANSPORT_ETHERNET)
+.addCapability(NET_CAPABILITY_NOT_VPN).build()`. Transports in a request are alternatives, so either matches.
+`NOT_VPN` is among the builder's defaults already (with `NOT_RESTRICTED` and `TRUSTED`) and is set explicitly so that
+the request says what it relies on; `INTERNET` is not asked for, so a Wi-Fi without an internet uplink still counts, since the LAN is what the
 admin interface needs. Everything used is available from API 21. The callback's `onAvailable`/`onLost` update the
 link's set of networks as today and write "LAN network available" and "LAN network lost" through the logger handed to
 `register`, which `FrameService` points at `core.log`, so the lines are in `GET /api/v1/logs`. A repeated
@@ -85,14 +87,24 @@ of a request has neither problem.
 
 ### 2. Idempotent registration with a fresh start value
 
-`register(connectivity, log)` first unregisters a callback it registered before, clears the set of networks, sets
-`connected` from a snapshot, and then registers the new callback; the listener hears of the snapshot only if it
-changes `connected`. `unregister(connectivity)` removes the callback. The link lives as long as the process, the
-service does not: without the clearing, a network lost while no callback was registered would stay in the set, and a
-second registration would leave two callbacks (Android 11 and later limit an app to 100 requests).
+`register(connectivity, log)` first unregisters a callback it registered before, clears the set of networks, creates
+a fresh `NetworkCallback` and registers it, and then reads the snapshot. The snapshot is applied to `connected` only
+while no callback of this registration has arrived yet; every callback sets `connected = networks.isNotEmpty()`, so a
+callback that arrives between the registration and the snapshot is not overwritten by an older view. The listener
+hears of the snapshot only if it changes `connected`. `unregister(connectivity)` unregisters the callback and sets
+the field to `null`, and does nothing when it is `null` already: from API 26 unregistering a callback that is not
+registered throws, and newer releases reject registering the same callback object twice, hence a new object each
+time. The link lives as long as the process, the service does not: without the clearing, a network lost while no
+callback was registered would stay in the set, and a second registration would leave two callbacks (Android limits an
+app to 100 network requests).
 
-The snapshot replaces today's `activeNetworkInfo?.isConnected`. It goes through `connectivity.allNetworks` and counts
-a network whose `connectionKind(getNetworkCapabilities(network))` is `WIFI` or `ETHERNET` and whose
+Before the first `register`, `connected` holds the same snapshot, read in the constructor instead of today's
+`activeNetworkInfo?.isConnected`: `FrameApp` creates the link and the core, and the core's `DisplayController` can
+evaluate before `FrameService.onCreate` registers anything.
+
+The snapshot goes through `connectivity.allNetworks` and counts a network whose
+`connectionKind(getNetworkCapabilities(network))` is `WIFI` or `ETHERNET` (a `null` from `getNetworkCapabilities`, a
+network going away, is not counted) and whose
 `getNetworkInfo(network)?.isConnected` is true; the second check is needed because `allNetworks` also lists networks
 that are still coming up (Robolectric's default has a disconnected Wi-Fi). If that throws, the fallback is
 `activeNetworkInfo` with type `TYPE_WIFI` or `TYPE_ETHERNET` and `isConnected`. A VPN on top of the Wi-Fi is a network
@@ -111,7 +123,10 @@ reports a network not known yet, remove one that was known). Its instance stays 
 is today: a service restarted by `START_STICKY` gets `onAvailable` for the network it is on, and a set in the service
 would take that for a new network and rebind, dropping every open connection, which today does not happen. A stale
 entry there only matters if the same network id comes back, and Android gives a new connection a new id. The
-existing test "A network reported available again without a loss is not new" moves to that class unchanged.
+existing test "A network reported available again without a loss is not new" moves to that class without its last
+line, `assertTrue(link.connected)`, which belongs to the link. The test "A lost and a regained network reach the
+listener", which calls `link.available`/`link.lost` directly today, is rewritten to drive the callback that
+`register` leaves in Robolectric's `ConnectivityManager` shadow, with the same assertions.
 
 ### 4. A device with only mobile data counts as never connected
 
@@ -131,7 +146,9 @@ case without users, and on such a device a dark wake cannot make anything worse 
 The `<activity>` element of `DisplayActivity`, not `<application>`, gets
 `<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true"/>`, which
 makes Android 16 keep honouring `screenOrientation` and `requestedOrientation` on large screens for an app with
-targetSdk 36. Below Android 12 the element is ignored, as the one on `FrameService` already is on the frames. A comment
+targetSdk 36. Android 16 (API 36) is what the property is defined for; whether Android 17 still honours it for an app
+with targetSdk 36 is unverified, so the emulator check runs on an API 36 tablet image first and on API 37 as well
+(task 6.3). Below Android 12 the element is ignored, as the one on `FrameService` already is on the frames. A comment
 at `targetSdk = 36` in `android/build.gradle.kts` says the opt-out ends with 37 and points to the guard.
 
 `ManifestTest` gets two tests on the merged manifest from its `mergedManifest()` helper: the property with value
@@ -209,8 +226,9 @@ usable screen stays where it is (`PairingManager.setScreenUsable`, fed by `Frame
 - [The rebind changes by accident] → The rebind's set stays per process and keeps today's test (decision 3); the
   emulator check of Wi-Fi off and on looks for exactly one "Network available" and rebind.
 - [The Android 16 opt-out ends with targetSdk 37] → The guard test fails at the bump.
-- [The opt-out is only checked on an emulator] → The Android 16 tablet is paused; an API 37 emulator with a tablet
-  display (smallest width 600 dp or more) shows the difference between 0.13.0 and this build.
+- [The opt-out is only checked on an emulator] → The Android 16 tablet is paused; an API 36 emulator with a tablet
+  display (smallest width 600 dp or more) shows the difference between 0.13.0 and this build. If an API 37 image
+  ignores the opt-out for targetSdk 36, that becomes a finding, not a failed task: no frame in use runs Android 17.
 - [The night test needs a dropped Wi-Fi on a frame] → Not needed: the emulator reproduces it, and finding 46's night
   test is closed. On the frames only the log line and a night without a false dark wake are checked, both read-only.
 
