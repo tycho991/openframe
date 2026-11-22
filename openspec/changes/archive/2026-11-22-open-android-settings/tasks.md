@@ -22,8 +22,8 @@
 ## 4. Devices (each persistent device change only with the owner's consent at that moment)
 
 - [x] 4.1 The main session adds rows to the private device checklist, each with its spec reference: the firmware check on the Frameo read-only first (the frame app known to the package manager), then the menu there without the entry (› On the Frameo); on the Lenovo the entry (› On the Lenovo), the start page, a subpage and the start page again, Home and Back, the settings left open for 30 minutes, an off period of the schedule beginning under the settings, and the HOME warning after Back. Verify: the rows exist with their references
-- [ ] 4.2 Run the rows of 4.1 on a debug build of this change before the release pull request is merged; install the debug build only with the owner's consent and put the release build back afterwards. Verify: results entered, a finding for anything that differs, and no open failure when the release is merged
-- [ ] 4.3 After the release, check on the release build that the entry is missing on the Frameo and offered on the Lenovo. Verify: results entered in the rows of 4.1
+- [x] 4.2 Run the rows of 4.1 on a debug build of this change before the release pull request is merged; install the debug build only with the owner's consent and put the release build back afterwards. Verify: results entered, a finding for anything that differs, and no open failure when the release is merged
+- [x] 4.3 After the release, check on the release build that the entry is missing on the Frameo and offered on the Lenovo. Verify: results entered in the rows of 4.1
 
 ## Workflow follow-up
 
