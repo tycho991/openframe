@@ -174,6 +174,20 @@ class LocalPhotoSource(
         }
     }
 
+    /**
+     * Accepts several files created by the app itself in one edit, an upload of several files, with the [ImageInfo] of
+     * their checks. Throws [ImageException].
+     */
+    fun addAll(files: List<Pair<File, ImageInfo>>): List<PhotoEntry> {
+        val read = files.map { (file, info) -> read(relativePath(root, file), file, info) }
+        return index.edit { edit ->
+            read.map { entry ->
+                val current = edit.get(entry.id)
+                entry.withStateOf(current).copy(version = edit.versionFor(current)).also(edit::put)
+            }
+        }
+    }
+
     fun fileOf(entry: PhotoEntry): File = File(root, entry.path)
 
     /** The entry of [file]; its version is assigned when it is applied ([LibraryEdit.versionFor]). */

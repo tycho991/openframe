@@ -114,6 +114,121 @@ class UploadApiTest {
         assertEquals(201, frame.upload(tooLong.dropLast(1), "a.jpg" to jpeg).statusCode(), "255 characters are allowed")
     }
 
+    private fun errorOf(res: io.github.tycho991.openframe.core.testing.Res) =
+        Json.parseToJsonElement(res.body()).jsonObject["error"]!!.jsonObject
+
+    private fun utf8Bytes(text: String) = text.toByteArray(Charsets.UTF_8).size
+
+    /** The name survives a round trip through UTF-8: a lone half of a surrogate pair would not. */
+    private fun assertValidUtf8(name: String) {
+        assertEquals(name, String(name.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+        assertFalse(name.contains('\uFFFD'), name)
+    }
+
+    /** Spec `photo-library`: Names of uploaded files › Long name in another script. */
+    @Test
+    fun `A long name in another script is cut to 200 bytes and keeps its extension`() {
+        val res = frame.upload(null, "日".repeat(90) + ".jpg" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        val path = result(res).photos.single().path
+        assertTrue(path.endsWith(".jpg"), path)
+        assertTrue(utf8Bytes(path) <= 200, "${utf8Bytes(path)} bytes")
+        assertEquals("日".repeat(65) + ".jpg", path, "whole characters only")
+        assertEquals(listOf(path), files())
+    }
+
+    /** Spec `photo-library`: Names of uploaded files › Emoji at the cut. */
+    @Test
+    fun `An emoji at the cut is kept whole or dropped`() {
+        // 195 bytes, then an emoji of four bytes across the budget of 196 for the stem.
+        val res = frame.upload(null, "a".repeat(195) + "😀" + "b".repeat(20) + ".jpg" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        val path = result(res).photos.single().path
+        assertValidUtf8(path)
+        assertEquals("a".repeat(195) + ".jpg", path)
+        val kept = result(frame.upload(null, "a".repeat(190) + "😀" + "b".repeat(20) + ".jpg" to jpeg)).photos.single().path
+        assertValidUtf8(kept)
+        assertEquals("a".repeat(190) + "😀" + "bb.jpg", kept, "the whole emoji")
+    }
+
+    @Test
+    fun `A long name without an image extension stays below 255 bytes with the appended one`() {
+        val res = frame.upload(null, "x".repeat(296) + ".bin" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        val path = result(res).photos.single().path
+        assertEquals("x".repeat(200) + ".jpg", path)
+        assertTrue(utf8Bytes(path) < 255)
+    }
+
+    /** Spec `photo-library`: Names of uploaded files › Album level is a file. */
+    @Test
+    fun `An album level that is a file is refused with invalid_album`() {
+        File(frame.photos, "family").apply { parentFile.mkdirs() }.writeBytes(ByteArray(3))
+        val res = frame.upload("family/2025", "a.jpg" to jpeg)
+        assertEquals(400, res.statusCode())
+        val error = errorOf(res)
+        assertEquals("invalid_album", error["code"]!!.jsonPrimitive.content)
+        assertEquals(setOf("album"), error["fields"]!!.jsonObject.keys)
+        assertEquals(listOf("family"), files(), "stores nothing")
+        assertTrue(
+            frame.core.library.index.library.value.photos
+                .isEmpty(),
+        )
+    }
+
+    /** Spec `photo-library`: Upload into an album in another letter case › Album in lower case. */
+    @Test
+    fun `An upload into an album in another letter case goes into the existing folder`() {
+        File(frame.photos, "Holiday").mkdirs()
+        val res = frame.upload("holiday", "x.jpg" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        val photo = result(res).photos.single()
+        assertEquals("Holiday/x.jpg", photo.path)
+        assertEquals("Holiday", photo.album)
+        assertEquals(listOf("Holiday/x.jpg"), files())
+        frame.scan()
+        assertEquals(
+            photo.id,
+            frame.core.library.index.library.value.photos.values
+                .single()
+                .id,
+            "the same ID after a scan",
+        )
+    }
+
+    /** Spec `photo-library`: Names of uploaded files › Second file fails. */
+    @Test
+    fun `When the second file cannot be put in place nothing is stored`() {
+        frame.upload("family", "old.jpg" to jpeg)
+        val version = frame.core.library.index.library.value.version
+        var renames = 0
+        frame.core.library.renameFile = { from, to -> ++renames < 2 && from.renameTo(to) }
+        val res = frame.upload("family", "a.jpg" to jpeg, "b.jpg" to jpeg)
+        assertEquals(500, res.statusCode())
+        assertEquals(listOf("family/old.jpg"), files(), "neither file stays")
+        assertEquals(version, frame.core.library.index.library.value.version, "the library is unchanged")
+        assertTrue(
+            frame.photos
+                .resolve(".upload")
+                .listFiles()
+                .orEmpty()
+                .isEmpty(),
+            "no leftovers",
+        )
+    }
+
+    /** Spec `photo-library`: Upload › Same name, within one request. */
+    @Test
+    fun `Two files of the same name in one request get distinct names in one edit`() {
+        val version = frame.core.library.index.library.value.version
+        frame.notifiedTogether.clear()
+        val res = frame.upload("family", "a.jpg" to jpeg, "a.jpg" to Fixtures.file("rotated6.jpg").readBytes(), "A.jpg" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        assertEquals(listOf("family/a.jpg", "family/a (1).jpg", "family/A (2).jpg"), result(res).photos.map { it.path })
+        assertEquals(version + 1, frame.core.library.index.library.value.version, "one edit")
+        assertEquals(1, frame.notifiedTogether.size, "one report to the media store")
+    }
+
     @Test
     fun `Same name`() {
         frame.upload("family", "a.jpg" to jpeg)

@@ -697,6 +697,28 @@ class LibraryApiTest {
         assertEquals(204, frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}").statusCode())
     }
 
+    /** Spec `photo-library`: Implausible capture dates › Camera without a set clock. */
+    @Test
+    fun `A capture date before 1800 counts as missing and the file date applies`() {
+        // What a lenient parse makes of `0000:00:00 00:00:00`.
+        frame.engine.takenAtOverride = { java.time.Instant.parse("-0001-11-30T00:00:00Z") }
+        val file = put("clockless.jpg").apply { setLastModified(1_700_000_000_000) }
+        frame.scan()
+        val photo = page().items.single()
+        assertEquals(
+            java.time.Instant
+                .ofEpochMilli(file.lastModified())
+                .toString(),
+            photo.takenAt,
+        )
+        assertEquals(
+            1_700_000_000_000L,
+            java.time.Instant
+                .parse(photo.takenAt)
+                .toEpochMilli(),
+        )
+    }
+
     @Test
     fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }
