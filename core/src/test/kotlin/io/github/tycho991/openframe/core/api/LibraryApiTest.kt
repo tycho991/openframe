@@ -604,6 +604,34 @@ class LibraryApiTest {
         assertEquals(listOf("holiday/r.jpg"), page().items.map { it.path })
     }
 
+    private fun libraryVersion() =
+        ApiJson
+            .decodeFromString(StateDto.serializer(), frame.get("/api/v1/state").body())
+            .libraryVersion
+
+    private fun batch(
+        action: String,
+        ids: List<String>,
+    ) = frame.send("POST", "/api/v1/photos:batch", ids.joinToString(",", "{\"action\":\"$action\",\"ids\":[", "]}") { "\"$it\"" })
+
+    /** Spec `photo-library`: Batch changes › Large batch, counted with 1,000 photos. */
+    @Test
+    fun `A batch of 1,000 IDs changes the library version once`() {
+        val ids = (0 until 1000).map { id("many/$it.jpg") }
+        // Entries with the size and time of their files: the scan finds them unchanged and opens none of them.
+        val files = (0 until 1000).map { put("many/$it.jpg").apply { setLastModified(1_700_000_000_000) } }
+        frame.core.library.index.edit { edit ->
+            ids.forEachIndexed { i, id ->
+                edit.put(PhotoEntry(id, "local", "many/$i.jpg", 400, 300, i.toLong(), files[i].length(), files[i].lastModified(), 1))
+            }
+        }
+        val before = libraryVersion()
+        val res = batch("hide", ids)
+        assertEquals(200, res.statusCode())
+        assertEquals(1000, ApiJson.decodeFromString(BatchResultDto.serializer(), res.body()).processed)
+        assertEquals(before + 1, libraryVersion())
+    }
+
     @Test
     fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }

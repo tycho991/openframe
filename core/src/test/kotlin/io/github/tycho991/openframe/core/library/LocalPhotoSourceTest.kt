@@ -128,6 +128,17 @@ class LocalPhotoSourceTest {
         assertTrue(before === index.library.value, "Index unchanged")
     }
 
+    /** Design decision 7 of `library-performance`: a rescan without a change does not edit the index. */
+    @Test
+    fun `Rescan without changes makes no edit`() {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        Fixtures.copy("photo.heic", File(photos, "b.heic"))
+        scan()
+        val edits = index.edits
+        scan()
+        assertEquals(edits, index.edits, "no edit call")
+    }
+
     @Test
     fun `Metadata`() {
         Fixtures.copy("rotated6.jpg", File(photos, "r.jpg"))

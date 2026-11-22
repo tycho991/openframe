@@ -281,6 +281,46 @@ class RenderCacheTest {
         }
     }
 
+    /** Design decision 13 of `library-performance`: rendering does not list the folder, nor does removing a source. */
+    @Test
+    fun `Rendering 1,000 photos and removing their source lists the folder only a few times`() {
+        var listings = 0
+        // Writes a file instead of decoding, so that 1,000 renderings take no time; the cache's own work is counted.
+        val writing =
+            object : io.github.tycho991.openframe.core.platform.MediaEngine by engine {
+                override fun render(
+                    source: File,
+                    target: File,
+                    width: Int,
+                    height: Int,
+                    region: Region,
+                    quality: Int,
+                ) = target.writeBytes(ByteArray(10))
+            }
+        val c =
+            RenderCache(
+                File(dir, "cache"),
+                writing,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                listFolder = {
+                    listings++
+                    it.listFiles()
+                },
+            )
+        try {
+            val entries = (0 until 1000).map { PhotoEntry(PhotoEntry.idFor("s1", "p$it.jpg"), "s1", "p$it.jpg", 400, 300, 0, 1, 1, 1) }
+            runBlocking { entries.forEach { c.get(it, RenderSize.THUMB) } }
+            c.removeAll(entries.map { it.id })
+            assertTrue(listings <= 3, "listed $listings times")
+        } finally {
+            c.close()
+        }
+    }
+
     /** A folder that counts how often it is listed. */
     private class CountingDir(
         file: File,

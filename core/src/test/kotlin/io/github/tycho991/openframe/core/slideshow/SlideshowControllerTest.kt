@@ -111,6 +111,7 @@ class SlideshowControllerTest {
         photos: List<PhotoEntry>,
         allReady: Boolean = true,
         settings: Settings = Settings.defaults("x").copy(order = Order.CHRONOLOGICAL, intervalSeconds = 30),
+        configure: FakeImages.() -> Unit = {},
     ) {
         val visible = MutableStateFlow(photos)
         val library = photos.map { it.id }.toMutableSet()
@@ -121,6 +122,7 @@ class SlideshowControllerTest {
                     readyIds += photos.map { it.id }
                     renderedFor(photos)
                 }
+                configure()
             }
         val controller =
             SlideshowController(visible, { it in library }, this.settings, images, scope.backgroundScope, AppLog(TestClock())).also {
@@ -132,6 +134,21 @@ class SlideshowControllerTest {
     }
 
     private val photos = (1..5).map(::photo)
+
+    /**
+     * Spec `slideshow-display`: Bounded rendering ahead › Cold cache with 5,000 photos, › Server of all photos
+     * unreachable; counted with 1,000 photos (design decision 13 of `library-performance`).
+     */
+    @Test
+    fun `A cold cache of 1,000 photos asks for at most 10 ahead and renders at most 3 on demand`() =
+        runTest {
+            val many = (1..1000).map(::photo)
+            val s = Setup(this, many, allReady = false) { broken += many.map { it.id } }
+            runCurrent()
+            val ahead = s.images.prefetched.map { it.first }.toSet()
+            assertTrue(ahead.size <= 10, "${ahead.size} photos asked for ahead")
+            assertTrue(s.images.demanded.size <= 3, "${s.images.demanded.size} photos rendered on demand")
+        }
 
     @Test
     fun `Change after interval and wrap-around`() =
