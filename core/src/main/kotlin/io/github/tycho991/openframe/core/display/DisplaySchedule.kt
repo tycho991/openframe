@@ -32,7 +32,9 @@ data class DimPeriod(
  * The on period of a day starts at the on time of that day's window and ends at the off time, on the next day if the
  * off time is not after the on time. Equal times cover the calendar day, 00:00 to 00:00. Periods that touch or overlap
  * are one period, so that no switching time lies between them. Local times are resolved with [ZonedDateTime.of]: a
- * time in the gap of a DST change moves to after the gap, one in the doubled hour takes the earlier offset.
+ * time in the gap of the spring DST change moves forward by the gap's length, not to the gap's end (02:30 becomes
+ * 03:30 in Europe/Berlin), and one in the doubled hour of the autumn change takes the earlier offset. This holds for
+ * the on, off and dim times alike.
  */
 object DisplaySchedule {
     /**
@@ -111,7 +113,10 @@ object DisplaySchedule {
 
     private fun wholeDay(window: DisplayWindow) = window.on == window.off
 
-    /** The on period that starts on [date], `null` if it is empty (both times in the same DST gap). */
+    /**
+     * The on period that starts on [date], `null` if it is empty: the on time lies in the spring DST gap and moves to
+     * or past the off time (02:30 to 03:15 becomes 03:30 to 03:15 in Europe/Berlin). That day then has no on period.
+     */
     private fun onPeriod(
         date: LocalDate,
         settings: DisplayScheduleSettings,

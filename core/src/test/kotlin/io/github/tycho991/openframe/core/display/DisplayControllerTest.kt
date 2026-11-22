@@ -682,8 +682,9 @@ class DisplayControllerTest {
         start()
         minutes(6)
         assertFalse(power.screenOn)
-        power.setAvailable(false)
-        scope.runCurrent()
+        power.deactivateLikeAndroid(scope::runCurrent)
+        assertFalse(power.screenOn, "the event arrives while the admin is still active")
+        minutes(1)
         assertTrue(power.screenOn, "on within a minute")
         assertEquals(DisplayState(false, true, DisplayCause.NONE, null), state)
         minutes(60)
@@ -698,8 +699,8 @@ class DisplayControllerTest {
         start()
         power.powerButton()
         scope.runCurrent()
-        power.setAvailable(false)
-        scope.runCurrent()
+        power.deactivateLikeAndroid(scope::runCurrent)
+        minutes(1)
         assertFalse(power.screenOn)
     }
 

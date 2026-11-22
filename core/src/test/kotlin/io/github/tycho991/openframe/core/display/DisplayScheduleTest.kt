@@ -112,6 +112,17 @@ class DisplayScheduleTest {
     }
 
     @Test
+    fun `On time in the gap moving past the off time drops that day's on period`() {
+        // Sunday 02:30 becomes 03:30, after the off time 03:15: Sunday has no on period, the off period runs from
+        // Saturday's off time to Monday's on time.
+        val s = defaults.copy(weekend = DisplayWindow("02:30", "03:15"))
+        assertEquals(
+            Period(false, instant("2026-03-28T03:15", berlin), instant("2026-03-30T07:00", berlin)),
+            DisplaySchedule.periodAt(at("2026-03-29T03:05", berlin), s),
+        )
+    }
+
+    @Test
     fun `Off time in the doubled hour of the autumn DST change`() {
         // 2026-10-25 is a Sunday; in Berlin 03:00 CEST goes back to 02:00 CET, so 02:30 happens twice. The first counts.
         val s = defaults.copy(weekend = DisplayWindow("08:00", "02:30"))

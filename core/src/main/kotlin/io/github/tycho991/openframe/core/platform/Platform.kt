@@ -174,10 +174,11 @@ interface ScreenBrightness {
 
 /**
  * The frame's network connection and asking the system to get it back (spec `display-schedule`, Asking for the network
- * while the display is off). In :android this is Wi-Fi.
+ * while the display is off). In :android this is a Wi-Fi or Ethernet connection; mobile data, a VPN or any other kind
+ * of connection does not count.
  */
 interface NetworkLink {
-    /** The device has a network the admin interface can be reached on. */
+    /** The device has a network the admin interface can be reached on: in :android a Wi-Fi or Ethernet connection. */
     val connected: Boolean
 
     /** Asks the system to reconnect to the Wi-Fi and to scan for it, without switching the display on. */

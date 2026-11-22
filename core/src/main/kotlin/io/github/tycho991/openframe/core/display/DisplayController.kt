@@ -619,6 +619,12 @@ class DisplayController(
     private fun wakeMillis(): Long = schedule.wakeMinutes * 60_000L
 
     companion object {
+        /**
+         * The re-evaluation interval. Besides the schedule, the tick also catches the end of device administration:
+         * Android sends the disable broadcast while the admin is still active, so the availability event reads a stale
+         * value and the next tick sees the loss. Replacing the tick by deadlines needs a delayed recheck after an
+         * availability event.
+         */
         const val TICK_MS = 30_000L
         private const val TOUCH_THROTTLE_MS = 1_000L
         private const val RECONNECT_MS = 60_000L

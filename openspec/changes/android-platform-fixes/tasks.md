@@ -2,7 +2,7 @@
 
 ## 1. Display schedule in `:core` (KDoc and tests, no production behaviour change)
 
-- [ ] 1.1 DST per design decision 6: correct the class KDoc of `DisplaySchedule` (a time in the spring gap moves
+- [x] 1.1 DST per design decision 6: correct the class KDoc of `DisplaySchedule` (a time in the spring gap moves
   forward by the gap's length, not to the gap's end, for the on, off and dim times) and the KDoc of `onPeriod` (`null`
   when the on time lies in the gap and moves to or past the off time; the day then has no on period); new test in
   `DisplayScheduleTest` next to "On time in the gap of the spring DST change": weekend window 02:30 to 03:15, default
@@ -12,7 +12,7 @@
   time in the DST gap moves to after the gap" to say it moves by the gap's length. Verify:
   `./gradlew :core:test --tests '*DisplayScheduleTest*' --tests '*DimScheduleTest*'` is green, all earlier cases
   unchanged (`display-schedule` › Periods of the schedule, › Dim periods)
-- [ ] 1.2 Android's order per design decision 8: `FakeDisplayPower.deactivateLikeAndroid(deliver: () -> Unit)` (event
+- [x] 1.2 Android's order per design decision 8: `FakeDisplayPower.deactivateLikeAndroid(deliver: () -> Unit)` (event
   while `available` is still true, then `deliver()`, then `available = false` without a second event); "Deactivated at
   night" calls it with `scope::runCurrent`, asserts the display is still off right after it, on after `minutes(1)`,
   and keeps its state, `minutes(60)` and switch-call checks; "A display off by hand stays off when device
@@ -23,7 +23,7 @@
   `power.setAvailable(false); scope.runCurrent()` in place of `deactivateLikeAndroid` its "still off" assertion
   fails (`display-schedule` ›
   Losing device administration › Deactivated at night)
-- [ ] 1.3 KDoc of `NetworkLink` in `Platform.kt`: in `:android` the network is a Wi-Fi or Ethernet connection, not
+- [x] 1.3 KDoc of `NetworkLink` in `Platform.kt`: in `:android` the network is a Wi-Fi or Ethernet connection, not
   mobile data or a VPN (design decision 1). Verify: `./gradlew :core:check` ends with exit 0, `checkNoAndroidImports`
   and the API 21 check included
 
