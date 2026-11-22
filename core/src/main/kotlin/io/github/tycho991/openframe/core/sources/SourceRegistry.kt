@@ -43,6 +43,10 @@ class SourceRegistry(
         val scheduler: SourceScheduler,
     )
 
+    /** Runs before the originals folder of a removed source is deleted in the background; a test holds it there. */
+    @Volatile
+    internal var beforeFolderDeleted: () -> Unit = {}
+
     private val kinds = kinds.associateBy { it.id }
     private val running = ConcurrentHashMap<String, Running>()
     private val syncLock = Mutex()
@@ -164,10 +168,12 @@ class SourceRegistry(
     }
 
     /**
-     * Removes [id]: stops its sync, deletes its credentials and removes its photos, skipped files and originals, then asks
-     * the server to revoke the credentials in the background, so that a server that does not answer does not hold up the
-     * request. Other sources and the local photos are not touched. `false` for an unknown ID, also for the second of two
-     * removals at once.
+     * Removes [id]: stops its sync, deletes its credentials and removes its photos and skipped files, then deletes its
+     * originals and asks the server to revoke the credentials in the background, so that neither thousands of files nor
+     * a server that does not answer hold up the request (design decision 11 of `library-performance`). The renderings go
+     * through the index's notification. A deletion that the end of the process cuts off is completed at the next start
+     * that can read the list of sources ([removeOrphans]). Other sources and the local photos are not touched. `false`
+     * for an unknown ID, also for the second of two removals at once.
      */
     @Synchronized
     fun remove(id: String): Boolean {
@@ -185,7 +191,10 @@ class SourceRegistry(
                 edit.skipped(id).forEach { edit.unskip(id, it.path) }
                 photos
             }
-        (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes)).delete()
+        scope.launch {
+            beforeFolderDeleted()
+            (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes)).delete()
+        }
         onSourceRemoved(config)
         log.i(TAG, "Source $id removed, ${removed.size} photos removed")
         // Credentials the server refused are not sent again: each attempt counts as a failed login there.

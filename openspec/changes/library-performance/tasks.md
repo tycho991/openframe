@@ -76,7 +76,7 @@
 
 ## 5. Source removal in the background
 
-- [ ] 5.1 `SourceRegistry.remove` deletes the originals folder on its scope, outside its lock; the renderings go through
+- [x] 5.1 `SourceRegistry.remove` deletes the originals folder on its scope, outside its lock; the renderings go through
   4.2 (design decision 11). Verify: `SourcesApiTest` with the contract check: `DELETE /sources/{sourceId}` of a source
   with 1,000 photos answers 204 while a test hook holds the deletion of the originals, the photos are gone from the
   library at once, and after the hook is released no original and no rendering of the source is left; a `TestFrame`
