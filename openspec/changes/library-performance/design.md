@@ -1,0 +1,333 @@
+# Design
+
+## Context
+
+See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the approach:
+
+- **Slideshow.** `SlideshowController.show()` walks the whole order with `ready()` and, for every photo without a
+  display size, calls `prefetch(listOf(entry), NEXT)`, so a cold cache queues the whole order. Its loop of renderings
+  on demand has no limit, and when every one fails it sets no timer and stays in `Loading`. `NEXT_AHEAD = 2` and
+  `PREFETCH_AHEAD = 10` exist, but only `prefetchUpcoming()` uses them. Resting cancels only the timer, so queued jobs
+  keep rendering at night, against `display-schedule` "Slideshow rests while the display is off".
+- **Render cache.**
+  - `RenderCache` has one worker and, since `nextcloud-hardening`, a download thread: a job whose remote original is
+    missing is handed over (`handOver`), stays in `inFlight`, and the original is pinned in `OriginalsStore` from the
+    start of its fetch (`SourceOriginals.fileOf` → `SourceRegistry.original(pin = true)`) until the re-queued jobs
+    call `finish()`.
+  - `enqueue` raises the priority of a pending name but never removes one, so a pending entry left behind would block
+    that name for good.
+  - `lastUse` maps names to a logical counter, and `touch` never sets a file time, so after a restart the order of use
+    comes from the creation times.
+  - `render()` lists the folder after every rendering to delete older versions (`deleteMatching`), `trim` reads the
+    size of every file it knows, `init` sorts by `lastModified()` inside the comparator, and `peekAnyDisplay` scans all
+    of `lastUse` for every candidate.
+  - `removeAll` lists the folder once per call (#116). There is no check of free storage.
+- **Index.** `PhotoIndexStore.edit` copies the photo map, compares it with the old one and tells nobody which IDs left.
+  Renderings are removed only by `PhotoLibrary.delete` (`cache.remove`) and through the `onPhotosRemoved` parameter of
+  `SourceRegistry` (source removal, orphans and, as `onRemoved`, vanished remote photos). A local scan that removes a
+  file and every `LibraryEdit.skip`, local or remote, leave the renderings behind.
+- **Image versions.** A new entry gets `(previous?.version ?: 0) + 1` (`LocalPhotoSource.read`,
+  `RemoteSource.fetch`). A removed photo that comes back at its path gets version 1 again, the name `id-v1-…` of a
+  rendering that may still be there, the same ETag and the same image URL.
+- **Storage.** `PhotoLibrary.RESERVE_BYTES` and `OriginalsStore.RESERVE_BYTES` are 100 MiB. `FrameCore` passes no
+  `freeBytes` to `SourceRegistry`, so originals use `File.usableSpace` instead of `PlatformInfo.freeBytes`. Downloads
+  already read the reserve from `OriginalsStore` (`roomBytes = originals::roomOnDisk` and `hasRoomOnDisk` in
+  `fetchForRendering`). The updater downloads into `filesDir/update`, not into the cache, and checks
+  `2 × APK + 100 MiB` (`app-update`).
+- **Scan.** `scanLoop` scans every 15 s whatever the display does, and `LocalPhotoSource.scan` always calls
+  `index.edit`. `FrameCore.requestScan()` has no caller.
+- **Batch.** `POST /photos:batch` calls `delete` or `setHidden` once per ID: one index edit each, and for a delete one
+  `notifyChanged` each. The web UI sends single deletes through the batch endpoint as well.
+- **Uploads.** `sanitizeName` cuts at 120 UTF-16 units and `sanitizeAlbum` at 64 per level, both able to split a
+  surrogate pair. `move` ignores the result of `mkdirs`, renames and indexes each file on its own, so a failure of the
+  second file leaves the first in place despite the KDoc's "All or nothing". There is no case resolution, while the
+  photo folder of the reference frames sits on a FUSE file system that does not tell case apart.
+- **Capture dates.** `AndroidMediaEngine.parseExifDate` uses a lenient `SimpleDateFormat`, so `0000:00:00 00:00:00`
+  becomes a date in the year 1 or 2 BC, and neither source checks the result.
+- **Slideshow view.** `SlideRenderer.preload` and `refit` poll every 200 ms during a transition; `clear()` resets
+  neither `animating` nor `pendingOld`; `release()` calls `shutdownNow()`, after which a late `decoder.execute`
+  throws on the main thread; the class KDoc still says photos are shown "on black".
+
+### Not in this change
+
+- **Batched removal** of renderings and originals per source (#116), and `OriginalsStore.remove(entry)` of the
+  original plan: `removeAll` with one listing per batch exists, and this change keeps it.
+- **A change of the updater** (owner's decision): `UpdateManager` and `app-update` keep `2 × APK + 100 MiB`, and the
+  coupling "the updater trims the render cache" of the original plan is dropped. The render cache frees space by
+  itself once free storage falls below the reserve (decision 2).
+- **`FileObserver`** for the photo folder (bootstrap design, decision 8), a budget check on `PATCH /settings`,
+  `relativeTo` micro-optimisations, NFC normalisation of uploaded names, and an upper bound for capture dates (the
+  clock of a frame may be wrong, and unchanged files are never read again).
+- **Moving the first listing of the render cache off the constructor.** The start logs its time; the device row
+  measures it on the Frameo, and only a value above about 200 ms leads to a follow-up.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- No work per photo of the library where work per change suffices: no listing per rendering, no size read per file
+  per trim, no index edit per batch ID, no index copy per idle scan.
+- Every exit of a photo from the index reaches the caches through one path, and a version never names two pictures.
+- The frame stays above Android's low-storage threshold, where Android starts trimming app caches, with one value for
+  uploads, originals and renderings ahead.
+
+**Non-Goals:**
+
+- No change of the cache budget's meaning in `frame-settings`; the cache only shrinks below it when storage is short.
+- No new API endpoint or field. Only texts in the contract change (decision 1, tasks group 1).
+- No change to how often remote sources sync.
+
+## Decisions
+
+### 1. One storage reserve, computed once
+
+- **Formula:** `StorageReserve.bytes(total) = min(total / 10, 500 MiB) + 100 MiB`, a pure object in
+  `core/.../library/`. It follows AOSP's low-storage threshold of Android 5 and 6 (10 % of the data volume, at most
+  500 MiB), from which Android trims app caches. That Android does this on the frames is not verified (risks).
+- **Volume size:** `PlatformInfo.totalBytes(dir)` with the default `dir.totalSpace` (API 9); `FakePlatform` can set it.
+- **Where it is computed:** `FrameCore` computes it once from the cache folder and logs
+  `Storage reserve: N MiB of M MiB` at the start. On the reference frames the cache and the photo folder are on the
+  same data volume.
+- **Who uses it:**
+  - `PhotoLibrary` instead of `RESERVE_BYTES`, with `platform.freeBytes(root)` as today. The 507 message names the
+    reserve in MiB.
+  - `SourceRegistry` passes it and `platform::freeBytes` to every `OriginalsStore`; `OriginalsStore.RESERVE_BYTES`
+    goes. The download limit and the check in `fetchForRendering` read it there already.
+  - `RenderCache` (decision 2).
+- **Alternative:** a reserve only for the caches, uploads keeping 100 MB. Rejected by the owner: an upload that pushes
+  the frame below the threshold makes Android trim renderings and originals, which then come back at every sync.
+
+### 2. The render cache below the reserve
+
+- **Check:** before each rendering the worker reads `freeBytes(dir)`. Below the reserve it first removes its own
+  entries unused longest, also below the budget, until the reserve is free again or only the file being kept is left.
+- **Who may go below:** a job somebody awaits (a `get()` from the slideshow or a request, see decision 6) renders
+  anyway. A job only for the window ahead fails with a storage error and is not retried until the window asks again.
+  A warning is logged at most once an hour.
+- **Originals:** a missing remote original is fetched only above the reserve (`hasRoomOnDisk`, unchanged). So below the
+  reserve such a photo fails its rendering, and the slideshow goes on with others. The spec says so.
+- **Order of use across restarts:** `touch` sets the file time when the last one it set is more than an hour old
+  (clock injected), so the start sorts by real use and Android's trimming, which removes old files first, spares the
+  renderings in use.
+- **Running total refreshed:** found below the reserve, the cache rebuilds its index from one listing, since Android
+  may have trimmed the folder.
+
+### 3. An index of the render cache in memory
+
+- **Contents:** name → (last use, size, file time last set), and photo ID → names. The photo ID is the part of a name
+  before the first `-v<digits>-`. IDs (`local-…`, `nextcloud-…`, `s<8 hex>-…` followed by a SHA-1 in hex) contain no
+  `-v`, and the render generation sits in the folder name (`renders-r1`), not in file names. A file whose name does not
+  parse is deleted at the start.
+- **Running total:** kept with every rendering, touch, trim and removal. `trim` returns at once within the budget and
+  otherwise walks the names sorted by last use without reading any size. `totalBytes()` returns the total.
+- **Start:** one listing, each file asked for its time and size once, then sorted. Its time is logged.
+- **Older versions:** after a rendering, the older versions of that photo are found through photo ID → names, not by
+  listing the folder. They are still removed only after the new version is rendered: removing them at once would take
+  away a file that the display may be decoding as the photo on screen or the next one.
+- **`peekAnyDisplay` and `ready`:** answered from photo ID → names; the disk is asked only for a hit.
+- **Deleting:** `removeAll(entries)` takes the names out of the index at once and hands the files to a delete thread of
+  low priority, so a source with 10,000 photos does not hold up a rendering on demand.
+- **Test seam:** listing the folder goes through one function, as in `OriginalsStore`, so a test counts listings.
+- **Alternative:** keep listing the folder and cache the result. Any external deletion would still need a listing, and
+  the index has to exist anyway for the tombstones of decision 5.
+
+### 4. One notification when photos leave the index
+
+- **Where:** `PhotoIndexStore.edit` reports the entries whose ID left the index to a listener given to its
+  constructor. `LibraryEdit` records the IDs touched by `remove` and `skip`; the photo map is no longer writable from
+  outside, so these two are the only ways out. The report compares only those IDs, not the whole map.
+- **When:** after the new state is published, still inside the edit's lock, so reports come in the order of the
+  edits. The listener only changes memory and hands file work to a background thread.
+- **What `FrameCore` wires to it:** `cache.removeAll(entries)` and, for remote photos, `SourceRegistry` removing their
+  originals on its scope through the running source's `OriginalsStore.removeAll`. A removed source is no longer
+  running at that point; its folder goes as a whole (decision 11).
+- **What goes:** the `onPhotosRemoved` parameter of `SourceRegistry`, `onRemoved` and the explicit
+  `originals.removeAll` in `RemoteSource.sync`, and `cache.remove` in `PhotoLibrary.delete`. Scan, `skip` (local and
+  remote), sync, source removal, orphan cleanup and API delete then all take the same path.
+- **Leftovers:** after `index.load` and before `slideshow.start`, `FrameCore.start` removes the renderings whose photo
+  ID is not in the index. That covers files from before the update and a background deletion cut off by the end of the
+  process.
+
+### 5. An image version the ID never had, and tombstones
+
+- **Rule, applied inside the edit:** an entry that is new in the index gets `edit.newVersion`, the library version
+  before the edit plus 1, clamped to `Int.MAX_VALUE`. A changed entry gets the version of the entry *in the edit*
+  plus 1, not that of the snapshot taken before the probe or download. This holds for `LocalPhotoSource.scan`, the
+  upload's `addAll` and `RemoteSource.sync`.
+- **Why it is new:** every edit raises the library version by one, so no entry's version is ever above the library
+  version. An earlier incarnation's versions were applied in earlier edits, so `edit.newVersion` is above all of them,
+  and the incarnation's later versions grow from there.
+- **Effect:** the file name of every rendering, the ETag and the image URL (`v=`) change, so neither the cache nor a
+  browser holding an `immutable` answer serves the old picture. A quarantine of an earlier incarnation no longer
+  matches.
+- **Tombstones:** `removeAll` keeps the highest removed version per photo ID in memory. Under the cache's lock, which
+  `removeAll` also takes, the worker drops a job whose version is not above its tombstone before it renders, before it
+  hands the job to the download thread and before it renames the `.tmp` file. A dropped job deletes its `.tmp` file.
+  Tombstones live until the process ends, a few bytes per removed photo.
+- **Contract:** `PhotoEntry.version` reads "changes with every change of the file and is never reused for another
+  file at the same path". It stays an integer.
+- **Alternative:** a version counter per path stored in the index. It would grow without bound and need a new field
+  that older builds drop.
+
+### 6. A window of renderings ahead
+
+- **Interface:** `DisplayImages.prefetch` becomes `ahead(next, later)`. `CachedDisplayImages` calls
+  `RenderCache.prefetchAhead(next, later)`, which replaces a volatile set `wanted` of target names and queues the
+  missing ones as `NEXT` and `PREFETCH`.
+- **Who awaits:** a pending name records whether a `get()` awaits it. One that is only in the window can be dropped;
+  one awaited, at any priority, never is. This keeps the slideshow's refresh of the photo on screen, which awaits a
+  `NEXT` rendering, safe.
+- **Dropping:** the worker checks under the `inFlight` lock, which `enqueue` and `prefetchAhead` also take: a job not
+  awaited and not in `wanted` is dropped. Its `inFlight` entry goes, and its `Deferred` completes with an internal
+  "no longer wanted" exception, never a `CancellationException`, which could end the slideshow's command loop.
+  `finish()` runs, so a pinned original is released.
+- **Downloads:** `prefetchAhead` also walks `pendingDownloads` under its lock.
+  - A download not started whose jobs are all droppable leaves the queue together with its jobs.
+  - A started one with only droppable jobs is marked cancelled. The fetch takes a cancel check, passed through
+    `SourceOriginals.fileOf` and `SourceRegistry.original` into the download limits, so it ends at the next read and
+    its `.part` goes.
+  - A job that joins a cancelled download waits for it and is handed over again as a new download when it ends, instead
+    of failing with it. A download with an awaited job is never cancelled.
+- **Resting:** `Command.Rest(true)` calls `ahead([], [])`. Waking sets the window again, as it does today.
+- **`show()`:** it still looks for a ready photo along the whole order, now an index lookup per photo. If none is
+  ready, the window gets the first `NEXT_AHEAD` candidates as next and the rest up to `PREFETCH_AHEAD` as later. At
+  most `MAX_DEMAND_ATTEMPTS = 3` candidates are rendered on demand. If all three fail, `armTimer()` runs, and the next
+  tick tries the following ones.
+- **Log:** a failed rendering logs the stack trace only for unexpected errors, not for a `SourceException` or a dropped
+  job.
+
+### 7. Local scan: no edit without a change, slower at night
+
+- **No change:** `LocalPhotoSource.scan` returns without `index.edit` when nothing was probed and every known path and
+  every known skipped path is still in the listing.
+- **Duration:** each scan is timed. Above 1 s a warning is logged at most once an hour; every 15 s would overwrite the
+  two log files of 512 KiB.
+- **Cadence** (owner's decision): `scanLoop` waits 15 s while the display is on and 5 minutes while it is off. The
+  display going on calls `requestScan()`. `GET /photos`, `/albums` and `/skipped-files` call it through a hook when the
+  last scan began more than 15 s ago. A request does not wait for the scan; the client sees the change with its next
+  fetch, prompted by the library version.
+- **Not `GET /state`:** clients poll it, and an integration polling it would keep the frame scanning all night.
+- **`requestScan()` stays** and gets its callers.
+
+### 8. Batch actions in one edit
+
+- **New methods:**
+  - `PhotoLibrary.setHiddenAll(ids, hidden)`: one edit, unknown IDs are missing.
+  - `deleteAll(ids)`: classifies each ID outside the index lock: unknown is missing, a remote photo is failed (spec
+    "Batch with Nextcloud photos"), otherwise its file is deleted. A file already gone counts as deleted, a failed
+    delete as failed. Then one edit removes the deleted entries, the listener removes their renderings, and one
+    `notifyChanged(files)` follows.
+- **Single delete:** `delete(id)` is `deleteAll` of one ID and keeps 404, 409 `read_only_source` and 500
+  `delete_failed`.
+- **Media store:** `MediaStoreNotifier` gets `notifyChanged(files: List<File>)` with a default loop; it stays a
+  `fun interface`. `AndroidMediaStoreNotifier` calls `MediaScannerConnection.scanFile` once with all paths.
+- **Route:** `POST /photos:batch` uses the new methods with the same `processed`, `missing` and `failed`.
+
+### 9. Upload names, albums and all or nothing
+
+- **File names:** `sanitizeName` splits off an image extension (`ImageFormats.hasImageExtension`); a long
+  extension of another kind counts as part of the stem. The stem is cut at code point boundaries until the whole name
+  has at most 200 bytes in UTF-8, then trimmed again. That leaves room below the 255-byte name limit for ` (n)` from
+  `uniqueFile` and an extension that `move` appends.
+- **Album levels:** `sanitizeAlbum` still cuts each level at 64 UTF-16 units, but never inside a surrogate pair. A
+  level then has at most 192 bytes in UTF-8, below the 255-byte name limit, so no byte budget is needed there.
+- **Case:** each album level is resolved against the existing folder by listing its parent: an exact match first, then
+  a case-insensitive one, otherwise a new folder. The index path then matches the folder on the frame's FUSE file
+  system. The same happens on a case-sensitive file system, so the JVM tests see it. `nested-albums` decision 1 (two
+  albums that differ in case) then holds only for remote sources.
+- **Folder check:** after `mkdirs`, `move` checks `isDirectory` and answers 400 `invalid_album` naming `album`
+  otherwise. The contract text and `error.invalid_album` in `en.json` and `de.json` say "invalid or too long"; today
+  the web UI shows "at most 255 characters" for any `invalid_album`.
+- **All or nothing:** under one lock, the targets of all files are resolved, also against each other, and then all
+  are renamed. If one rename fails, the ones already renamed are deleted before anything is indexed. A scan that
+  picked one up in between loses it again at the next scan. Then one `LocalPhotoSource.addAll` adds all of them in
+  one edit, and one `notifyChanged(files)` follows.
+
+### 10. Capture dates
+
+- **Parse:** `AndroidMediaEngine.parseExifDate` parses with `isLenient = false`.
+- **Plausibility in `:core`:** `CaptureDates.plausible(instant)` turns a date before 1800-01-01 into `null`.
+  `LocalPhotoSource` and `RemoteSource` apply it before falling back to the file date. This is the real guard: the
+  Robolectric tests run the host JDK's `java.text`, not the libcore of Android 5 and 6.
+- **Stored entries:** after `index.load`, `FrameCore.start` corrects in one edit every entry whose capture date lies
+  before 1800 to its file date. The library version rises, so web UI tabs reload.
+- **What stays:** a date that the lenient parse already rolled into a valid-looking one cannot be recognised.
+
+### 11. Removing a source answers at once
+
+- **Lock:** `SourceRegistry.remove` keeps the index edit under its lock, which is quick, and deletes the originals
+  folder on its scope, outside the lock.
+- **Renderings:** they go through the notification (decision 4) to the delete thread.
+- **Cut off:** a deletion cut off by the end of the process is completed at the next start, by `removeOrphans` for the
+  originals folder and the sweep of decision 4 for the renderings.
+
+### 12. SlideRenderer
+
+- **No polling:** during a transition, `preload` only remembers `lastNext` and sets `preloadPending`, and `refit` sets
+  `refitPending`. `done()` posts both to the main thread, so a `swapTo` that calls `done()` itself finishes first and
+  the photo on screen is not decoded twice.
+- **`clear()`:** after `cancel()` it sets `animating = false`, recycles `pendingOld` unless it is `current`, and
+  resets `pendingOld`, `preloading`, `preloaded` and both flags. It raises a counter of its own, by which late decode
+  results of `preload` are dropped; `generation` does not fit, since `show()` raises it.
+- **`release()`:** sets `released`, removes the handler's callbacks and shuts the executor down gracefully. No
+  `decoder.execute` runs after `released`, so none can throw `RejectedExecutionException` on the main thread.
+- **Test seam:** the decoder executor is a constructor parameter; the default stays.
+- **KDoc:** describes what `BitmapFit` does: scaled down to the view's size, black borders as pixels of the bitmap,
+  views without a background.
+
+### 13. Tests that count
+
+- **Counters:** a listing counter in `RenderCache` (decision 3) and an edit counter in `PhotoIndexStore`, added in a
+  first commit of their own, so the tests compile on the old code and fail there. The fixes then make them pass.
+- **Small numbers:** the tests count, so N = 1,000 is enough and no wall-clock bound is needed.
+- **The four claims:**
+  - removing a source with N photos and 1.1 · N renderings lists the folder no more than once (extends #116's test);
+  - a cold cache with 1,000 photos keeps the window at no more than `PREFETCH_AHEAD` distinct photos (counted over
+    the names queued, not `queued`, which counts a raised job twice);
+  - a rescan without a change makes no edit;
+  - a batch over N IDs raises the library version by exactly 1.
+
+## Risks / Trade-offs
+
+- **Dropping stale jobs races with the download thread and its pins.**
+  → One lock for the decision, an awaited job is never dropped, a dropped job always runs `finish()`, and
+  `RenderDownloadTest` gets cases for a dropped queued download, a cancelled running one that a new job then joins, and
+  a raised job that keeps its result.
+- **Remote photos disappear from the slideshow on a nearly full frame.** Below the higher reserve, a remote photo whose
+  original was evicted cannot render. On a frame with 100 to 600 MiB free today, remote photos without a stored
+  original stop showing after the update, not just their pre-rendering.
+  → The spec says so. Before the rollout a read-only `df` on both frames shows whether either is in that range, and
+  the reserve is in the start log.
+- **The low-storage threshold and Android's trimming order are not verified on the frames.**
+  → The formula is a constant in one place. The device row reads the start log line and `df`.
+- **`freeBytes` of the photo folder goes through FUSE on the reference frames.** It is not verified that it matches
+  the free space of the data volume on Android 5 and 6.
+  → The read-only check before the rollout compares `df` of the data volume and of the photo folder.
+- **Every delete in the web UI changes shape**, since single deletes use `photos:batch` too.
+  → e2e cases for a single delete and a batch delete; `DELETE /photos/{photoId}` keeps its answers.
+- **The `version` contract changes.** A new photo at an old path has a version above 1.
+  → The contract only promised an integer that changes. Tests that assume version 1 for a new photo are adapted.
+  External API clients that assumed it would see larger numbers, still integers.
+- **Higher reserve, earlier refusals.** A nearly full frame refuses uploads (507) and downloads (`storage`) about
+  500 MB earlier than today.
+  → Owner's decision; the 507 text names the reserve.
+- **Scanning every 5 minutes at night delays USB changes while the display is off.**
+  → The display going on and the web UI's photo, album and skipped-file lists scan at once.
+- **Open package P11 plans to delete `requestScan()` as dead code.**
+  → It now has callers; P11 has to drop that part or land after this change.
+- **Background deletion can be cut off.** → The start sweep and `removeOrphans` finish it (decision 11).
+- **Case resolution for uploads** sends an upload into an existing folder on every file system. → Intended; the spec
+  and the decision record that `nested-albums` decision 1 now holds only for remote sources.
+- **The render cache is in the display path, and device rows run only on the released build.**
+  → The JVM tests cover the cache's paths, safe mode stops a crash loop, and a fix ships as a follow-up release.
+
+## Migration Plan
+
+- **Renderings:** left in the render folder from before the update, the files of photos not in the index are deleted
+  at the first start, and files whose names do not parse as well.
+- **Index:** existing entries keep their versions; only new incarnations get larger ones. The index format is
+  unchanged; tombstones live only in memory.
+- **Capture dates:** corrected once at the first start, with one rise of the library version.
+- **Storage:** the reserve applies from the first start. Check the frames with a read-only `df` before the rollout.
+- **Rollback:** install the previous release over it. It reads the same index; corrected capture dates and larger
+  versions stay valid for it.
