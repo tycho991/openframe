@@ -92,9 +92,9 @@
 
 ## 5. Checks
 
-- [ ] 5.1 `./gradlew check` (formatting, tests, API 21 check, Android Lint with `NewApi` as an error). Verify: the
+- [x] 5.1 `./gradlew check` (formatting, tests, API 21 check, Android Lint with `NewApi` as an error). Verify: the
   command ends with exit 0
-- [ ] 5.2 `openspec validate android-platform-fixes`. Verify: exit 0 and no warnings
+- [x] 5.2 `openspec validate android-platform-fixes`. Verify: exit 0 and no warnings
 
 ## 6. Emulator (debug build, see the emulator note in design.md)
 
