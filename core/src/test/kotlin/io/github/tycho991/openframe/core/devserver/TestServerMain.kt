@@ -279,6 +279,12 @@ object TestServerMain {
                             }
                         }
 
+                        // Whether a file is in the photo folder, as a computer over USB would see it: `yes` or `no`.
+                        "/usb/exists" -> {
+                            val target = resolveInside(core.localSource.root, q.getValue("path"))
+                            ok(if (target?.isFile == true) "yes" else "no")
+                        }
+
                         // Many photos at once, without the scan having to open them all.
                         "/many" -> {
                             val n = q.getValue("n").toInt()

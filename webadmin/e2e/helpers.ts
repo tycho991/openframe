@@ -53,6 +53,10 @@ export async function avoidMidnight(): Promise<void> {
 export const usb = (fixture: string, to: string, { scan = true } = {}) =>
   control(`/usb?fixture=${encodeURIComponent(fixture)}&to=${encodeURIComponent(to)}&scan=${scan ? 1 : 0}`);
 
+/** Whether [file] is in the photo folder of the test server. */
+export const inPhotoFolder = async (file: string) =>
+  (await control(`/usb/exists?path=${encodeURIComponent(file)}`)) === "yes";
+
 export const many = (n: number) => control(`/many?n=${n}`);
 
 /** Restarts the frame in safe mode or in normal mode, with its data and pairings. */
