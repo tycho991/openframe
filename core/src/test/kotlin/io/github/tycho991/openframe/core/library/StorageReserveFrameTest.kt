@@ -35,6 +35,7 @@ class StorageReserveFrameTest {
             val shown = mutableListOf((frame.core.slideshow.state.value as SlideState.Showing).photo.id)
             repeat(3) {
                 assertEquals(200, frame.send("POST", "/api/v1/slideshow", """{"action":"next"}""").statusCode())
+                // Shuffled, each once per pass: a photo not shown yet.
                 waitFor(message = "the next photo") { (frame.core.slideshow.state.value as SlideState.Showing).photo.id !in shown }
                 shown += (frame.core.slideshow.state.value as SlideState.Showing).photo.id
                 // Nothing ahead of time: only photos that were shown have a rendering.
@@ -43,6 +44,37 @@ class StorageReserveFrameTest {
                 assertTrue(shown.containsAll(rendered), "rendered $rendered, shown $shown")
             }
             assertEquals(6, frame.core.library.index.library.value.photos.size, "the photos stay in the library")
+        }
+    }
+
+    /**
+     * Spec `photo-library`: Going below the storage reserve › Remote photo without its original below the reserve,
+     * › Storage almost full; through the whole chain from the image request to the download.
+     */
+    @Test
+    fun `An image a client asks for downloads its original below the reserve, but not below 100 MiB`() {
+        val clients = FakeClients()
+        val remote = clients.share("AbC123").remote
+        val bytes = Fixtures.file("landscape.jpg").readBytes()
+        remote.put("a.jpg", bytes, "e1")
+        remote.put("b.jpg", bytes, "e2")
+        val platform = platform(2000)
+        TestFrame(dir, platform = platform, nextcloudClients = clients).use { frame ->
+            val res = frame.send("POST", "/api/v1/sources", """{"kind":"nextcloud-share","link":"https://cloud.example.org/s/AbC123"}""")
+            val source = ApiJson.decodeFromString(SourceDto.serializer(), res.body()).id
+            waitFor(10_000, "the first sync") { frame.core.library.index.library.value.photos.size == 2 }
+            val ids = listOf("a.jpg", "b.jpg").map { PhotoEntry.idFor(source, it) }
+            // Hidden, so that the slideshow asks for neither; their originals evicted.
+            ids.forEach { assertEquals(200, frame.send("PATCH", "/api/v1/photos/$it", """{"hidden":true}""").statusCode()) }
+            File(frame.dirs.cache, "sources/$source").listFiles()!!.forEach { it.delete() }
+            remote.downloads.clear()
+            platform.free = 100 * mib + bytes.size + 1000
+            assertEquals(200, frame.get("/api/v1/photos/${ids[0]}/image?size=full").statusCode())
+            assertEquals(listOf("a.jpg"), remote.downloads.toList())
+            platform.free = 100 * mib + bytes.size - 1
+            assertEquals(503, frame.get("/api/v1/photos/${ids[1]}/image?size=full").statusCode())
+            assertEquals(listOf("a.jpg"), remote.downloads.toList(), "no request below the floor")
+            assertEquals(2, frame.core.library.index.library.value.photos.size, "the photo stays in the library")
         }
     }
 

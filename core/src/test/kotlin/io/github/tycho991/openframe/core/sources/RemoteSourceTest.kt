@@ -472,6 +472,46 @@ class RemoteSourceTest {
         assertEquals(emptyList<String>(), remote.downloads, "an original that is there is not fetched")
     }
 
+    /**
+     * Spec `remote-sources`: Storage of the originals › Removed original on a nearly full frame, › Storage almost full
+     * (design decision 1 of `library-performance`).
+     */
+    @Test
+    fun `Below the reserve only a rendering somebody awaits downloads, down to 100 MiB free`() {
+        val mib = 1024L * 1024
+        val reserve = 600 * mib
+        val store = OriginalsStore(File(dir, "reserved"), freeBytes = { freeBytes }, reserveBytes = reserve)
+        val reserved = RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, store, log)
+        remote.put("a.jpg", jpg(), "e1")
+        runBlocking { reserved.scan() }
+        val entry = photos().getValue("a.jpg")
+        store.fileOf(entry).delete()
+        remote.downloads.clear()
+        val size = entry.fileSize
+        freeBytes = OriginalsStore.ON_DEMAND_FLOOR_BYTES + size + 1000
+        val ahead = assertThrows(SourceException::class.java) { reserved.original(entry) }
+        assertEquals(SourceException.Kind.STORAGE, ahead.kind, "a rendering ahead keeps the reserve")
+        assertEquals(emptyList<String>(), remote.downloads)
+        assertTrue(reserved.original(entry, onDemand = true).isFile, "an awaited one goes below it")
+        assertEquals(listOf("a.jpg"), remote.downloads)
+        assertEquals(OriginalsStore.ON_DEMAND_FLOOR_BYTES, freeBytes - remote.limits.last().roomBytes(), "its limit keeps the floor")
+
+        store.fileOf(entry).delete()
+        remote.downloads.clear()
+        freeBytes = OriginalsStore.ON_DEMAND_FLOOR_BYTES + size - 1
+        val full = assertThrows(SourceException::class.java) { reserved.original(entry, onDemand = true) }
+        assertEquals(SourceException.Kind.STORAGE, full.kind, "not below the floor")
+        assertEquals(emptyList<String>(), remote.downloads)
+
+        // A sync keeps the reserve: nothing new is downloaded.
+        freeBytes = OriginalsStore.ON_DEMAND_FLOOR_BYTES + size + 1000
+        remote.put("b.jpg", jpg(), "e2")
+        val sync = assertThrows(SourceException::class.java) { runBlocking { reserved.scan() } }
+        assertEquals(SourceException.Kind.STORAGE, sync.kind)
+        assertEquals(emptyList<String>(), remote.downloads)
+        assertTrue(photos().containsKey("a.jpg"), "the photo stays in the library")
+    }
+
     @Test
     fun `A rendering of a removed source or with a failing download fails`() {
         remote.put("a.jpg", jpg(), "e1")

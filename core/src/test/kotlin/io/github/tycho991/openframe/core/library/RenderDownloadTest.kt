@@ -46,6 +46,19 @@ class RenderDownloadTest {
 
     @Volatile private var fetchFailure: Throwable? = null
 
+    /** Counts down when a fetch begins, before it waits for [gate]. */
+    @Volatile private var fetching = CountDownLatch(1)
+
+    /** Whether each fetch was on demand, in order. */
+    private val onDemand = Collections.synchronizedList(ArrayList<Boolean>())
+
+    /** The free storage the cache sees, and its reserve; by default far above it. */
+    @Volatile private var free = Long.MAX_VALUE / 2
+    private val reserve = 600L * 1024 * 1024
+
+    /** Throws for a fetch, after [gate], instead of [fetchFailure] when set; gets whether it is on demand. */
+    @Volatile private var failFetch: ((OriginalRequest) -> Throwable?)? = null
+
     private val cache by lazy {
         RenderCache(
             File(dir, "cache"),
@@ -56,13 +69,18 @@ class RenderDownloadTest {
             { 10L * 1024 * 1024 },
             AppLog(TestClock()),
             onCrashed = { crashed += it.id },
-            fetch = { entry, _ ->
+            fetch = { entry, request ->
+                fetching.countDown()
                 gate.await()
                 fetched += entry.id
+                onDemand += request.onDemand
+                failFetch?.invoke(request)?.let { throw it }
                 fetchFailure?.let { throw it }
                 File(photos, entry.path).also { onFrame[entry.id] = it }
             },
             release = { released += it.id },
+            freeBytes = { free },
+            reserveBytes = reserve,
         )
     }
 
@@ -199,6 +217,43 @@ class RenderDownloadTest {
         }
         waitUntil("all three downloads") { fetched.size == 3 }
         assertEquals(listOf(first.id, urgent.id, later.id), fetched.toList())
+    }
+
+    /**
+     * Spec `photo-library`: Going below the storage reserve › Remote photo without its original below the reserve
+     * (design decisions 1 and 2 of `library-performance`).
+     */
+    @Test
+    fun `Below the reserve an awaited rendering downloads on demand and a window job downloads nothing`() {
+        free = reserve - 1
+        val awaited = remote("a.jpg")
+        val ahead = remote("b.jpg")
+        cache.prefetchAhead(listOf(ahead), emptyList(), emptyList())
+        handedOver()
+        assertEquals(emptyList<String>(), fetched.toList(), "no request for the window")
+        assertTrue(runBlocking { withTimeout(10_000) { cache.get(awaited, RenderSize.DISPLAY) } }.isFile)
+        assertEquals(listOf(awaited.id), fetched.toList())
+        assertEquals(listOf(true), onDemand.toList(), "asked for on demand")
+    }
+
+    /** Design decision 2 of `library-performance`: a job that arrives later. */
+    @Test
+    fun `A get that joins a window download failing with storage gets its file through a second download`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        failFetch = { request ->
+            if (request.onDemand) null else SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame")
+        }
+        cache.prefetchAhead(listOf(photo), emptyList(), emptyList())
+        assertTrue(fetching.await(10, TimeUnit.SECONDS), "the window download has started")
+        runBlocking {
+            val waiting = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { waiting.await() }.isFile)
+        }
+        assertEquals(listOf(photo.id, photo.id), fetched.toList(), "a second download")
+        assertEquals(listOf(false, true), onDemand.toList(), "the second one on demand")
     }
 
     @Test

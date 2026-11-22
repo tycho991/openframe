@@ -223,6 +223,17 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   ready, the window gets the first `NEXT_AHEAD` candidates as next and the rest up to `PREFETCH_AHEAD` as later. At
   most `MAX_DEMAND_ATTEMPTS = 3` candidates are rendered on demand. If all three fail, `armTimer()` runs, and the next
   tick tries the following ones.
+  - **Found in the implementation:** the renderings on demand run in a coroutine of their own and report back as a
+    command, while a photo on screen stays; awaiting them in the command loop would hold up a swipe and resting for as
+    long as a download takes. A step does not stop at the photo on screen.
+  - **Found in the implementation:** a step skips the due photo only for one rendered ahead, not for one of the last
+    `PREFETCH_AHEAD` photos shown, whose rendering is left from its turn. Below the reserve nothing is rendered ahead,
+    and in a library of up to 11 photos the photo on screen and the one before it (both protected, as `keep` and in
+    the window) would otherwise take turns for good, against "Local photos below the reserve". The due photo is then
+    rendered on demand.
+  - **Found in the implementation:** the search walks the order with `next()`, which shuffles a new pass at the end of
+    one; it returns to the position and the pass it began with (`Playlist.mark`/`reset`), so a search without a ready
+    photo does not shuffle away the photos of the pass not shown yet.
 - **Log:** a failed rendering logs the stack trace only for unexpected errors, not for a `SourceException` or a dropped
   job.
 
