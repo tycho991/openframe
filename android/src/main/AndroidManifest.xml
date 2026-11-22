@@ -51,6 +51,13 @@
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"
             android:stateNotNeeded="true">
+            <!-- Android 16 ignores the orientation on large screens for apps that target 36; this opts out
+                 (spec `slideshow-display`, Orientation of the frame). The opt-out ends with targetSdk 37: before
+                 that bump the render size has to follow the real window (ManifestTest guards it). Ignored below
+                 Android 12. -->
+            <property
+                android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+                android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

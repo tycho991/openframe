@@ -30,6 +30,8 @@ android {
     defaultConfig {
         applicationId = "io.github.tycho991.openframe"
         minSdk = 21
+        // The Android 16 orientation opt-out in the manifest ends with 37: ManifestTest fails at that bump until the
+        // render size follows the real window (design decision 5 of android-platform-fixes).
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersion

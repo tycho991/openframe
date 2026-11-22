@@ -67,7 +67,7 @@
 
 ## 3. Android 16 orientation opt-out
 
-- [ ] 3.1 Per design decision 5: `<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+- [x] 3.1 Per design decision 5: `<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
   android:value="true"/>` in the `<activity>` element of `DisplayActivity` with a comment naming the targetSdk 37 end;
   a comment at `targetSdk = 36` in `android/build.gradle.kts` pointing to the guard test. Verify: two new tests in
   `ManifestTest` on `mergedManifest()` are green: the property with value `true` on the `DisplayActivity` element, and

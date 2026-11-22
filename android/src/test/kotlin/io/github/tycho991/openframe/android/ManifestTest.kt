@@ -74,6 +74,41 @@ class ManifestTest {
         assertTrue(actions.toString(), "android.settings.SETTINGS" in actions)
     }
 
+    private fun parsedManifest(): org.w3c.dom.Document =
+        DocumentBuilderFactory
+            .newInstance()
+            .apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(mergedManifest())
+
+    /** Spec `slideshow-display` › Orientation of the frame › Switch to portrait, on Android 16 tablets. */
+    @Test
+    fun `The display opts out of Android 16's orientation restrictions on large screens`() {
+        val activities = parsedManifest().getElementsByTagName("activity")
+        val display =
+            (0 until activities.length)
+                .map { activities.item(it) as org.w3c.dom.Element }
+                .single { it.getAttributeNS(android, "name").endsWith(".android.DisplayActivity") }
+        val properties = display.getElementsByTagName("property")
+        val values =
+            (0 until properties.length)
+                .map { properties.item(it) as org.w3c.dom.Element }
+                .associate { it.getAttributeNS(android, "name") to it.getAttributeNS(android, "value") }
+        assertEquals("true", values["android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"])
+    }
+
+    @Test
+    fun `targetSdk stays at most 36 while the orientation opt-out is needed`() {
+        val usesSdk = parsedManifest().getElementsByTagName("uses-sdk").item(0) as org.w3c.dom.Element
+        val target = usesSdk.getAttributeNS(android, "targetSdkVersion").toInt()
+        assertTrue(
+            "targetSdk $target: Android ends the orientation opt-out for apps that target 37. Before that bump the " +
+                "render size has to come from the real window instead of settings.orientation, or the content has to be " +
+                "rotated on large screens (design decision 5 of android-platform-fixes).",
+            target <= 36,
+        )
+    }
+
     @Test
     fun `The installed app has the flag that Android 9 and later read`() {
         val flags = RuntimeEnvironment.getApplication().applicationInfo.flags
