@@ -85,11 +85,11 @@
 
 ## 6. Storage reserve
 
-- [ ] 6.1 `StorageReserve.bytes(total)` and `PlatformInfo.totalBytes(dir)` with the `FakePlatform` override (design
+- [x] 6.1 `StorageReserve.bytes(total)` and `PlatformInfo.totalBytes(dir)` with the `FakePlatform` override (design
   decision 1). Verify: `StorageReserveTest`: 16 GiB → 600 MiB, 3,000 MiB → 400 MiB, 0 → 100 MiB
   (`photo-library` › Storage reserve › Reference frame, › Small volume); `./gradlew :core:check` (API 21 check)
   is green.
-- [ ] 6.2 Wiring: `FrameCore` computes the reserve once from the cache folder and logs
+- [x] 6.2 Wiring: `FrameCore` computes the reserve once from the cache folder and logs
   `Storage reserve: N MiB of M MiB`; `PhotoLibrary` uses it instead of `RESERVE_BYTES` and names it in the 507 message;
   `SourceRegistry` passes it and `platform::freeBytes` to every `OriginalsStore`, whose `RESERVE_BYTES` goes. Verify:
   - `UploadApiTest` with the contract check and `FakePlatform.free` just below reserve + upload: 507, nothing stored, no
@@ -98,7 +98,7 @@
     free space is asked from `FakePlatform`, not `usableSpace` (`remote-sources` › Storage of the originals › Budgets
     larger than the storage);
   - a `FrameCoreTest` finds the log line.
-- [ ] 6.3 `RenderCache` below the reserve (design decision 2): free storage checked before each rendering; its own
+- [x] 6.3 `RenderCache` below the reserve (design decision 2): free storage checked before each rendering; its own
   entries removed, also below the budget, never a name in `wanted`, an awaited name or a file in `keep`; a job nobody
   awaits fails with a storage error, an awaited one renders; a warning at most once an hour; the index rebuilt from one
   listing when a `peek` misses a name it knows, at most once an hour; `touch` sets the file time at most once an hour

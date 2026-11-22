@@ -26,6 +26,11 @@ class RenderCacheTest {
     lateinit var dir: File
 
     private val engine = JvmMediaEngine()
+
+    private companion object {
+        const val RESERVE = 600L * 1024 * 1024
+    }
+
     private val photos get() = File(dir, "photos")
     private var budget = 10L * 1024 * 1024
     private var screen = PixelSize(320, 200)
@@ -501,6 +506,130 @@ class RenderCacheTest {
             c.close()
         }
     }
+
+    /** A volume of [capacity] bytes that holds only the render folder: the free storage falls with every rendering. */
+    private inner class Volume(
+        var capacity: Long,
+    ) {
+        val folder = File(dir, "cache")
+
+        fun free(): Long = capacity - folder.listFiles().orEmpty().sumOf { it.length() }
+
+        fun cache(clock: TestClock = TestClock()) =
+            RenderCache(
+                folder,
+                engine,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                freeBytes = { free() },
+                reserveBytes = RESERVE,
+                clock = clock,
+            )
+    }
+
+    /**
+     * Spec `photo-library`: Storage reserve › Storage runs short; Going below the storage reserve (design decision 2 of
+     * `library-performance`).
+     */
+    @Test
+    fun `Below the reserve the oldest renderings go, protected ones stay, and only an awaited job renders`() {
+        val volume = Volume(Long.MAX_VALUE / 2)
+        val c = volume.cache()
+        try {
+            val (a, b, k, d, e, f) = listOf("a", "b", "k", "d", "e", "f").map { entry("$it.jpg") }
+            val g = entry("g.jpg")
+            val h = entry("h.jpg")
+            runBlocking {
+                for (photo in listOf(a, b, d, e, f)) c.get(photo, RenderSize.THUMB)
+                // A display size of the window, rendered before the storage ran short.
+                c.get(k, RenderSize.DISPLAY)
+            }
+            // Read from the folder: a peek would count as a use.
+            val thumb = File(volume.folder, c.target(b, RenderSize.THUMB).name).length()
+            val shown = File(volume.folder, c.target(a, RenderSize.THUMB).name)
+            // The photo on screen (the oldest file) and the window are protected.
+            c.prefetchAhead(listOf(k), emptyList(), listOf(shown))
+            volume.capacity = volume.capacity - volume.free() + RESERVE - 2 * thumb - 1
+            assertTrue(runBlocking { c.get(g, RenderSize.THUMB) }.isFile, "an awaited job renders below the reserve")
+            assertNotNull(c.peek(a, RenderSize.THUMB), "on screen")
+            assertNotNull(c.peek(k, RenderSize.DISPLAY), "in the window")
+            assertNull(c.peek(b, RenderSize.THUMB), "unused longest")
+            assertNull(c.peek(d, RenderSize.THUMB))
+            assertNull(c.peek(e, RenderSize.THUMB), "until the reserve is free again")
+            assertNotNull(c.peek(f, RenderSize.THUMB), "not more than that")
+            // A job only for the window ahead is not rendered while removing every unprotected rendering does not free
+            // the reserve.
+            volume.capacity = volume.capacity - volume.free() + RESERVE - 10L * 1024 * 1024
+            val renders = engine.renders.get()
+            c.prefetchAhead(listOf(h), emptyList(), listOf(shown))
+            waitUntilIdle(c)
+            assertNull(c.peek(h, RenderSize.DISPLAY))
+            assertEquals(renders, engine.renders.get())
+            assertNotNull(c.peek(a, RenderSize.THUMB), "the photo on screen still stays")
+            assertEquals(listOf(shown.name), volume.folder.list()!!.toList(), "every other rendering removed")
+        } finally {
+            c.close()
+        }
+    }
+
+    private operator fun <T> List<T>.component6() = this[5]
+
+    private fun waitUntilIdle(c: RenderCache) {
+        val deadline = System.currentTimeMillis() + 5000
+        while (c.queued > 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        Thread.sleep(200)
+    }
+
+    /** Design decision 2 of `library-performance`: Android's trimming leaves the index out of date. */
+    @Test
+    fun `A file deleted behind the cache's back rebuilds the index once an hour at most`() =
+        runBlocking {
+            val clock = TestClock()
+            val (a, b, x) = listOf("a", "b", "x").map { entry("$it.jpg") }
+            val first = Counted(clock = clock)
+            listOf(a, b, x).forEach { first.cache.get(it, RenderSize.THUMB) }
+            assertEquals(1, first.listings)
+            first.cache.peek(a, RenderSize.THUMB)!!.delete()
+            assertNull(first.cache.peek(a, RenderSize.THUMB))
+            assertEquals(2, first.listings, "one listing at the miss")
+            first.cache.peek(b, RenderSize.THUMB)!!.delete()
+            assertNull(first.cache.peek(b, RenderSize.THUMB))
+            assertNull(first.cache.peek(a, RenderSize.THUMB))
+            assertEquals(2, first.listings, "none at the following misses within the hour")
+            assertEquals(File(dir, "cache").listFiles()!!.sumOf { it.length() }, first.cache.totalBytes())
+            clock.advance(java.time.Duration.ofMinutes(61))
+            first.cache.peek(x, RenderSize.THUMB)!!.delete()
+            assertNull(first.cache.peek(x, RenderSize.THUMB))
+            assertEquals(3, first.listings, "again after an hour")
+            first.cache.close()
+        }
+
+    /** Design decision 2 of `library-performance`: the order of use survives a restart, and Android trims old files first. */
+    @Test
+    fun `A rendering's file time is set at most once an hour`() =
+        runBlocking {
+            val clock = TestClock()
+            val c = Counted(clock = clock).cache
+            val a = entry("a.jpg")
+            val file = c.get(a, RenderSize.THUMB)
+            val created = file.lastModified()
+            c.peek(a, RenderSize.THUMB)
+            clock.advance(java.time.Duration.ofMinutes(30))
+            c.peek(a, RenderSize.THUMB)
+            assertEquals(created, file.lastModified(), "within the hour of the rendering")
+            clock.advance(java.time.Duration.ofMinutes(31))
+            c.peek(a, RenderSize.THUMB)
+            val set = file.lastModified()
+            assertEquals(clock.millis() / 1000, set / 1000, "set to the time of use")
+            clock.advance(java.time.Duration.ofMinutes(10))
+            c.peekAnyDisplay(a)
+            c.peek(a, RenderSize.THUMB)
+            assertEquals(set, file.lastModified(), "not again within the hour")
+            c.close()
+        }
 
     /** A folder that counts how often it is listed. */
     private class CountingDir(
