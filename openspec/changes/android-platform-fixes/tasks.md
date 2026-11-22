@@ -77,12 +77,12 @@
 
 ## 4. Pairing rule in one place
 
-- [ ] 4.1 `PairingShown.kt` per design decision 9: `pairingShownOnFrame`, `pairingInEmptyState` and
+- [x] 4.1 `PairingShown.kt` per design decision 9: `pairingShownOnFrame`, `pairingInEmptyState` and
   `PairingShownSync`. Verify: `PairingShownTest` (JUnit) is green: the truth tables of both functions over clients,
   hint, empty state and local-only mode; the invariant over all combinations that `pairingShownOnFrame` is true
   whenever the empty state or the hint shows code and QR code, and always false in local-only mode; `PairingShownSync`
   sends the first value, not a repeat, and the next `true` after a `false`
-- [ ] 4.2 `DisplayActivity.syncPairingShown()` replaces the three copies (pairing collector, `render`,
+- [x] 4.2 `DisplayActivity.syncPairingShown()` replaces the three copies (pairing collector, `render`,
   `setHintVisible`), also runs from the collector that combines `localOnly` with the server state, `onStop` sends
   `false` through the sync, `attach` makes a new sync, and `updateEmptyPairing` uses `pairingInEmptyState`. Verify: a
   Robolectric test next to `UpdateOnDisplayTest` with `TestCore` is green: an empty library without paired devices

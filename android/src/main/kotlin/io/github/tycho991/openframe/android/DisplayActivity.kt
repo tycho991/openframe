@@ -104,6 +104,9 @@ class DisplayActivity : Activity() {
     private var localized: Resources? = null
     private var hintVisible = false
     private var showingEmpty = false
+
+    /** Tells the core whether the frame shows pairing; a new one per [attach], so that its first value goes out. */
+    private var pairingSync: PairingShownSync? = null
     private var menuOpen = false
 
     /** The display came back over a system screen from the device menu: the core still ends the display hold. */
@@ -254,7 +257,7 @@ class DisplayActivity : Activity() {
         clock.stop()
         scope?.cancel()
         scope = null
-        core?.pairing?.setShownOnFrame(false)
+        pairingSync?.send(false)
         if (bound) unbindService(connection)
         bound = false
         renderer?.clear()
@@ -327,6 +330,7 @@ class DisplayActivity : Activity() {
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope?.cancel()
         scope = s
+        pairingSync = PairingShownSync(core.pairing::setShownOnFrame)
         s.launch {
             // Wait only for the core, not for server or network.
             core.ready.filter { it }.first()
@@ -346,17 +350,18 @@ class DisplayActivity : Activity() {
             launch { followDark(core.display.dark) }
             launch {
                 combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
+                    syncPairingShown()
                     updateHint()
                     updateEmpty()
                 }
             }
             launch {
-                combine(core.pairing.display, core.clients.clients) { display, clients -> display to clients.isEmpty() }
-                    .collect { (display, noClients) ->
+                combine(core.pairing.display, core.clients.clients) { display, _ -> display }
+                    .collect { display ->
                         // On request from the web UI the hint with the code stays up.
                         if (display.requested && !hintVisible) setHintVisible(true, autoHide = false)
                         if (!display.requested && hintVisible && !hintAutoHides) setHintVisible(false)
-                        core.pairing.setShownOnFrame(hintVisible || (showingEmpty && noClients))
+                        syncPairingShown()
                         updateHint()
                         updateEmpty()
                     }
@@ -449,16 +454,23 @@ class DisplayActivity : Activity() {
                 Unit
             }
         }
-        core?.let { c ->
-            c.pairing.setShownOnFrame(
-                hintVisible || (
-                    showingEmpty &&
-                        c.clients.clients.value
-                            .isEmpty()
-                ),
-            )
-        }
+        syncPairingShown()
         updateEmpty()
+    }
+
+    /** Tells the core whether the hint or the empty state shows pairing now ([pairingShownOnFrame]). */
+    private fun syncPairingShown() {
+        val c = core ?: return
+        pairingSync?.send(
+            pairingShownOnFrame(
+                localOnly = c.settings.localOnly.value,
+                hintVisible = hintVisible,
+                showingEmpty = showingEmpty,
+                noClients =
+                    c.clients.clients.value
+                        .isEmpty(),
+            ),
+        )
     }
 
     private var hintAutoHides = true
@@ -476,15 +488,7 @@ class DisplayActivity : Activity() {
         hint.visibility = if (visible) View.VISIBLE else View.GONE
         main.removeCallbacks(hideHint)
         if (visible && autoHide) main.postDelayed(hideHint, HINT_MS)
-        core?.let { c ->
-            c.pairing.setShownOnFrame(
-                visible || (
-                    showingEmpty &&
-                        c.clients.clients.value
-                            .isEmpty()
-                ),
-            )
-        }
+        syncPairingShown()
         updateHint()
         updateEmpty()
     }
@@ -569,8 +573,13 @@ class DisplayActivity : Activity() {
         // Pairing appears in the empty state only as long as no device is paired, and not while the hint is up:
         // the hint shows the same code and QR code, and the two would be drawn on top of each other.
         val pairing =
-            c.clients.clients.value
-                .isEmpty() && !c.settings.localOnly.value && !hintVisible
+            pairingInEmptyState(
+                localOnly = c.settings.localOnly.value,
+                hintVisible = hintVisible,
+                noClients =
+                    c.clients.clients.value
+                        .isEmpty(),
+            )
         showCode(emptyCode, shown, EMPTY_CODE_SP)
         emptyCode.visibility = if (pairing && (shown.code != null || shown.codeLocked)) View.VISIBLE else View.GONE
         emptyCodeLabel.visibility = emptyCode.visibility
