@@ -294,7 +294,7 @@
   "sources.confirmRemove": "Remove “{name}”? Its photos are removed from this frame; local photos and the other sources stay.",
   "photos.noDeleteRemote": "Photos of a source cannot be deleted here. Hide them instead.",
   "error.read_only_source": "This photo comes from a source and cannot be deleted here. Hide it instead.",
-  "error.invalid_album": "The album path is too long: at most 255 characters.",
+  "error.invalid_album": "The album path is invalid or too long: at most 255 characters, and no level may be an existing file.",
   "error.nextcloud_unreachable": "The frame cannot reach the Nextcloud server, or does not trust its certificate.",
   "error.nextcloud_insecure_login": "The server answered with an insecure address or the address of another server. Check the protocol settings of the server (overwriteprotocol and trusted_proxies in config.php).",
   "error.source_no_folder": "Choose a folder first.",

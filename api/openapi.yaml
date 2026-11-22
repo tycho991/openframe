@@ -301,17 +301,21 @@ paths:
       operationId: uploadPhotos
       summary: Upload one or more files, optionally into an album.
       description: |
-        Streamed to disk. If the request contains a file without a supported
-        format, nothing is stored (415, `unsupported_format`); the same holds for an
-        image over 100 megapixels or with an aspect ratio over 32:1 (415,
-        `image_too_large`). If less than 100 MB would remain free after the upload,
-        nothing is stored (507). While the photo folder is unavailable, for example
-        because the storage is not mounted, nothing is stored (503,
-        `storage_unavailable`); the same holds while the decoder cannot be started
+        Streamed to disk. On any error nothing of the request is stored, also when
+        several files were sent and only one of them fails. If the request contains a
+        file without a supported format, nothing is stored (415, `unsupported_format`);
+        the same holds for an image over 100 megapixels or with an aspect ratio over
+        32:1 (415, `image_too_large`). If less free storage than the frame's storage
+        reserve would remain after the upload (10 % of the data volume, at most
+        500 MiB, plus 100 MiB), nothing is stored (507). While the photo folder is
+        unavailable, for example because the storage is not mounted, nothing is stored
+        (503, `storage_unavailable`); the same holds while the decoder cannot be started
         (503, `decoder_unavailable`) and in safe mode (503, `safe_mode`). A file that crashes the decoder is refused as
-        an unsupported format (415). An album path longer than
-        255 characters after sanitizing is refused with 400 and the error code
-        `invalid_album`, naming the field `album`.
+        an unsupported format (415). An album path longer than 255 characters after
+        sanitizing, or one with a level that exists as a file in the photo folder, is
+        refused with 400 and the error code `invalid_album`, naming the field `album`.
+        File names are shortened to at most 200 bytes of UTF-8, keeping their image
+        extension.
       requestBody:
         required: true
         content:
@@ -324,7 +328,9 @@ paths:
                   description: |
                     Album path below the photo folder, levels separated by `/` (`family/2025`).
                     Each level is sanitized; empty levels, `.` and `..` are dropped. At most
-                    255 characters after sanitizing. Missing folders are created.
+                    255 characters after sanitizing. A level that differs from an existing
+                    folder only in letter case goes into that folder. Missing folders are
+                    created; a level that exists as a file is refused with 400 `invalid_album`.
                 file:
                   type: array
                   items: { type: string, format: binary }
@@ -350,6 +356,10 @@ paths:
       tags: [photos]
       operationId: batchPhotos
       summary: Hide, unhide or delete several photos.
+      description: >-
+        One change of the library: `libraryVersion` changes at most once, however many IDs the batch has. A delete
+        batch is refused with 503 (`storage_unavailable`) while the photo folder is unavailable, and then deletes
+        nothing.
       requestBody:
         required: true
         content:
@@ -371,6 +381,7 @@ paths:
         "413": { $ref: "#/components/responses/TooLarge" }
         "421": { $ref: "#/components/responses/MisdirectedHost" }
         "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /photos/{photoId}:
     parameters:
@@ -406,7 +417,10 @@ paths:
       tags: [photos]
       operationId: deletePhoto
       summary: Remove file, index entry and rendered sizes.
-      description: "A photo of a read-only source (any source but `local`) is refused with 409 and the error code `read_only_source`."
+      description: >-
+        A photo of a read-only source (any source but `local`) is refused with 409 and the error code
+        `read_only_source`. While the photo folder is unavailable, for example because the storage is not mounted,
+        nothing is deleted (503, `storage_unavailable`).
       responses:
         "204": { description: Deleted. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -415,6 +429,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "421": { $ref: "#/components/responses/MisdirectedHost" }
         "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /photos/{photoId}/image:
     parameters:
@@ -1613,7 +1628,7 @@ components:
         height: { type: integer, description: "Height after EXIF rotation." }
         takenAt: { type: string, format: date-time, description: "Capture date from EXIF, falling back to the file date." }
         fileSize: { type: integer }
-        version: { type: integer, description: "Image version, increases with every change of the file." }
+        version: { type: integer, description: "Image version: changes with every change of the file and is never reused for another file at the same path." }
         crop:
           description: The photo's own section, `null` if the fill mode applies to it.
           oneOf:

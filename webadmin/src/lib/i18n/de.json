@@ -294,7 +294,7 @@
   "sources.confirmRemove": "„{name}“ entfernen? Ihre Fotos werden vom Rahmen entfernt, lokale Fotos und die anderen Quellen bleiben.",
   "photos.noDeleteRemote": "Fotos aus einer Quelle lassen sich hier nicht löschen. Blende sie stattdessen aus.",
   "error.read_only_source": "Dieses Foto stammt aus einer Quelle und lässt sich hier nicht löschen. Blende es stattdessen aus.",
-  "error.invalid_album": "Der Albumpfad ist zu lang: höchstens 255 Zeichen.",
+  "error.invalid_album": "Der Albumpfad ist ungültig oder zu lang: höchstens 255 Zeichen, und keine Ebene darf eine vorhandene Datei sein.",
   "error.nextcloud_unreachable": "Der Rahmen erreicht den Nextcloud-Server nicht oder vertraut seinem Zertifikat nicht.",
   "error.nextcloud_insecure_login": "Der Server hat mit einer unsicheren Adresse oder der Adresse eines anderen Servers geantwortet. Prüfe die Protokolleinstellungen des Servers (overwriteprotocol und trusted_proxies in config.php).",
   "error.source_no_folder": "Wähle zuerst einen Ordner.",

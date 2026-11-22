@@ -2,7 +2,7 @@
 
 ## 1. Contract and texts (first, `api/openapi.yaml` before the code)
 
-- [ ] 1.1 `api/openapi.yaml` first: the upload description names the storage reserve instead of 100 MB, says that
+- [x] 1.1 `api/openapi.yaml` first: the upload description names the storage reserve instead of 100 MB, says that
   nothing is stored on any error, and that an album level that exists as a file is refused with 400 `invalid_album`
   as well; the `album` field description likewise; `version` of the schema `Photo` reads "changes with every change
   of the file and is never reused for another file at the same path"; `DELETE /photos/{photoId}` and
@@ -10,7 +10,7 @@
   decisions 1, 5, 8 and 9). No schema changes, so no DTO changes. Then `npm run gen:api`. Verify: `npm run lint` in
   `webadmin/` (Redocly included) is green, the generated types change only in descriptions and the new 503 answers,
   and `RouteAccessTest` stays green.
-- [ ] 1.2 Texts: `error.invalid_album` in `webadmin/src/lib/i18n/en.json` and `de.json` says the album path is invalid
+- [x] 1.2 Texts: `error.invalid_album` in `webadmin/src/lib/i18n/en.json` and `de.json` says the album path is invalid
   or too long; the README names the storage reserve (about 600 MiB on the reference frames) instead of "A download
   never leaves less than 100 MB free". Verify: `npm run lint`, `npm run typecheck` and `npm test` are green, and
   `grep -n "100 MB" README.md` finds no reserve sentence.
