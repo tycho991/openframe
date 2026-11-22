@@ -98,11 +98,17 @@ class SlideshowControllerTest {
             }
         }
 
-        override fun prefetch(
-            entries: List<PhotoEntry>,
-            priority: RenderPriority,
+        /** Every window set with [ahead]: the IDs of next and later, and the files kept. */
+        val windows = mutableListOf<Triple<List<String>, List<String>, List<File>>>()
+
+        override fun ahead(
+            next: List<PhotoEntry>,
+            later: List<PhotoEntry>,
+            keep: List<File>,
         ) {
-            entries.forEach { prefetched += it.id to priority }
+            next.forEach { prefetched += it.id to RenderPriority.NEXT }
+            later.forEach { prefetched += it.id to RenderPriority.PREFETCH }
+            windows += Triple(next.map { it.id }, later.map { it.id }, keep)
         }
     }
 
@@ -145,7 +151,10 @@ class SlideshowControllerTest {
             val many = (1..1000).map(::photo)
             val s = Setup(this, many, allReady = false) { broken += many.map { it.id } }
             runCurrent()
-            val ahead = s.images.prefetched.map { it.first }.toSet()
+            val ahead =
+                s.images.prefetched
+                    .map { it.first }
+                    .toSet()
             assertTrue(ahead.size <= 10, "${ahead.size} photos asked for ahead")
             assertTrue(s.images.demanded.size <= 3, "${s.images.demanded.size} photos rendered on demand")
         }

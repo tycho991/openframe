@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.sources
 
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
+import io.github.tycho991.openframe.core.library.OriginalRequest
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import java.io.File
 
@@ -15,10 +16,18 @@ class SourceOriginals(
 ) {
     /**
      * The file of [entry], fetched again first if it was removed from the cache. A remote original stays pinned until
-     * [release], so that a small budget cannot remove it before the renderings that wait for it are done.
+     * [release], so that a small budget cannot remove it before the renderings that wait for it are done. [request] says
+     * whether a rendering somebody awaits needs it and when nobody wants it any more.
      */
-    fun fileOf(entry: PhotoEntry): File =
-        if (entry.source == LocalPhotoSource.SOURCE_ID) local.fileOf(entry) else sources.original(entry, pin = true)
+    fun fileOf(
+        entry: PhotoEntry,
+        request: OriginalRequest = OriginalRequest(onDemand = false) { false },
+    ): File =
+        if (entry.source == LocalPhotoSource.SOURCE_ID) {
+            local.fileOf(entry)
+        } else {
+            sources.original(entry, pin = true, onDemand = request.onDemand, ended = request.cancelled)
+        }
 
     /** Ends the pin that [fileOf] set. */
     fun release(entry: PhotoEntry) {

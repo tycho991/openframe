@@ -71,6 +71,9 @@ interface PlatformInfo {
     /** Free storage on the volume that contains [dir]. */
     fun freeBytes(dir: File): Long = dir.usableSpace
 
+    /** The size of the volume that contains [dir], 0 if it cannot be read. */
+    fun totalBytes(dir: File): Long = dir.totalSpace
+
     /** Whether the storage that holds [dir] is mounted; internal storage always is. */
     fun storageMounted(dir: File): Boolean = true
 }

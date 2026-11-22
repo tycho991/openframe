@@ -332,25 +332,54 @@ class Library(
     }
 }
 
-/** Changes to a state, collected and then applied as a new state. */
+/**
+ * Changes to a state, collected and then applied as a new state. Photos leave it only through [remove] and [skip], which
+ * record their IDs, so [PhotoIndexStore] reports what left without comparing the whole map.
+ */
 class LibraryEdit internal constructor(
     from: Library,
 ) {
-    internal val photos = from.photos.toMutableMap()
+    private val photos = from.photos.toMutableMap()
     internal val albumStates = from.albumStates.toMutableMap()
     internal val skipped = from.skipped.associateBy { it.source to it.path }.toMutableMap()
 
+    /** The IDs that [remove] and [skip] took out; some may have come back with [put]. */
+    internal val takenOut = HashSet<String>()
+
+    /**
+     * The image version for an entry that is new in the index (design decision 5 of `library-performance`): the library
+     * version before this edit plus 1. Every edit raises the library version, and no entry's version is above it, so no
+     * earlier entry of the same ID ever had this one.
+     */
+    val newVersion: Int = (from.version + 1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+    /** The version for [entry] in place of [current], the entry in this edit: [newVersion] if there is none, else one more. */
+    fun versionFor(current: PhotoEntry?): Int =
+        if (current ==
+            null
+        ) {
+            newVersion
+        } else {
+            (current.version.toLong() + 1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+
     fun get(id: String): PhotoEntry? = photos[id]
+
+    /** Every entry, read only. */
+    fun all(): Collection<PhotoEntry> = photos.values.toList()
+
+    internal fun photoMap(): Map<String, PhotoEntry> = photos
 
     fun put(entry: PhotoEntry) {
         photos[entry.id] = entry
         skipped.remove(entry.source to entry.path)
     }
 
-    fun remove(id: String): PhotoEntry? = photos.remove(id)
+    fun remove(id: String): PhotoEntry? = photos.remove(id)?.also { takenOut += id }
 
     fun skip(file: SkippedFile) {
-        photos.remove(PhotoEntry.idFor(file.source, file.path))
+        val id = PhotoEntry.idFor(file.source, file.path)
+        if (photos.remove(id) != null) takenOut += id
         skipped[file.source to file.path] = file
     }
 
@@ -385,6 +414,12 @@ class LibraryEdit internal constructor(
  */
 class PhotoIndexStore(
     private val store: JsonStore<StoredIndex>,
+    /**
+     * Photos left the index (design decision 4 of `library-performance`): called after the new state is published,
+     * inside the edit's lock, so reports come in the order of the edits, with the entries as they were. It only changes
+     * memory and hands file work to a background thread; never called with an empty list.
+     */
+    private val onRemoved: (List<PhotoEntry>) -> Unit = {},
 ) {
     private val _library = MutableStateFlow(Library.EMPTY)
 
@@ -416,9 +451,10 @@ class PhotoIndexStore(
         val edit = LibraryEdit(current)
         val result = block(edit)
         val skipped = edit.skipped.values.sortedWith(compareBy({ it.source }, { it.path }))
-        val changed = edit.photos != current.photos || edit.albumStates != current.albumStates || skipped != current.skipped
+        val photos = edit.photoMap()
+        val changed = photos != current.photos || edit.albumStates != current.albumStates || skipped != current.skipped
         if (changed) {
-            val next = Library(edit.photos.toMap(), edit.albumStates.toSortedMap(), skipped, current.version + 1)
+            val next = Library(photos.toMap(), edit.albumStates.toSortedMap(), skipped, current.version + 1)
             _library.value = next
             store.save(
                 StoredIndex(
@@ -429,6 +465,8 @@ class PhotoIndexStore(
                     libraryVersion = next.version,
                 ),
             )
+            val removed = edit.takenOut.filter { it !in next.photos }.mapNotNull { current.photos[it] }
+            if (removed.isNotEmpty()) onRemoved(removed)
         }
         return result
     }

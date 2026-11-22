@@ -133,13 +133,13 @@ class RenderCacheTest {
             RenderCache(File(dir, "cache"), holding, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
         try {
             val entries = (1..4).map { entry("q$it.jpg") }
-            c.prefetch(entries.take(1))
+            c.prefetchAhead(emptyList(), entries.take(1), emptyList())
             // Wait until the worker holds the first job.
             val deadline = System.currentTimeMillis() + 5000
             while (c.queued > 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
-            repeat(20) { c.prefetch(entries.drop(1)) }
+            repeat(20) { c.prefetchAhead(emptyList(), entries.drop(1), emptyList()) }
             assertEquals(3, c.queued, "each waiting file once")
-            c.prefetch(entries.drop(1), RenderPriority.NEXT)
+            c.prefetchAhead(entries.drop(1), emptyList(), emptyList())
             assertEquals(6, c.queued, "again once each when asked for more urgently")
         } finally {
             release.countDown()
@@ -245,12 +245,13 @@ class RenderCacheTest {
             screen = PixelSize(200, 320)
             assertNull(c.peek(e, RenderSize.DISPLAY), "new format, not rendered yet")
             assertNotNull(c.peekAnyDisplay(e), "the old display size is available until then")
-            c.remove(e.id)
+            c.removeAll(listOf(e))
+            c.awaitDeletions()
             assertEquals(0, File(dir, "cache").list()!!.size)
         }
 
     @Test
-    fun `Removing many photos at once lists the folder once and deletes exactly their renderings`() {
+    fun `Removing many photos at once lists nothing and deletes exactly their renderings`() {
         val folder = CountingDir(File(dir, "cache"))
         folder.mkdirs()
         // IDs contain '-', and one ID is a prefix of another: only the renderings of the removed IDs may go.
@@ -266,20 +267,28 @@ class RenderCacheTest {
         try {
             val removed = ids.filterIndexed { i, _ -> i % 2 == 0 }
             val listings = folder.listings
-            c.removeAll(removed)
-            assertEquals(listings + 1, folder.listings, "one listing for all photos")
+            c.removeAll(removed.map { photo(it, version = 2) })
+            c.awaitDeletions()
+            assertEquals(listings, folder.listings, "no listing")
             val left = folder.list()!!.toSet()
             val expected = (ids - removed.toSet() + prefixed + longer).flatMap { listOf("$it-v1-400x300.jpg", "$it-v2-pr1-abc.jpg") }
             assertEquals(expected.toSet(), left)
+            assertEquals(expected.size.toLong(), c.totalBytes(), "the running total follows")
 
             c.removeAll(emptyList())
-            assertEquals(listings + 1, folder.listings, "nothing to remove, no listing")
-            c.remove(prefixed)
+            c.removeAll(listOf(photo(prefixed, version = 2)))
+            c.awaitDeletions()
+            assertEquals(listings, folder.listings, "still no listing")
             assertEquals(left - setOf("$prefixed-v1-400x300.jpg", "$prefixed-v2-pr1-abc.jpg"), folder.list()!!.toSet())
         } finally {
             c.close()
         }
     }
+
+    private fun photo(
+        id: String,
+        version: Int = 1,
+    ) = PhotoEntry(id, id.substringBefore('-'), "photo.jpg", 400, 300, 0, 1, 1, version)
 
     /** Design decision 13 of `library-performance`: rendering does not list the folder, nor does removing a source. */
     @Test
@@ -314,9 +323,181 @@ class RenderCacheTest {
         try {
             val entries = (0 until 1000).map { PhotoEntry(PhotoEntry.idFor("s1", "p$it.jpg"), "s1", "p$it.jpg", 400, 300, 0, 1, 1, 1) }
             runBlocking { entries.forEach { c.get(it, RenderSize.THUMB) } }
-            c.removeAll(entries.map { it.id })
+            c.removeAll(entries)
             assertTrue(listings <= 3, "listed $listings times")
         } finally {
+            c.close()
+        }
+    }
+
+    /** A cache whose listings and size reads are counted, for the cases of design decision 3 of `library-performance`. */
+    private inner class Counted(
+        engine: io.github.tycho991.openframe.core.platform.MediaEngine = this.engine,
+        clock: TestClock = TestClock(),
+    ) {
+        var listings = 0
+        var sizeReads = 0
+        val cache =
+            RenderCache(
+                File(dir, "cache"),
+                engine,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                listFolder = {
+                    listings++
+                    it.listFiles()
+                },
+                sizeOf = {
+                    sizeReads++
+                    it.length()
+                },
+                clock = clock,
+            )
+    }
+
+    /** Spec `photo-library`: Limit storage space, without reading the folder per rendering. */
+    @Test
+    fun `Rendering below the budget lists nothing and reads only the size of the new file`() =
+        runBlocking {
+            val first = Counted()
+            val entries = (1..5).map { entry("s$it.jpg") }
+            entries.take(4).forEach { first.cache.get(it, RenderSize.THUMB) }
+            first.cache.close()
+            val c = Counted()
+            assertEquals(1, c.listings, "one listing at the start")
+            assertEquals(4, c.sizeReads, "each file's size once")
+            c.cache.get(entries[4], RenderSize.THUMB)
+            assertEquals(1, c.listings, "no listing for a rendering")
+            assertEquals(5, c.sizeReads, "only the size of the new file")
+            assertEquals(File(dir, "cache").listFiles()!!.sumOf { it.length() }, c.cache.totalBytes())
+            c.cache.close()
+        }
+
+    @Test
+    fun `Removing 1,000 of 1,100 photos lists nothing`() {
+        val folder = File(dir, "cache").apply { mkdirs() }
+        val all = (0 until 1100).map { photo(PhotoEntry.idFor("local", "p$it.jpg")) }
+        all.forEach { File(folder, "${it.id}-v1-400x300.jpg").writeBytes(ByteArray(2)) }
+        val c = Counted()
+        try {
+            c.cache.removeAll(all.take(1000))
+            c.cache.awaitDeletions()
+            assertEquals(1, c.listings, "only the one at the start")
+            assertEquals(100, folder.list()!!.size)
+            assertEquals(200L, c.cache.totalBytes())
+        } finally {
+            c.cache.close()
+        }
+    }
+
+    @Test
+    fun `A file whose name is not that of a rendering is deleted at the start`() {
+        val folder = File(dir, "cache").apply { mkdirs() }
+        File(folder, "junk.jpg").writeBytes(ByteArray(1))
+        File(folder, ".${PhotoEntry.idFor("local", "a.jpg")}-v1-400x300.jpg.tmp").writeBytes(ByteArray(1))
+        val kept = File(folder, "${PhotoEntry.idFor("local", "a.jpg")}-v1-400x300.jpg").apply { writeBytes(ByteArray(1)) }
+        cache().close()
+        assertEquals(listOf(kept.name), folder.list()!!.toList())
+    }
+
+    @Test
+    fun `Photo ID and version of a rendering's name`() {
+        val id = PhotoEntry.idFor("s0000beef", "a.jpg")
+        assertEquals(id to 12, RenderCache.parse("$id-v12-400x300.jpg"))
+        assertEquals(id to 3, RenderCache.parse("$id-v3-pr1-abc.jpg"))
+        assertNull(RenderCache.parse("junk.jpg"))
+        assertNull(RenderCache.parse("$id-vx-400x300.jpg"))
+        assertNull(RenderCache.parse("-v1-a.jpg"))
+    }
+
+    /** An engine that holds every render until [release] opens, and tells when one started. */
+    private inner class Holding : io.github.tycho991.openframe.core.platform.MediaEngine by engine {
+        val release = java.util.concurrent.CountDownLatch(1)
+        val started = java.util.concurrent.CountDownLatch(1)
+
+        override fun render(
+            source: File,
+            target: File,
+            width: Int,
+            height: Int,
+            region: Region,
+            quality: Int,
+        ) {
+            started.countDown()
+            release.await()
+            engine.render(source, target, width, height, region, quality)
+        }
+    }
+
+    /** Spec `photo-library`: Rendered sizes follow the index › Removed while rendering. */
+    @Test
+    fun `A photo removed while one of its sizes renders leaves no file`() {
+        val holding = Holding()
+        val c =
+            RenderCache(File(dir, "cache"), holding, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
+        try {
+            val e = entry("a.jpg")
+            runBlocking {
+                val rendering = async(kotlinx.coroutines.Dispatchers.IO) { runCatching { c.get(e, RenderSize.THUMB) } }
+                assertTrue(holding.started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                c.removeAll(listOf(e))
+                holding.release.countDown()
+                val result = rendering.await()
+                assertTrue(result.exceptionOrNull() is RenderDroppedException, "${result.exceptionOrNull()}")
+            }
+            c.awaitDeletions()
+            assertEquals(emptyList<String>(), File(dir, "cache").list()!!.toList(), "neither the rendering nor its .tmp")
+            assertEquals(0L, c.totalBytes())
+            // A new version of the photo, a file at the same path later, renders again.
+            assertTrue(runBlocking { c.get(e.copy(version = 5), RenderSize.THUMB) }.isFile)
+        } finally {
+            holding.release.countDown()
+            c.close()
+        }
+    }
+
+    @Test
+    fun `A waiting job of a removed photo neither renders nor fetches its original`() {
+        val holding = Holding()
+        val fetched = java.util.Collections.synchronizedList(ArrayList<String>())
+        val c =
+            RenderCache(
+                File(dir, "cache"),
+                holding,
+                { if (it.source == "local") File(photos, it.path) else null },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                fetch = { e, _ ->
+                    fetched += e.id
+                    File(photos, e.path)
+                },
+            )
+        try {
+            val first = entry("first.jpg")
+            Fixtures.copy("landscape.jpg", File(photos, "r.jpg"))
+            val remote = PhotoEntry(PhotoEntry.idFor("s1", "r.jpg"), "s1", "r.jpg", 400, 300, 0, 1, 1, 3)
+            val local = entry("l.jpg")
+            runBlocking {
+                val busy = async(kotlinx.coroutines.Dispatchers.IO) { c.get(first, RenderSize.THUMB) }
+                assertTrue(holding.started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                val waitingRemote = async(kotlinx.coroutines.Dispatchers.IO) { runCatching { c.get(remote, RenderSize.THUMB) } }
+                val waitingLocal = async(kotlinx.coroutines.Dispatchers.IO) { runCatching { c.get(local, RenderSize.THUMB) } }
+                while (c.queued < 2) Thread.sleep(5)
+                c.removeAll(listOf(remote, local.copy(version = 2)))
+                holding.release.countDown()
+                busy.await()
+                assertTrue(waitingRemote.await().exceptionOrNull() is RenderDroppedException)
+                assertTrue(waitingLocal.await().exceptionOrNull() is RenderDroppedException, "an older version is dropped as well")
+            }
+            assertEquals(emptyList<String>(), fetched.toList())
+            assertEquals(1, engine.renders.get(), "only the first photo rendered")
+        } finally {
+            holding.release.countDown()
             c.close()
         }
     }

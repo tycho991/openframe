@@ -34,7 +34,7 @@
 
 ## 3. Render cache index
 
-- [ ] 3.1 `RenderCache` per design decision 3: name → (last use, size, file time set) and photo ID → names; names that
+- [x] 3.1 `RenderCache` per design decision 3: name → (last use, size, file time set) and photo ID → names; names that
   do not parse are deleted at the start; one listing at the start with one time and size read per file, its duration
   logged; a running total; `trim` without size reads; `totalBytes()` from the total; older versions removed after a
   rendering through the index; `peekAnyDisplay` and `peek` answered from the index, the disk asked only for a hit;
@@ -45,11 +45,11 @@
 
 ## 4. Removal notification and image versions
 
-- [ ] 4.1 `PhotoIndexStore` reports the entries that left the index (design decision 4): `LibraryEdit` records the IDs
+- [x] 4.1 `PhotoIndexStore` reports the entries that left the index (design decision 4): `LibraryEdit` records the IDs
   of `remove` and `skip`, the photo map is no longer writable from outside, and the listener runs after publishing,
   inside the lock. Verify: `PhotoIndexStoreTest`: the listener gets exactly the removed entries for `remove` and
   `skip`, nothing for a `put` with a new version, and nothing for an edit without a change.
-- [ ] 4.2 Wiring: `FrameCore` passes `cache.removeAll` and the removal of remote originals through `SourceRegistry`
+- [x] 4.2 Wiring: `FrameCore` passes `cache.removeAll` and the removal of remote originals through `SourceRegistry`
   (on its scope) to the listener; `onPhotosRemoved` of `SourceRegistry`, `onRemoved` and the explicit
   `originals.removeAll` of `RemoteSource.sync`, and `cache.remove` in `PhotoLibrary.delete` go. Verify: tests with
   `TestFrame` leave no rendering behind for a file deleted from the folder and scanned, for a local file replaced by a
@@ -57,7 +57,7 @@
   version is skipped; in the last case its old original is gone as well (`photo-library` › Rendered sizes follow the
   index › File deleted over USB, › File replaced by a damaged one; `remote-sources` › Vanished photos › Photo deleted
   at the source).
-- [ ] 4.3 Image versions and tombstones (design decision 5): `LibraryEdit.newVersion`; a new entry gets it, a changed
+- [x] 4.3 Image versions and tombstones (design decision 5): `LibraryEdit.newVersion`; a new entry gets it, a changed
   entry gets the version in the edit plus 1, in `LocalPhotoSource.scan`, the upload's add and `RemoteSource.sync`;
   `RenderCache.removeAll` keeps tombstones, checked under the cache's lock before rendering, before the handover to the
   download thread and before the rename of the `.tmp` file. Adapt tests that assume version 1 for a new photo,
@@ -70,7 +70,7 @@
     photo neither renders nor fetches its original;
   - (`photo-library` › Stable photo IDs › Another file at the path of a removed photo, › Rendered sizes follow the
     index › Removed while rendering).
-- [ ] 4.4 Start sweep: after `index.load` and before `slideshow.start`, `FrameCore.start` removes renderings whose photo
+- [x] 4.4 Start sweep: after `index.load` and before `slideshow.start`, `FrameCore.start` removes renderings whose photo
   ID is not in the index. Verify: `FrameCoreTest`: a start with a rendering of an unknown ID deletes it, and that of a
   photo in the index stays (`photo-library` › Rendered sizes follow the index › Renderings from before the update).
 

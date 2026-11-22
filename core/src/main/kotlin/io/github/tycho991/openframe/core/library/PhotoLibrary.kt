@@ -25,6 +25,8 @@ class PhotoLibrary(
     private val notifier: MediaStoreNotifier,
     private val platform: PlatformInfo,
     private val log: AppLog,
+    /** The storage reserve an upload leaves free ([StorageReserve]). */
+    val reserveBytes: Long = StorageReserve.MARGIN_BYTES,
 ) {
     fun setHidden(
         id: String,
@@ -66,8 +68,8 @@ class PhotoLibrary(
         }
         val file = local.fileOf(entry)
         if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "File could not be deleted")
+        // The renderings go through the index's notification.
         index.edit { it.remove(id) }
-        cache.remove(id)
         notifier.notifyChanged(file)
         log.i(TAG, "Deleted: ${entry.path}")
         return true
@@ -92,7 +94,7 @@ class PhotoLibrary(
         }
         val staging = File(root, STAGING).apply { mkdirs() }
         request.contentLength?.let { length ->
-            if (platform.freeBytes(root) - length < RESERVE_BYTES) throw insufficientStorage()
+            if (platform.freeBytes(root) - length < reserveBytes) throw insufficientStorage()
         }
         val staged = mutableListOf<Staged>()
         var album: String? = null
@@ -192,20 +194,23 @@ class PhotoLibrary(
                 sinceCheck += n
                 if (sinceCheck >= SPACE_CHECK_BYTES) {
                     sinceCheck = 0
-                    if (platform.freeBytes(root) < RESERVE_BYTES) throw insufficientStorage()
+                    if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
                 }
             }
         }
-        if (platform.freeBytes(root) < RESERVE_BYTES) throw insufficientStorage()
+        if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
     }
 
     private fun insufficientStorage() =
-        HttpException(507, "insufficient_storage", "Not enough storage: less than 100 MB would remain free after the upload.")
+        HttpException(
+            507,
+            "insufficient_storage",
+            "Not enough storage: less than the storage reserve of ${reserveBytes / StorageReserve.MIB} MiB would remain free after the upload.",
+        )
 
     private fun unsupported(name: String) = HttpException(415, "unsupported_format", "$name has no supported format")
 
     companion object {
-        const val RESERVE_BYTES = 100L * 1024 * 1024
         private const val SPACE_CHECK_BYTES = 4L * 1024 * 1024
         private const val STAGING = ".upload"
         private const val PART = ".part"

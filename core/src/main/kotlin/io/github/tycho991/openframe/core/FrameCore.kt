@@ -30,6 +30,7 @@ import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.http.StaticAssets
 import io.github.tycho991.openframe.core.identity.FrameIdentity
+import io.github.tycho991.openframe.core.library.CaptureDates
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
 import io.github.tycho991.openframe.core.library.MetadataBackfill
 import io.github.tycho991.openframe.core.library.PhotoEntry
@@ -37,6 +38,7 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSizes
+import io.github.tycho991.openframe.core.library.StorageReserve
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.log.LogSink
@@ -210,9 +212,16 @@ class FrameCore(
     val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
+    /** The storage reserve of the data volume, computed once from the cache folder (design decision 1 of `library-performance`). */
+    private val volumeBytes = platform.totalBytes(dirs.cache.apply { mkdirs() })
+    val reserveBytes = StorageReserve.bytes(volumeBytes)
+
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
     private val index =
-        PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true))
+        PhotoIndexStore(
+            JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true),
+            ::photosRemoved,
+        )
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
@@ -235,11 +244,12 @@ class FrameCore(
             index,
             engine,
             File(dirs.cache, "sources"),
-            { removed -> cache.removeAll(removed.map { it.id }) },
             clock,
             log,
             migration::sourceRemoved,
+            freeBytes = platform::freeBytes,
             onSynced = { backfill.request() },
+            reserveBytes = reserveBytes,
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
@@ -257,8 +267,11 @@ class FrameCore(
             onCrashed = ::quarantine,
             fetch = originals::fileOf,
             release = originals::release,
+            freeBytes = platform::freeBytes,
+            reserveBytes = reserveBytes,
+            clock = clock,
         )
-    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
+    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, reserveBytes)
 
     /** Updates of the app from GitHub's releases (spec `app-update`). Android reports installation results here. */
     val update =
@@ -349,6 +362,7 @@ class FrameCore(
             "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion} (${platform.appVersionCode ?: "?"}, $build)",
         )
         logHealth()
+        log.i(TAG, "Storage reserve: ${reserveBytes / StorageReserve.MIB} MiB of ${volumeBytes / StorageReserve.MIB} MiB")
         settings.load()
         transitions.load()
         clients.load()
@@ -360,6 +374,16 @@ class FrameCore(
         val migrated = loadedSources == SourceConfigStore.Loaded.MISSING && migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         library.removePartialUploads()
+        correctCaptureDates()
+        // Renderings of photos that are not in the index, and of versions it will assign again: files from before the
+        // update, a deletion the end of the process cut off, an index restored from its backup (design decision 4 of
+        // `library-performance`). Before the slideshow asks for any.
+        val swept =
+            cache.sweep { id ->
+                index.library.value.photos[id]
+                    ?.version
+            }
+        if (swept > 0) log.i(TAG, "$swept renderings of photos that are not in the index removed")
         // Renderings of an older format, after an update; on the core's scope, there may be thousands of files.
         scope.launch {
             RenderCache.staleFolders(dirs.cache).forEach { stale ->
@@ -573,6 +597,31 @@ class FrameCore(
                 log.e(TAG, "Revoking all pairings failed", e)
             }
         }
+
+    /**
+     * Photos left the index, by any path (design decision 4 of `library-performance`): their renderings and the
+     * originals of remote ones go. Inside the index's lock; both only change memory and delete in the background.
+     */
+    private fun photosRemoved(removed: List<PhotoEntry>) {
+        cache.removeAll(removed)
+        sources.photosRemoved(removed)
+    }
+
+    /**
+     * Entries with a capture date before 1800, from before such dates counted as missing, get their file date (spec
+     * `photo-library`, "Implausible capture dates"), in one edit.
+     */
+    private fun correctCaptureDates() {
+        val corrected =
+            index.edit { edit ->
+                edit
+                    .all()
+                    .filter { CaptureDates.implausible(it.takenAtMs) }
+                    .onEach { edit.put(it.copy(takenAtMs = it.modifiedMs)) }
+                    .size
+            }
+        if (corrected > 0) log.i(TAG, "$corrected implausible capture dates replaced by the file date")
+    }
 
     /** Quarantines the version of [entry] whose rendering crashed the decoder, unless the file changed meanwhile. */
     private fun quarantine(entry: PhotoEntry) {

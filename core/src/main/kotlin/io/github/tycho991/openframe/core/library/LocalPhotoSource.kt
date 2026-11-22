@@ -78,7 +78,7 @@ class LocalPhotoSource(
             if (entry != null && entry.fileSize == size && entry.modifiedMs == mtime) continue
             val skip = skippedKnown[path]
             if (skip != null && skip.fileSize == size && skip.modifiedMs == mtime) continue
-            val result = runCatching { read(path, file, previous = entry) }
+            val result = runCatching { read(path, file) }
             if (result.exceptionOrNull() is DecoderUnavailableException) {
                 // Says nothing about the file; every further file would wait for the decoder as well.
                 log.w(TAG, "The decoder is not available; the remaining files are checked at the next scan")
@@ -98,7 +98,9 @@ class LocalPhotoSource(
                         .onSuccess {
                             val current = edit.get(it.id)
                             if (current == null) added++ else updated++
-                            edit.put(it.withStateOf(current))
+                            // The version from the entry in the edit, so a file at the path of a removed photo gets
+                            // one this ID never had (design decision 5 of `library-performance`).
+                            edit.put(it.withStateOf(current).copy(version = edit.versionFor(current)))
                         }.onFailure { e ->
                             val reason = (e as? ImageException)?.reason ?: io.github.tycho991.openframe.core.platform.SkipReason.CORRUPT
                             if (e !is ImageException) log.w(TAG, "Error reading $path", e)
@@ -135,16 +137,19 @@ class LocalPhotoSource(
         info: ImageInfo? = null,
     ): PhotoEntry {
         val path = relativePath(root, file)
-        val entry = read(path, file, previous = index.library.value.photos[PhotoEntry.idFor(id, path)], info)
-        return index.edit { edit -> entry.withStateOf(edit.get(entry.id)).also(edit::put) }
+        val entry = read(path, file, info)
+        return index.edit { edit ->
+            val current = edit.get(entry.id)
+            entry.withStateOf(current).copy(version = edit.versionFor(current)).also(edit::put)
+        }
     }
 
     fun fileOf(entry: PhotoEntry): File = File(root, entry.path)
 
+    /** The entry of [file]; its version is assigned when it is applied ([LibraryEdit.versionFor]). */
     private fun read(
         path: String,
         file: File,
-        previous: PhotoEntry?,
         known: ImageInfo? = null,
     ): PhotoEntry {
         val info = known ?: engine.probe(file)
@@ -155,11 +160,12 @@ class LocalPhotoSource(
             path = path,
             width = info.width,
             height = info.height,
-            takenAtMs = info.takenAt?.toEpochMilli() ?: mtime,
+            takenAtMs = CaptureDates.plausible(info.takenAt)?.toEpochMilli() ?: mtime,
             fileSize = file.length(),
             modifiedMs = mtime,
-            // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf).
-            version = (previous?.version ?: 0) + 1,
+            // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf), and
+            // the version is assigned there.
+            version = 0,
             gps = info.gps,
             metadataVersion = PhotoEntry.METADATA_VERSION,
         )

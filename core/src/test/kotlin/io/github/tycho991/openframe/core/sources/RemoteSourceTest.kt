@@ -49,15 +49,17 @@ class RemoteSourceTest {
             it.add(FakeKind.source("nextcloud"))
         }
     }
+
+    /** Removed photos are reported by the index; their originals go there as `SourceRegistry.photosRemoved` does. */
     private val index by lazy {
-        PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() }
+        PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)) { removed ->
+            removedPhotos += removed
+            originals.removeAll(removed.map { it.id })
+        }.also { it.load() }
     }
     private val originals by lazy { OriginalsStore(File(dir, "originals"), freeBytes = { freeBytes }) }
     private val source by lazy {
-        RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, originals, {
-            removedPhotos +=
-                it
-        }, log)
+        RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, originals, log)
     }
 
     private fun sync(): ScanResult = runBlocking { source.scan() }
@@ -146,7 +148,7 @@ class RemoteSourceTest {
                     return engine.probe(file)
                 }
             }
-        runBlocking { RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, racing, originals, {}, log).scan() }
+        runBlocking { RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, racing, originals, log).scan() }
         val photo = photos().getValue("a.jpg")
         assertEquals(2, photo.version)
         assertEquals(Crop(0.2, 0.8, 2.0), photo.crop)
@@ -181,6 +183,25 @@ class RemoteSourceTest {
         assertEquals(setOf("a.jpg"), photos().keys)
         assertFalse(originals.has(gone))
         assertEquals(listOf(gone.id), removedPhotos.map { it.id })
+    }
+
+    /** Spec `photo-library`: Stable photo IDs › Another file at the path of a removed photo, for a remote source. */
+    @Test
+    fun `A photo that vanishes from the server and comes back gets a version it never had`() {
+        remote.put("a.jpg", jpg(), "e1")
+        sync()
+        val first = photos().getValue("a.jpg")
+        remote.remove("a.jpg")
+        sync()
+        assertNull(photos()["a.jpg"])
+        remote.put("a.jpg", Fixtures.solidJpeg(400, 300, 0xFF0000), "e2")
+        sync()
+        val back = photos().getValue("a.jpg")
+        assertEquals(first.id, back.id)
+        assertTrue(back.version > first.version, "${back.version} after ${first.version}")
+        remote.put("a.jpg", jpg(), "e3")
+        sync()
+        assertEquals(back.version + 1, photos().getValue("a.jpg").version, "a changed file: one more")
     }
 
     @Test
@@ -229,7 +250,7 @@ class RemoteSourceTest {
     @Test
     fun `A sync that takes longer than two hours stops between downloads and keeps what arrived`() {
         val clock = TestClock()
-        val timed = RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, originals, {}, log, clock = clock)
+        val timed = RemoteSource("nextcloud", { configs.get("nextcloud") }, kind, index, engine, originals, log, clock = clock)
         for (i in 1..3) remote.put("p$i.jpg", jpg(), "e$i")
         remote.beforeDownload = { clock.advance(java.time.Duration.ofMinutes(61)) }
         val failure = assertThrows(SourceException::class.java) { runBlocking { timed.scan() } }
@@ -257,7 +278,7 @@ class RemoteSourceTest {
                 }
             }
         val timed =
-            RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { slow }, index, engine, originals, {}, log, clock = clock)
+            RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { slow }, index, engine, originals, log, clock = clock)
         val failure = assertThrows(SourceException::class.java) { runBlocking { timed.scan() } }
         assertEquals(SourceException.Kind.LIMIT, failure.kind)
         assertTrue(failure.message!!.contains("longer than 2 hours"), failure.message)
@@ -305,7 +326,6 @@ class RemoteSourceTest {
                 index,
                 engine,
                 originals,
-                {},
                 log,
             )
         configs.patch(
@@ -426,7 +446,7 @@ class RemoteSourceTest {
             SourceConfigStore(JsonStore(File(dir, "tight.json"), StoredSources.serializer(), TestScope(), log)).also {
                 it.load()
             }
-        val tightSource = RemoteSource("nextcloud", { tightConfigs.get("nextcloud") }, kind, index, engine, originals, {}, log)
+        val tightSource = RemoteSource("nextcloud", { tightConfigs.get("nextcloud") }, kind, index, engine, originals, log)
         originals.fileOf(entry).delete()
         remote.downloads.clear()
         runBlocking { tightSource.scan() }

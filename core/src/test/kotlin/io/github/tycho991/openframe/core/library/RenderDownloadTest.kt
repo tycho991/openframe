@@ -56,7 +56,7 @@ class RenderDownloadTest {
             { 10L * 1024 * 1024 },
             AppLog(TestClock()),
             onCrashed = { crashed += it.id },
-            fetch = { entry ->
+            fetch = { entry, _ ->
                 gate.await()
                 fetched += entry.id
                 fetchFailure?.let { throw it }
@@ -188,7 +188,7 @@ class RenderDownloadTest {
         runBlocking {
             val a = async(start = CoroutineStart.UNDISPATCHED) { cache.get(first, RenderSize.DISPLAY, RenderPriority.PREFETCH) }
             handedOver()
-            cache.prefetch(listOf(later))
+            cache.prefetchAhead(emptyList(), listOf(later), emptyList())
             val c = async(start = CoroutineStart.UNDISPATCHED) { cache.get(urgent, RenderSize.DISPLAY, RenderPriority.DEMAND) }
             handedOver()
             gate.countDown()

@@ -51,7 +51,6 @@ class SourceOriginalsTest {
             index,
             engine,
             File(dir, "sources"),
-            {},
             TestClock(),
             log,
         ).also {

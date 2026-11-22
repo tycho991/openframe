@@ -1,7 +1,6 @@
 package io.github.tycho991.openframe.core.api
 
 import io.github.tycho991.openframe.core.http.ApiJson
-import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.testing.FakePlatform
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
@@ -139,11 +138,15 @@ class UploadApiTest {
         assertEquals("image.jpg", result(res).photos.single().path)
     }
 
+    /** Spec `photo-library`: Upload › Storage full, with the storage reserve of a reference frame. */
     @Test
     fun `Storage full`() {
-        platform.free = PhotoLibrary.RESERVE_BYTES + jpeg.size / 2
+        platform.total = 16L * 1024 * 1024 * 1024
+        assertEquals(600L * 1024 * 1024, frame.core.reserveBytes)
+        platform.free = frame.core.reserveBytes + jpeg.size / 2
         val res = frame.upload(null, "a.jpg" to jpeg)
         assertEquals(507, res.statusCode())
+        assertTrue(res.body().contains("600 MiB"), res.body())
         assertEquals(emptyList<String>(), files())
         assertTrue(
             frame.photos

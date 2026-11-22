@@ -59,6 +59,65 @@ class FrameCoreTest {
         }
     }
 
+    /** Spec `photo-library`: Rendered sizes follow the index › Renderings from before the update. */
+    @Test
+    fun `The start removes renderings of photos that are not in the index`() {
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        Fixtures.copy("landscape.jpg", File(File(dir, "photos"), "a.jpg"))
+        val kept =
+            TestFrame(dir).use { frame ->
+                frame.scan()
+                assertEquals(200, frame.get("/api/v1/photos/$id/image?size=thumb").statusCode())
+                File(frame.dirs.cache, RenderCache.FOLDER).list()!!.single { it.startsWith("$id-") && !it.contains("-p") }
+            }
+        val renders = File(File(dir, "cache"), RenderCache.FOLDER)
+        val unknown = "${PhotoEntry.idFor("local", "gone.jpg")}-v1-400x300.jpg"
+        val ahead = "$id-v99-400x300.jpg"
+        listOf(unknown, ahead).forEach { File(renders, it).writeBytes(ByteArray(10)) }
+        TestFrame(dir).use { frame ->
+            frame.core.cache.awaitDeletions()
+            assertEquals(listOf(kept), renders.list()!!.filter { !it.contains("-p") }, "the rendering of the photo in the index stays")
+        }
+    }
+
+    /** Spec `photo-library`: Storage reserve › Reference frame. */
+    @Test
+    fun `The start log names the storage reserve`() {
+        TestFrame(dir, platform = FakePlatform(total = 16L * 1024 * 1024 * 1024)).use { frame ->
+            assertEquals(600L * 1024 * 1024, frame.core.reserveBytes)
+            assertTrue(
+                frame.core.log
+                    .recent(1000)
+                    .any { it.message == "Storage reserve: 600 MiB of 16384 MiB" },
+            )
+        }
+    }
+
+    /** Spec `photo-library`: Implausible capture dates › Index from before the update. */
+    @Test
+    fun `The start gives entries dated before 1800 their file date`() {
+        val file = Fixtures.copy("landscape.jpg", File(File(dir, "photos"), "a.jpg"))
+        val yearMinusOne = Instant.parse("-0001-06-01T00:00:00Z").toEpochMilli()
+        val id = PhotoEntry.idFor("local", "a.jpg")
+        val before =
+            TestFrame(dir).use { frame ->
+                frame.scan()
+                val index = frame.core.library.index
+                index.edit { edit -> edit.put(edit.get(id)!!.copy(takenAtMs = yearMinusOne)) }
+                index.library.value.version
+            }
+        val after =
+            TestFrame(dir).use { frame ->
+                val library = frame.core.library.index.library.value
+                assertEquals(file.lastModified(), library.photos.getValue(id).takenAtMs)
+                assertEquals(before + 1, library.version)
+                library.version
+            }
+        TestFrame(dir).use { frame ->
+            assertEquals(after, frame.core.library.index.library.value.version, "nothing to correct")
+        }
+    }
+
     /** Spec `slideshow-display`: Caption changes without a photo change. */
     @Test
     fun `Comment, place and language reach the caption without a photo change`() {
