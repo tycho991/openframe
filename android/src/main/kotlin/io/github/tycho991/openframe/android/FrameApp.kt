@@ -38,8 +38,11 @@ class FrameApp : Application() {
     /** Android's system brightness; the core reads the permission on every evaluation. */
     val screenBrightness: AndroidScreenBrightness by lazy { AndroidScreenBrightness(this) }
 
-    /** The network; the [FrameService] reports its network callbacks to it. */
+    /** The LAN for the display schedule; the [FrameService] registers its callback. */
     val networkLink: AndroidNetworkLink by lazy { AndroidNetworkLink(this) }
+
+    /** The networks the [FrameService]'s rebind has seen, per process so that a restarted service does not rebind. */
+    internal val knownNetworks = KnownNetworks()
 
     /** The decoder process, bound by the core's first decoding. */
     internal val decoder: RemoteMediaEngine by lazy { RemoteMediaEngine(ServiceDecoderConnector(this)) }

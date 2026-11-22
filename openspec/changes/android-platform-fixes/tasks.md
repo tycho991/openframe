@@ -29,10 +29,10 @@
 
 ## 2. Only the LAN counts as the network in `:android`
 
-- [ ] 2.1 Move `connectionKind(capabilities)` from a private member of `AndroidPlatform` to an internal top-level
+- [x] 2.1 Move `connectionKind(capabilities)` from a private member of `AndroidPlatform` to an internal top-level
   function in `AndroidPlatform.kt` (design decision 2). Verify: the existing address tests in `:android` and `:core`
   stay green unchanged
-- [ ] 2.2 `AndroidNetworkLink` per design decisions 1 and 2: internal `lanRequest()` (Wi-Fi or Ethernet transport,
+- [x] 2.2 `AndroidNetworkLink` per design decisions 1 and 2: internal `lanRequest()` (Wi-Fi or Ethernet transport,
   `NET_CAPABILITY_NOT_VPN` explicit, no `INTERNET`); `register(connectivity, log)` that unregisters an earlier
   callback, clears the set, registers a freshly created callback and then applies the snapshot only while no callback
   of this registration has arrived (listener only on a change); every callback sets `connected =
@@ -54,7 +54,7 @@
   callback give `connected == false` with one listener event and both log lines; after `unregister` and `register`
   with an empty snapshot a network reported before is gone from the set (`display-schedule` › Asking for the network
   while the display is off › Mobile data stays on, › Mobile data only)
-- [ ] 2.3 Rebind per design decision 3: a small internal class for "new network, not one reported again", one instance
+- [x] 2.3 Rebind per design decision 3: a small internal class for "new network, not one reported again", one instance
   per process in `FrameApp`; `FrameService.watchNetwork` keeps the unfiltered callback for the rebind and its
   "Network available/lost" lines through that class, no longer calls `link.available`/`link.lost`, and calls
   `link.register(connectivity) { core.log.i(TAG, it) }`; `onDestroy` unregisters both callbacks; the KDoc of
