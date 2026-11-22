@@ -61,6 +61,25 @@ It SHALL be possible to upload photos through the API, one or several, optionall
 - **WHEN** less free storage than the storage reserve would remain after an upload
 - **THEN** the API answers with 507, stores nothing and leaves no partial file behind
 
+### Requirement: Photo folder kept
+The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT switch to internal storage while the external storage is unavailable. While the storage is not mounted or the folder cannot be listed, a scan SHALL NOT remove entries, and uploads and deletes SHALL be rejected with 503 and the error code `storage_unavailable`. A folder deleted over USB on mounted storage SHALL be created again, and its entries removed.
+
+#### Scenario: Storage mounted late after a restart
+- **WHEN** the device restarts and its storage is mounted only after the app has started
+- **THEN** no photo disappears from the library, and comments, sections and hidden states are kept
+
+#### Scenario: Upload while the storage is unavailable
+- **WHEN** a photo is uploaded while the storage is not mounted
+- **THEN** the API answers 503 with `storage_unavailable` and stores nothing
+
+#### Scenario: Delete while the storage is unavailable
+- **WHEN** a client deletes a local photo, alone or in a batch, while the storage is not mounted
+- **THEN** the API answers 503 with `storage_unavailable`, and the photo stays in the library
+
+#### Scenario: Folder deleted over USB
+- **WHEN** the whole photo folder is deleted over USB
+- **THEN** the folder exists again after the next scan and no photo of the folder remains in the library
+
 ## ADDED Requirements
 
 ### Requirement: Local scan while the display is off
@@ -83,7 +102,7 @@ While the display is off, the frame SHALL scan the photo folder at least every 5
 - **THEN** the library version stays the same
 
 ### Requirement: Storage reserve
-The frame SHALL keep a storage reserve of Android's low-storage threshold (10 % of the data volume, at most 500 MiB) plus 100 MiB. Uploads, downloads of originals and renderings ahead of time SHALL leave at least the reserve free, except as "Going below the storage reserve" allows. To keep it, the cache of rendered sizes SHALL remove its entries unused longest, also below its budget.
+The frame SHALL keep a storage reserve of 10 % of its data volume, at most 500 MiB, plus 100 MiB, based on the low-storage threshold of Android 5 and 6. Uploads, downloads of originals and renderings ahead of time SHALL leave the reserve free, except as "Going below the storage reserve" allows. To keep it, the render cache SHALL remove its entries unused longest, also below its budget, but never those of the photo on screen, of the next photos or ones a request waits for.
 
 #### Scenario: Reference frame
 - **WHEN** the frame's data volume holds 16 GiB
@@ -95,7 +114,7 @@ The frame SHALL keep a storage reserve of Android's low-storage threshold (10 % 
 
 #### Scenario: Storage runs short
 - **WHEN** the free storage drops below the reserve while the cache of rendered sizes is within its budget
-- **THEN** the cache removes the renderings unused longest until the reserve is free again or no other rendering is left, and the photos stay in the library
+- **THEN** the cache removes the renderings unused longest until the reserve is free again or only those of the photo on screen, of the next photos and of waiting requests are left, the photo on screen stays, and the photos stay in the library
 
 ### Requirement: Going below the storage reserve
 Only renderings someone waits for, the photo the slideshow shows now or an image a client asks for, SHALL be allowed to go below the storage reserve. Fetching a missing original for such a rendering SHALL be allowed to go below it as well, but SHALL leave at least 100 MiB free. A download of an original for a rendering ahead of time SHALL NOT go below the reserve.
@@ -132,7 +151,7 @@ When a photo leaves the index for any reason (deleted through the API, removed f
 - **THEN** those rendered sizes are deleted, and those of photos in the index stay
 
 ### Requirement: Batch changes
-A batch that hides, shows or deletes photos SHALL change the library in one step: the library version SHALL change exactly once, however many IDs the batch has. Every ID SHALL still end in exactly one of the lists processed, missing or failed.
+A batch that hides, shows or deletes photos SHALL change the library in one step: the library version SHALL change at most once, however many IDs the batch has, and exactly once if the batch changed a photo. Every ID SHALL still end in exactly one of the lists processed, missing or failed.
 
 #### Scenario: Large batch
 - **WHEN** a client hides 1,000 photos in one batch
@@ -142,16 +161,20 @@ A batch that hides, shows or deletes photos SHALL change the library in one step
 - **WHEN** a batch deletes a local photo, a Nextcloud photo and an unknown ID
 - **THEN** the local photo is deleted and listed as processed, the Nextcloud photo as failed and the unknown ID as missing, and the library version changed once
 
+#### Scenario: Nothing to change
+- **WHEN** a client hides 10 photos in one batch that are all hidden already
+- **THEN** `processed` is 10, and the library version is unchanged
+
 ### Requirement: Names of uploaded files
-The name of an uploaded file SHALL be shortened to at most 200 bytes in UTF-8 without splitting a character, keeping its image extension. If a level of the album path exists as a file, the API SHALL answer with 400 `invalid_album` naming the field `album`. If one file of an upload of several cannot be stored, no file of the request SHALL stay and the library SHALL be unchanged.
+The name of an uploaded file SHALL be shortened to at most 200 bytes in UTF-8 without splitting a code point, keeping its image extension. If a level of the album path exists as a file, the API SHALL answer with 400 `invalid_album` naming the field `album`. If one file of an upload of several cannot be stored, no file of the request SHALL stay and the library SHALL be unchanged.
 
 #### Scenario: Long name in another script
 - **WHEN** a file named with 90 Japanese characters and `.jpg` is uploaded
 - **THEN** it is stored with a name of at most 200 bytes that ends in `.jpg`
 
 #### Scenario: Emoji at the cut
-- **WHEN** a file is uploaded whose name has an emoji where it would be cut
-- **THEN** the stored name has the whole emoji or none of it
+- **WHEN** a file is uploaded whose name has an emoji of one code point where it would be cut
+- **THEN** the stored name has the whole emoji or none of it, and is valid UTF-8
 
 #### Scenario: Album level is a file
 - **WHEN** a file is uploaded into the album `family/2025` and `family` is a file in the photo folder

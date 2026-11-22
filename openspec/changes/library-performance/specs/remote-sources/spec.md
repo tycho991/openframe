@@ -20,7 +20,7 @@ Downloaded originals SHALL stay within the budget of their source. When it is ex
 - **THEN** the original is not downloaded, the rendering fails, the photo stays in the library, and the slideshow shows other photos
 
 ### Requirement: Remove a source
-The user SHALL be able to remove a source. The frame SHALL then delete its stored credentials, ask the server to revoke them if the kind has any to revoke and the server has not already refused them, stop syncing it and remove its photos and downloaded originals. The removal SHALL answer without waiting for files to be deleted; originals and rendered sizes left by a removal that was cut off SHALL be deleted at the next start. Other sources and local photos SHALL be untouched.
+The user SHALL be able to remove a source. The frame SHALL then delete its stored credentials, ask the server to revoke them if the kind has any to revoke and the server has not already refused them, stop syncing it and remove its photos and downloaded originals. The removal SHALL answer without waiting for files to be deleted; files left by a removal that was cut off SHALL be deleted at the next start that can read the list of sources. Other sources and local photos SHALL be untouched.
 
 #### Scenario: Remove
 - **WHEN** the user removes a source
@@ -31,5 +31,5 @@ The user SHALL be able to remove a source. The frame SHALL then delete its store
 - **THEN** the API answers without waiting for the files, the photos are gone from the library at once, and the files are deleted in the background
 
 #### Scenario: App ends during the deletion
-- **WHEN** the app ends while the files of a removed source are being deleted, and starts again
+- **WHEN** the app ends while the files of a removed source are being deleted, and starts again with a readable list of sources
 - **THEN** no original and no rendered size of that source is left after the start

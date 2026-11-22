@@ -7,8 +7,8 @@ things are wrong. On a cold cache the slideshow queues a rendering for every pho
 keep running while the display is off. The render cache lists its folder after every rendering and reads the size of
 every file when it trims. The local scan copies the index every 15 seconds, also at night. A batch of 10,000 IDs is
 10,000 index edits. Renderings of photos that left the index stay behind, and a new file at the path of a removed
-photo gets version 1 again, so it can be served the old picture. The 100 MB reserve lies below Android's own
-low-storage threshold, where Android starts to trim app caches. The prerequisites the plan named are on `main` now
+photo gets version 1 again, so it can be served the old picture. The 100 MB reserve lies below the free space at
+which Android 5 and 6 start to trim app caches, about 375 MiB on the reference frames. The prerequisites the plan named are on `main` now
 (render generation in the folder name, safe mode and quarantine, the download thread of `nextcloud-hardening`); #116
 already batched the removal of renderings and originals. All 14 findings of the package are still open on 0.13.0, two
 of them in part.
@@ -43,8 +43,10 @@ of them in part.
     and at once when a client fetches photos, albums or skipped files. While it is on, the 15-second scan stays.
 - **Batch actions in one step.** Hide, show and delete of a batch are one index edit and one library version, with one
   notification of the system's media store. Single deletes in the web UI use the batch endpoint, so they change too.
+  While the photo folder is unavailable, deletes answer 503 `storage_unavailable` instead of counting a missing file
+  as deleted.
 - **Uploads.**
-  - File names are shortened to 200 bytes of UTF-8 at character boundaries, with their image extension kept.
+  - File names are shortened to 200 bytes of UTF-8 at code point boundaries, with their image extension kept.
   - An album level that exists as a file gives 400 `invalid_album`.
   - An upload of several files is all or nothing for real, as one index edit.
   - An album that differs from a local folder only in letter case goes into that folder.
@@ -62,7 +64,8 @@ None.
 
 ### Modified Capabilities
 
-- `photo-library`: "Local photo folder", "Stable photo IDs" and "Upload" change; new requirements "Local scan while
+- `photo-library`: "Local photo folder", "Stable photo IDs", "Upload" and "Photo folder kept" (deletes refused while
+  the storage is unavailable) change; new requirements "Local scan while
   the display is off", "Storage reserve", "Going below the storage reserve", "Rendered sizes follow the index", "Batch
   changes", "Names of uploaded files", "Upload into an album in another letter case", "Implausible capture dates".
 - `remote-sources`: "Storage of the originals" and "Remove a source" change.
@@ -83,8 +86,8 @@ None.
     cadence, start sweep and date correction, reserve log line).
 - `android`: `SlideRenderer`, `AndroidMediaEngine.parseExifDate`, `AndroidMediaStoreNotifier`.
 - `api/openapi.yaml`: the upload text (reserve, nothing stored on any error, `invalid_album` also for an album level
-  that is a file), the `PhotoEntry.version` text (never reused for another file at the same path). Then
-  `npm run gen:api`.
+  that is a file), the `Photo.version` text (never reused for another file at the same path), and 503
+  `storage_unavailable` at `DELETE /photos/{photoId}` and `POST /photos:batch`. Then `npm run gen:api`.
 - `webadmin`: `error.invalid_album` in `en.json` and `de.json`; e2e coverage of single and batch deletes.
 - Docs: the README names the reserve instead of 100 MB.
 - Behaviour visible to users:

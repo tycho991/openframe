@@ -4,10 +4,12 @@
 
 - [ ] 1.1 `api/openapi.yaml` first: the upload description names the storage reserve instead of 100 MB, says that
   nothing is stored on any error, and that an album level that exists as a file is refused with 400 `invalid_album`
-  as well; the `album` field description likewise; `PhotoEntry.version` reads "changes with every change of the file
-  and is never reused for another file at the same path" (design decisions 1, 5 and 9). No schema changes, so no DTO
-  changes. Then `npm run gen:api`. Verify: `npm run lint` in `webadmin/` (Redocly included) is green, and the
-  generated types are unchanged apart from the descriptions.
+  as well; the `album` field description likewise; `version` of the schema `Photo` reads "changes with every change
+  of the file and is never reused for another file at the same path"; `DELETE /photos/{photoId}` and
+  `POST /photos:batch` get a 503 response (`storage_unavailable` while the photo folder is unavailable) (design
+  decisions 1, 5, 8 and 9). No schema changes, so no DTO changes. Then `npm run gen:api`. Verify: `npm run lint` in
+  `webadmin/` (Redocly included) is green, the generated types change only in descriptions and the new 503 answers,
+  and `RouteAccessTest` stays green.
 - [ ] 1.2 Texts: `error.invalid_album` in `webadmin/src/lib/i18n/en.json` and `de.json` says the album path is invalid
   or too long; the README names the storage reserve (about 600 MiB on the reference frames) instead of "A download
   never leaves less than 100 MB free". Verify: `npm run lint`, `npm run typecheck` and `npm test` are green, and
@@ -19,10 +21,12 @@
   through one injectable function, and `PhotoIndexStore` counts its `edit` calls (`internal`). Verify:
   `./gradlew :core:check` is green, and no behaviour changes.
 - [ ] 2.2 The four count-based tests with N = 1,000:
-  - removing a source with N photos and 1.1 · N renderings lists the render folder at most once, extending the test of
-    #116 in `RenderCacheTest`/`SourceRegistryTest`;
-  - `SlideshowControllerTest` with a cold cache of 1,000 photos: the names queued for rendering ahead never cover more
-    than `PREFETCH_AHEAD` distinct photos, and one `show()` renders at most 3 photos on demand;
+  - rendering N photos and then removing their source lists the render folder at most a few times in total, counted
+    over both steps (#116 already made the removal itself list once; today every rendering lists the folder), in
+    `RenderCacheTest`/`SourceRegistryTest`;
+  - `SlideshowControllerTest` with a cold cache of 1,000 photos: the photos asked for ahead through the fake's
+    existing `prefetch` never number more than `PREFETCH_AHEAD`, and one `show()` renders at most 3 photos on demand;
+    task 7.3 moves the test to `ahead()`;
   - `LocalPhotoSourceTest`: a rescan without a change makes no `edit` call;
   - `LibraryApiTest` with the contract check: a batch over N IDs raises `libraryVersion` by exactly 1.
 
@@ -95,11 +99,14 @@
     larger than the storage);
   - a `FrameCoreTest` finds the log line.
 - [ ] 6.3 `RenderCache` below the reserve (design decision 2): free storage checked before each rendering; its own
-  entries removed, also below the budget; a job nobody awaits fails with a storage error, an awaited one renders; a
-  warning at most once an hour; the index rebuilt from one listing when found below the reserve; `touch` sets the file
-  time at most once an hour (clock injected). Verify: `RenderCacheTest` with `FakePlatform.free` below the reserve: a
-  window job is not rendered, the oldest renderings are deleted until the reserve is free, a `get()` renders; repeated
-  `peek`s change the file time at most once per hour of `TestClock`; a `TestFrame` with free storage below the reserve
+  entries removed, also below the budget, never a name in `wanted`, an awaited name or a file in `keep`; a job nobody
+  awaits fails with a storage error, an awaited one renders; a warning at most once an hour; the index rebuilt from one
+  listing when a `peek` misses a name it knows, at most once an hour; `touch` sets the file time at most once an hour
+  (clock injected). Verify: `RenderCacheTest` with `FakePlatform.free` below the reserve: a window job is not
+  rendered, the oldest renderings are deleted until the reserve is free while the `keep`, `wanted` and awaited files
+  stay, a `get()` renders; a file deleted behind the cache's back triggers one listing at the next `peek` and none at
+  the following misses within an hour of `TestClock`; repeated `peek`s change the file time at most once per hour of
+  `TestClock`; a `TestFrame` with free storage below the reserve
   keeps changing local photos, each rendered when due and none ahead of time (`photo-library` › Storage reserve ›
   Storage runs short; › Going below the storage reserve › Local photos below the reserve).
 - [ ] 6.4 The exception for displays (design decisions 1 and 2): `SourceOriginals.fileOf` and `SourceRegistry.original`
@@ -117,23 +124,32 @@
 
 ## 7. Window of renderings ahead
 
-- [ ] 7.1 `RenderCache.prefetchAhead(next, later)` with the set `wanted`, a flag for awaited names, and dropping under
-  the `inFlight` lock with the internal "no longer wanted" exception and `finish()` (design decision 6); the log line
-  of a failed rendering without a stack trace for a `SourceException` or a dropped job. Verify: `RenderCacheTest`:
+- [ ] 7.1 `RenderCache.prefetchAhead(next, later, keep)` with the set `wanted`, the `Pending` referenced by each `Job`
+  with its awaited flag, removal of an `inFlight` entry only when it is the job's own `Pending`, dropping under the
+  one cache lock with the internal "no longer wanted" exception and `finish()`, and the lock order of design decision
+  6a (no `index.edit`, `SourceRegistry`, `SourceOriginals` or `onCrashed` call under the cache lock; tombstone check,
+  rename and index entry in one critical section); the log line of a failed rendering without a stack trace for a
+  `SourceException` or a dropped job (design decision 6). Verify: a test quarantines a photo from the worker while
+  another thread's edit removes photos, and both finish; Verify: `RenderCacheTest`:
   `prefetchAhead(A..J)` then `prefetchAhead(K..T)`: none of the waiting A..J renders, and a later `prefetchAhead(A)`
   queues A again; a job raised to `DEMAND` by a `get()` is not dropped and returns its file; a `get()` at `NEXT` (the
   refresh of the photo on screen) is not dropped either.
 - [ ] 7.2 Downloads in the window: a queued download with only droppable jobs leaves the queue; a running one is
   cancelled through a cancel check passed by `SourceOriginals.fileOf` and `SourceRegistry.original` into the download
-  limits; a job that joins a cancelled download is handed over again after it ends; a download with an awaited job is
-  never cancelled. Verify: `RenderDownloadTest`: a dropped queued download makes no request; a running one blocked in
-  the fake ends at its next read, leaves no `.part`, and its pin is released (`OriginalsStore` trims it); a `get()`
-  that joins it during the cancellation still gets its file through a second download.
-- [ ] 7.3 `SlideshowController` and `DisplayImages.ahead(next, later)`: `show()` puts the first `NEXT_AHEAD`
+  limits; a job that joins a cancelled download does not take the cancel back and is handed over again after it
+  ends; a download with an awaited job is never cancelled. Verify: `RenderDownloadTest`: a dropped queued download
+  makes no request; a running one blocked in the fake ends at its next read, leaves no `.part`, and its pin is
+  released (`OriginalsStore` trims it); a `get()` that joins it during the cancellation still gets its file through a
+  second download; a window job is dropped, a `get()` for the same name follows, and then the cancelled download
+  fails: the `get()` still gets its file, and its `inFlight` entry was not removed by the old job.
+- [ ] 7.3 `SlideshowController` and `DisplayImages.ahead(next, later, keep)`, `keep` being the files on screen and next
+  up: `show()` puts the first `NEXT_AHEAD`
   candidates into the window as next and the rest up to `PREFETCH_AHEAD` as later instead of queueing every candidate,
   renders at most `MAX_DEMAND_ATTEMPTS = 3` on demand and arms the timer when all fail; `Command.Rest(true)` calls
-  `ahead([], [])`. Verify: `SlideshowControllerTest` with `FakeImages`:
-  - after three failed renderings on demand the next tick of `TestClock` tries the following candidates;
+  `ahead([], [], keep)`; the counting test of 2.2 moves from `prefetch` to `ahead()`. Verify: `SlideshowControllerTest`
+  with `FakeImages`:
+  - after three failed renderings on demand, advancing the test dispatcher's time by one interval (`advanceTimeBy`)
+    tries the following candidates;
   - swiping forward drops waiting renderings that left the window;
   - resting empties the window and waking sets it again;
   - (`slideshow-display` › Bounded rendering ahead › Cold cache with 5,000 photos, › Window moves on, › Server of all
@@ -147,12 +163,15 @@
   and the `Library` instance stays the same for a rescan without a change, a removed file still causes one edit, and a
   slow fake listing logs the warning once within an hour of `TestClock` (`photo-library` › Local scan while the
   display is off › Nothing changed; › Metadata › Rescan without changes).
-- [ ] 8.2 Cadence: `scanLoop` waits 15 s with the display on and 5 minutes with it off; the display going on calls
-  `requestScan()`; `GET /photos`, `/albums` and `/skipped-files` call it through a hook when the last scan began more
-  than 15 s ago, `GET /state` does not. Verify: a `TestFrame` test with `TestClock` and `FakeDisplayPower`: with the
-  display off a file copied into the folder is not scanned after 15 s and is in the index after 5 minutes; switching
-  the display on scans at once; with the display off, `GET /photos` with the contract check leads to a scan, and the
-  next `GET /photos` lists the file (`photo-library` › Local scan while the display is off › Photo copied at night,
+- [ ] 8.2 Cadence: `scanLoop` waits 15 s with the display on and 5 minutes with it off, the night interval injected
+  like `scanInterval` (its `withTimeoutOrNull` runs on real coroutine time, which `TestClock` does not drive); the
+  display going on calls `requestScan()`; `GET /photos`, `/albums` and `/skipped-files` call it through a hook when the
+  last scan began more than 15 s ago on `clock.monotonicMillis()`, `GET /state` does not. Verify: a `TestFrame` test
+  with short injected intervals (day interval short, night interval long), `TestClock` for the guard and
+  `FakeDisplayPower`: with the display off a file copied into the folder is not scanned within several day intervals
+  and is in the index after the night interval; switching the display on scans at once; with the display off,
+  `GET /photos` with the contract check leads to a scan, and the next `GET /photos` lists the file; `GET /state` leads
+  to no scan; two `GET /photos` within 15 s of `TestClock` lead to one scan (`photo-library` › Local scan while the display is off › Photo copied at night,
   › Display goes on, › Admin interface at night; › Local photo folder › Photo copied over USB).
 
 ## 9. Batch actions
@@ -161,9 +180,13 @@
   keeping 404, 409 `read_only_source` and 500 `delete_failed`; `MediaStoreNotifier.notifyChanged(files)` with a
   default loop; `POST /photos:batch` on top of them (design decision 8). Verify: `LibraryApiTest` with the contract
   check: hide and delete batches with local, Nextcloud and unknown IDs give the same `processed`, `missing` and
-  `failed` as before and raise `libraryVersion` by exactly 1; `DELETE /photos/{photoId}` still gives 404 and 409;
-  the fake notifier gets one call with all deleted files; `RouteAccessTest` stays green (`photo-library` › Batch
-  changes › Large batch, › Mixed batch; › Delete › Batch with Nextcloud photos).
+  `failed` as before and raise `libraryVersion` by exactly 1; a hide batch of photos already hidden leaves it
+  unchanged; `DELETE /photos/{photoId}` still gives 404 and 409, and 500 `delete_failed` when the file cannot be
+  deleted (test hook); with `FakePlatform` reporting the storage as not mounted, `DELETE /photos/{photoId}` and a
+  delete batch answer 503 `storage_unavailable`, delete nothing and leave the entries in the library; the fake notifier
+  gets one call with all deleted files; `RouteAccessTest` stays green (`photo-library` › Batch changes › Large batch,
+  › Mixed batch, › Nothing to change; › Delete › Batch with Nextcloud photos; › Photo folder kept › Delete while the
+  storage is unavailable).
 - [ ] 9.2 `AndroidMediaStoreNotifier` overrides `notifyChanged(files)` with one `MediaScannerConnection.scanFile` call.
   Verify: a Robolectric test sees one scan request with all paths; `./gradlew :android:check` is green.
 - [ ] 9.3 Web UI: e2e cases for deleting a single photo and a selection of photos, both through `photos:batch` (own
@@ -177,7 +200,7 @@
   existing folders (exact, then case-insensitive); `isDirectory` checked after `mkdirs`, else 400 `invalid_album`
   naming `album`. Verify: `UploadApiTest` with the contract check:
   - 90 × `日` + `.jpg` is stored with at most 200 bytes and `.jpg`;
-  - an emoji at the cut is kept whole or dropped;
+  - an emoji of one code point at the cut is kept whole or dropped, and the name is valid UTF-8;
   - a 300-byte name without an image extension stays below 255 bytes with the appended extension;
   - an album level that is a file gives 400 `invalid_album` naming `album`;
   - with a folder `Holiday`, an upload into `holiday` lies in `Holiday/` with the album `Holiday`;
@@ -207,7 +230,8 @@
   from `done()`; the full reset in `clear()` with its own counter; `released`, callbacks removed and a graceful
   shutdown in `release()`; an injectable decoder executor; the class KDoc as `BitmapFit` works. Verify: a new
   Robolectric `SlideRendererTest` with a synchronous executor: start a fade, call `preload` during it, then `clear()`
-  in the middle; afterwards no runnable is left in the main looper, the `pendingOld` bitmap is recycled, a `preload`
+  in the middle; afterwards no runnable is left in the main looper, the `pendingOld` bitmap is recycled, both views
+  have `translationX` 0, `alpha` 1 and `translationZ` reset after a cancelled slide and fade, a `preload`
   during a fade decodes exactly once after it ends, and a late decode result after `clear()` or `release()` throws
   nothing and sets no preloaded bitmap; `./gradlew :android:check` is green (`slideshow-display` › Memory limits ›
   Endurance run).
@@ -220,9 +244,11 @@
 
 ## 14. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 14.1 Before the release, read-only on both frames: `df` of the data volume and of the photo folder. Verify: the
-  values are noted in the private checklist, with whether either frame has between 100 and 600 MiB free and whether
-  the two values match (design, Risks).
+- [ ] 14.1 Before the release, read-only on both frames: `df` of the data volume and of the photo folder,
+  `dumpsys devicestoragemonitor`, and `settings get global sys_storage_threshold_percentage` and
+  `settings get global sys_storage_threshold_max_bytes`. Verify: the values are noted in the private checklist, with
+  whether either frame has between 100 and 600 MiB free, whether the two `df` values match, and whether the threshold
+  and the trimming points match design decision 1 (design, Risks).
 - [ ] 14.2 The main session adds rows to the private device checklist, each with its spec reference:
   - Frameo with 5,000 to 10,000 synthetic photos from `scripts/generate-test-fixtures.py` and a cleared render cache:
     after the first photo only about 10 renderings appear; scan time from the log and CPU of the app and the storage
