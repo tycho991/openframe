@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -630,6 +631,137 @@ class RenderCacheTest {
             assertEquals(set, file.lastModified(), "not again within the hour")
             c.close()
         }
+
+    /** A cache whose worker is held on a first rendering until [Holding.release] opens. */
+    private fun held(): Pair<RenderCache, Holding> {
+        val holding = Holding()
+        val c =
+            RenderCache(File(dir, "cache"), holding, { File(photos, it.path) }, { screen }, { fillMode }, { budget }, AppLog(TestClock()))
+        val first = entry("first.jpg")
+        Thread { runBlocking { runCatching { c.get(first, RenderSize.THUMB) } } }.start()
+        assertTrue(holding.started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        return c to holding
+    }
+
+    /** Spec `slideshow-display`: Bounded rendering ahead › Window moves on (design decision 6 of `library-performance`). */
+    @Test
+    fun `Waiting renderings that left the window do not run, and the window can ask again`() {
+        val (c, holding) = held()
+        try {
+            val first = (0 until 10).map { entry("a$it.jpg") }
+            val second = (0 until 10).map { entry("k$it.jpg") }
+            c.prefetchAhead(first.take(2), first.drop(2), emptyList())
+            c.prefetchAhead(second.take(2), second.drop(2), emptyList())
+            holding.release.countDown()
+            waitUntilIdle(c)
+            assertTrue(first.none { c.peek(it, RenderSize.DISPLAY) != null }, "none of the first window rendered")
+            assertTrue(second.all { c.peek(it, RenderSize.DISPLAY) != null }, "the second window rendered")
+            c.prefetchAhead(first.take(1), emptyList(), emptyList())
+            waitUntilIdle(c)
+            assertNotNull(c.peek(first[0], RenderSize.DISPLAY), "asked for again, it is queued again")
+        } finally {
+            holding.release.countDown()
+            c.close()
+        }
+    }
+
+    @Test
+    fun `An awaited rendering is never dropped, at DEMAND or at NEXT`() {
+        val (c, holding) = held()
+        try {
+            val raised = entry("raised.jpg")
+            val refresh = entry("refresh.jpg")
+            c.prefetchAhead(listOf(raised), emptyList(), emptyList())
+            runBlocking {
+                // A request raises the window's job to DEMAND; the refresh of the photo on screen awaits one at NEXT.
+                val demanded = async(kotlinx.coroutines.Dispatchers.IO) { c.get(raised, RenderSize.DISPLAY) }
+                val next = async(kotlinx.coroutines.Dispatchers.IO) { c.get(refresh, RenderSize.DISPLAY, RenderPriority.NEXT) }
+                while (c.queued < 3) Thread.sleep(5)
+                c.prefetchAhead(emptyList(), emptyList(), emptyList())
+                holding.release.countDown()
+                assertTrue(kotlinx.coroutines.withTimeout(10_000) { demanded.await() }.isFile)
+                assertTrue(kotlinx.coroutines.withTimeout(10_000) { next.await() }.isFile)
+            }
+        } finally {
+            holding.release.countDown()
+            c.close()
+        }
+    }
+
+    /**
+     * Design decision 6a of `library-performance`: the worker quarantines a photo (an index edit) while another thread's
+     * edit removes photos (the cache lock inside the index lock); both finish.
+     */
+    @Test
+    fun `Quarantine from the worker and a removal from an edit do not deadlock`() {
+        val crash = java.util.concurrent.CountDownLatch(1)
+        val crashing =
+            object : io.github.tycho991.openframe.core.platform.MediaEngine by engine {
+                override fun render(
+                    source: File,
+                    target: File,
+                    width: Int,
+                    height: Int,
+                    region: Region,
+                    quality: Int,
+                ) {
+                    crash.await()
+                    throw io.github.tycho991.openframe.core.platform.ImageException(
+                        io.github.tycho991.openframe.core.platform.SkipReason.CRASHED,
+                        "The decoder process died",
+                    )
+                }
+            }
+        lateinit var c: RenderCache
+        val index =
+            PhotoIndexStore(
+                io.github.tycho991.openframe.core.store.JsonStore(
+                    File(dir, "index.json"),
+                    StoredIndex.serializer(),
+                    kotlinx.coroutines.test.TestScope(),
+                    AppLog(TestClock()),
+                ),
+            ) { removed -> c.removeAll(removed) }
+        index.load()
+        c =
+            RenderCache(
+                File(dir, "cache"),
+                crashing,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                onCrashed = { e -> index.edit { it.get(e.id)?.let { cur -> it.put(cur.copy(quarantinedVersion = e.version)) } } },
+            )
+        try {
+            val bad = entry("bad.jpg")
+            val others = (0 until 50).map { entry("o$it.jpg") }
+            index.edit { edit -> (others + bad).forEach(edit::put) }
+            val rendering = Thread { runBlocking { runCatching { c.get(bad, RenderSize.THUMB) } } }.apply { start() }
+            val removing =
+                Thread {
+                    index.edit { edit ->
+                        crash.countDown()
+                        // The worker reaches its quarantine while this edit holds the index lock.
+                        Thread.sleep(200)
+                        others.forEach { edit.remove(it.id) }
+                    }
+                }.apply { start() }
+            rendering.join(10_000)
+            removing.join(10_000)
+            assertFalse(rendering.isAlive || removing.isAlive, "both finished")
+            assertEquals(
+                bad.version,
+                index.library.value.photos
+                    .getValue(bad.id)
+                    .quarantinedVersion,
+            )
+        } finally {
+            crash.countDown()
+            c.close()
+        }
+    }
 
     /** A folder that counts how often it is listed. */
     private class CountingDir(

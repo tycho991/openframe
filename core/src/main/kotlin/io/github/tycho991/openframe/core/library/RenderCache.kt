@@ -176,6 +176,9 @@ class RenderCache(
             file: File,
             onFinished: () -> Unit,
         ) = Job(priority, seq, entry, target, pending, file, onFinished)
+
+        /** The same job queued once more, with the original it has. */
+        fun again(seq: Long) = Job(RenderPriority.DEMAND, seq, entry, target, pending, original, onFinished)
     }
 
     /** The original of [entry] to be fetched for the [jobs] that wait for it. */
@@ -619,6 +622,14 @@ class RenderCache(
         var handedOver = false
         try {
             if (!roomForRendering(job)) {
+                // A get() that joined after the check awaits it now: it renders after all. Decided under the lock, so a
+                // later get() finds no entry in flight and queues a job of its own.
+                val joined = synchronized(lock) { job.pending.awaited.also { if (!it) removeInFlight(job) } }
+                if (joined) {
+                    queue.add(job.again(seq.incrementAndGet()))
+                    handedOver = true
+                    return
+                }
                 throw StorageShortException("Less free storage than the reserve; ${job.entry.path} is rendered when it is due")
             }
             val original = job.original ?: onFrame(job.entry)

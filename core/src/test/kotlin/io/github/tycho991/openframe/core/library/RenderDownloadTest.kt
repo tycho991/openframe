@@ -256,6 +256,45 @@ class RenderDownloadTest {
         assertEquals(listOf(false, true), onDemand.toList(), "the second one on demand")
     }
 
+    /** Spec `slideshow-display`: Bounded rendering ahead › Window moves on, for a download that has not started. */
+    @Test
+    fun `A queued download that left the window makes no request`() {
+        gate = CountDownLatch(1)
+        val busy = remote("busy.jpg")
+        val ahead = remote("ahead.jpg")
+        runBlocking {
+            // An awaited download holds the download thread; the window's waits behind it.
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(busy, RenderSize.DISPLAY) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            cache.prefetchAhead(listOf(ahead), emptyList(), emptyList())
+            handedOver()
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { first.await() }.isFile)
+        }
+        Thread.sleep(200)
+        assertEquals(listOf(busy.id), fetched.toList())
+    }
+
+    @Test
+    fun `A download with an awaited job is never cancelled`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        lateinit var request: OriginalRequest
+        failFetch = {
+            request = it
+            null
+        }
+        runBlocking {
+            val waiting = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY, RenderPriority.NEXT) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { waiting.await() }.isFile)
+        }
+        assertFalse(request.cancelled(), "the refresh of the photo on screen awaits it")
+    }
+
     @Test
     fun `Closing during a download returns`() {
         gate = CountDownLatch(1)

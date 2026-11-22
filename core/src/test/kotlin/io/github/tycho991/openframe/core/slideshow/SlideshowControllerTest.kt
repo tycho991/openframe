@@ -159,6 +159,74 @@ class SlideshowControllerTest {
             assertTrue(s.images.demanded.size <= 3, "${s.images.demanded.size} photos rendered on demand")
         }
 
+    /** Spec `slideshow-display`: Bounded rendering ahead › Server of all photos unreachable. */
+    @Test
+    fun `After three failed renderings on demand the next interval tries the following photos`() =
+        runTest {
+            val many = (1..20).map(::photo)
+            val s = Setup(this, many, allReady = false) { broken += many.map { it.id } }
+            runCurrent()
+            assertEquals(many.take(3).map { it.id }, s.images.demanded, "three in a row")
+            assertEquals(SlideState.Loading, s.controller.state.value)
+            advanceTimeBy(29_000)
+            runCurrent()
+            assertEquals(3, s.images.demanded.size, "then it waits")
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(many.take(6).map { it.id }, s.images.demanded, "one interval later the following ones")
+            s.images.broken -= many[6].id
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(many[6].id, s.images.demanded.last())
+            s.images.pending
+                .getValue(many[6].id)
+                .complete(File("p07.jpg"))
+            runCurrent()
+            assertEquals(many[6], s.shown(), "and keeps trying every interval")
+        }
+
+    /** Spec `slideshow-display`: Bounded rendering ahead › Window moves on. */
+    @Test
+    fun `Swiping forward moves the window, so waiting renderings that left it are dropped`() =
+        runTest {
+            val many = (1..30).map(::photo)
+            val s = Setup(this, many)
+            val first = s.images.windows.last()
+            assertEquals(many.subList(1, 3).map { it.id }, first.first, "the next two")
+            assertEquals(many.subList(3, 11).map { it.id }, first.second, "and eight more")
+            repeat(5) { s.controller.next() }
+            runCurrent()
+            val moved = s.images.windows.last()
+            assertEquals(many.subList(6, 8).map { it.id }, moved.first)
+            assertEquals(many.subList(8, 16).map { it.id }, moved.second)
+            assertTrue((first.first + first.second).take(5).none { it in moved.first + moved.second }, "the passed ones left it")
+            assertEquals(
+                listOfNotNull(
+                    (s.controller.state.value as SlideState.Showing).file,
+                    s.controller.nextUp.value
+                        ?.second,
+                ),
+                moved.third,
+                "the files on screen and next up are kept",
+            )
+        }
+
+    /** Spec `display-schedule`: Slideshow rests while the display is off › Renderings queued before the night. */
+    @Test
+    fun `Resting empties the window and waking sets it again`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            val night = s.images.windows.last()
+            assertEquals(emptyList<String>(), night.first + night.second, "nothing is rendered ahead at night")
+            assertTrue((s.controller.state.value as SlideState.Showing).file in night.third, "the photo on screen stays")
+            s.controller.setResting(false)
+            runCurrent()
+            val morning = s.images.windows.last()
+            assertEquals(photos.subList(1, 3).map { it.id }, morning.first)
+        }
+
     @Test
     fun `Change after interval and wrap-around`() =
         runTest {

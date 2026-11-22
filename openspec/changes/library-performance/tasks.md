@@ -124,7 +124,7 @@
 
 ## 7. Window of renderings ahead
 
-- [ ] 7.1 `RenderCache.prefetchAhead(next, later, keep)` with the set `wanted`, the `Pending` referenced by each `Job`
+- [x] 7.1 `RenderCache.prefetchAhead(next, later, keep)` with the set `wanted`, the `Pending` referenced by each `Job`
   with its awaited flag, removal of an `inFlight` entry only when it is the job's own `Pending`, dropping under the
   one cache lock with the internal "no longer wanted" exception and `finish()`, and the lock order of design decision
   6a (no `index.edit`, `SourceRegistry`, `SourceOriginals` or `onCrashed` call under the cache lock; tombstone check,
@@ -134,7 +134,7 @@
   `prefetchAhead(A..J)` then `prefetchAhead(K..T)`: none of the waiting A..J renders, and a later `prefetchAhead(A)`
   queues A again; a job raised to `DEMAND` by a `get()` is not dropped and returns its file; a `get()` at `NEXT` (the
   refresh of the photo on screen) is not dropped either.
-- [ ] 7.2 Downloads in the window: a queued download with only droppable jobs leaves the queue; a running one is
+- [x] 7.2 Downloads in the window: a queued download with only droppable jobs leaves the queue; a running one is
   cancelled through a cancel check passed by `SourceOriginals.fileOf` and `SourceRegistry.original` into the download
   limits; a job that joins a cancelled download does not take the cancel back and is handed over again after it
   ends; a download with an awaited job is never cancelled. Verify: `RenderDownloadTest`: a dropped queued download
@@ -142,7 +142,7 @@
   released (`OriginalsStore` trims it); a `get()` that joins it during the cancellation still gets its file through a
   second download; a window job is dropped, a `get()` for the same name follows, and then the cancelled download
   fails: the `get()` still gets its file, and its `inFlight` entry was not removed by the old job.
-- [ ] 7.3 `SlideshowController` and `DisplayImages.ahead(next, later, keep)`, `keep` being the files on screen and next
+- [x] 7.3 `SlideshowController` and `DisplayImages.ahead(next, later, keep)`, `keep` being the files on screen and next
   up: `show()` puts the first `NEXT_AHEAD`
   candidates into the window as next and the rest up to `PREFETCH_AHEAD` as later instead of queueing every candidate,
   renders at most `MAX_DEMAND_ATTEMPTS = 3` on demand and arms the timer when all fail; `Command.Rest(true)` calls
