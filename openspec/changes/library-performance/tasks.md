@@ -20,7 +20,7 @@
 - [x] 2.1 A first commit of its own with the test seams only (design decision 13): `RenderCache` lists its folder
   through one injectable function, and `PhotoIndexStore` counts its `edit` calls (`internal`). Verify:
   `./gradlew :core:check` is green, and no behaviour changes.
-- [ ] 2.2 The four count-based tests with N = 1,000:
+- [x] 2.2 The four count-based tests with N = 1,000:
   - rendering N photos and then removing their source lists the render folder at most a few times in total, counted
     over both steps (#116 already made the removal itself list once; today every rendering lists the folder), in
     `RenderCacheTest`/`SourceRegistryTest`;
@@ -176,7 +176,7 @@
 
 ## 9. Batch actions
 
-- [ ] 9.1 `PhotoLibrary.setHiddenAll` and `deleteAll` with one index edit each, `delete(id)` on top of `deleteAll`
+- [x] 9.1 `PhotoLibrary.setHiddenAll` and `deleteAll` with one index edit each, `delete(id)` on top of `deleteAll`
   keeping 404, 409 `read_only_source` and 500 `delete_failed`; `MediaStoreNotifier.notifyChanged(files)` with a
   default loop; `POST /photos:batch` on top of them (design decision 8). Verify: `LibraryApiTest` with the contract
   check: hide and delete batches with local, Nextcloud and unknown IDs give the same `processed`, `missing` and

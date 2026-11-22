@@ -42,6 +42,9 @@ class TestFrame(
 ) : AutoCloseable {
     val dirs = FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"))
     val notified = CopyOnWriteArrayList<File>()
+
+    /** Every report of several files at once, as one list each. */
+    val notifiedTogether = CopyOnWriteArrayList<List<File>>()
     val assets = AssetSource { path -> if (path == "index.html") "<!doctype html>".byteInputStream() else null }
     val core =
         FrameCore(
@@ -49,8 +52,15 @@ class TestFrame(
             platform,
             engine,
             assets,
-            MediaStoreNotifier {
-                notified += it
+            object : MediaStoreNotifier {
+                override fun notifyChanged(file: File) {
+                    notified += file
+                }
+
+                override fun notifyChanged(files: List<File>) {
+                    notifiedTogether += files
+                    notified += files
+                }
             },
             clock = clock,
             port = 0,

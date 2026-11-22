@@ -55,25 +55,98 @@ class PhotoLibrary(
         edit.setAlbumHidden(album, hidden)
     }
 
-    /** Deletes file, index entry and rendered sizes. `false` if the photo does not exist, 409 for a photo of a read-only source. */
+    /** What a batch did with each ID: every ID ends in exactly one of the lists (spec "Batch changes"). */
+    class BatchResult(
+        val processed: List<String>,
+        val missing: List<String>,
+        val failed: List<String>,
+    )
+
+    /** Deletes a file; a test makes it fail. */
+    @Volatile
+    internal var deleteFile: (File) -> Boolean = { it.delete() }
+
+    /**
+     * Hides or shows the photos with [ids] in one edit, so the library version changes at most once (design decision 8
+     * of `library-performance`). Unknown IDs are missing; a photo already in that state counts as processed.
+     */
+    fun setHiddenAll(
+        ids: Collection<String>,
+        hidden: Boolean,
+    ): BatchResult {
+        val processed = ArrayList<String>()
+        val missing = ArrayList<String>()
+        index.edit { edit ->
+            for (id in ids.distinct()) {
+                val entry = edit.get(id)
+                if (entry == null) {
+                    missing += id
+                } else {
+                    if (entry.hidden != hidden) edit.put(entry.copy(hidden = hidden))
+                    processed += id
+                }
+            }
+        }
+        return BatchResult(processed, missing, emptyList())
+    }
+
+    /**
+     * Deletes the files of the photos with [ids] and removes them in one edit, with one report to the media store; the
+     * renderings go through the index's notification. Unknown IDs are missing; a photo of a remote source, which would
+     * come back with the next sync, and a file that cannot be deleted are failed; a file already gone counts as deleted.
+     * While the photo folder is unavailable a missing file says nothing, so nothing is deleted: 503
+     * `storage_unavailable` (spec "Photo folder kept").
+     */
+    fun deleteAll(ids: Collection<String>): BatchResult {
+        if (!local.available()) throw storageUnavailable()
+        val library = index.library.value
+        val deleted = ArrayList<PhotoEntry>()
+        val missing = ArrayList<String>()
+        val failed = ArrayList<String>()
+        for (id in ids.distinct()) {
+            val entry = library.photos[id]
+            when {
+                entry == null -> missing += id
+                entry.source != LocalPhotoSource.SOURCE_ID -> failed += id
+                local.fileOf(entry).let { !it.exists() || runCatching { deleteFile(it) }.getOrDefault(false) } -> deleted += entry
+                else -> failed += id
+            }
+        }
+        if (deleted.isNotEmpty()) {
+            index.edit { edit -> deleted.forEach { edit.remove(it.id) } }
+            notifier.notifyChanged(deleted.map(local::fileOf))
+            if (deleted.size == 1) log.i(TAG, "Deleted: ${deleted.single().path}") else log.i(TAG, "Deleted: ${deleted.size} photos")
+        }
+        return BatchResult(deleted.map { it.id }, missing, failed)
+    }
+
+    /**
+     * Deletes file, index entry and rendered sizes: [deleteAll] of one ID. `false` if the photo does not exist, 409 for a
+     * photo of a read-only source, 500 if its file cannot be deleted, 503 while the photo folder is unavailable.
+     */
     fun delete(id: String): Boolean {
-        val entry = index.library.value.photos[id] ?: return false
+        val result = deleteAll(listOf(id))
+        if (result.missing.isNotEmpty()) return false
+        if (result.failed.isEmpty()) return true
         // A photo that the frame only reads would come back with the next sync.
-        if (entry.source != LocalPhotoSource.SOURCE_ID) {
+        if (index.library.value.photos[id]
+                ?.source != LocalPhotoSource.SOURCE_ID
+        ) {
             throw HttpException(
                 409,
                 "read_only_source",
                 "This photo comes from a remote source and cannot be deleted here. Hide it instead.",
             )
         }
-        val file = local.fileOf(entry)
-        if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "File could not be deleted")
-        // The renderings go through the index's notification.
-        index.edit { it.remove(id) }
-        notifier.notifyChanged(file)
-        log.i(TAG, "Deleted: ${entry.path}")
-        return true
+        throw HttpException(500, "delete_failed", "File could not be deleted")
     }
+
+    private fun storageUnavailable() =
+        HttpException(
+            503,
+            "storage_unavailable",
+            "The photo folder is not available; is the storage mounted?",
+        )
 
     /**
      * Upload by `multipart/form-data` with an optional field `album` and files
@@ -85,13 +158,7 @@ class PhotoLibrary(
             MultipartReader.boundaryOf(request.header("content-type"))
                 ?: throw HttpException(415, "unsupported_media_type", "Expected multipart/form-data")
         val root = local.root
-        if (!local.available()) {
-            throw HttpException(
-                503,
-                "storage_unavailable",
-                "The photo folder is not available; is the storage mounted?",
-            )
-        }
+        if (!local.available()) throw storageUnavailable()
         val staging = File(root, STAGING).apply { mkdirs() }
         request.contentLength?.let { length ->
             if (platform.freeBytes(root) - length < reserveBytes) throw insufficientStorage()

@@ -270,31 +270,10 @@ fun Router.libraryRoutes(
         val body = req.bodyAs(BatchRequestDto.serializer())
         if (body.ids.isEmpty() || body.ids.size > 10_000) throw HttpException.badRequest("1 to 10000 IDs")
         if (body.action !in BATCH_ACTIONS) throw HttpException.badRequest("action is hide, show or delete")
-        val missing = mutableListOf<String>()
-        val failed = mutableListOf<String>()
-        var processed = 0
-        for (id in body.ids.distinct()) {
-            // One photo that cannot be processed must not stop the rest, so every ID ends in exactly one list.
-            try {
-                val found =
-                    if (body.action == "delete") {
-                        library.delete(id)
-                    } else {
-                        try {
-                            library.setHidden(id, body.action == "hide")
-                            true
-                        } catch (e: HttpException) {
-                            if (e.status == 404) false else throw e
-                        }
-                    }
-                if (found) processed++ else missing += id
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                failed += id
-            }
-        }
-        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(processed, missing, failed))
+        // One change of the library for the whole batch; every ID ends in exactly one list (spec "Batch changes").
+        val result =
+            if (body.action == "delete") library.deleteAll(body.ids) else library.setHiddenAll(body.ids, body.action == "hide")
+        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(result.processed.size, result.missing, result.failed))
     }
 
     patch("/api/v1/photos/{photoId}") { req ->

@@ -210,6 +210,9 @@ interface NetworkLink {
 fun interface MediaStoreNotifier {
     fun notifyChanged(file: File)
 
+    /** Several files at once, from one batch or upload; one request to the system where it can take several. */
+    fun notifyChanged(files: List<File>) = files.forEach(::notifyChanged)
+
     companion object {
         val None = MediaStoreNotifier { }
     }
