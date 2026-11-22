@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Delete
-It SHALL be possible to delete photos through the API. The file of a local photo SHALL move into the trash (see "Trash for deleted photos"), and its index entry and all derived image sizes SHALL be removed. Photos of a source that the frame only reads (Nextcloud) SHALL NOT be deleted: the API refuses with 409 and `read_only_source`, because the photo would come back with the next sync. Hiding it remains possible.
+It SHALL be possible to delete photos through the API. The file of a local photo SHALL move into the trash (see "Trash for deleted photos"), and its index entry and all derived image sizes SHALL be removed. Photos of a source that the frame only reads (Nextcloud) SHALL NOT be deleted: the API refuses with 409 and the error code `read_only_source`, because the photo would come back with the next sync. Hiding it remains possible.
 
 #### Scenario: Delete photo
 - **WHEN** a photo is deleted
@@ -36,7 +36,7 @@ If the decoder crashes or hangs while rendering a photo of the library, that ver
 
 #### Scenario: Restore a quarantined photo
 - **WHEN** a quarantined local photo is restored from the trash
-- **THEN** it is back in the library as quarantined, and the frame does not render it
+- **THEN** it is back in the library with a new image version and still quarantined, and the frame does not render it
 
 ## ADDED Requirements
 
@@ -51,15 +51,19 @@ A deleted local photo SHALL be kept in a hidden folder `.trash` inside the photo
 - **WHEN** a paired client sends `DELETE` to the trash or to one of its entries
 - **THEN** the API answers 404 or 405, and the trash keeps all its entries
 
-### Requirement: Delete while the photo folder is unavailable
-While the storage of the photo folder is not mounted or the folder cannot be listed, deleting a local photo SHALL be refused with 503 `storage_unavailable`, so that its entry is not dropped while its file stays and comes back without its state.
+### Requirement: Entries of the trash
+Only a folder directly in `.trash` whose name has the form of a trash entry SHALL count as one; the frame SHALL leave every other file and folder in `.trash` alone, never list, move or delete it, and SHALL NOT follow symbolic links there. An entry SHALL hold exactly one image file; an entry with none or several SHALL be listed as damaged and SHALL NOT be restorable.
 
-#### Scenario: Delete while the storage is unavailable
-- **WHEN** a client deletes a local photo while the storage of the photo folder is not mounted
-- **THEN** the API answers 503 with `storage_unavailable`, and the photo stays in the library with its state
+#### Scenario: A folder of the user's own
+- **WHEN** the user has copied a folder `.Trash` with files into `.trash` over USB
+- **THEN** the trash does not list it, and no purge or restore touches it
+
+#### Scenario: Entry with two files
+- **WHEN** a second image file is copied into the folder of a trash entry over USB
+- **THEN** the trash lists the entry as damaged, and restoring it reports it as failed and moves nothing
 
 ### Requirement: Retention of the trash
-An entry SHALL stay in the trash for 7 days after it was deleted and SHALL then be deleted for good, checked at start and at least once an hour. An entry whose deletion time lies before a fixed date in the past, from a clock that was not yet set, SHALL get the current time as its deletion time once the clock is past that date, instead of being deleted at once.
+An entry SHALL stay in the trash for 7 days after it was deleted and SHALL then be deleted for good, checked after start and at least once an hour. An entry whose deletion time lies before a fixed date in the past, from a clock that was not yet set, SHALL get the current time as its deletion time, and with it a new ID, once the clock is past that date, instead of being deleted at once.
 
 #### Scenario: After 7 days
 - **WHEN** a photo was deleted 7 days and 1 hour ago
@@ -70,25 +74,44 @@ An entry SHALL stay in the trash for 7 days after it was deleted and SHALL then 
 - **THEN** the photo stays in the trash for 7 days from when the clock was set
 
 ### Requirement: Trash under storage pressure
-Before the frame refuses an upload with 507 because less than 100 MB would remain free, it SHALL delete trash entries that were deleted more than 24 hours ago, the oldest first, until the upload fits, and only then refuse it if it still does not fit. Entries deleted within the last 24 hours SHALL stay.
+Under storage pressure the frame SHALL delete only trash entries deleted more than 24 hours ago, the oldest first, and only as many as the need requires. If deleting all such entries would still not meet the need, it SHALL delete none and refuse as before. Entries deleted within the last 24 hours SHALL stay.
 
 #### Scenario: Upload makes room
-- **WHEN** an upload would leave less than 100 MB free and the trash holds photos deleted two days ago that free enough storage
-- **THEN** those photos are deleted from the trash, oldest first, and the upload succeeds
+- **WHEN** an upload would leave less free storage than the storage reserve and the trash holds photos deleted two days ago that free enough storage
+- **THEN** those photos are deleted from the trash, oldest first, only as many as needed, and the upload succeeds
 
-#### Scenario: Only recent entries
-- **WHEN** an upload would leave less than 100 MB free and every photo in the trash was deleted within the last 24 hours
+#### Scenario: Not enough to gain
+- **WHEN** an upload would leave less free storage than the storage reserve, and deleting every trash entry older than 24 hours would not free enough
 - **THEN** the API answers 507 and the trash keeps all its entries
 
+#### Scenario: Only recent entries
+- **WHEN** an upload would leave less free storage than the storage reserve and every photo in the trash was deleted within the last 24 hours
+- **THEN** the API answers 507 and the trash keeps all its entries
+
+### Requirement: Where storage pressure frees the trash
+Storage pressure SHALL mean: an upload that would leave less than the storage reserve free while it is written; the render cache or a download of an original below the storage reserve after the render cache has trimmed itself; and an update that would be refused for lack of storage. The trash SHALL be used only when it is on the same volume as the storage that is short.
+
+#### Scenario: Update on a full frame
+- **WHEN** an update is found, the free storage is short of what its download needs, and trash entries older than 24 hours would free enough
+- **THEN** those entries are deleted and the update is downloaded
+
+#### Scenario: Announced size of an upload
+- **WHEN** an upload announces a body larger than the free storage above the storage reserve
+- **THEN** no trash entry is deleted before the body is written
+
 ### Requirement: Trash list through the API
-Every paired device SHALL be able to list the trash. Each entry SHALL contain its ID, the ID the photo had, its path, album, file size, deletion time, the time after which it is deleted (`null` while the clock is not yet set), the ID of the device that deleted it or `null` if unknown, whether it is quarantined, and a signed thumbnail URL or `null`. The list SHALL give the total size of the trash.
+Every paired device SHALL be able to list the trash. Each entry SHALL contain its ID, the photo's former ID and path (`null` when damaged), album, size, deletion time, the time after which it is deleted (`null` while the clock is not yet set), the deleting device's ID or `null`, whether it is quarantined or damaged, and a signed thumbnail URL or `null`. The list SHALL give the total size. While the photo folder is unavailable, listing SHALL answer 503 `storage_unavailable`.
 
 #### Scenario: List after a delete
 - **WHEN** a phone deletes the local photo `holiday/beach.jpg` and a laptop lists the trash
 - **THEN** the list has an entry with the path `holiday/beach.jpg`, the album `holiday`, the phone's ID, the deletion time and a time 7 days later
 
+#### Scenario: Storage unavailable
+- **WHEN** a client lists the trash while the storage of the photo folder is not mounted
+- **THEN** the API answers 503 with `storage_unavailable`
+
 ### Requirement: Thumbnails in the trash
-A trash entry SHALL have a thumbnail URL signed like the image URLs of the photo list, valid for that entry only. An entry that is quarantined, or whose saved state is missing, SHALL have no thumbnail URL, and a request for its thumbnail SHALL answer 503 without decoding. If the decoder crashes or hangs while rendering a trash thumbnail, the entry SHALL become quarantined.
+A trash entry SHALL have a thumbnail URL signed like the image URLs of the photo list, valid for that entry only. An entry that is quarantined, damaged or without its saved state SHALL have no thumbnail URL, and a request for its thumbnail SHALL answer 503 without decoding. If the decoder crashes or hangs while rendering a trash thumbnail, the entry SHALL become quarantined.
 
 #### Scenario: Thumbnail of a deleted photo
 - **WHEN** a paired client lists the trash and fetches the thumbnail URL of an entry without a token
@@ -103,11 +126,11 @@ A trash entry SHALL have a thumbnail URL signed like the image URLs of the photo
 - **THEN** the entry is listed as quarantined without a thumbnail URL, its thumbnail is not rendered again, and restoring it gives a quarantined photo
 
 ### Requirement: Restore from the trash
-Every paired device SHALL be able to restore one or several trash entries. A restored photo SHALL return to its path with its ID, hidden state, comment, section and quarantine, and SHALL be in the index at once. A missing album folder SHALL be created again. If a file exists at the path by then, the photo SHALL get a unique name and so a new ID, keeping its state. An entry that cannot be restored SHALL stay in the trash.
+Every paired device SHALL be able to restore one or several trash entries. A restored photo SHALL return to its path with its ID, a new image version, its hidden state, comment, section and quarantine, and SHALL be in the index at once. A missing album folder SHALL be created again. On a taken path the photo SHALL get a unique name and so a new ID, keeping its state. An entry that cannot be restored SHALL stay in the trash. In safe mode restoring SHALL answer 503 `safe_mode`.
 
 #### Scenario: Restore a hidden photo with a comment
 - **WHEN** a hidden photo with a comment and a section is deleted and then restored
-- **THEN** it has its old ID, is hidden, and has its comment and section, and the slideshow never showed it in between
+- **THEN** it has its old ID, a new image version, is hidden, and has its comment and section, and the slideshow never showed it in between
 
 #### Scenario: Path taken meanwhile
 - **WHEN** `holiday/beach.jpg` is deleted, a new `holiday/beach.jpg` is uploaded, and the deleted one is restored
@@ -117,9 +140,17 @@ Every paired device SHALL be able to restore one or several trash entries. A res
 - **WHEN** the only photo of the album `trip/2024` is deleted, the empty folder is removed over USB, and the photo is restored
 - **THEN** the folder `trip/2024` exists again and the photo belongs to the album `trip/2024`
 
+#### Scenario: Album folder in another letter case
+- **WHEN** the only photo of `Trip` is deleted, the folder is removed, a photo is uploaded into the album `trip`, and the deleted photo is restored
+- **THEN** it lies in the folder `trip` and belongs to the album `trip`
+
 #### Scenario: Restore after a restart
 - **WHEN** a photo is deleted and the frame restarts before it is restored
 - **THEN** it is still in the trash and is restored with its ID and state
+
+#### Scenario: Safe mode
+- **WHEN** a client restores a trash entry while the frame is in safe mode
+- **THEN** the API answers 503 with `safe_mode` and the entry stays in the trash
 
 ### Requirement: Album state of a restored photo
 A restored photo SHALL take the current state of its album, by the album's own setting or by inheritance, as a photo copied there would. Restoring SHALL NOT change any album setting. An album that lost its last photo to the trash SHALL keep its own setting while it is empty.
@@ -137,14 +168,14 @@ A scan that runs while a photo is restored or uploaded SHALL NOT replace the ent
 
 #### Scenario: Restore while the folder is scanned
 - **WHEN** a quarantined photo is restored while a scan of the photo folder is running
-- **THEN** after the scan the photo has its old version and is still quarantined
+- **THEN** after the scan the photo has the version the restore gave it and is still quarantined
 
 ### Requirement: Trash without its saved state
-The files in the trash SHALL be the source of truth. If the saved state of an entry is missing, the entry SHALL still be listed, purged and restorable; restoring it SHALL check the file like a photo copied over USB, without hidden state, comment or section. A file removed from the trash over USB SHALL leave the list without an error.
+The files in the trash SHALL be the source of truth. If the saved state of an entry is missing, the entry SHALL still be listed, purged and restorable; restoring it SHALL check the file like a photo copied over USB and add it as a hidden photo without comment or section. A file removed from the trash over USB SHALL leave the list without an error.
 
 #### Scenario: State file lost
 - **WHEN** a photo is deleted and the frame's record of the trash is lost before the next start
-- **THEN** the trash still lists the entry without a deleting device and without a thumbnail, and restoring it adds the photo as a new visible photo
+- **THEN** the trash still lists the entry without a deleting device and without a thumbnail, and restoring it adds the photo as a hidden photo
 
 #### Scenario: Deleted from the trash over USB
 - **WHEN** the file of a trash entry is deleted over USB

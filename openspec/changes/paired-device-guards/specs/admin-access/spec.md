@@ -30,7 +30,7 @@ All endpoints that read or change photos or settings SHALL require a valid token
 ## ADDED Requirements
 
 ### Requirement: Equal rights of paired devices
-Every paired device SHALL have the same rights through the API, whether it paired with the code, the QR code or an invitation, including renaming, revoking and inviting other devices. The only limits SHALL be the trash for deleted local photos and the login needed to widen the folder of an account (`remote-sources`). "Reset all pairings on the frame" SHALL stay the remedy against a hostile paired device.
+Every paired device SHALL have the same rights through the API, whether it paired with the code, the QR code or an invitation, including renaming, revoking and inviting other devices. Beyond what no device may do through the API, such as local-only mode, the only guards SHALL be the trash for deleted local photos and the login needed to widen the folder of an account (`remote-sources`). "Unpair all devices" on the frame SHALL stay the remedy against a hostile paired device.
 
 #### Scenario: Invited device revokes another one
 - **WHEN** a device paired by invitation revokes the pairing of the device that invited it
@@ -38,7 +38,7 @@ Every paired device SHALL have the same rights through the API, whether it paire
 
 #### Scenario: A hostile device keeps revoking
 - **WHEN** a paired device revokes every new pairing as soon as it appears
-- **THEN** "Revoke all pairings" on the frame invalidates its token as well, and the next pairing stays
+- **THEN** "Unpair all devices" on the frame invalidates its token as well, and the next pairing stays
 
 ### Requirement: Origin of a pairing
 Each pairing SHALL record whether it was made with the code shown on the frame, with the frame's QR code or with an invitation, and for an invitation the ID of the inviting device, also after that device is revoked. The list of paired devices SHALL give both. A pairing made before this was recorded, or with a value this version does not know, SHALL be listed without an origin, and the list of paired devices SHALL stay readable.

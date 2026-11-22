@@ -52,7 +52,7 @@ The interface SHALL be able to create an invitation from the list of paired devi
 ## ADDED Requirements
 
 ### Requirement: Trash in the interface
-When the trash holds photos, the photo overview SHALL say so with their number and size and SHALL list them with a thumbnail, name, album, deletion time, the deleting device and the date until which each is kept. A quarantined entry, or one without a thumbnail, SHALL show a placeholder without requesting an image. It SHALL be possible to restore single entries and all of them.
+When the trash holds photos, the photo overview SHALL say so with their number and size and SHALL list them with a thumbnail, name, album, deletion time, the deleting device and the date until which each is kept. A quarantined or damaged entry, or one without a thumbnail, SHALL show a placeholder without requesting an image, and a damaged one SHALL offer no restore. It SHALL be possible to restore single entries and all of them.
 
 #### Scenario: Restore a deleted photo
 - **WHEN** the user deletes a photo, opens the trash in the overview and chooses "Restore" for it
@@ -67,7 +67,7 @@ When the trash holds photos, the photo overview SHALL say so with their number a
 - **THEN** all three are back in the overview and the trash is no longer shown
 
 ### Requirement: Storage full and the trash
-When an upload is refused because the storage is full, the interface SHALL say that photos deleted within the last day stay in the trash and that older ones were already removed to make room.
+When an upload is refused because the storage is full, the interface SHALL say that photos deleted within the last day stay in the trash and that older ones are removed for room only when that frees enough.
 
 #### Scenario: Upload refused with a recent trash
 - **WHEN** an upload is refused with 507
