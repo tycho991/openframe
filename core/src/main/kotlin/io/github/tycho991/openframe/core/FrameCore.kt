@@ -135,6 +135,8 @@ class FrameCore(
     private val port: Int = DEFAULT_PORT,
     logSinks: List<LogSink> = emptyList(),
     private val scanInterval: Duration = Duration.ofSeconds(15),
+    /** How often the photo folder is scanned while the display is off (design decision 7 of `library-performance`). */
+    private val nightScanInterval: Duration = Duration.ofMinutes(5),
     /** Where the Nextcloud sources get their connections from; the real ones unless a test hands in fakes. */
     nextcloudClients: NextcloudClients? = null,
     /** Switching the display off and on; a device without it never switches the display (spec `display-schedule`). */
@@ -222,7 +224,7 @@ class FrameCore(
             JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true),
             ::photosRemoved,
         )
-    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted)
+    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
@@ -402,7 +404,12 @@ class FrameCore(
             display.state
                 .map { !it.on }
                 .distinctUntilChanged()
-                .collect(slideshow::setResting)
+                .collect { resting ->
+                    slideshow.setResting(resting)
+                    // While the display was off the folder was scanned less often (spec "Local scan while the display is off").
+                    if (!resting && wasResting) requestScan()
+                    wasResting = resting
+                }
         }
         // A pairing code only while someone can see it: the display is on and not in a dark wake (design decision 5
         // of harden-lan-server).
@@ -580,6 +587,30 @@ class FrameCore(
         scanSignal.trySend(Unit)
     }
 
+    /** The display was off at its last change; see [start]. */
+    private var wasResting = false
+
+    /** When the last scan began or was asked for by a client, on [Clock.monotonicMillis]. */
+    @Volatile private var lastScanMono = Long.MIN_VALUE / 2
+
+    /** Scans that began, for the tests of the cadence. */
+    internal val scans =
+        java.util.concurrent.atomic
+            .AtomicInteger()
+
+    /**
+     * A client fetches photos, albums or skipped files: a scan now unless one began less than [CLIENT_SCAN_MS] ago, so
+     * that a file copied over USB at night shows at the client's next fetch. The request does not wait for it.
+     */
+    private fun scanForClient() {
+        val now = clock.monotonicMillis()
+        synchronized(scanSignal) {
+            if (now - lastScanMono <= CLIENT_SCAN_MS) return
+            lastScanMono = now
+        }
+        requestScan()
+    }
+
     /** "Local only" mode, only through the device menu. */
     fun setLocalOnly(enabled: Boolean) = settings.setLocalOnly(enabled)
 
@@ -672,7 +703,7 @@ class FrameCore(
         router.pairingRoutes(pairing, clients, log, ::adminUrl)
         router.settingsRoutes(settings)
         val photos = PhotoDtos(library, settings, signer, places, platform)
-        router.libraryRoutes(library, settings, photos, transitions, platform, health::safe)
+        router.libraryRoutes(library, settings, photos, transitions, platform, health::safe) { if (!health.safe) scanForClient() }
         router.sourcesRoutes(sources, nextcloud, health::safe)
         router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
@@ -681,8 +712,15 @@ class FrameCore(
         router.diagnosticsRoutes(log)
     }
 
+    /**
+     * Scans the photo folder every [scanInterval] while the display is on and every [nightScanInterval] while it is off,
+     * and at once on [requestScan] (spec `photo-library`, "Local scan while the display is off"). The waits run on
+     * coroutine time.
+     */
     private suspend fun scanLoop() {
         while (scope.isActive) {
+            synchronized(scanSignal) { lastScanMono = clock.monotonicMillis() }
+            scans.incrementAndGet()
             try {
                 backfill.scanned(localSource.scan())
             } catch (e: CancellationException) {
@@ -690,7 +728,8 @@ class FrameCore(
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }
-            withTimeoutOrNull(scanInterval.toMillis()) { scanSignal.receive() }
+            val wait = if (display.state.value.on) scanInterval else nightScanInterval
+            withTimeoutOrNull(wait.toMillis()) { scanSignal.receive() }
         }
     }
 
@@ -704,6 +743,9 @@ class FrameCore(
         private const val HANDLER_THREADS = 8
         private const val LAN_ADDRESS_TTL_MS = 5_000L
         private const val STOP_WAIT_MS = 5_000L
+
+        /** A client's fetch scans the folder only when the last scan began longer ago than this. */
+        private const val CLIENT_SCAN_MS = 15_000L
         private const val TAG = "core"
 
         /** `http://<ip>:<port>/`, without the port for port 80. */

@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
@@ -40,15 +41,42 @@ class LocalPhotoSource(
     private val log: AppLog,
     /** Whether the storage that holds [root] is mounted (`PlatformInfo.storageMounted`). */
     private val mounted: (File) -> Boolean = { true },
+    /** Times each scan, on [Clock.monotonicMillis]. */
+    private val clock: Clock = Clock.System,
     /** Lists the image files below [root]; replaced only by tests that act while the folder is listed. */
     private val listFiles: (File) -> Map<String, File> = { listImageFiles(it) },
 ) : PhotoSource {
     override val id = SOURCE_ID
 
+    /** When a slow scan was last reported, on [Clock.monotonicMillis]; `null` before the first. */
+    @Volatile private var slowReportedAt: Long? = null
+
     /** Whether the folder can be used now: its storage mounted, and the folder listable if it exists. */
     fun available(): Boolean = mounted(root) && (!root.exists() || root.list() != null)
 
+    /**
+     * Reconciles the index with the folder. A scan without a change does not edit the index (design decision 7 of
+     * `library-performance`); one that takes longer than [SLOW_SCAN_MS] is reported at most once an hour, since the frame
+     * scans every 15 s and the log files are small.
+     */
     override suspend fun scan(): ScanResult {
+        val started = clock.monotonicMillis()
+        try {
+            return scanFolder()
+        } finally {
+            val took = clock.monotonicMillis() - started
+            if (took > SLOW_SCAN_MS) {
+                val now = clock.monotonicMillis()
+                val due = slowReportedAt.let { it == null || now - it >= HOUR_MS }
+                if (due) {
+                    slowReportedAt = now
+                    log.w(TAG, "A scan of the photo folder took $took ms")
+                }
+            }
+        }
+    }
+
+    private fun scanFolder(): ScanResult {
         if (!mounted(root)) {
             log.w(TAG, "The storage of the photo folder is not mounted; the scan changes nothing")
             return NOTHING
@@ -86,6 +114,8 @@ class LocalPhotoSource(
             }
             probed[path] = result
         }
+        // Nothing new or changed, and every known file and every known skipped file still there: no edit, no new state.
+        if (probed.isEmpty() && known.keys.all { it in files } && skippedKnown.keys.all { it in files }) return NOTHING
 
         return index
             .edit { edit ->
@@ -174,6 +204,8 @@ class LocalPhotoSource(
     companion object {
         const val SOURCE_ID = "local"
         private const val TAG = "scan"
+        private const val SLOW_SCAN_MS = 1_000L
+        private const val HOUR_MS = 60 * 60 * 1000L
         private val NOTHING = ScanResult(0, 0, 0, 0)
 
         /** All files with an image extension below [root] by relative path, hidden files and folders excluded. */

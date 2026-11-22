@@ -196,8 +196,35 @@ class LocalPhotoSourceTest {
         Fixtures.copy("photo.heic", File(photos, "b.heic"))
         scan()
         val edits = index.edits
+        val before = index.library.value
         scan()
         assertEquals(edits, index.edits, "no edit call")
+        assertTrue(before === index.library.value, "the same state")
+        File(photos, "a.jpg").delete()
+        scan()
+        assertEquals(edits + 1, index.edits, "a removed file is one edit")
+    }
+
+    /** Design decision 7 of `library-performance`: a slow scan is reported, but at most once an hour. */
+    @Test
+    fun `A slow scan logs a warning at most once an hour`() {
+        val clock = TestClock()
+        val log = AppLog(clock)
+        val slow =
+            LocalPhotoSource(photos, engine, index, log, listFiles = { root ->
+                clock.advance(java.time.Duration.ofMillis(1_500))
+                LocalPhotoSource.listImageFiles(root)
+            }, clock = clock)
+        photos.mkdirs()
+
+        fun warnings() = log.recent(100).count { it.message.startsWith("A scan of the photo folder took") }
+        runBlocking { slow.scan() }
+        assertEquals(1, warnings())
+        runBlocking { slow.scan() }
+        assertEquals(1, warnings(), "not again within the hour")
+        clock.advance(java.time.Duration.ofMinutes(60))
+        runBlocking { slow.scan() }
+        assertEquals(2, warnings(), "again after an hour")
     }
 
     @Test

@@ -192,6 +192,11 @@ fun Router.libraryRoutes(
     platform: PlatformInfo,
     /** Safe mode: images and uploads answer 503 `safe_mode`, so that nothing decodes. */
     safeMode: () -> Boolean = { false },
+    /**
+     * A client fetches photos, albums or skipped files: the frame may scan its folder now (design decision 7 of
+     * `library-performance`). Not for `GET /state`, which clients poll.
+     */
+    onListed: () -> Unit = {},
 ) {
     val index = library.index
 
@@ -202,6 +207,7 @@ fun Router.libraryRoutes(
     fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("No such photo")
 
     get("/api/v1/photos") { req ->
+        onListed()
         val sort =
             req.queryParam("sort")?.let { s ->
                 Sort.entries.firstOrNull { it.apiName == s }
@@ -333,6 +339,7 @@ fun Router.libraryRoutes(
     }
 
     get("/api/v1/skipped-files") {
+        onListed()
         val items =
             index.library.value.skipped.map {
                 SkippedFileDto(it.path, it.reason.apiName, it.fileSize, Instant.ofEpochMilli(it.modifiedMs).toString())
@@ -360,7 +367,10 @@ fun Router.libraryRoutes(
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums, noAlbum))
     }
 
-    get("/api/v1/albums") { req -> albumList(req.clientId!!) }
+    get("/api/v1/albums") { req ->
+        onListed()
+        albumList(req.clientId!!)
+    }
 
     // The album is in the body because its path contains `/`, and the answer is the whole
     // list because switching an album resets its sub-albums.

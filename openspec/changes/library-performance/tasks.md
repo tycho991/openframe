@@ -158,12 +158,12 @@
 
 ## 8. Local scan
 
-- [ ] 8.1 `LocalPhotoSource.scan` returns without `index.edit` when nothing changed; each scan is timed, with a warning
+- [x] 8.1 `LocalPhotoSource.scan` returns without `index.edit` when nothing changed; each scan is timed, with a warning
   above 1 s at most once an hour (design decision 7). Verify: `LocalPhotoSourceTest`: the edit counter stays at 0
   and the `Library` instance stays the same for a rescan without a change, a removed file still causes one edit, and a
   slow fake listing logs the warning once within an hour of `TestClock` (`photo-library` › Local scan while the
   display is off › Nothing changed; › Metadata › Rescan without changes).
-- [ ] 8.2 Cadence: `scanLoop` waits 15 s with the display on and 5 minutes with it off, the night interval injected
+- [x] 8.2 Cadence: `scanLoop` waits 15 s with the display on and 5 minutes with it off, the night interval injected
   like `scanInterval` (its `withTimeoutOrNull` runs on real coroutine time, which `TestClock` does not drive); the
   display going on calls `requestScan()`; `GET /photos`, `/albums` and `/skipped-files` call it through a hook when the
   last scan began more than 15 s ago on `clock.monotonicMillis()`, `GET /state` does not. Verify: a `TestFrame` test
