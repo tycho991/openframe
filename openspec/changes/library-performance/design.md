@@ -93,6 +93,9 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
     reserve in MiB.
   - `SourceRegistry` passes it and `platform::freeBytes` to every `OriginalsStore`; `OriginalsStore.RESERVE_BYTES`
     goes. The download limit and the check in `fetchForRendering` read it there already.
+  - **Exception for displays** (owner's decision): a download of a missing original for a rendering somebody awaits
+    may go below the reserve down to a floor of 100 MiB free, the old reserve (`OriginalsStore.ON_DEMAND_FLOOR_BYTES`).
+    Downloads for the window ahead and for syncs keep the shared reserve (decision 2).
   - `RenderCache` (decision 2).
 - **Alternative:** a reserve only for the caches, uploads keeping 100 MB. Rejected by the owner: an upload that pushes
   the frame below the threshold makes Android trim renderings and originals, which then come back at every sync.
@@ -104,8 +107,14 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **Who may go below:** a job somebody awaits (a `get()` from the slideshow or a request, see decision 6) renders
   anyway. A job only for the window ahead fails with a storage error and is not retried until the window asks again.
   A warning is logged at most once an hour.
-- **Originals:** a missing remote original is fetched only above the reserve (`hasRoomOnDisk`, unchanged). So below the
-  reserve such a photo fails its rendering, and the slideshow goes on with others. The spec says so.
+- **Originals:** the download thread decides the room of a download when it starts it. If one of its jobs is awaited,
+  `SourceOriginals.fileOf` asks `SourceRegistry.original` for an on-demand fetch, and `RemoteSource` checks
+  `hasRoomOnDisk` and the download limit (`roomBytes`) against the floor of 100 MiB instead of the reserve; otherwise
+  against the reserve, as today. Below the floor the rendering fails with `STORAGE` and the slideshow goes on with
+  others.
+- **A job that arrives later:** a download started for the window only that fails with `STORAGE` hands an awaited job
+  that joined it meanwhile over again, as a new on-demand download, in the same way as after a cancellation
+  (decision 6).
 - **Order of use across restarts:** `touch` sets the file time when the last one it set is more than an hour old
   (clock injected), so the start sorts by real use and Android's trimming, which removes old files first, spares the
   renderings in use.
@@ -206,7 +215,9 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   display going on calls `requestScan()`. `GET /photos`, `/albums` and `/skipped-files` call it through a hook when the
   last scan began more than 15 s ago. A request does not wait for the scan; the client sees the change with its next
   fetch, prompted by the library version.
-- **Not `GET /state`:** clients poll it, and an integration polling it would keep the frame scanning all night.
+- **Not `GET /state`** (owner's decision, 22 Nov 2026): clients poll it, and an integration polling it would keep the
+  frame scanning all night. An open web UI tab therefore sees a file copied over USB at night only when it loads
+  photos, albums or skipped files again.
 - **`requestScan()` stays** and gets its callers.
 
 ### 8. Batch actions in one edit
@@ -293,11 +304,13 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   → One lock for the decision, an awaited job is never dropped, a dropped job always runs `finish()`, and
   `RenderDownloadTest` gets cases for a dropped queued download, a cancelled running one that a new job then joins, and
   a raised job that keeps its result.
-- **Remote photos disappear from the slideshow on a nearly full frame.** Below the higher reserve, a remote photo whose
-  original was evicted cannot render. On a frame with 100 to 600 MiB free today, remote photos without a stored
-  original stop showing after the update, not just their pre-rendering.
-  → The spec says so. Before the rollout a read-only `df` on both frames shows whether either is in that range, and
-  the reserve is in the start log.
+- **Downloads on demand go below Android's threshold.** On a frame with 100 to 600 MiB free, an evicted original that
+  the slideshow waits for is still downloaded (owner's decision), which can push the frame below the low-storage
+  threshold, where Android may trim app caches.
+  → Only one original per photo due, never ahead of time; the render cache shrinks first (decision 2), and the trim of
+  the originals keeps them within their budget. Below 100 MiB free such a photo is not shown, as the spec says. Before
+  the rollout a read-only `df` on both frames shows whether either is in that range, and the reserve is in the start
+  log.
 - **The low-storage threshold and Android's trimming order are not verified on the frames.**
   → The formula is a constant in one place. The device row reads the start log line and `df`.
 - **`freeBytes` of the photo folder goes through FUSE on the reference frames.** It is not verified that it matches
@@ -308,8 +321,8 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **The `version` contract changes.** A new photo at an old path has a version above 1.
   → The contract only promised an integer that changes. Tests that assume version 1 for a new photo are adapted.
   External API clients that assumed it would see larger numbers, still integers.
-- **Higher reserve, earlier refusals.** A nearly full frame refuses uploads (507) and downloads (`storage`) about
-  500 MB earlier than today.
+- **Higher reserve, earlier refusals.** A nearly full frame refuses uploads (507) and downloads for syncs and
+  renderings ahead (`storage`) about 500 MB earlier than today; downloads on demand keep the floor of 100 MiB.
   → Owner's decision; the 507 text names the reserve.
 - **Scanning every 5 minutes at night delays USB changes while the display is off.**
   → The display going on and the web UI's photo, album and skipped-file lists scan at once.
@@ -328,6 +341,7 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **Index:** existing entries keep their versions; only new incarnations get larger ones. The index format is
   unchanged; tombstones live only in memory.
 - **Capture dates:** corrected once at the first start, with one rise of the library version.
-- **Storage:** the reserve applies from the first start. Check the frames with a read-only `df` before the rollout.
+- **Storage:** the reserve applies from the first start; downloads on demand keep the old floor of 100 MiB. Check the
+  frames with a read-only `df` before the rollout.
 - **Rollback:** install the previous release over it. It reads the same index; corrected capture dates and larger
   versions stay valid for it.

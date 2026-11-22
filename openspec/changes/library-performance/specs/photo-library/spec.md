@@ -83,7 +83,7 @@ While the display is off, the frame SHALL scan the photo folder at least every 5
 - **THEN** the library version stays the same
 
 ### Requirement: Storage reserve
-The frame SHALL keep a storage reserve of Android's low-storage threshold (10 % of the data volume, at most 500 MiB) plus 100 MiB. Uploads, downloads of originals and renderings ahead of time SHALL leave at least the reserve free. To keep it, the cache of rendered sizes SHALL remove its entries unused longest, also below its budget.
+The frame SHALL keep a storage reserve of Android's low-storage threshold (10 % of the data volume, at most 500 MiB) plus 100 MiB. Uploads, downloads of originals and renderings ahead of time SHALL leave at least the reserve free, except as "Going below the storage reserve" allows. To keep it, the cache of rendered sizes SHALL remove its entries unused longest, also below its budget.
 
 #### Scenario: Reference frame
 - **WHEN** the frame's data volume holds 16 GiB
@@ -98,14 +98,18 @@ The frame SHALL keep a storage reserve of Android's low-storage threshold (10 % 
 - **THEN** the cache removes the renderings unused longest until the reserve is free again or no other rendering is left, and the photos stay in the library
 
 ### Requirement: Going below the storage reserve
-Only renderings someone waits for, the photo the slideshow shows now or an image a client asks for, SHALL be allowed to go below the storage reserve. Fetching a missing original for such a rendering SHALL NOT go below it, so below the reserve a remote photo whose original is not stored cannot be rendered.
+Only renderings someone waits for, the photo the slideshow shows now or an image a client asks for, SHALL be allowed to go below the storage reserve. Fetching a missing original for such a rendering SHALL be allowed to go below it as well, but SHALL leave at least 100 MiB free. A download of an original for a rendering ahead of time SHALL NOT go below the reserve.
 
 #### Scenario: Local photos below the reserve
 - **WHEN** the free storage is below the reserve and the slideshow shows local photos
 - **THEN** the photos keep changing, each rendered when it is due, and no photo is rendered ahead of time
 
 #### Scenario: Remote photo without its original below the reserve
-- **WHEN** the free storage is below the reserve and the next photo is a remote photo whose original is not stored
+- **WHEN** the free storage is below the reserve but more than 100 MiB plus the size of the original, and the slideshow comes to a remote photo whose original is not stored
+- **THEN** its original is downloaded when the photo is due, not ahead of time, and the photo is shown
+
+#### Scenario: Storage almost full
+- **WHEN** less than 100 MiB plus the size of the original would remain free, and the slideshow comes to a remote photo whose original is not stored
 - **THEN** its original is not downloaded, the photo is not shown, it stays in the library, and the slideshow shows other photos
 
 ### Requirement: Rendered sizes follow the index

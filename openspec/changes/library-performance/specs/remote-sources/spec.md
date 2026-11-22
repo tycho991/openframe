@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Storage of the originals
-Downloaded originals SHALL stay within the budget of their source. When it is exceeded, the originals of that source unused for the longest time SHALL be removed. A removed original SHALL be fetched again when a new rendering needs it, unless its source is in the state of rejected access or the free storage is below the storage reserve (`photo-library`). A download SHALL NOT leave less free storage than that reserve, whatever the budgets are.
+Downloaded originals SHALL stay within the budget of their source. When it is exceeded, the originals of that source unused for the longest time SHALL be removed. A removed original SHALL be fetched again when a new rendering needs it, unless its source is in the state of rejected access. A download SHALL NOT leave less free storage than the storage reserve (`photo-library`), whatever the budgets are; one for a rendering someone waits for SHALL leave at least 100 MiB free.
 
 #### Scenario: Budget exceeded
 - **WHEN** the downloaded originals of a source exceed its budget
@@ -12,7 +12,11 @@ Downloaded originals SHALL stay within the budget of their source. When it is ex
 - **THEN** a download that would leave less free storage than the storage reserve fails with a readable error and nothing is removed from the library
 
 #### Scenario: Removed original on a nearly full frame
-- **WHEN** the free storage is below the storage reserve and a rendering needs an original that was removed from the cache
+- **WHEN** the free storage is below the storage reserve but more than 100 MiB plus the size of the original, and the slideshow waits for a photo whose original was removed from the cache
+- **THEN** the original is downloaded and the photo is shown, while no original is downloaded for a photo that is only rendered ahead of time
+
+#### Scenario: Storage almost full
+- **WHEN** less than 100 MiB plus the size of the original would remain free and a rendering needs an original that was removed from the cache
 - **THEN** the original is not downloaded, the rendering fails, the photo stays in the library, and the slideshow shows other photos
 
 ### Requirement: Remove a source

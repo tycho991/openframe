@@ -24,8 +24,9 @@ of them in part.
 - **One storage reserve** (owner's decision): Android's low-storage threshold plus 100 MiB, about 600 MiB on the
   reference frames, for uploads, downloads of originals and renderings ahead.
   - To keep it, the render cache shrinks below its budget.
-  - Only renderings someone waits for go below it. A remote photo whose original is not stored cannot be rendered
-    below the reserve.
+  - Only renderings someone waits for go below it. The download of a missing original for such a rendering may go
+    below it too, down to 100 MiB free (owner's decision), so remote photos keep showing on a frame with 100 to
+    600 MiB free; downloads for renderings ahead and for syncs keep the reserve.
   - The updater keeps its own rule (`app-update`, twice the APK plus 100 MiB) and does not change.
 - **Rendered sizes follow the index.** Every way a photo leaves the index (API delete, scan, skip, sync, removed
   source, orphan cleanup) removes its renderings through one notification from the index. A late rendering of a
@@ -87,7 +88,8 @@ None.
 - `webadmin`: `error.invalid_album` in `en.json` and `de.json`; e2e coverage of single and batch deletes.
 - Docs: the README names the reserve instead of 100 MB.
 - Behaviour visible to users:
-  - A nearly full frame refuses uploads and stops downloading originals about 500 MB earlier than today.
+  - A nearly full frame refuses uploads and stops downloading originals for syncs and renderings ahead about 500 MB
+    earlier than today; an original the slideshow waits for is still downloaded down to 100 MiB free.
   - A new photo at an old path has a version number above 1.
   - While the display is off, a photo copied over USB appears within 5 minutes, or when the display goes on or the web
     UI loads photos.

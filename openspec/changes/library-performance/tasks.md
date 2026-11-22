@@ -100,10 +100,20 @@
   time at most once an hour (clock injected). Verify: `RenderCacheTest` with `FakePlatform.free` below the reserve: a
   window job is not rendered, the oldest renderings are deleted until the reserve is free, a `get()` renders; repeated
   `peek`s change the file time at most once per hour of `TestClock`; a `TestFrame` with free storage below the reserve
-  keeps changing local photos and skips a remote photo without its original without a request to the server
-  (`photo-library` › Storage reserve › Storage runs short; › Going below the storage reserve › Local photos below
-  the reserve, › Remote photo without its original below the reserve; `remote-sources` › Storage of the originals ›
-  Removed original on a nearly full frame).
+  keeps changing local photos, each rendered when due and none ahead of time (`photo-library` › Storage reserve ›
+  Storage runs short; › Going below the storage reserve › Local photos below the reserve).
+- [ ] 6.4 The exception for displays (design decisions 1 and 2): `SourceOriginals.fileOf` and `SourceRegistry.original`
+  take an on-demand flag, set by the download thread when one of the download's jobs is awaited; `RemoteSource`
+  checks `hasRoomOnDisk` and `roomBytes` against `OriginalsStore.ON_DEMAND_FLOOR_BYTES` (100 MiB) for it and against
+  the reserve otherwise; a window download that fails with `STORAGE` hands an awaited job that joined it over again
+  as an on-demand download. Verify: `RenderDownloadTest`/`RemoteSourceTest` with `FakePlatform.free` between
+  100 MiB + the original's size and the reserve: a `get()` of a remote photo without its original downloads it and
+  returns the rendering; a window job of another such photo makes no request; with less than 100 MiB + size free the
+  `get()` fails with `STORAGE` without a request; a sync in the same state downloads nothing new and fails with
+  `STORAGE`; a `get()` that joins a window download failing with `STORAGE` gets its file through a second download
+  (`photo-library` › Going below the storage reserve › Remote photo without its original below the reserve,
+  › Storage almost full; `remote-sources` › Storage of the originals › Removed original on a nearly full frame,
+  › Storage almost full).
 
 ## 7. Window of renderings ahead
 
