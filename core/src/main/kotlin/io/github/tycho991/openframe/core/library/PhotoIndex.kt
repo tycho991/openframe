@@ -390,6 +390,11 @@ class PhotoIndexStore(
 
     val library: StateFlow<Library> = _library.asStateFlow()
 
+    /** How often [edit] ran, for the tests that count edits instead of timing them. */
+    @Volatile
+    internal var edits = 0L
+        private set
+
     fun load() {
         val stored = store.load() ?: StoredIndex()
         _library.value =
@@ -406,6 +411,7 @@ class PhotoIndexStore(
     /** Runs [block] and applies the result if something has changed. */
     @Synchronized
     fun <R> edit(block: (LibraryEdit) -> R): R {
+        edits++
         val current = _library.value
         val edit = LibraryEdit(current)
         val result = block(edit)

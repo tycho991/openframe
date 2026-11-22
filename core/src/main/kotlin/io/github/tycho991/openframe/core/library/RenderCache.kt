@@ -107,6 +107,8 @@ class RenderCache(
     private val fetch: (PhotoEntry) -> File = { onFrame(it) ?: throw RenderFailedException("The original of ${it.path} is missing") },
     /** The renderings that waited for a fetched original are done. */
     private val release: (PhotoEntry) -> Unit = {},
+    /** Lists the folder; every listing goes through here, so that a test can count them. */
+    private val listFolder: (File) -> Array<File>? = { it.listFiles() },
 ) {
     private class Job(
         val priority: RenderPriority,
@@ -181,13 +183,11 @@ class RenderCache(
 
     init {
         dir.mkdirs()
-        dir
-            .listFiles()
+        listFolder(dir)
             .orEmpty()
             .filter { it.name.startsWith('.') }
             .forEach { it.delete() }
-        dir
-            .listFiles()
+        listFolder(dir)
             .orEmpty()
             .filter { it.isFile }
             .sortedBy { it.lastModified() }
@@ -332,7 +332,7 @@ class RenderCache(
         }
     }
 
-    fun totalBytes(): Long = dir.listFiles().orEmpty().sumOf { it.length() }
+    fun totalBytes(): Long = listFolder(dir).orEmpty().sumOf { it.length() }
 
     private fun enqueue(
         entry: PhotoEntry,
@@ -513,7 +513,7 @@ class RenderCache(
     }
 
     private fun deleteMatching(predicate: (String) -> Boolean) {
-        dir.listFiles().orEmpty().filter { predicate(it.name) }.forEach { file ->
+        listFolder(dir).orEmpty().filter { predicate(it.name) }.forEach { file ->
             file.delete()
             synchronized(lastUse) { lastUse.remove(file.name) }
         }

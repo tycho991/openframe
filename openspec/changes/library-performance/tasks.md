@@ -17,7 +17,7 @@
 
 ## 2. Counters and scaling tests (they fail before the fixes)
 
-- [ ] 2.1 A first commit of its own with the test seams only (design decision 13): `RenderCache` lists its folder
+- [x] 2.1 A first commit of its own with the test seams only (design decision 13): `RenderCache` lists its folder
   through one injectable function, and `PhotoIndexStore` counts its `edit` calls (`internal`). Verify:
   `./gradlew :core:check` is green, and no behaviour changes.
 - [ ] 2.2 The four count-based tests with N = 1,000:
