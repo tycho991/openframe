@@ -82,6 +82,22 @@ class AndroidMediaEngineTest {
         assertNull(engine.probe(fixture("rotated8.jpg")).takenAt)
     }
 
+    /** Spec `photo-library`: Implausible capture dates › Camera without a set clock. */
+    @Test
+    fun `A date that is not on the calendar is no capture date`() {
+        assertNull(AndroidMediaEngine.parseExifDate("0000:00:00 00:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("2024:00:00 00:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("2024:02:30 12:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("    :  :     :  :  "))
+        val valid = AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00")
+        val expected =
+            SimpleDateFormat(
+                "yyyy:MM:dd HH:mm:ss",
+                Locale.US,
+            ).apply { timeZone = TimeZone.getDefault() }.parse("2024:07:14 12:30:00")!!
+        assertEquals(expected.time, valid?.toEpochMilli())
+    }
+
     @Test
     fun gpsPositionFromExif() {
         val siena = engine.probe(fixture("gps-siena.jpg")).gps!!

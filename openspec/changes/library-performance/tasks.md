@@ -187,7 +187,7 @@
   gets one call with all deleted files; `RouteAccessTest` stays green (`photo-library` › Batch changes › Large batch,
   › Mixed batch, › Nothing to change; › Delete › Batch with Nextcloud photos; › Photo folder kept › Delete while the
   storage is unavailable).
-- [ ] 9.2 `AndroidMediaStoreNotifier` overrides `notifyChanged(files)` with one `MediaScannerConnection.scanFile` call.
+- [x] 9.2 `AndroidMediaStoreNotifier` overrides `notifyChanged(files)` with one `MediaScannerConnection.scanFile` call.
   Verify: a Robolectric test sees one scan request with all paths; `./gradlew :android:check` is green.
 - [ ] 9.3 Web UI: e2e cases for deleting a single photo and a selection of photos, both through `photos:batch` (own
   `OPENFRAME_E2E_PORT`). Verify: `npm run e2e` is green, and both photos are gone from the list and from the dev
@@ -195,7 +195,7 @@
 
 ## 10. Uploads
 
-- [ ] 10.1 Names and albums (design decision 9): a 200-byte UTF-8 budget for file names at code point boundaries with
+- [x] 10.1 Names and albums (design decision 9): a 200-byte UTF-8 budget for file names at code point boundaries with
   the image extension kept; album levels cut without splitting a surrogate pair; each album level resolved against the
   existing folders (exact, then case-insensitive); `isDirectory` checked after `mkdirs`, else 400 `invalid_album`
   naming `album`. Verify: `UploadApiTest` with the contract check:
@@ -206,7 +206,7 @@
   - with a folder `Holiday`, an upload into `holiday` lies in `Holiday/` with the album `Holiday`;
   - (`photo-library` › Names of uploaded files › Long name in another script, › Emoji at the cut, › Album level is a
     file; › Upload into an album in another letter case › Album in lower case).
-- [ ] 10.2 All or nothing: targets of all files resolved under one lock, also against each other, then all renamed,
+- [x] 10.2 All or nothing: targets of all files resolved under one lock, also against each other, then all renamed,
   with the renamed ones deleted on a failure before anything is indexed; then one `LocalPhotoSource.addAll` edit and one
   `notifyChanged(files)`. Verify: `UploadApiTest`: two files where the rename of the second fails (test hook) leave no
   file and no entry, and `libraryVersion` is unchanged; two files with the same name in one request get distinct names
@@ -214,19 +214,19 @@
 
 ## 11. Capture dates
 
-- [ ] 11.1 `AndroidMediaEngine.parseExifDate` with `isLenient = false`; `CaptureDates.plausible` (before 1800 →
+- [x] 11.1 `AndroidMediaEngine.parseExifDate` with `isLenient = false`; `CaptureDates.plausible` (before 1800 →
   `null`) in `LocalPhotoSource` and `RemoteSource` before the file date applies (design decision 10). Verify:
   `AndroidMediaEngineTest`: `0000:00:00 00:00:00` and `2024:00:00 00:00:00` give `null`; a `:core` test with an
   engine wrapper returning year −1: `GET /photos` with the contract check gives the file date as a valid `date-time`
   (`photo-library` › Implausible capture dates › Camera without a set clock).
-- [ ] 11.2 After `index.load`, `FrameCore.start` corrects every entry dated before 1800 to its file date in one edit.
+- [x] 11.2 After `index.load`, `FrameCore.start` corrects every entry dated before 1800 to its file date in one edit.
   Verify: `FrameCoreTest`: a stored entry of year −1 has its `modifiedMs` as capture date after the start, and the
   library version is one higher; a start without such entries leaves the version unchanged (`photo-library` ›
   Implausible capture dates › Index from before the update).
 
 ## 12. SlideRenderer
 
-- [ ] 12.1 `SlideRenderer` per design decision 12: pending flags instead of the 200 ms polling with the catch-up posted
+- [x] 12.1 `SlideRenderer` per design decision 12: pending flags instead of the 200 ms polling with the catch-up posted
   from `done()`; the full reset in `clear()` with its own counter; `released`, callbacks removed and a graceful
   shutdown in `release()`; an injectable decoder executor; the class KDoc as `BitmapFit` works. Verify: a new
   Robolectric `SlideRendererTest` with a synchronous executor: start a fade, call `preload` during it, then `clear()`

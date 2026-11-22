@@ -304,10 +304,18 @@ class AndroidMediaEngine(
          */
         fun fromFloat(degrees: Float): Double = Math.round(degrees * 100_000.0) / 100_000.0
 
-        /** EXIF date without time zone, as the device's local time. */
+        /**
+         * EXIF date without time zone, as the device's local time. Strict: a date that is not on the calendar, such as
+         * `0000:00:00 00:00:00` of a camera without a set clock, is `null` instead of a date rolled into the year 1 BC
+         * (spec `photo-library`, "Implausible capture dates"). `CaptureDates` in the core drops dates before 1800 as well.
+         */
         fun parseExifDate(value: String?): java.time.Instant? {
             if (value.isNullOrBlank()) return null
-            val format = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
+            val format =
+                SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply {
+                    timeZone = TimeZone.getDefault()
+                    isLenient = false
+                }
             return try {
                 format.parse(value.trim())?.let { java.time.Instant.ofEpochMilli(it.time) }
             } catch (e: ParseException) {

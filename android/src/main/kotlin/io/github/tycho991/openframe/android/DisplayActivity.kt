@@ -148,7 +148,7 @@ class DisplayActivity : Activity() {
                     findViewById(R.id.photo_a),
                     findViewById(R.id.photo_b),
                     { core?.slideshow?.reportUndecodable(it) },
-                    caption::swapStarted,
+                    onSwap = caption::swapStarted,
                 )
         }
         clock = ClockOverlay(this, findViewById(R.id.clock), findViewById(R.id.clock_time), findViewById(R.id.clock_date))
