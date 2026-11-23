@@ -204,8 +204,11 @@ class RenderCache(
     private class Pending(
         val result: CompletableDeferred<File>,
         var priority: RenderPriority,
-        var awaited: Boolean,
-    )
+        /** How many [get] calls await it now; one that is cancelled stops counting. */
+        var awaiters: Int,
+    ) {
+        val awaited: Boolean get() = awaiters > 0
+    }
 
     /** A rendered file in the index: its photo, version, last use, size and the file time last set. */
     private class Item(
@@ -234,6 +237,9 @@ class RenderCache(
     /** The names of the window of renderings ahead, and the files on screen and next up; see [prefetchAhead]. */
     private var wanted: Set<String> = emptySet()
     private var keep: Set<String> = emptySet()
+
+    /** Names out of the index whose files are still to be deleted; see [discardLocked]. */
+    private val deleting = HashSet<String>()
 
     /** Photo ID → the highest version removed from the library (design decision 5); a few bytes per removed photo. */
     private val tombstones = HashMap<String, Int>()
@@ -351,9 +357,55 @@ class RenderCache(
         // Also a size rendered before the crash: a quarantined photo has no image at all.
         if (entry.quarantined) throw RenderFailedException("${entry.path} is quarantined")
         peek(target)?.let { return it }
-        val (deferred, job) = synchronized(lock) { enqueueLocked(entry, target, priority, awaited = true) }
+        val (pending, job) = synchronized(lock) { enqueueLocked(entry, target, priority, awaited = true) }
         job?.let(queue::add)
-        return deferred.await()
+        try {
+            return pending.result.await()
+        } finally {
+            // An awaiter that gave up, the slideshow resting or a request that ended: once nobody awaits the job any more
+            // it can be dropped like one of the window, and so can its download.
+            if (!pending.result.isCompleted) stopAwaiting(pending)
+        }
+    }
+
+    private fun stopAwaiting(pending: Pending) {
+        val dropped =
+            synchronized(lock) {
+                pending.awaiters = (pending.awaiters - 1).coerceAtLeast(0)
+                if (pending.awaited) emptyList() else dropUnwantedDownloadsLocked()
+            }
+        complete(dropped)
+    }
+
+    /**
+     * Under [lock]: a queued download whose jobs nobody wants any more leaves the queue with its jobs, which are returned
+     * to be completed outside the lock; a running one is cancelled.
+     */
+    private fun dropUnwantedDownloadsLocked(): List<Job> {
+        val dropped = ArrayList<Job>()
+        val downloadsLeft = pendingDownloads.values.iterator()
+        while (downloadsLeft.hasNext()) {
+            val download = downloadsLeft.next()
+            if (download.jobs.any { !droppable(it) }) continue
+            if (download.started) {
+                download.cancelled = true
+            } else {
+                downloads.remove(download)
+                downloadsLeft.remove()
+                for (job in download.jobs) {
+                    removeInFlight(job)
+                    dropped += job
+                }
+            }
+        }
+        return dropped
+    }
+
+    private fun complete(dropped: List<Job>) {
+        for (job in dropped) {
+            job.result.completeExceptionally(RenderDroppedException("${job.entry.path} is no longer wanted"))
+            job.finish()
+        }
     }
 
     /** The rendered file if it already exists, without rendering. */
@@ -419,36 +471,19 @@ class RenderCache(
         val targets =
             next.filter { !it.quarantined }.map { Triple(it, target(it, RenderSize.DISPLAY), RenderPriority.NEXT) } +
                 later.filter { !it.quarantined }.map { Triple(it, target(it, RenderSize.DISPLAY), RenderPriority.PREFETCH) }
-        val dropped = ArrayList<Job>()
         val queued = ArrayList<Job>()
-        synchronized(lock) {
-            wanted = targets.mapTo(HashSet()) { it.second.name }
-            this.keep = keep.mapTo(HashSet()) { it.name }
-            val downloadsLeft = pendingDownloads.values.iterator()
-            while (downloadsLeft.hasNext()) {
-                val download = downloadsLeft.next()
-                if (download.jobs.any { !droppable(it) }) continue
-                if (download.started) {
-                    download.cancelled = true
-                } else {
-                    downloads.remove(download)
-                    downloadsLeft.remove()
-                    for (job in download.jobs) {
-                        removeInFlight(job)
-                        dropped += job
-                    }
+        val dropped =
+            synchronized(lock) {
+                wanted = targets.mapTo(HashSet()) { it.second.name }
+                this.keep = keep.mapTo(HashSet()) { it.name }
+                for ((entry, target, priority) in targets) {
+                    if (target.name in items) continue
+                    enqueueLocked(entry, target, priority, awaited = false).second?.let(queued::add)
                 }
+                dropUnwantedDownloadsLocked()
             }
-            for ((entry, target, priority) in targets) {
-                if (target.name in items) continue
-                enqueueLocked(entry, target, priority, awaited = false).second?.let(queued::add)
-            }
-        }
         queued.forEach(queue::add)
-        for (job in dropped) {
-            job.result.completeExceptionally(RenderDroppedException("${job.entry.path} is no longer wanted"))
-            job.finish()
-        }
+        complete(dropped)
     }
 
     /**
@@ -464,11 +499,8 @@ class RenderCache(
             for (entry in entries) {
                 val tomb = tombstones[entry.id]
                 if (tomb == null || entry.version > tomb) tombstones[entry.id] = entry.version
-                val names = byPhoto.remove(entry.id) ?: continue
-                for (name in names) {
-                    items.remove(name)?.let { total -= it.size }
-                    files += File(dir, name)
-                }
+                val names = byPhoto[entry.id]?.toList() ?: continue
+                for (name in names) files += discardLocked(name)
             }
         }
         if (files.isNotEmpty()) deleteLater(files)
@@ -483,10 +515,7 @@ class RenderCache(
         val files = ArrayList<File>()
         synchronized(lock) {
             val stale = items.filter { (_, item) -> version(item.photoId).let { it == null || item.version > it } }.keys
-            for (name in stale) {
-                forget(name)
-                files += File(dir, name)
-            }
+            for (name in stale) files += discardLocked(name)
         }
         if (files.isNotEmpty()) deleteLater(files)
         return files.size
@@ -494,8 +523,7 @@ class RenderCache(
 
     /** Stays within the budget. [keep] is kept in any case, for example the image just rendered. */
     fun trim(keep: String? = null) {
-        val victims = synchronized(lock) { overBudgetLocked(keep) }
-        victims.forEach { it.delete() }
+        deleteNow(synchronized(lock) { overBudgetLocked(keep) })
     }
 
     fun totalBytes(): Long = synchronized(lock) { total }
@@ -527,25 +555,25 @@ class RenderCache(
     @Volatile
     private var closed = false
 
-    /** Under [lock]: the deferred of [target] and the job to queue, `null` if one is waiting already. */
+    /** Under [lock]: what waits for [target], and the job to queue, `null` if one is waiting already. */
     private fun enqueueLocked(
         entry: PhotoEntry,
         target: RenderTarget,
         priority: RenderPriority,
         awaited: Boolean,
-    ): Pair<CompletableDeferred<File>, Job?> {
+    ): Pair<Pending, Job?> {
         // A file already waiting is queued again only when it is asked for more urgently: the slideshow asks for the
         // photos ahead after every change of the library, which would otherwise pile up jobs for the same files.
         val pending = inFlight[target.name]
         if (pending == null) {
-            val created = Pending(CompletableDeferred(), priority, awaited)
+            val created = Pending(CompletableDeferred(), priority, if (awaited) 1 else 0)
             inFlight[target.name] = created
-            return created.result to Job(priority, seq.incrementAndGet(), entry, target, created)
+            return created to Job(priority, seq.incrementAndGet(), entry, target, created)
         }
-        if (awaited) pending.awaited = true
-        if (priority <= pending.priority) return pending.result to null
+        if (awaited) pending.awaiters++
+        if (priority <= pending.priority) return pending to null
         pending.priority = priority
-        return pending.result to Job(priority, seq.incrementAndGet(), entry, target, pending)
+        return pending to Job(priority, seq.incrementAndGet(), entry, target, pending)
     }
 
     /** Under [lock]: neither awaited nor in the window. */
@@ -690,7 +718,7 @@ class RenderCache(
         val free = freeBytes(dir)
         if (free >= reserveBytes) return true
         val victims = synchronized(lock) { victimsLocked(reserveBytes - free, protectedLocked(job.key)) }
-        victims.forEach { it.delete() }
+        deleteNow(victims)
         if (freeBytes(dir) >= reserveBytes) return true
         val awaited = synchronized(lock) { job.pending.awaited }
         val now = clock.monotonicMillis()
@@ -724,8 +752,7 @@ class RenderCache(
             if (freed >= bytes) break
             if (name in protected) continue
             freed += items.getValue(name).size
-            forget(name)
-            files += File(dir, name)
+            files += discardLocked(name)
         }
         return files
     }
@@ -871,8 +898,10 @@ class RenderCache(
                 }
             }
         }
-        if (failed.isNotEmpty() || dropped.isEmpty()) {
+        if (failed.isNotEmpty()) {
             log.w(TAG, "The original of ${download.entry.path} could not be fetched: ${e.message}")
+        } else if (!download.cancelled) {
+            log.i(TAG, "The original of ${download.entry.path} is fetched again on demand: ${e.message}")
         }
         // Only the decoder crashing on a fetched original, in the check of its dimensions, quarantines it; a failed
         // download does not.
@@ -904,26 +933,50 @@ class RenderCache(
         val tmp = File(dir, ".${job.key}.tmp")
         engine.render(original, tmp, job.target.size.width, job.target.size.height, job.target.region)
         val obsolete = ArrayList<File>()
-        val accepted =
+        val outcome =
             synchronized(lock) {
-                if (removed(job.entry)) {
-                    obsolete += tmp
-                    return@synchronized false
-                }
-                if (!tmp.renameTo(target)) throw IllegalStateException("Renaming to ${target.name} failed")
-                add(job.key, sizeOf(target), clock.millis())
-                byPhoto[job.entry.id]
-                    ?.filter { items[it]?.version != job.entry.version }
-                    ?.forEach { name ->
-                        forget(name)
-                        obsolete += File(dir, name)
+                val names = byPhoto[job.entry.id].orEmpty()
+                when {
+                    removed(job.entry) -> {
+                        "${job.entry.path} left the library while it was rendered"
                     }
-                obsolete += overBudgetLocked(job.key)
-                true
+
+                    // A late job of an older version: the newer one is on screen or about to be.
+                    names.any { (items[it]?.version ?: 0) > job.entry.version } -> {
+                        "${job.entry.path} has a newer version"
+                    }
+
+                    !tmp.renameTo(target) -> {
+                        null
+                    }
+
+                    else -> {
+                        add(job.key, sizeOf(target), clock.millis())
+                        // Only older versions, and not the file on screen or next up: the display may decode it now.
+                        names
+                            .filter { (items[it]?.version ?: Int.MAX_VALUE) < job.entry.version && it !in keep }
+                            .forEach { obsolete += discardLocked(it) }
+                        obsolete += overBudgetLocked(job.key)
+                        ""
+                    }
+                }
             }
-        obsolete.forEach { it.delete() }
-        if (!accepted) throw RenderDroppedException("${job.entry.path} left the library while it was rendered")
-        return target
+        deleteNow(obsolete)
+        when (outcome) {
+            "" -> {
+                return target
+            }
+
+            null -> {
+                tmp.delete()
+                throw IllegalStateException("Renaming to ${target.name} failed")
+            }
+
+            else -> {
+                tmp.delete()
+                throw RenderDroppedException(outcome)
+            }
+        }
     }
 
     /** Marks [name] as used; sets its file time when the last one set is more than an hour old (design decision 2). */
@@ -954,6 +1007,23 @@ class RenderCache(
         total += size
     }
 
+    /**
+     * Under [lock]: [name] leaves the index to be deleted; until [deleted] it counts as being deleted, so that a
+     * [rebuild] that lists the folder meanwhile does not take it back.
+     */
+    private fun discardLocked(name: String): File {
+        forget(name)
+        deleting += name
+        return File(dir, name)
+    }
+
+    /** Deletes [files] that [discardLocked] took out of the index. */
+    private fun deleteNow(files: List<File>) {
+        if (files.isEmpty()) return
+        files.forEach { it.delete() }
+        synchronized(lock) { files.forEach { deleting -= it.name } }
+    }
+
     /** Under [lock]: [name] leaves the index. */
     private fun forget(name: String) {
         val item = items.remove(name) ?: return
@@ -969,25 +1039,40 @@ class RenderCache(
      * stays; the order of use of known names stays.
      */
     private fun rebuild() {
-        val since = synchronized(lock) { uses }
+        val (since, known) = synchronized(lock) { uses to (items.keys + deleting) }
         val listed = listFolder(dir).orEmpty().filter { !it.name.startsWith('.') }
-        val sizes = listed.associate { it.name to it }
+        val names = listed.mapTo(HashSet()) { it.name }
+        // A file the index does not know is asked for its time and size outside the lock, once.
+        val found = listed.filter { it.name !in known }.map { Triple(it.name, sizeOf(it), it.lastModified()) }
         synchronized(lock) {
             for (name in items.keys.toList()) {
-                if (name !in sizes && items.getValue(name).since <= since) forget(name)
+                if (name !in names && items.getValue(name).since <= since) forget(name)
             }
-            for ((name, file) in sizes) if (name !in items) add(name, sizeOf(file), file.lastModified())
+            for ((name, size, time) in found) {
+                // Not a file being deleted, nor one of a photo that left the library meanwhile.
+                if (name in items || name in deleting) continue
+                val (photoId, version) = parse(name) ?: continue
+                if (tombstones[photoId]?.let { version <= it } == true) continue
+                add(name, size, time)
+            }
         }
         log.i(TAG, "Files of the render cache went behind its back; its index was read again")
     }
 
     private fun deleteLater(files: List<File>) {
         try {
-            deleter.execute { files.forEach { it.delete() } }
+            deleter.execute {
+                beforeDelete()
+                deleteNow(files)
+            }
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             // Closed: the sweep at the next start removes them.
         }
     }
+
+    /** Runs on the delete thread before each batch; a test holds the thread there. */
+    @Volatile
+    internal var beforeDelete: () -> Unit = {}
 
     companion object {
         /** The format of the renderings; see [target]. */

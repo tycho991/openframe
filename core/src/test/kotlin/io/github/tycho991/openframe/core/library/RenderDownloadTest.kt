@@ -295,6 +295,38 @@ class RenderDownloadTest {
         assertFalse(request.cancelled(), "the refresh of the photo on screen awaits it")
     }
 
+    /**
+     * Task 7.2 of `library-performance`: a window job is dropped, a get() for the same name follows, and a duplicate of
+     * the dropped job that comes later leaves the new job's entry alone, so a second get() joins it.
+     */
+    @Test
+    fun `A dropped job leaves the entry of a later request for the same file alone`() {
+        gate = CountDownLatch(1)
+        val busy = remote("busy.jpg")
+        val photo = remote("p.jpg")
+        runBlocking {
+            // An awaited download holds the download thread.
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(busy, RenderSize.THUMB) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            // The window asks for p at PREFETCH and then at NEXT: two jobs for one entry; then it moves on.
+            cache.prefetchAhead(emptyList(), listOf(photo), emptyList())
+            cache.prefetchAhead(listOf(photo), emptyList(), emptyList())
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            handedOver()
+            val second = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            val third = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            gate.countDown()
+            withTimeout(10_000) {
+                assertTrue(first.await().isFile)
+                assertTrue(second.await().isFile)
+                assertEquals(second.await(), third.await())
+            }
+        }
+        assertEquals(listOf(busy.id, photo.id), fetched.toList(), "one download for both requests")
+    }
+
     @Test
     fun `Closing during a download returns`() {
         gate = CountDownLatch(1)

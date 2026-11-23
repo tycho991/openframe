@@ -195,6 +195,9 @@ class SlideshowController(
     /** The photos shown most recently, the newest last, at most [PREFETCH_AHEAD]; see [show]. */
     private val recent = ArrayDeque<String>()
 
+    /** Where the latest search of [show] found each candidate: the order goes there for a result of it. */
+    private var demandMarks: Map<String, Playlist.Mark> = emptyMap()
+
     /** The renderings on demand of the latest search of [show]; a newer search, resting or a shown photo ends it. */
     private var demand: Job? = null
     private var demandGeneration = 0L
@@ -316,6 +319,11 @@ class SlideshowController(
                 if (isResting) {
                     timer?.cancel()
                     endDemand()
+                    // The current part of the photo on screen is rendered when the display comes on (wake()), not now.
+                    refresh?.cancel()
+                    refresh = null
+                    if (refreshFor != null) presentationChangedWhileResting = true
+                    refreshFor = null
                     // Renderings queued before the display went off are dropped (spec `display-schedule`).
                     images.ahead(emptyList(), emptyList(), keepFiles())
                 } else {
@@ -326,7 +334,9 @@ class SlideshowController(
             is Command.Demanded -> {
                 if (command.generation != demandGeneration || isResting) return
                 demand = null
-                if (advanceTo(command.photo.id, command.step)) {
+                // Back to where the search found the photo, also in its pass.
+                demandMarks[command.photo.id]?.let(playlist::reset)
+                if (playlist.current?.id == command.photo.id) {
                     emit(command.photo, command.file, command.step)
                 } else {
                     // Gone from the order meanwhile: the search goes on from where it was.
@@ -337,8 +347,9 @@ class SlideshowController(
             is Command.DemandFailed -> {
                 if (command.generation != demandGeneration || isResting) return
                 demand = null
-                // The next tick tries the photos after the last one tried (spec "Bounded rendering ahead").
-                advanceTo(command.last.id, +1)
+                // The next tick tries the photos after the last one tried, in the direction of the step (spec "Bounded
+                // rendering ahead"), from where the search found it.
+                demandMarks[command.last.id]?.let(playlist::reset)
                 armTimer()
             }
 
@@ -458,6 +469,7 @@ class SlideshowController(
         val showing = (_state.value as? SlideState.Showing)?.photo
         val start = playlist.mark()
         val candidates = ArrayList<PhotoEntry>()
+        val marks = HashMap<String, Playlist.Mark>()
         var due = true
         for (i in 0 until playlist.size) {
             val entry =
@@ -469,7 +481,7 @@ class SlideshowController(
                     } else {
                         playlist.next()
                     }
-                ) ?: return
+                ) ?: break
             // A step looks for another photo: the one on screen is the last resort, after renderings on demand.
             if (step != 0 && entry.id == showing?.id) continue
             val eligible = step == 0 || due || entry.id !in recent
@@ -481,7 +493,10 @@ class SlideshowController(
                 refreshShown()
                 return
             }
-            if (candidates.size < PREFETCH_AHEAD) candidates += entry
+            if (candidates.size < PREFETCH_AHEAD) {
+                candidates += entry
+                if (candidates.size <= MAX_DEMAND_ATTEMPTS) marks[entry.id] = playlist.mark()
+            }
         }
         // Back to where the search began, also in the pass: the candidates are rendered first.
         playlist.reset(start)
@@ -495,6 +510,7 @@ class SlideshowController(
         // First start with an empty cache: a photo is rendered now and waited for.
         if (!stays) _state.value = SlideState.Loading
         val generation = demandGeneration
+        demandMarks = marks
         val tries = candidates.take(MAX_DEMAND_ATTEMPTS)
         demand =
             scope.launch {
@@ -516,28 +532,11 @@ class SlideshowController(
             }
     }
 
-    /**
-     * Moves the order to the photo [id], in the direction of [step], as the steps of the search did: across the end of a
-     * pass only if the photo lies beyond it. `false`, with the order where it was, if it is not in the order.
-     */
-    private fun advanceTo(
-        id: String,
-        step: Int,
-    ): Boolean {
-        if (playlist.current?.id == id) return true
-        val start = playlist.mark()
-        repeat(playlist.size) {
-            val entry = if (step < 0) playlist.previous() else playlist.next()
-            if (entry?.id == id) return true
-        }
-        playlist.reset(start)
-        return false
-    }
-
     /** Ends the renderings on demand of an earlier search; a result that still arrives is ignored. */
     private fun endDemand() {
         demand?.cancel()
         demand = null
+        demandMarks = emptyMap()
         demandGeneration++
     }
 
@@ -602,6 +601,8 @@ class SlideshowController(
     ) {
         seq++
         _state.value = SlideState.Showing(photo, file, 0, seq)
+        // The file kept for the screen is the new one now.
+        prefetchUpcoming()
     }
 
     private fun prefetchUpcoming() {

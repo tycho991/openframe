@@ -763,6 +763,58 @@ class RenderCacheTest {
         }
     }
 
+    /** A late job of an older version neither removes the newer one nor stays (review of `library-performance`). */
+    @Test
+    fun `A late rendering of an older version keeps the newer one`() =
+        runBlocking {
+            val c = cache()
+            val v1 = entry("a.jpg")
+            val v2 = v1.copy(version = 2)
+            val newer = c.get(v2, RenderSize.THUMB)
+            val late = runCatching { c.get(v1, RenderSize.THUMB) }
+            assertTrue(late.exceptionOrNull() is RenderDroppedException, "${late.exceptionOrNull()}")
+            assertTrue(newer.isFile, "the newer version stays")
+            assertEquals(listOf(newer.name), File(dir, "cache").list()!!.toList())
+            c.close()
+        }
+
+    @Test
+    fun `A new version keeps an older file that is on screen`() =
+        runBlocking {
+            val c = cache()
+            val v1 = entry("a.jpg")
+            val shown = c.get(v1, RenderSize.DISPLAY)
+            c.prefetchAhead(emptyList(), emptyList(), listOf(shown))
+            c.get(v1.copy(version = 2), RenderSize.DISPLAY)
+            assertTrue(shown.isFile, "the display may be decoding it")
+            c.close()
+        }
+
+    /** A rebuild must not take back files the delete thread has not reached yet (review of `library-performance`). */
+    @Test
+    fun `A rebuild does not take back files that wait to be deleted`() =
+        runBlocking {
+            val clock = TestClock()
+            val (a, b) = listOf("a", "b").map { entry("$it.jpg") }
+            val counted = Counted(clock = clock)
+            val c = counted.cache
+            c.get(a, RenderSize.THUMB)
+            val bFile = c.get(b, RenderSize.THUMB)
+            val hold = java.util.concurrent.CountDownLatch(1)
+            c.beforeDelete = { hold.await() }
+            c.removeAll(listOf(a))
+            // Android trims b; the next peek lists the folder while a's file still waits for the delete thread.
+            bFile.delete()
+            assertNull(c.peek(b, RenderSize.THUMB))
+            assertEquals(2, counted.listings, "the rebuild listed the folder")
+            assertNull(c.peek(a, RenderSize.THUMB), "a left the library")
+            assertEquals(0L, c.totalBytes(), "neither a nor b counts")
+            hold.countDown()
+            c.awaitDeletions()
+            assertEquals(emptyList<String>(), File(dir, "cache").list()!!.toList())
+            c.close()
+        }
+
     /** A folder that counts how often it is listed. */
     private class CountingDir(
         file: File,

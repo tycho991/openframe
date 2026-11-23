@@ -120,8 +120,13 @@ class Playlist(
         val id = mark.pass.getOrNull(mark.pos)
         pass = mark.pass.filter { it in photos }.toMutableList()
         previousPass = mark.previousPass.filter { it in photos }
-        pos = id?.let { pass.indexOf(it) }?.takeIf { it >= 0 } ?: mark.pos.coerceAtMost((pass.size - 1).coerceAtLeast(0))
-        advanced = mark.advanced
+        val found = id?.let { pass.indexOf(it) }?.takeIf { it >= 0 }
+        // The marked photo left the order: as in [update], the position points to the one after it already.
+        pos = found ?: mark.pass
+            .take(mark.pos)
+            .count { it in photos }
+            .coerceAtMost((pass.size - 1).coerceAtLeast(0))
+        advanced = if (found == null) pass.isNotEmpty() else mark.advanced
         if (pass.size < photos.size) {
             // A photo that came meanwhile goes after the current one, as in [update].
             val known = pass.toHashSet()
