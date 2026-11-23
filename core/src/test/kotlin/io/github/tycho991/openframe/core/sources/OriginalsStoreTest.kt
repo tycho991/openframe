@@ -62,7 +62,7 @@ class OriginalsStoreTest {
         val index = PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() }
         val originals = store(File(dir, "originals"))
         val source =
-            RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { remote }, index, JvmMediaEngine(), originals, {}, log)
+            RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { remote }, index, JvmMediaEngine(), originals, log)
         runBlocking { source.scan() }
         val first = listings.get()
         assertEquals(30, originals.totalBytes() / Fixtures.file("landscape.jpg").length())

@@ -58,7 +58,6 @@ class RealSourcesTest {
             index,
             JvmMediaEngine(),
             File(dir, "sources"),
-            {},
             TestClock(),
             log,
         ).also { it.start() }

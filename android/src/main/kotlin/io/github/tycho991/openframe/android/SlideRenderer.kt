@@ -9,14 +9,14 @@ import android.widget.ImageView
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.settings.Transition
 import java.io.File
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Shows photos with two stacked `ImageView`s. Decoding happens on a
- * thread of its own, only the pre-rendered display size, without further
- * scaling. The display size already is the part of the photo the frame shows,
- * so every photo is shown with `FIT_CENTER` on black, which gives its borders;
- * the fill mode and the section change only the rendered files.
+ * Shows photos with two stacked `ImageView`s. Decoding happens on a thread of its own, only the pre-rendered display
+ * size. The display size already is the part of the photo the frame shows; the fill mode and the section change only
+ * the rendered files. [BitmapFit] scales each decoded bitmap down to the size of the views and pads it to their aspect
+ * ratio with black pixels, so the borders are part of the bitmap and fade with it, and the views have no background.
  * There are at most two bitmaps: the current and the next.
  * Transitions run through `ViewPropertyAnimator`. Deliberately without `withLayer()`: an `ImageView` without a
  * background does not overlap itself, so `alpha` and `translationX` need no
@@ -30,6 +30,9 @@ class SlideRenderer(
     private var back: ImageView,
     /** A photo could not be decoded. */
     private val onUndecodable: (PhotoEntry) -> Unit,
+    /** Decodes the bitmaps; a test passes one that runs at once or when it says. */
+    private val decoder: ExecutorService =
+        Executors.newSingleThreadExecutor { r -> Thread(r, "decode").apply { priority = Thread.NORM_PRIORITY - 1 } },
     /** The swap to the slide `seq` starts: animated over `durationMs`, or at once. */
     private val onSwap: (seq: Long, animated: Boolean, durationMs: Long) -> Unit = { _, _, _ -> },
 ) {
@@ -42,7 +45,6 @@ class SlideRenderer(
     )
 
     private val main = Handler(Looper.getMainLooper())
-    private val decoder = Executors.newSingleThreadExecutor { r -> Thread(r, "decode").apply { priority = Thread.NORM_PRIORITY - 1 } }
     private var current: Decoded? = null
     private var preloaded: Decoded? = null
     private var preloading: Pair<String, File>? = null
@@ -50,6 +52,19 @@ class SlideRenderer(
     private var animating = false
     private var pendingOld: Decoded? = null
     private var lastNext: Pair<PhotoEntry, File>? = null
+
+    /** A [preload] or a [refit] came during a transition; [done] runs it afterwards, instead of polling. */
+    private var preloadPending = false
+    private var refitPending = false
+
+    /** Raised by [clear], so that a decode of [preload] that ends after it is dropped; [generation] is raised by [show]. */
+    private var clears = 0L
+
+    /** [release] ran: nothing is decoded any more. */
+    private var released = false
+
+    /** The photo decoded ahead, for tests. */
+    internal val preloadedId: String? get() = preloaded?.photo?.id
 
     /** The size of the views at the moment: bitmaps are scaled down to it, see [BitmapFit]. */
     private data class Target(
@@ -84,6 +99,7 @@ class SlideRenderer(
         transition: Transition,
         durationMs: Long,
     ) {
+        if (released) return
         val gen = ++generation
         val ready = preloaded?.takeIf { it.photo.id == photo.id && it.photo.version == photo.version && it.file == file }
         if (ready != null) {
@@ -98,7 +114,7 @@ class SlideRenderer(
         decoder.execute {
             val bitmap = decode(file, target)
             main.post {
-                if (gen != generation) {
+                if (gen != generation || released) {
                     bitmap?.recycle()
                 } else if (bitmap == null) {
                     onUndecodable(photo)
@@ -111,23 +127,28 @@ class SlideRenderer(
 
     /** Decodes the next photo ahead so that the transition starts without waiting. */
     fun preload(next: Pair<PhotoEntry, File>?) {
-        if (next == null) return
+        if (next == null || released) return
         lastNext = next
         val (photo, file) = next
         if (preloaded?.photo?.id == photo.id && preloaded?.file == file) return
         if (preloading == photo.id to file) return
-        // At most two bitmaps: during a transition both are in use.
+        // At most two bitmaps: during a transition both are in use. The end of the transition decodes it.
         if (animating) {
-            main.postDelayed({ preload(next) }, 200)
+            preloadPending = true
             return
         }
         preloaded?.bitmap?.recycle()
         preloaded = null
         preloading = photo.id to file
         val target = target()
+        val clearsAtStart = clears
         decoder.execute {
             val bitmap = decode(file, target)
             main.post {
+                if (released || clears != clearsAtStart) {
+                    bitmap?.recycle()
+                    return@post
+                }
                 preloading = null
                 if (bitmap == null) return@post
                 if (current?.photo?.id == photo.id) {
@@ -145,11 +166,12 @@ class SlideRenderer(
      * A running transition is waited for.
      */
     private fun refit() {
+        if (released) return
         val shown = current ?: return
         val target = target()
         if (shown.target == target) return
         if (animating) {
-            main.postDelayed({ refit() }, 200)
+            refitPending = true
             return
         }
         generation++
@@ -159,7 +181,7 @@ class SlideRenderer(
         decoder.execute {
             val bitmap = decode(shown.file, target)
             main.post {
-                if (bitmap == null || current !== shown || animating) {
+                if (bitmap == null || released || current !== shown || animating) {
                     bitmap?.recycle()
                     return@post
                 }
@@ -172,22 +194,45 @@ class SlideRenderer(
         }
     }
 
-    /** Shows nothing any more, for example in the empty state. */
+    /**
+     * Shows nothing any more, for example in the empty state. A transition cancelled halfway leaves nothing behind:
+     * its old bitmap is recycled, and the views are back at their place, opaque and on the same level. A decode that
+     * ends afterwards is dropped.
+     */
     fun clear() {
         generation++
+        clears++
+        // cancel() does not run withEndAction, so what done() would do happens here.
         front.animate().cancel()
         back.animate().cancel()
+        animating = false
+        pendingOld?.let { if (it !== current) it.bitmap.recycle() }
+        pendingOld = null
         front.setImageDrawable(null)
         back.setImageDrawable(null)
         current?.bitmap?.recycle()
         preloaded?.bitmap?.recycle()
         current = null
         preloaded = null
+        preloading = null
+        preloadPending = false
+        refitPending = false
+        for (view in listOf(front, back)) {
+            view.translationX = 0f
+            view.alpha = 1f
+            view.translationZ = 0f
+        }
     }
 
+    /**
+     * Ends the renderer with its activity: no decode starts afterwards, so none can be refused on the main thread, and
+     * one still running ends on its own and is dropped.
+     */
     fun release() {
+        released = true
         clear()
-        decoder.shutdownNow()
+        main.removeCallbacksAndMessages(null)
+        decoder.shutdown()
     }
 
     private fun swapTo(
@@ -259,6 +304,18 @@ class SlideRenderer(
         pendingOld = null
         exchangeViews()
         finishSwap(old)
+        // What came during the transition, posted: a swapTo that ends the transition itself finishes first, so the photo
+        // it shows is not decoded twice.
+        if (preloadPending || refitPending) {
+            main.post {
+                val refitting = refitPending
+                val preloading = preloadPending
+                refitPending = false
+                preloadPending = false
+                if (refitting) refit()
+                if (preloading) preload(lastNext)
+            }
+        }
     }
 
     /** The back view to the front, but below the overlays (their translationZ is higher). */

@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.sources
 
+import io.github.tycho991.openframe.core.library.CaptureDates
 import io.github.tycho991.openframe.core.library.PhotoEntry
 import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoSource
@@ -32,8 +33,6 @@ class RemoteSource(
     private val index: PhotoIndexStore,
     private val engine: MediaEngine,
     val originals: OriginalsStore,
-    /** Photos left the library: their renderings are not needed any more. Called once per sync, never with an empty list. */
-    private val onRemoved: (List<PhotoEntry>) -> Unit,
     private val log: AppLog,
     /**
      * An original fetched for a rendering did not match the index (spec "Refetched original matches the index"): the
@@ -58,13 +57,15 @@ class RemoteSource(
     /** The source was removed: its listings and downloads end at their next read. */
     private val cancelled: () -> Boolean = { config() == null }
 
-    private fun limits(ended: () -> Boolean = cancelled) =
-        DownloadLimits(
-            roomBytes = originals::roomOnDisk,
-            cancelled = ended,
-            acceptHeader = { header -> ImageFormats.detect(header)?.let(engine::canDecode) ?: true },
-            unknownSizeBytes = unknownSizeBytes,
-        )
+    private fun limits(
+        ended: () -> Boolean = cancelled,
+        onDemand: Boolean = false,
+    ) = DownloadLimits(
+        roomBytes = { originals.roomOnDisk(onDemand) },
+        cancelled = ended,
+        acceptHeader = { header -> ImageFormats.detect(header)?.let(engine::canDecode) ?: true },
+        unknownSizeBytes = unknownSizeBytes,
+    )
 
     override suspend fun scan(): ScanResult =
         withContext(Dispatchers.IO) {
@@ -83,11 +84,15 @@ class RemoteSource(
      * The original of [entry] for a rendering, fetched again from the server if it was removed from the cache. With [pin]
      * it stays through every trim until [unpin], while the renderings that wait for it are queued. A fetched original
      * whose `ETag` differs is checked by its dimensions: one that does not match the index is discarded, the rendering
-     * fails, and [onStale] lets the source sync soon.
+     * fails, and [onStale] lets the source sync soon. [onDemand]: a rendering somebody awaits needs it, so the download
+     * may go below the storage reserve down to [OriginalsStore.ON_DEMAND_FLOOR_BYTES]; [ended] ends the download at its
+     * next read once nobody wants it.
      */
     fun original(
         entry: PhotoEntry,
         pin: Boolean = false,
+        onDemand: Boolean = false,
+        ended: () -> Boolean = { false },
     ): File {
         val file = originals.fileOf(entry)
         if (pin) originals.pin(entry)
@@ -98,7 +103,7 @@ class RemoteSource(
             }
             val config = config() ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source $id was removed")
             synchronized(lockOf(entry.id)) {
-                if (!file.isFile) fetchForRendering(entry, config)
+                if (!file.isFile) fetchForRendering(entry, config, onDemand, ended)
             }
             return file
         } catch (e: Throwable) {
@@ -113,15 +118,21 @@ class RemoteSource(
     private fun fetchForRendering(
         entry: PhotoEntry,
         config: StoredSource,
+        onDemand: Boolean,
+        ended: () -> Boolean,
     ) {
-        if (!originals.hasRoomOnDisk(entry.fileSize)) {
+        if (!originals.hasRoomOnDisk(entry.fileSize, onDemand)) {
             throw SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame for ${entry.path}")
         }
         val remote = kind.remoteFolder(config)
         val part = originals.partOf(entry)
         val etag =
             try {
-                remote.download(RemoteFile(entry.path, entry.etag.orEmpty(), entry.fileSize, entry.modifiedMs), part, limits())
+                remote.download(
+                    RemoteFile(entry.path, entry.etag.orEmpty(), entry.fileSize, entry.modifiedMs),
+                    part,
+                    limits({ cancelled() || ended() }, onDemand),
+                )
             } catch (e: Throwable) {
                 part.delete()
                 if (e is SourceException && e.kind == SourceException.Kind.CHANGED) stale(entry, "is larger on the server than listed")
@@ -183,6 +194,10 @@ class RemoteSource(
                 .associateBy { it.path }
         val skippedKnown = library.skipped.filter { it.source == id }.associateBy { it.path }
         val budget = config.budgetBytes
+        // Photos that vanished from the server: if the sync removes them, their originals go with them, so the trims
+        // during the downloads do not count them and evict originals of photos that stay.
+        val listed = listing.mapTo(HashSet()) { it.path }
+        val vanishing = originals.leaving(if (config.removeVanished) known.values.filter { it.path !in listed } else emptyList())
 
         val results = LinkedHashMap<String, Result<PhotoEntry>>()
         var failure: SourceException? = null
@@ -203,7 +218,7 @@ class RemoteSource(
                     break
                 }
                 results[file.path] = result
-                originals.trim(budget)
+                originals.trim(budget, uncounted = vanishing)
             }
         } catch (e: SourceException) {
             // The folder was listed: whatever a download says, it is about a file, not about access to the folder.
@@ -222,9 +237,12 @@ class RemoteSource(
             if (config() == null) return@edit
             for ((path, result) in results) {
                 result
-                    .onSuccess {
-                        val current = edit.get(it.id)
-                        val entry = it.withStateOf(current)
+                    .onSuccess { fetched ->
+                        val current = edit.get(fetched.id)
+                        // A new version gets its number from the entry in the edit (design decision 5 of
+                        // `library-performance`); an unchanged photo keeps its own.
+                        val numbered = if (fetched.version == UNNUMBERED) fetched.copy(version = edit.versionFor(current)) else fetched
+                        val entry = numbered.withStateOf(current)
                         // An original that came back for an unchanged photo: the entry is the same, nothing to apply or count.
                         if (entry == current) return@onSuccess
                         // The same photo with only its position taken over from the download: applied, but not an update.
@@ -257,10 +275,11 @@ class RemoteSource(
                 }
             }
         }
-        if (removed.isNotEmpty()) {
-            originals.removeAll(removed.map { it.id })
-            onRemoved(removed)
-        }
+        // The renderings of removed photos go through the index's notification (design decision 4 of
+        // `library-performance`), and so do the originals of photos whose new version was skipped. The originals of
+        // vanished photos go here as well, before the trim: counted in the total, they would make it evict originals of
+        // photos that stay. The notification's removal later finds nothing left.
+        if (removed.isNotEmpty()) originals.removeAll(removed.map { it.id })
         originals.trim(budget)
         val result = ScanResult(added, updated, removed.size, skipped)
         if (result.added + result.updated + result.removed + result.skipped > 0) log.i(TAG, "Sync of $id: $result")
@@ -305,8 +324,9 @@ class RemoteSource(
                 takenAtMs = file.modifiedMs,
                 fileSize = file.size,
                 modifiedMs = file.modifiedMs,
-                // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf).
-                version = (previous?.version ?: 0) + 1,
+                // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf), and
+                // the version is assigned there.
+                version = UNNUMBERED,
                 etag = file.etag,
                 metadataVersion = PhotoEntry.METADATA_VERSION,
             )
@@ -381,7 +401,7 @@ class RemoteSource(
     ) = draft.copy(
         width = info.width,
         height = info.height,
-        takenAtMs = info.takenAt?.toEpochMilli() ?: file.modifiedMs,
+        takenAtMs = CaptureDates.plausible(info.takenAt)?.toEpochMilli() ?: file.modifiedMs,
         gps = info.gps,
     )
 
@@ -394,6 +414,9 @@ class RemoteSource(
 
     companion object {
         private const val TAG = "sources"
+
+        /** The version of a new version of a file until the edit that applies it assigns one. */
+        private const val UNNUMBERED = 0
 
         /** `2 hours`, `90 minutes`: a time limit for a message. */
         private fun duration(ms: Long): String {

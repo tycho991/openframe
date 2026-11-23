@@ -130,7 +130,9 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **Running total refreshed:** when a `peek` misses a name the index knows, Android or someone else has deleted files
   in the folder. The cache then rebuilds its index from one listing, at most once an hour. A rebuild triggered by free
   space would point the wrong way: Android's trimming leaves the frame above the reserve, and a frame that stays below
-  it would list the folder for every rendering.
+  it would list the folder for every rendering. (After review:) a rebuild does not take back a name that waits for its
+  deletion, nor one of a version at or below its photo's tombstone, and it reads the time and size of unknown files
+  outside the cache lock before it merges them.
 
 ### 3. An index of the render cache in memory
 
@@ -143,10 +145,13 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **Start:** one listing, each file asked for its time and size once, then sorted. Its time is logged.
 - **Older versions:** after a rendering, the older versions of that photo are found through photo ID → names, not by
   listing the folder. They are still removed only after the new version is rendered: removing them at once would take
-  away a file that the display may be decoding as the photo on screen or the next one.
+  away a file that the display may be decoding as the photo on screen or the next one. (After review:) only versions
+  below the new one go, never a file in `keep`, and a late rendering of a version below one already in the index is
+  discarded, so it cannot take away the newer file on screen.
 - **`peekAnyDisplay` and `ready`:** answered from photo ID → names; the disk is asked only for a hit.
 - **Deleting:** `removeAll(entries)` takes the names out of the index at once and hands the files to a delete thread of
-  low priority, so a source with 10,000 photos does not hold up a rendering on demand.
+  low priority, so a source with 10,000 photos does not hold up a rendering on demand. Every name taken out to be
+  deleted (removal, sweep, trim, older versions) counts as being deleted until its file is gone.
 - **Test seam:** listing the folder goes through one function, as in `OriginalsStore`, so a test counts listings.
 - **Alternative:** keep listing the folder and cache the result. Any external deletion would still need a listing, and
   the index has to exist anyway for the tombstones of decision 5.
@@ -157,13 +162,18 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   constructor. `LibraryEdit` records the IDs touched by `remove` and `skip`; the photo map is no longer writable from
   outside, so these two are the only ways out. The report compares only those IDs, not the whole map.
 - **When:** after the new state is published, still inside the edit's lock, so reports come in the order of the
-  edits. The listener only changes memory and hands file work to a background thread.
+  edits. The listener only changes memory and hands file work to a background thread. A failure of the listener is
+  logged and does not make the applied edit fail (after review); the start sweep completes what it left.
 - **What `FrameCore` wires to it:** `cache.removeAll(entries)` and, for remote photos, `SourceRegistry` removing their
   originals on its scope through the running source's `OriginalsStore.removeAll`. A removed source is no longer
   running at that point; its folder goes as a whole (decision 11).
-- **What goes:** the `onPhotosRemoved` parameter of `SourceRegistry`, `onRemoved` and the explicit
-  `originals.removeAll` in `RemoteSource.sync`, and `cache.remove` in `PhotoLibrary.delete`. Scan, `skip` (local and
-  remote), sync, source removal, orphan cleanup and API delete then all take the same path.
+- **What goes:** the `onPhotosRemoved` parameter of `SourceRegistry`, `onRemoved` of `RemoteSource`, and
+  `cache.remove` in `PhotoLibrary.delete`. Scan, `skip` (local and remote), sync, source removal, orphan cleanup and API
+  delete then all take the same path. (After review:) `RemoteSource.sync` still removes the originals of vanished
+  photos itself before its trim, since the registry's removal runs later and the trim would count them and evict
+  originals of photos that stay; the notification's removal then finds nothing left. The trims during the downloads
+  leave the originals of photos the sync is going to remove out of the count, with their names and bytes worked out
+  once per sync.
 - **Leftovers:** after `index.load` and before `slideshow.start`, `FrameCore.start` removes the renderings whose photo
   ID is not in the index, and those whose version is above the entry's version (an index restored from its backup, or
   a debounced save lost at the end of the process, would otherwise meet renderings of versions it will assign again).
@@ -198,7 +208,9 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   files of `keep` (decision 2), and queues the missing ones as `NEXT` and `PREFETCH`.
 - **Who awaits:** a `Pending` records whether a `get()` awaits it. One that is only in the window can be dropped;
   one awaited, at any priority, never is. This keeps the slideshow's refresh of the photo on screen, which awaits a
-  `NEXT` rendering, safe.
+  `NEXT` rendering, safe. (After review:) it counts its awaiters; a `get()` that is cancelled before the result stops
+  counting, and once none is left the job can be dropped like one of the window, and so can its download. Otherwise a
+  rendering on demand or a refresh abandoned by resting or by fast swipes would keep rendering and downloading.
 - **Each job knows its `Pending`:** after a drop, the same name can get a new `Pending` from a request while the old
   job still sits in the queue or in a download's job list. So every `Job` holds a reference to the `Pending` it was
   queued for. Drop decisions read `job.pending.awaited`, and every path that ends a job (worker, download failure,
@@ -218,11 +230,28 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
     path, rather than a race between clearing the flag and a read that has already failed. A download that has an
     awaited job when the window changes is never cancelled.
 - **`keep`:** the slideshow passes the files on screen and next up as `keep` with every window.
-- **Resting:** `Command.Rest(true)` calls `ahead([], [], keep)`. Waking sets the window again, as it does today.
+- **Resting:** `Command.Rest(true)` calls `ahead([], [], keep)` and cancels the renderings on demand and the refresh
+  of the photo on screen (after review), whose current part is then rendered on wake. Waking sets the window again.
 - **`show()`:** it still looks for a ready photo along the whole order, now an index lookup per photo. If none is
   ready, the window gets the first `NEXT_AHEAD` candidates as next and the rest up to `PREFETCH_AHEAD` as later. At
   most `MAX_DEMAND_ATTEMPTS = 3` candidates are rendered on demand. If all three fail, `armTimer()` runs, and the next
   tick tries the following ones.
+  - **Found in the implementation:** the renderings on demand run in a coroutine of their own and report back as a
+    command, while a photo on screen stays; awaiting them in the command loop would hold up a swipe and resting for as
+    long as a download takes. A step does not stop at the photo on screen.
+  - **Found in the implementation:** a step skips the due photo only for one rendered ahead, not for one of the last
+    `PREFETCH_AHEAD` photos shown, whose rendering is left from its turn. Below the reserve nothing is rendered ahead,
+    and in a library of up to 11 photos the photo on screen and the one before it (both protected, as `keep` and in
+    the window) would otherwise take turns for good, against "Local photos below the reserve". The due photo is then
+    rendered on demand.
+  - **Found in the implementation:** the search walks the order with `next()`, which shuffles a new pass at the end of
+    one; it returns to the position and the pass it began with (`Playlist.mark`/`reset`), so a search without a ready
+    photo does not shuffle away the photos of the pass not shown yet. A result of the renderings on demand moves the
+    order to where the search found that photo; after a change of the library or the order those positions are
+    dropped and the result goes through a new search from the photo on screen. When all fail after a step forward the
+    order goes to the last one tried, by its mark or, after such a change, by its ID; after a step back it goes back to where the search began, since the tick steps
+    forward and would otherwise render the failed photos again. A photo that comes again across the end of a pass is
+    a candidate once.
 - **Log:** a failed rendering logs the stack trace only for unexpected errors, not for a `SourceException` or a dropped
   job.
 
@@ -263,11 +292,13 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
     delete as failed. Then one edit removes the deleted entries, the listener removes their renderings, and one
     `notifyChanged(files)` follows.
 - **Photo folder unavailable:** while the storage of the photo folder is not mounted or the folder cannot be listed
-  (`LocalPhotoSource.available()`), a missing file says nothing, so `deleteAll` deletes nothing and the request answers
-  503 `storage_unavailable`, as an upload does (spec "Photo folder kept"). The contract gets the 503 at
-  `DELETE /photos/{photoId}` and `POST /photos:batch`.
+  (`LocalPhotoSource.available()`), a missing file says nothing, so a `deleteAll` with a local photo deletes nothing and
+  the request answers 503 `storage_unavailable`, as an upload does (spec "Photo folder kept"). A batch of remote and
+  unknown IDs answers as before (changed after review). The contract gets the 503 at `DELETE /photos/{photoId}` and
+  `POST /photos:batch`.
 - **Single delete:** `delete(id)` is `deleteAll` of one ID and keeps 404, 409 `read_only_source` and 500
-  `delete_failed`.
+  `delete_failed`; the batch result says which failed IDs are of a read-only source, so 409 and 500 do not depend on
+  reading the index again.
 - **Media store:** `MediaStoreNotifier` gets `notifyChanged(files: List<File>)` with a default loop; it stays a
   `fun interface`. `AndroidMediaStoreNotifier` calls `MediaScannerConnection.scanFile` once with all paths.
 - **Route:** `POST /photos:batch` uses the new methods with the same `processed`, `missing` and `failed`.
@@ -282,20 +313,29 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 - **Album levels:** `sanitizeAlbum` still cuts each level at 64 UTF-16 units, but never inside a surrogate pair. A
   level then has at most 192 bytes in UTF-8, below the 255-byte name limit, so no byte budget is needed there.
 - **Case:** each album level is resolved against the existing folder by listing its parent: an exact match first, then
-  a case-insensitive one, otherwise a new folder. The index path then matches the folder on the frame's FUSE file
+  a case-insensitive one that is a folder, otherwise a new folder. Never by `exists()`, which on the frames' FUSE says
+  yes for `holiday` when only `Holiday` is there (found in review). The folders are created level by level, and only
+  those this upload really created are recorded and removed again on a failure, and only as empty folders, so a file
+  that answers to the same name in another letter case is never deleted. A folder that cannot be listed refuses the
+  upload (500 `album_unreadable`) instead of counting as empty. The index path then matches the folder on the frame's FUSE file
   system. The same happens on a case-sensitive file system, so the JVM tests see it. `nested-albums` decision 1 (two
   albums that differ in case) then holds only for remote sources.
 - **Folder check:** after `mkdirs`, `move` checks `isDirectory` and answers 400 `invalid_album` naming `album`
   otherwise. The contract text and `error.invalid_album` in `en.json` and `de.json` say "invalid or too long"; today
   the web UI shows "at most 255 characters" for any `invalid_album`.
 - **All or nothing:** under one lock, the targets of all files are resolved, also against each other, and then all
-  are renamed. If one rename fails, the ones already renamed are deleted before anything is indexed. A scan that
+  are renamed. If one rename fails, the ones already renamed and the album folders this upload created are deleted
+  before anything is indexed. A scan that
   picked one up in between loses it again at the next scan. Then one `LocalPhotoSource.addAll` adds all of them in
   one edit, and one `notifyChanged(files)` follows.
 
 ### 10. Capture dates
 
-- **Parse:** `AndroidMediaEngine.parseExifDate` parses with `isLenient = false`.
+- **Parse:** `AndroidMediaEngine.parseExifDate` parses the fields strictly (`java.time`, `ResolverStyle.STRICT`) and
+  then places the local date-time in the device's zone, so that a time in the gap of the switch to summer time is moved
+  forward instead of refused, as a strict `SimpleDateFormat` would (after review). The offset the camera recorded
+  (`OffsetTimeOriginal`, `OffsetTime`) applies when present; a device zone that the time zone data does not know falls
+  back to UTC instead of making every capture date unknown.
 - **Plausibility in `:core`:** `CaptureDates.plausible(instant)` turns a date before 1800-01-01 into `null`.
   `LocalPhotoSource` and `RemoteSource` apply it before falling back to the file date. This is the real guard: the
   Robolectric tests run the host JDK's `java.text`, not the libcore of Android 5 and 6.

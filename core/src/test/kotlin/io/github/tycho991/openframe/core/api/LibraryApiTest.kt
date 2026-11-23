@@ -604,6 +604,125 @@ class LibraryApiTest {
         assertEquals(listOf("holiday/r.jpg"), page().items.map { it.path })
     }
 
+    private fun libraryVersion() =
+        ApiJson
+            .decodeFromString(StateDto.serializer(), frame.get("/api/v1/state").body())
+            .libraryVersion
+
+    private fun batch(
+        action: String,
+        ids: List<String>,
+    ) = frame.send("POST", "/api/v1/photos:batch", ids.joinToString(",", "{\"action\":\"$action\",\"ids\":[", "]}") { "\"$it\"" })
+
+    /** Spec `photo-library`: Batch changes › Large batch, counted with 1,000 photos. */
+    @Test
+    fun `A batch of 1,000 IDs changes the library version once`() {
+        val ids = (0 until 1000).map { id("many/$it.jpg") }
+        // Entries with the size and time of their files: the scan finds them unchanged and opens none of them.
+        val files = (0 until 1000).map { put("many/$it.jpg").apply { setLastModified(1_700_000_000_000) } }
+        frame.core.library.index.edit { edit ->
+            ids.forEachIndexed { i, id ->
+                edit.put(PhotoEntry(id, "local", "many/$i.jpg", 400, 300, i.toLong(), files[i].length(), files[i].lastModified(), 1))
+            }
+        }
+        val before = libraryVersion()
+        val res = batch("hide", ids)
+        assertEquals(200, res.statusCode())
+        assertEquals(1000, ApiJson.decodeFromString(BatchResultDto.serializer(), res.body()).processed)
+        assertEquals(before + 1, libraryVersion())
+    }
+
+    private fun batchResult(res: io.github.tycho991.openframe.core.testing.Res): BatchResultDto {
+        assertEquals(200, res.statusCode(), res.body())
+        return ApiJson.decodeFromString(BatchResultDto.serializer(), res.body())
+    }
+
+    /** Spec `photo-library`: Batch changes › Mixed batch, › Nothing to change; Delete › Batch with Nextcloud photos. */
+    @Test
+    fun `A mixed batch is one change of the library with the same lists as before`() {
+        listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }
+        frame.scan()
+        val remote = putRemote()
+        val unknown = "local-${"f".repeat(40)}"
+        val (a, b, c) = listOf("a.jpg", "b.jpg", "c.jpg").map(::id)
+
+        var before = libraryVersion()
+        val hidden = batchResult(batch("hide", listOf(a, b, remote, unknown, a)))
+        assertEquals(3, hidden.processed, "a Nextcloud photo can be hidden; a repeated ID counts once")
+        assertEquals(listOf(unknown), hidden.missing)
+        assertEquals(emptyList<String>(), hidden.failed)
+        assertEquals(before + 1, libraryVersion())
+
+        before = libraryVersion()
+        val again = batchResult(batch("hide", listOf(a, b)))
+        assertEquals(2, again.processed, "already hidden still counts as processed")
+        assertEquals(before, libraryVersion(), "nothing to change")
+
+        before = libraryVersion()
+        frame.notifiedTogether.clear()
+        val deleted = batchResult(batch("delete", listOf(a, c, remote, unknown)))
+        assertEquals(2, deleted.processed)
+        assertEquals(listOf(remote), deleted.failed)
+        assertEquals(listOf(unknown), deleted.missing)
+        assertEquals(before + 1, libraryVersion())
+        assertEquals(listOf(setOf("a.jpg", "c.jpg")), frame.notifiedTogether.map { files -> files.map { it.name }.toSet() }, "one report")
+        assertEquals(setOf("b.jpg", "holiday/r.jpg"), page().items.map { it.path }.toSet())
+    }
+
+    /** Spec `photo-library`: Delete; Photo folder kept › Delete while the storage is unavailable. */
+    @Test
+    fun `Deleting one photo keeps its answers and refuses while the storage is unavailable`() {
+        put("a.jpg")
+        put("b.jpg")
+        frame.scan()
+        val remote = putRemote()
+        assertEquals(404, frame.send("DELETE", "/api/v1/photos/local-${"0".repeat(40)}").statusCode())
+        assertEquals(409, frame.send("DELETE", "/api/v1/photos/$remote").statusCode())
+        frame.core.library.deleteFile = { false }
+        val failed = frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}")
+        assertEquals(500, failed.statusCode())
+        assertTrue(failed.body().contains("delete_failed"), failed.body())
+        frame.core.library.deleteFile = { it.delete() }
+
+        frame.platform.mounted = false
+        val single = frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}")
+        assertEquals(503, single.statusCode())
+        assertTrue(single.body().contains("storage_unavailable"), single.body())
+        val batched = batch("delete", listOf(id("a.jpg"), id("b.jpg")))
+        assertEquals(503, batched.statusCode())
+        assertTrue(batched.body().contains("storage_unavailable"), batched.body())
+        assertTrue(File(frame.photos, "a.jpg").exists() && File(frame.photos, "b.jpg").exists(), "nothing deleted")
+        assertEquals(3, frame.core.library.index.library.value.photos.size, "the photos stay in the library")
+        // Without a local photo the batch answers as before: a Nextcloud photo is failed, an unknown ID missing.
+        val remoteOnly = batchResult(batch("delete", listOf(remote, "local-${"e".repeat(40)}")))
+        assertEquals(listOf(remote), remoteOnly.failed)
+        assertEquals(409, frame.send("DELETE", "/api/v1/photos/$remote").statusCode())
+        frame.platform.mounted = true
+        assertEquals(204, frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}").statusCode())
+    }
+
+    /** Spec `photo-library`: Implausible capture dates › Camera without a set clock. */
+    @Test
+    fun `A capture date before 1800 counts as missing and the file date applies`() {
+        // What a lenient parse makes of `0000:00:00 00:00:00`.
+        frame.engine.takenAtOverride = { java.time.Instant.parse("-0001-11-30T00:00:00Z") }
+        val file = put("clockless.jpg").apply { setLastModified(1_700_000_000_000) }
+        frame.scan()
+        val photo = page().items.single()
+        assertEquals(
+            java.time.Instant
+                .ofEpochMilli(file.lastModified())
+                .toString(),
+            photo.takenAt,
+        )
+        assertEquals(
+            1_700_000_000_000L,
+            java.time.Instant
+                .parse(photo.takenAt)
+                .toEpochMilli(),
+        )
+    }
+
     @Test
     fun `Hide and delete several by batch`() {
         listOf("a.jpg", "b.jpg", "c.jpg").forEach { put(it) }
@@ -732,6 +851,7 @@ class LibraryApiTest {
         assertEquals(204, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
         assertFalse(File(frame.photos, "holiday/a.jpg").exists())
         assertEquals(0, page().total)
+        frame.core.cache.awaitDeletions()
         assertEquals(0, File(frame.dirs.cache, RenderCache.FOLDER).list()!!.size, "rendered sizes removed")
         assertTrue(frame.notified.any { it.name == "a.jpg" }, "reported to the MediaStore")
         assertEquals(404, frame.send("DELETE", "/api/v1/photos/$id").statusCode())

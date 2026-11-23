@@ -233,7 +233,13 @@ Where things are stored: the app password, the share link and the password of a 
 storage (`sources.json`, never in an API answer or the log), the downloaded originals in the app's cache folder,
 next to the rendered sizes, with a budget per source (2,000 MB by default). When it is exceeded, the originals of that
 source unused for the longest time are removed and fetched again when a rendering needs them. A photo stays on the
-frame without its original. A download never leaves less than 100 MB free.
+frame without its original.
+
+The frame keeps a storage reserve free: 10 % of its data volume, at most 500 MiB, plus 100 MiB, about 600 MiB on the
+reference frames. Uploads, downloads of originals for syncs and renderings ahead of time leave it free, and the cache
+of rendered sizes shrinks below its budget to keep it. Only a photo someone waits for, the one the slideshow shows
+next or an image the web interface asks for, may go below it; the download of its original still leaves 100 MiB free.
+The start log names the reserve (`Storage reserve: N MiB of M MiB`).
 
 A frame that had a Nextcloud connection before (0.1.0) keeps it as the source `nextcloud`, with its photos, their IDs
 and hidden states, without a new login. Its old `nextcloud.json` is deleted at the next start with a readable list of

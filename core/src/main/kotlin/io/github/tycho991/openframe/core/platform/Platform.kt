@@ -71,6 +71,9 @@ interface PlatformInfo {
     /** Free storage on the volume that contains [dir]. */
     fun freeBytes(dir: File): Long = dir.usableSpace
 
+    /** The size of the volume that contains [dir], 0 if it cannot be read. */
+    fun totalBytes(dir: File): Long = dir.totalSpace
+
     /** Whether the storage that holds [dir] is mounted; internal storage always is. */
     fun storageMounted(dir: File): Boolean = true
 }
@@ -207,6 +210,9 @@ interface NetworkLink {
 /** Reports photo files created or deleted by the app itself to the system so that they become visible over USB. */
 fun interface MediaStoreNotifier {
     fun notifyChanged(file: File)
+
+    /** Several files at once, from one batch or upload; one request to the system where it can take several. */
+    fun notifyChanged(files: List<File>) = files.forEach(::notifyChanged)
 
     companion object {
         val None = MediaStoreNotifier { }

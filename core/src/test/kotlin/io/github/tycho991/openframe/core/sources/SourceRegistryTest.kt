@@ -37,8 +37,12 @@ class SourceRegistryTest {
     private var removalCalls = 0
     private val removedSources = ArrayList<String>()
 
+    /** The index reports removed photos, as it does to the render cache in `FrameCore`. */
     private val index by lazy {
-        PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() }
+        PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)) {
+            removedPhotos += it
+            removalCalls++
+        }.also { it.load() }
     }
     private val configs by lazy {
         SourceConfigStore(JsonStore(File(dir, "sources.json"), StoredSources.serializer(), TestScope(), log)).also { it.load() }
@@ -53,10 +57,6 @@ class SourceRegistryTest {
             index,
             JvmMediaEngine(),
             File(dir, "sources"),
-            {
-                removedPhotos += it
-                removalCalls++
-            },
             TestClock(),
             log,
             { removedSources += it.id },
@@ -176,7 +176,7 @@ class SourceRegistryTest {
 
         assertTrue(registry.remove("sa"))
 
-        // One call, so that the renderings are removed with one listing of their folder, not one per photo.
+        // One call from the index, so that the renderings are removed in one step, not one per photo.
         assertEquals(1, removalCalls)
         assertEquals(photos.map { it.id }.toSet(), removedPhotos.map { it.id }.toSet())
         assertEquals(photos.size, removedPhotos.size)
@@ -232,7 +232,6 @@ class SourceRegistryTest {
             index,
             JvmMediaEngine(),
             File(dir, "sources"),
-            { removedPhotos += it },
             TestClock(),
             log,
             { removedSources += it.id },

@@ -194,7 +194,6 @@ class LoginSecurityTest {
             PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() },
             JvmMediaEngine(),
             File(dir, "sources"),
-            {},
             TestClock(),
             log,
         ).also { it.start() }

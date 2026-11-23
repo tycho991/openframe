@@ -50,6 +50,9 @@ class JvmMediaEngine(
 
     @Volatile var metadataFailure: (File) -> Throwable? = { null }
 
+    /** The capture date a probe reports instead of the file's own, as a device's EXIF parser may; `null` for its own. */
+    @Volatile var takenAtOverride: ((File) -> java.time.Instant?)? = null
+
     /** What [canDecode] says for HEIF: by default whether this engine decodes HEIC at all. */
     @Volatile var canDecodeHeif: Boolean = supportsHeic
 
@@ -68,7 +71,7 @@ class JvmMediaEngine(
             format = format,
             width = if (swap) image.height else image.width,
             height = if (swap) image.width else image.height,
-            takenAt = takenAt(file),
+            takenAt = takenAtOverride?.invoke(file) ?: takenAt(file),
             gps = gps(file),
         )
     }

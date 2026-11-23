@@ -32,6 +32,17 @@ object Fixtures {
         return file(name).copyTo(target, overwrite = true)
     }
 
+    /** A JPEG of [width]×[height] in one colour, [rgb] as `0xRRGGBB`: another picture of the same dimensions. */
+    fun solidJpeg(
+        width: Int,
+        height: Int,
+        rgb: Int,
+    ): ByteArray {
+        val image = java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        for (y in 0 until height) for (x in 0 until width) image.setRGB(x, y, rgb)
+        return ByteArrayOutputStream().also { javax.imageio.ImageIO.write(image, "jpg", it) }.toByteArray()
+    }
+
     /**
      * A grey PNG that declares [width]×[height] but holds only one row of pixel data: enough for every reader of the
      * bounds, and far too little to decode, so an image of gigapixels costs a few bytes.

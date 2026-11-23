@@ -32,15 +32,23 @@ interface DisplayImages {
     /** The finished display size for the entry's current presentation, or `null` while it is not rendered. */
     fun current(entry: PhotoEntry): File?
 
-    /** Renders the display size with [priority], by default before everything else. Throws if that fails. */
+    /**
+     * Renders the display size with [priority], by default before everything else, and awaits it: such a rendering is
+     * never dropped and may go below the storage reserve. Throws if that fails.
+     */
     suspend fun render(
         entry: PhotoEntry,
         priority: RenderPriority = RenderPriority.DEMAND,
     ): File
 
-    fun prefetch(
-        entries: List<PhotoEntry>,
-        priority: RenderPriority,
+    /**
+     * The window of renderings ahead (spec "Bounded rendering ahead"): the display sizes of [next] before those of
+     * [later]; a waiting rendering of a photo in neither is dropped. [keep] are the files on screen and next up.
+     */
+    fun ahead(
+        next: List<PhotoEntry>,
+        later: List<PhotoEntry>,
+        keep: List<File>,
     )
 }
 
@@ -57,10 +65,11 @@ class CachedDisplayImages(
         priority: RenderPriority,
     ): File = cache.get(entry, RenderSize.DISPLAY, priority)
 
-    override fun prefetch(
-        entries: List<PhotoEntry>,
-        priority: RenderPriority,
-    ) = cache.prefetch(entries, priority)
+    override fun ahead(
+        next: List<PhotoEntry>,
+        later: List<PhotoEntry>,
+        keep: List<File>,
+    ) = cache.prefetchAhead(next, later, keep)
 }
 
 /** A command from the API (spec `slideshow-display`, "Operating the slideshow through the API"). */
@@ -144,6 +153,21 @@ class SlideshowController(
         /** Fill mode or orientation changed: every display size is a new one. */
         data object Presentation : Command
 
+        /** A photo rendered on demand by the search [generation] of [show] is ready. */
+        data class Demanded(
+            val generation: Long,
+            val photo: PhotoEntry,
+            val file: File,
+            val step: Int,
+        ) : Command
+
+        /** Every photo the search [generation] of [show] rendered on demand failed; [last] was the last one tried. */
+        data class DemandFailed(
+            val generation: Long,
+            val last: PhotoEntry,
+            val step: Int,
+        ) : Command
+
         /** [command], and [done] completes once it has been handled, also if handling it failed. */
         data class Awaited(
             val command: Command,
@@ -168,6 +192,19 @@ class SlideshowController(
 
     /** Fill mode or orientation changed while resting: the photo that stays is rendered again on wake. */
     private var presentationChangedWhileResting = false
+
+    /** The photos shown most recently, the newest last, at most [PREFETCH_AHEAD]; see [show]. */
+    private val recent = ArrayDeque<String>()
+
+    /** Where the latest search of [show] found each candidate: the order goes there for a result of it. */
+    private var demandMarks: Map<String, Playlist.Mark> = emptyMap()
+
+    /** Where the latest search of [show] began. */
+    private var demandStart: Playlist.Mark? = null
+
+    /** The renderings on demand of the latest search of [show]; a newer search, resting or a shown photo ends it. */
+    private var demand: Job? = null
+    private var demandGeneration = 0L
 
     val state: StateFlow<SlideState> = _state.asStateFlow()
     val paused: StateFlow<Boolean> = _paused.asStateFlow()
@@ -283,7 +320,49 @@ class SlideshowController(
             is Command.Rest -> {
                 if (command.resting == isResting) return
                 _resting.value = command.resting
-                if (isResting) timer?.cancel() else wake()
+                if (isResting) {
+                    timer?.cancel()
+                    endDemand()
+                    // The current part of the photo on screen is rendered when the display comes on (wake()), not now.
+                    refresh?.cancel()
+                    refresh = null
+                    if (refreshFor != null) presentationChangedWhileResting = true
+                    refreshFor = null
+                    // Renderings queued before the display went off are dropped (spec `display-schedule`).
+                    images.ahead(emptyList(), emptyList(), keepFiles())
+                } else {
+                    wake()
+                }
+            }
+
+            is Command.Demanded -> {
+                if (command.generation != demandGeneration || isResting) return
+                demand = null
+                // Back to where the search found the photo, also in its pass.
+                demandMarks[command.photo.id]?.let(playlist::reset)
+                if (playlist.current?.id == command.photo.id) {
+                    emit(command.photo, command.file, command.step)
+                } else {
+                    // Gone from the order meanwhile: the search goes on from where it was.
+                    show(command.step)
+                }
+            }
+
+            is Command.DemandFailed -> {
+                if (command.generation != demandGeneration || isResting) return
+                demand = null
+                // The next tick tries the photos after the last one tried (spec "Bounded rendering ahead"), from where the
+                // search found it. After a step back the tick goes forward, so the order goes back to where the search
+                // began instead, and the tick does not render the failed photos behind it again.
+                val mark = if (command.step < 0) demandStart else demandMarks[command.last.id]
+                // Without a mark (the library changed meanwhile) the order goes to the last one tried, if it is still
+                // there, so the tick does not render the failed photos again.
+                if (mark != null) {
+                    playlist.reset(mark)
+                } else if (command.step >= 0) {
+                    playlist.moveTo(command.last.id)
+                }
+                armTimer()
             }
 
             is Command.Pause -> {
@@ -324,11 +403,16 @@ class SlideshowController(
     private suspend fun onLibrary(command: Command.Library) {
         val current = (_state.value as? SlideState.Showing)?.photo
         val removed = playlist.update(command.photos, command.order)
+        // Positions found in the order before it changed no longer hold: a result of the renderings on demand then goes
+        // through a new search from the photo on screen.
+        demandMarks = emptyMap()
+        demandStart = null
         // The order follows the library at once; what the display shows waits until it comes on.
         if (isResting) return
         when {
             command.photos.isEmpty() -> {
                 timer?.cancel()
+                endDemand()
                 _nextUp.value = null
                 _state.value = SlideState.Empty
             }
@@ -385,13 +469,25 @@ class SlideshowController(
     }
 
     /**
-     * Shows the next ([step] = +1), previous (-1) or current (0) photo of the
-     * order that has a finished display size. If none at all is finished,
-     * the first photo is rendered now and waited for.
+     * Shows the next ([step] = +1), previous (-1) or current (0) photo of the order that has a finished display size,
+     * an index lookup per photo. If no other photo is finished, the window of renderings ahead gets the first candidates,
+     * and at most [MAX_DEMAND_ATTEMPTS] of them are rendered on demand in the background (spec "Bounded rendering
+     * ahead"); a photo on screen stays meanwhile. If all of them fail, the next tick tries the following ones.
+     *
+     * A step skips the photo that is due only for one rendered ahead, not for one of the [recent] photos whose rendering
+     * is left from its turn: below the storage reserve nothing is rendered ahead, and the photo on screen and one shown
+     * before it, both still rendered, would take turns for good (spec `photo-library`, "Going below the storage
+     * reserve" › Local photos below the reserve). The due photo is then rendered on demand.
      */
     private suspend fun show(step: Int) {
         if (playlist.size == 0) return
+        endDemand()
+        val showing = (_state.value as? SlideState.Showing)?.photo
+        val start = playlist.mark()
         val candidates = ArrayList<PhotoEntry>()
+        val marks = HashMap<String, Playlist.Mark>()
+        val seen = HashSet<String>()
+        var due = true
         for (i in 0 until playlist.size) {
             val entry =
                 (
@@ -402,44 +498,81 @@ class SlideshowController(
                     } else {
                         playlist.next()
                     }
-                ) ?: return
-            val file = images.ready(entry)
+                ) ?: break
+            // A step looks for another photo: the one on screen is the last resort, after renderings on demand.
+            if (step != 0 && entry.id == showing?.id) continue
+            val eligible = step == 0 || due || entry.id !in recent
+            due = false
+            val file = if (eligible) images.ready(entry) else null
             if (file != null) {
                 emit(entry, file, step)
                 // The file may be of an older section, fill mode or orientation: the current one follows
                 refreshShown()
                 return
             }
-            candidates += entry
-            images.prefetch(listOf(entry), RenderPriority.NEXT)
-        }
-        // No photo finished. If one is already showing, it stays until the next is finished.
-        val showing = (_state.value as? SlideState.Showing)?.photo
-        if (showing != null && playlist.moveTo(showing.id) != null) {
-            armTimer()
-            return
-        }
-        // First start with an empty cache: render the first photo now and wait for it.
-        _state.value = SlideState.Loading
-        for (entry in candidates) {
-            playlist.moveTo(entry.id) ?: continue
-            try {
-                emit(entry, images.render(entry), step)
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                // An OutOfMemoryError skips the photo as well (spec `slideshow-display`, "Skip faulty files").
-                log.w(TAG, "Photo skipped, rendering failed: ${entry.path}")
+            // Across the end of a pass the same photo can come again: it is a candidate once.
+            if (candidates.size < PREFETCH_AHEAD && entry.id !in seen) {
+                seen += entry.id
+                candidates += entry
+                if (candidates.size <= MAX_DEMAND_ATTEMPTS) marks[entry.id] = playlist.mark()
             }
         }
+        // Back to where the search began, also in the pass: the candidates are rendered first.
+        playlist.reset(start)
+        val stays = showing != null && playlist.current?.id == showing.id
+        if (candidates.isEmpty()) {
+            // Only the photo on screen is left in the order.
+            if (stays) armTimer()
+            return
+        }
+        images.ahead(candidates.take(NEXT_AHEAD), candidates.drop(NEXT_AHEAD), keepFiles())
+        // First start with an empty cache: a photo is rendered now and waited for.
+        if (!stays) _state.value = SlideState.Loading
+        val generation = demandGeneration
+        demandMarks = marks
+        demandStart = start
+        val tries = candidates.take(MAX_DEMAND_ATTEMPTS)
+        demand =
+            scope.launch {
+                for (entry in tries) {
+                    val file =
+                        try {
+                            images.render(entry)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            // An OutOfMemoryError skips the photo as well (spec `slideshow-display`, "Skip faulty files").
+                            log.w(TAG, "Photo skipped, rendering failed: ${entry.path}")
+                            continue
+                        }
+                    commands.send(Command.Demanded(generation, entry, file, step))
+                    return@launch
+                }
+                commands.send(Command.DemandFailed(generation, tries.last(), step))
+            }
     }
+
+    /** Ends the renderings on demand of an earlier search; a result that still arrives is ignored. */
+    private fun endDemand() {
+        demand?.cancel()
+        demand = null
+        demandMarks = emptyMap()
+        demandStart = null
+        demandGeneration++
+    }
+
+    /** The files on screen and next up, which no trim of the render cache removes. */
+    private fun keepFiles(): List<File> = listOfNotNull((_state.value as? SlideState.Showing)?.file, _nextUp.value?.second)
 
     private fun emit(
         entry: PhotoEntry,
         file: File,
         step: Int,
     ) {
+        endDemand()
+        recent.remove(entry.id)
+        recent.addLast(entry.id)
+        while (recent.size > PREFETCH_AHEAD) recent.removeFirst()
         seq++
         _state.value = SlideState.Showing(entry, file, step, seq)
         armTimer()
@@ -489,13 +622,18 @@ class SlideshowController(
     ) {
         seq++
         _state.value = SlideState.Showing(photo, file, 0, seq)
+        // The file kept for the screen is the new one now.
+        prefetchUpcoming()
     }
 
     private fun prefetchUpcoming() {
         val upcoming = playlist.upcoming(PREFETCH_AHEAD)
-        _nextUp.value = upcoming.firstNotNullOfOrNull { e -> images.ready(e)?.let { e to it } }
-        images.prefetch(upcoming.take(NEXT_AHEAD), RenderPriority.NEXT)
-        images.prefetch(upcoming.drop(NEXT_AHEAD), RenderPriority.PREFETCH)
+        // The photo the next step shows if it is ready: the due one, or one rendered ahead (see [show]).
+        _nextUp.value =
+            upcoming.withIndex().firstNotNullOfOrNull { (i, e) ->
+                if (i == 0 || e.id !in recent) images.ready(e)?.let { e to it } else null
+            }
+        images.ahead(upcoming.take(NEXT_AHEAD), upcoming.drop(NEXT_AHEAD), keepFiles())
     }
 
     private fun armTimer() {
@@ -514,5 +652,8 @@ class SlideshowController(
         const val TAG = "slideshow"
         const val NEXT_AHEAD = 2
         const val PREFETCH_AHEAD = 10
+
+        /** Photos rendered on demand in a row while none is ready, before the next tick tries the following ones. */
+        const val MAX_DEMAND_ATTEMPTS = 3
     }
 }

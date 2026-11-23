@@ -23,6 +23,35 @@ class PlaylistTest {
 
     private val ten = (1..10).map { photo(it) }
 
+    /** Design decision 6 of `library-performance`: looking ahead across the end of a pass keeps the pass. */
+    @RepeatedTest(10)
+    fun `Reset after looking ahead returns to the position and the pass`() {
+        val p = Playlist(Random(System.nanoTime()))
+        p.update(ten, Order.SHUFFLE)
+        repeat(3) { p.next() }
+        val mark = p.mark()
+        val rest = p.upcoming(10)
+        // Across the end of the pass: next() shuffles a new one.
+        repeat(15) { p.next() }
+        p.reset(mark)
+        assertEquals(rest, p.upcoming(10), "the photos of this pass not shown yet")
+        val shown = mutableListOf<PhotoEntry>()
+        repeat(6) { shown += p.next()!! }
+        assertEquals(rest, shown)
+    }
+
+    @Test
+    fun `Reset drops photos that left the order meanwhile`() {
+        val p = Playlist(Random(1))
+        p.update(ten, Order.CHRONOLOGICAL)
+        p.next()
+        val mark = p.mark()
+        p.update(ten - ten[1], Order.CHRONOLOGICAL)
+        p.reset(mark)
+        assertEquals(ten[2], p.next())
+        assertEquals(9, p.size)
+    }
+
     @RepeatedTest(20)
     fun `Shuffle without repeats within a pass`() {
         val p = Playlist(Random(System.nanoTime()))

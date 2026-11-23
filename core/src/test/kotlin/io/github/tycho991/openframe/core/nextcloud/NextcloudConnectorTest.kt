@@ -51,7 +51,6 @@ class NextcloudConnectorTest {
             PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)).also { it.load() },
             JvmMediaEngine(),
             File(dir, "sources"),
-            {},
             clock,
             log,
         ).also { it.start() }

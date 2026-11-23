@@ -69,7 +69,6 @@ class NextcloudSecrecyTest {
             index,
             JvmMediaEngine(),
             File(dir, "sources"),
-            {},
             TestClock(),
             log,
         ).also {

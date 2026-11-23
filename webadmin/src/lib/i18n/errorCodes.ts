@@ -94,6 +94,7 @@ export const errorKeys: Record<string, Key> = {
   no_address: "error.no_address",
   read_only_source: "error.read_only_source",
   invalid_album: "error.invalid_album",
+  album_unreadable: "error.album_unreadable",
   nextcloud_unreachable: "error.nextcloud_unreachable",
   nextcloud_insecure_login: "error.nextcloud_insecure_login",
   source_no_folder: "error.source_no_folder",

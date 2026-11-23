@@ -181,8 +181,15 @@ class ApkAssets(
 /** Reports files to the MediaStore so that a computer over USB (MTP) sees them, and no longer sees deleted ones. */
 class AndroidMediaStoreNotifier(
     private val context: Context,
+    /** Asks the media scanner for [paths]; a test records the requests. */
+    private val scan: (Context, Array<String>) -> Unit = { c, paths -> MediaScannerConnection.scanFile(c, paths, null, null) },
 ) : MediaStoreNotifier {
     override fun notifyChanged(file: java.io.File) {
-        MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), null, null)
+        scan(context, arrayOf(file.absolutePath))
+    }
+
+    /** All files of a batch or an upload in one request (design decision 8 of `library-performance`). */
+    override fun notifyChanged(files: List<java.io.File>) {
+        if (files.isNotEmpty()) scan(context, files.map { it.absolutePath }.toTypedArray())
     }
 }

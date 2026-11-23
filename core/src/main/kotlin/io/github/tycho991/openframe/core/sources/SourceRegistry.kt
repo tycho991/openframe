@@ -28,11 +28,6 @@ class SourceRegistry(
     private val engine: MediaEngine,
     /** `cache/sources`: the originals of each source are in a folder named by its ID. */
     private val originalsDir: File,
-    /**
-     * Photos left the library: their renderings are not needed any more. Called once with all photos removed together,
-     * never with an empty list.
-     */
-    private val onPhotosRemoved: (List<PhotoEntry>) -> Unit,
     private val clock: Clock,
     private val log: AppLog,
     /** Called after a source was removed, for files that an older version kept for it. */
@@ -40,11 +35,17 @@ class SourceRegistry(
     private val freeBytes: (File) -> Long = { it.usableSpace },
     /** After each sync of a source, also one that failed: what arrived before the failure stays. */
     private val onSynced: () -> Unit = {},
+    /** The storage reserve that downloads leave free ([io.github.tycho991.openframe.core.library.StorageReserve]). */
+    private val reserveBytes: Long = OriginalsStore.ON_DEMAND_FLOOR_BYTES,
 ) {
     private class Running(
         val source: RemoteSource,
         val scheduler: SourceScheduler,
     )
+
+    /** Runs before the originals folder of a removed source is deleted in the background; a test holds it there. */
+    @Volatile
+    internal var beforeFolderDeleted: () -> Unit = {}
 
     private val kinds = kinds.associateBy { it.id }
     private val running = ConcurrentHashMap<String, Running>()
@@ -167,10 +168,12 @@ class SourceRegistry(
     }
 
     /**
-     * Removes [id]: stops its sync, deletes its credentials and removes its photos, skipped files and originals, then asks
-     * the server to revoke the credentials in the background, so that a server that does not answer does not hold up the
-     * request. Other sources and the local photos are not touched. `false` for an unknown ID, also for the second of two
-     * removals at once.
+     * Removes [id]: stops its sync, deletes its credentials and removes its photos and skipped files, then deletes its
+     * originals and asks the server to revoke the credentials in the background, so that neither thousands of files nor
+     * a server that does not answer hold up the request (design decision 11 of `library-performance`). The renderings go
+     * through the index's notification. A deletion that the end of the process cuts off is completed at the next start
+     * that can read the list of sources ([removeOrphans]). Other sources and the local photos are not touched. `false`
+     * for an unknown ID, also for the second of two removals at once.
      */
     @Synchronized
     fun remove(id: String): Boolean {
@@ -188,13 +191,28 @@ class SourceRegistry(
                 edit.skipped(id).forEach { edit.unskip(id, it.path) }
                 photos
             }
-        if (removed.isNotEmpty()) onPhotosRemoved(removed)
-        (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes)).delete()
+        scope.launch {
+            beforeFolderDeleted()
+            (gone?.source?.originals ?: OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes)).delete()
+        }
         onSourceRemoved(config)
         log.i(TAG, "Source $id removed, ${removed.size} photos removed")
         // Credentials the server refused are not sent again: each attempt counts as a failed login there.
         if (!refused) kindOf(config)?.let { kind -> scope.launch { revoke(id, kind, config) } }
         return true
+    }
+
+    /**
+     * Photos left the index (the index's notification, design decision 4 of `library-performance`): the originals of
+     * remote ones go on the registry's scope through their running source. Called inside the index's lock, so it takes
+     * no lock of the registry; a source being removed is no longer running, and its folder goes as a whole.
+     */
+    fun photosRemoved(entries: List<PhotoEntry>) {
+        val bySource = entries.filter { it.source != LocalPhotoSource.SOURCE_ID }.groupBy { it.source }
+        for ((id, photos) in bySource) {
+            val store = running[id]?.source?.originals ?: continue
+            scope.launch { store.removeAll(photos.map { it.id }) }
+        }
     }
 
     /** The network changed: every source that waits for a retry tries sooner. */
@@ -205,11 +223,14 @@ class SourceRegistry(
     /**
      * The original of [entry] for a rendering, fetched again if it was removed from the cache, and pinned with [pin]. A
      * source whose access was rejected sends no request with the refused credentials (spec "Rejected access" › Removed
-     * original wanted): only an original that is still stored is given.
+     * original wanted): only an original that is still stored is given. [onDemand] and [ended] as in
+     * [RemoteSource.original].
      */
     fun original(
         entry: PhotoEntry,
         pin: Boolean = false,
+        onDemand: Boolean = false,
+        ended: () -> Boolean = { false },
     ): File {
         val running =
             running[entry.source] ?: throw SourceException(SourceException.Kind.NOT_FOUND, "The source of ${entry.path} is not there")
@@ -218,26 +239,25 @@ class SourceRegistry(
             val kind = SourceException.Kind.entries.firstOrNull { it.code == last.errorCode } ?: SourceException.Kind.UNAUTHORIZED
             throw SourceException(kind, "The server refused access to the source ${entry.source}; ${entry.path} is not fetched")
         }
-        return running.source.original(entry, pin)
+        return running.source.original(entry, pin, onDemand, ended)
     }
 
     private fun removeOrphans() {
         val known = configs.sources.value.mapTo(HashSet()) { it.id } + LocalPhotoSource.SOURCE_ID
         val orphans =
             index.edit { edit ->
-                val photos = edit.photos.values.filter { it.source !in known }
+                val photos = edit.all().filter { it.source !in known }
                 photos.forEach { edit.remove(it.id) }
                 edit.skipped.values
                     .filter { it.source !in known }
                     .forEach { edit.unskip(it.source, it.path) }
                 photos
             }
-        if (orphans.isNotEmpty()) onPhotosRemoved(orphans)
         originalsDir
             .listFiles()
             .orEmpty()
             .filter { it.isDirectory && it.name !in known }
-            .forEach { OriginalsStore(it, freeBytes).delete() }
+            .forEach { OriginalsStore(it, freeBytes, reserveBytes).delete() }
         if (orphans.isNotEmpty()) log.w(TAG, "${orphans.size} photos of sources that are not stored any more removed")
     }
 
@@ -255,8 +275,7 @@ class SourceRegistry(
                 kind,
                 index,
                 engine,
-                OriginalsStore(File(originalsDir, id), freeBytes),
-                onPhotosRemoved,
+                OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes),
                 log,
                 onStale = { running[id]?.scheduler?.staleOriginal() },
                 clock = clock,

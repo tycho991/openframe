@@ -46,7 +46,7 @@ class CaptionOverlayTest {
     private val b = root.findViewById<LinearLayout>(R.id.caption_b)
     private val overlay = CaptionOverlay(container, a, b)
     private val renderer =
-        SlideRenderer(root.findViewById<ImageView>(R.id.photo_a), root.findViewById(R.id.photo_b), {}, overlay::swapStarted)
+        SlideRenderer(root.findViewById<ImageView>(R.id.photo_a), root.findViewById(R.id.photo_b), {}, onSwap = overlay::swapStarted)
 
     @After
     fun tearDown() = renderer.release()

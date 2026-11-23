@@ -30,6 +30,7 @@ import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.http.ServerState
 import io.github.tycho991.openframe.core.http.StaticAssets
 import io.github.tycho991.openframe.core.identity.FrameIdentity
+import io.github.tycho991.openframe.core.library.CaptureDates
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
 import io.github.tycho991.openframe.core.library.MetadataBackfill
 import io.github.tycho991.openframe.core.library.PhotoEntry
@@ -37,6 +38,7 @@ import io.github.tycho991.openframe.core.library.PhotoIndexStore
 import io.github.tycho991.openframe.core.library.PhotoLibrary
 import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSizes
+import io.github.tycho991.openframe.core.library.StorageReserve
 import io.github.tycho991.openframe.core.library.StoredIndex
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.log.LogSink
@@ -133,6 +135,8 @@ class FrameCore(
     private val port: Int = DEFAULT_PORT,
     logSinks: List<LogSink> = emptyList(),
     private val scanInterval: Duration = Duration.ofSeconds(15),
+    /** How often the photo folder is scanned while the display is off (design decision 7 of `library-performance`). */
+    private val nightScanInterval: Duration = Duration.ofMinutes(5),
     /** Where the Nextcloud sources get their connections from; the real ones unless a test hands in fakes. */
     nextcloudClients: NextcloudClients? = null,
     /** Switching the display off and on; a device without it never switches the display (spec `display-schedule`). */
@@ -210,10 +214,18 @@ class FrameCore(
     val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
+    /** The storage reserve of the data volume, computed once from the cache folder (design decision 1 of `library-performance`). */
+    private val volumeBytes = platform.totalBytes(dirs.cache.apply { mkdirs() })
+    val reserveBytes = StorageReserve.bytes(volumeBytes)
+
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
     private val index =
-        PhotoIndexStore(JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true))
-    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted)
+        PhotoIndexStore(
+            JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true),
+            log,
+            ::photosRemoved,
+        )
+    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
@@ -235,11 +247,12 @@ class FrameCore(
             index,
             engine,
             File(dirs.cache, "sources"),
-            { removed -> cache.removeAll(removed.map { it.id }) },
             clock,
             log,
             migration::sourceRemoved,
+            freeBytes = platform::freeBytes,
             onSynced = { backfill.request() },
+            reserveBytes = reserveBytes,
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
@@ -257,8 +270,11 @@ class FrameCore(
             onCrashed = ::quarantine,
             fetch = originals::fileOf,
             release = originals::release,
+            freeBytes = platform::freeBytes,
+            reserveBytes = reserveBytes,
+            clock = clock,
         )
-    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log)
+    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, reserveBytes)
 
     /** Updates of the app from GitHub's releases (spec `app-update`). Android reports installation results here. */
     val update =
@@ -349,6 +365,7 @@ class FrameCore(
             "Start: ${platform.model}, Android ${platform.androidVersion}, App ${platform.appVersion} (${platform.appVersionCode ?: "?"}, $build)",
         )
         logHealth()
+        log.i(TAG, "Storage reserve: ${reserveBytes / StorageReserve.MIB} MiB of ${volumeBytes / StorageReserve.MIB} MiB")
         settings.load()
         transitions.load()
         clients.load()
@@ -360,6 +377,16 @@ class FrameCore(
         val migrated = loadedSources == SourceConfigStore.Loaded.MISSING && migration.migrate()
         identity = FrameIdentity.loadOrCreate(identityStore)
         library.removePartialUploads()
+        correctCaptureDates()
+        // Renderings of photos that are not in the index, and of versions it will assign again: files from before the
+        // update, a deletion the end of the process cut off, an index restored from its backup (design decision 4 of
+        // `library-performance`). Before the slideshow asks for any.
+        val swept =
+            cache.sweep { id ->
+                index.library.value.photos[id]
+                    ?.version
+            }
+        if (swept > 0) log.i(TAG, "$swept renderings of photos that are not in the index removed")
         // Renderings of an older format, after an update; on the core's scope, there may be thousands of files.
         scope.launch {
             RenderCache.staleFolders(dirs.cache).forEach { stale ->
@@ -378,7 +405,12 @@ class FrameCore(
             display.state
                 .map { !it.on }
                 .distinctUntilChanged()
-                .collect(slideshow::setResting)
+                .collect { resting ->
+                    slideshow.setResting(resting)
+                    // While the display was off the folder was scanned less often (spec "Local scan while the display is off").
+                    if (!resting && wasResting) requestScan()
+                    wasResting = resting
+                }
         }
         // A pairing code only while someone can see it: the display is on and not in a dark wake (design decision 5
         // of harden-lan-server).
@@ -556,6 +588,30 @@ class FrameCore(
         scanSignal.trySend(Unit)
     }
 
+    /** The display was off at its last change; see [start]. */
+    private var wasResting = false
+
+    /** When the last scan began or was asked for by a client, on [Clock.monotonicMillis]. */
+    @Volatile private var lastScanMono = Long.MIN_VALUE / 2
+
+    /** Scans that began, for the tests of the cadence. */
+    internal val scans =
+        java.util.concurrent.atomic
+            .AtomicInteger()
+
+    /**
+     * A client fetches photos, albums or skipped files: a scan now unless one began less than [CLIENT_SCAN_MS] ago, so
+     * that a file copied over USB at night shows at the client's next fetch. The request does not wait for it.
+     */
+    private fun scanForClient() {
+        val now = clock.monotonicMillis()
+        synchronized(scanSignal) {
+            if (now - lastScanMono <= CLIENT_SCAN_MS) return
+            lastScanMono = now
+        }
+        requestScan()
+    }
+
     /** "Local only" mode, only through the device menu. */
     fun setLocalOnly(enabled: Boolean) = settings.setLocalOnly(enabled)
 
@@ -573,6 +629,31 @@ class FrameCore(
                 log.e(TAG, "Revoking all pairings failed", e)
             }
         }
+
+    /**
+     * Photos left the index, by any path (design decision 4 of `library-performance`): their renderings and the
+     * originals of remote ones go. Inside the index's lock; both only change memory and delete in the background.
+     */
+    private fun photosRemoved(removed: List<PhotoEntry>) {
+        cache.removeAll(removed)
+        sources.photosRemoved(removed)
+    }
+
+    /**
+     * Entries with a capture date before 1800, from before such dates counted as missing, get their file date (spec
+     * `photo-library`, "Implausible capture dates"), in one edit.
+     */
+    private fun correctCaptureDates() {
+        val corrected =
+            index.edit { edit ->
+                edit
+                    .all()
+                    .filter { CaptureDates.implausible(it.takenAtMs) }
+                    .onEach { edit.put(it.copy(takenAtMs = it.modifiedMs)) }
+                    .size
+            }
+        if (corrected > 0) log.i(TAG, "$corrected implausible capture dates replaced by the file date")
+    }
 
     /** Quarantines the version of [entry] whose rendering crashed the decoder, unless the file changed meanwhile. */
     private fun quarantine(entry: PhotoEntry) {
@@ -623,7 +704,7 @@ class FrameCore(
         router.pairingRoutes(pairing, clients, log, ::adminUrl)
         router.settingsRoutes(settings)
         val photos = PhotoDtos(library, settings, signer, places, platform)
-        router.libraryRoutes(library, settings, photos, transitions, platform, health::safe)
+        router.libraryRoutes(library, settings, photos, transitions, platform, health::safe) { if (!health.safe) scanForClient() }
         router.sourcesRoutes(sources, nextcloud, health::safe)
         router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
@@ -632,8 +713,15 @@ class FrameCore(
         router.diagnosticsRoutes(log)
     }
 
+    /**
+     * Scans the photo folder every [scanInterval] while the display is on and every [nightScanInterval] while it is off,
+     * and at once on [requestScan] (spec `photo-library`, "Local scan while the display is off"). The waits run on
+     * coroutine time.
+     */
     private suspend fun scanLoop() {
         while (scope.isActive) {
+            synchronized(scanSignal) { lastScanMono = clock.monotonicMillis() }
+            scans.incrementAndGet()
             try {
                 backfill.scanned(localSource.scan())
             } catch (e: CancellationException) {
@@ -641,7 +729,8 @@ class FrameCore(
             } catch (e: Exception) {
                 log.e(TAG, "Scan failed", e)
             }
-            withTimeoutOrNull(scanInterval.toMillis()) { scanSignal.receive() }
+            val wait = if (display.state.value.on) scanInterval else nightScanInterval
+            withTimeoutOrNull(wait.toMillis()) { scanSignal.receive() }
         }
     }
 
@@ -655,6 +744,9 @@ class FrameCore(
         private const val HANDLER_THREADS = 8
         private const val LAN_ADDRESS_TTL_MS = 5_000L
         private const val STOP_WAIT_MS = 5_000L
+
+        /** A client's fetch scans the folder only when the last scan began longer ago than this. */
+        private const val CLIENT_SCAN_MS = 15_000L
         private const val TAG = "core"
 
         /** `http://<ip>:<port>/`, without the port for port 80. */

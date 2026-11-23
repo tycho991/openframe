@@ -25,6 +25,8 @@ class PhotoLibrary(
     private val notifier: MediaStoreNotifier,
     private val platform: PlatformInfo,
     private val log: AppLog,
+    /** The storage reserve an upload leaves free ([StorageReserve]). */
+    val reserveBytes: Long = StorageReserve.MARGIN_BYTES,
 ) {
     fun setHidden(
         id: String,
@@ -53,25 +55,112 @@ class PhotoLibrary(
         edit.setAlbumHidden(album, hidden)
     }
 
-    /** Deletes file, index entry and rendered sizes. `false` if the photo does not exist, 409 for a photo of a read-only source. */
+    /** What a batch did with each ID: every ID ends in exactly one of the lists (spec "Batch changes"). */
+    class BatchResult(
+        val processed: List<String>,
+        val missing: List<String>,
+        val failed: List<String>,
+        /** The failed IDs of photos of a remote source, which the frame only reads; the others failed to delete. */
+        val readOnly: Set<String> = emptySet(),
+    )
+
+    /** Deletes a file; a test makes it fail. */
+    @Volatile
+    internal var deleteFile: (File) -> Boolean = { it.delete() }
+
+    /**
+     * Hides or shows the photos with [ids] in one edit, so the library version changes at most once (design decision 8
+     * of `library-performance`). Unknown IDs are missing; a photo already in that state counts as processed.
+     */
+    fun setHiddenAll(
+        ids: Collection<String>,
+        hidden: Boolean,
+    ): BatchResult {
+        val processed = ArrayList<String>()
+        val missing = ArrayList<String>()
+        index.edit { edit ->
+            for (id in ids.distinct()) {
+                val entry = edit.get(id)
+                if (entry == null) {
+                    missing += id
+                } else {
+                    if (entry.hidden != hidden) edit.put(entry.copy(hidden = hidden))
+                    processed += id
+                }
+            }
+        }
+        return BatchResult(processed, missing, emptyList())
+    }
+
+    /**
+     * Deletes the files of the photos with [ids] and removes them in one edit, with one report to the media store; the
+     * renderings go through the index's notification. Unknown IDs are missing; a photo of a remote source, which would
+     * come back with the next sync, and a file that cannot be deleted are failed; a file already gone counts as deleted.
+     * While the photo folder is unavailable a missing file says nothing, so a batch with a local photo deletes nothing:
+     * 503 `storage_unavailable` (spec "Photo folder kept"). A batch of remote and unknown IDs answers as before.
+     */
+    fun deleteAll(ids: Collection<String>): BatchResult {
+        val library = index.library.value
+        val distinct = ids.distinct()
+        if (distinct.any { library.photos[it]?.source == LocalPhotoSource.SOURCE_ID } && !local.available()) throw storageUnavailable()
+        val deleted = ArrayList<PhotoEntry>()
+        val missing = ArrayList<String>()
+        val failed = ArrayList<String>()
+        val readOnly = HashSet<String>()
+        for (id in distinct) {
+            val entry = library.photos[id]
+            when {
+                entry == null -> {
+                    missing += id
+                }
+
+                entry.source != LocalPhotoSource.SOURCE_ID -> {
+                    failed += id
+                    readOnly += id
+                }
+
+                local.fileOf(entry).let { !it.exists() || runCatching { deleteFile(it) }.getOrDefault(false) } -> {
+                    deleted += entry
+                }
+
+                else -> {
+                    failed += id
+                }
+            }
+        }
+        if (deleted.isNotEmpty()) {
+            index.edit { edit -> deleted.forEach { edit.remove(it.id) } }
+            notifier.notifyChanged(deleted.map(local::fileOf))
+            if (deleted.size == 1) log.i(TAG, "Deleted: ${deleted.single().path}") else log.i(TAG, "Deleted: ${deleted.size} photos")
+        }
+        return BatchResult(deleted.map { it.id }, missing, failed, readOnly)
+    }
+
+    /**
+     * Deletes file, index entry and rendered sizes: [deleteAll] of one ID. `false` if the photo does not exist, 409 for a
+     * photo of a read-only source, 500 if its file cannot be deleted, 503 while the photo folder is unavailable.
+     */
     fun delete(id: String): Boolean {
-        val entry = index.library.value.photos[id] ?: return false
+        val result = deleteAll(listOf(id))
+        if (result.missing.isNotEmpty()) return false
+        if (result.failed.isEmpty()) return true
         // A photo that the frame only reads would come back with the next sync.
-        if (entry.source != LocalPhotoSource.SOURCE_ID) {
+        if (id in result.readOnly) {
             throw HttpException(
                 409,
                 "read_only_source",
                 "This photo comes from a remote source and cannot be deleted here. Hide it instead.",
             )
         }
-        val file = local.fileOf(entry)
-        if (file.exists() && !file.delete()) throw HttpException(500, "delete_failed", "File could not be deleted")
-        index.edit { it.remove(id) }
-        cache.remove(id)
-        notifier.notifyChanged(file)
-        log.i(TAG, "Deleted: ${entry.path}")
-        return true
+        throw HttpException(500, "delete_failed", "File could not be deleted")
     }
+
+    private fun storageUnavailable() =
+        HttpException(
+            503,
+            "storage_unavailable",
+            "The photo folder is not available; is the storage mounted?",
+        )
 
     /**
      * Upload by `multipart/form-data` with an optional field `album` and files
@@ -83,16 +172,10 @@ class PhotoLibrary(
             MultipartReader.boundaryOf(request.header("content-type"))
                 ?: throw HttpException(415, "unsupported_media_type", "Expected multipart/form-data")
         val root = local.root
-        if (!local.available()) {
-            throw HttpException(
-                503,
-                "storage_unavailable",
-                "The photo folder is not available; is the storage mounted?",
-            )
-        }
+        if (!local.available()) throw storageUnavailable()
         val staging = File(root, STAGING).apply { mkdirs() }
         request.contentLength?.let { length ->
-            if (platform.freeBytes(root) - length < RESERVE_BYTES) throw insufficientStorage()
+            if (platform.freeBytes(root) - length < reserveBytes) throw insufficientStorage()
         }
         val staged = mutableListOf<Staged>()
         var album: String? = null
@@ -118,7 +201,7 @@ class PhotoLibrary(
             }
             if (staged.isEmpty()) throw HttpException.badRequest("No file in the field file")
             for (s in staged) s.info = check(s)
-            return staged.map { move(it, album) }
+            return moveAll(staged, album)
         } finally {
             staged.forEach { it.tmp.delete() }
         }
@@ -155,27 +238,108 @@ class PhotoLibrary(
         }
     }
 
-    private fun move(
-        s: Staged,
+    /** Renames a staged file into place; a test makes it fail. */
+    @Volatile
+    internal var renameFile: (File, File) -> Boolean = { from, to -> from.renameTo(to) }
+
+    /**
+     * Puts all [staged] files in place, all or nothing (design decision 9 of `library-performance`): under one lock the
+     * targets of all files are resolved, also against each other, and then all are renamed; if one rename fails, the
+     * ones already renamed are deleted before anything is indexed. Then one edit adds all of them, and one report goes
+     * to the media store.
+     */
+    private fun moveAll(
+        staged: List<Staged>,
         album: String?,
-    ): PhotoEntry {
-        val dir = if (album != null) File(local.root, album) else local.root
-        dir.mkdirs()
-        val info = s.info!!
-        val name = if (ImageFormats.hasImageExtension(s.name)) s.name else "${s.name}.${info.format.extension}"
+    ): List<PhotoEntry> {
         // Concurrent uploads with the same name must not overwrite each other.
-        val target =
+        val targets =
             synchronized(this) {
-                uniqueFile(
-                    dir,
-                    name,
-                ).also { if (!s.tmp.renameTo(it)) throw HttpException(500, "move_failed", "File could not be put in place") }
+                val (dir, created) = albumFolder(album)
+                val taken = HashSet<String>()
+                val targets =
+                    staged.map { s ->
+                        val name = if (ImageFormats.hasImageExtension(s.name)) s.name else "${s.name}.${s.info!!.format.extension}"
+                        // Compared without letter case: the photo folder of the reference devices does not tell it apart.
+                        uniqueFile(dir, name) { it.exists() || it.name.lowercase() in taken }.also { taken += it.name.lowercase() }
+                    }
+                val moved = ArrayList<File>()
+                for ((s, target) in staged.zip(targets)) {
+                    if (!renameFile(s.tmp, target)) {
+                        moved.forEach { it.delete() }
+                        // Folders this upload created go as well, deepest first; delete() leaves one that is not empty.
+                        removeFolders(created)
+                        throw HttpException(500, "move_failed", "File could not be put in place")
+                    }
+                    moved += target
+                }
+                targets
             }
-        val entry = local.add(target, info)
-        notifier.notifyChanged(target)
-        log.i(TAG, "Uploaded: ${entry.path}")
-        return entry
+        val entries = local.addAll(staged.zip(targets).map { (s, target) -> target to s.info!! })
+        notifier.notifyChanged(targets)
+        entries.forEach { log.i(TAG, "Uploaded: ${it.path}") }
+        return entries
     }
+
+    /** The names in a folder; a test makes the photo folder behave as one that does not tell letter case apart. */
+    @Volatile
+    internal var listNames: (File) -> Array<String>? = { it.list() }
+
+    /**
+     * The folder of [album], created if needed, and the folders created for it, top first. Each level is resolved from
+     * the listing of its parent: the same name if it is there, else a folder whose name differs only in letter case
+     * (spec "Upload into an album in another letter case"), else a new one. Never by `exists()`, which says yes for
+     * `holiday` on the frames' file system when only `Holiday` is there, so that the index path would not match the
+     * listing of the next scan. A level that exists as a file is 400 `invalid_album`.
+     */
+    private fun albumFolder(album: String?): Pair<File, List<File>> {
+        var dir = local.root
+        val levels = ArrayList<File>()
+        if (album != null) {
+            for (level in album.split('/')) {
+                val names =
+                    when {
+                        // Below a level that is still to be created there is nothing.
+                        !dir.exists() -> emptyArray()
+
+                        !dir.isDirectory -> throw invalidAlbum()
+
+                        // A folder that cannot be listed says nothing about what is in it.
+                        else -> listNames(dir) ?: throw HttpException(500, "album_unreadable", "The album folder could not be read")
+                    }
+                val name =
+                    when {
+                        level in names -> level
+                        else -> names.firstOrNull { it.equals(level, ignoreCase = true) && File(dir, it).isDirectory } ?: level
+                    }
+                dir = File(dir, name)
+                levels += dir
+            }
+        }
+        // Level by level, so that only folders this upload really created are recorded, never an existing file.
+        val created = ArrayList<File>()
+        for (level in levels) {
+            if (!level.exists() && level.mkdir()) created += level
+            if (!level.isDirectory) {
+                removeFolders(created)
+                throw invalidAlbum()
+            }
+        }
+        return dir to created
+    }
+
+    /** Deletes the folders this upload created, deepest first: only folders, and only empty ones. */
+    private fun removeFolders(created: List<File>) {
+        created.asReversed().forEach { if (it.isDirectory) it.delete() }
+    }
+
+    private fun invalidAlbum() =
+        HttpException(
+            400,
+            "invalid_album",
+            "The album path is invalid",
+            mapOf("album" to "A level of the album path is a file in the photo folder"),
+        )
 
     private fun copyWithSpaceCheck(
         input: java.io.InputStream,
@@ -192,30 +356,87 @@ class PhotoLibrary(
                 sinceCheck += n
                 if (sinceCheck >= SPACE_CHECK_BYTES) {
                     sinceCheck = 0
-                    if (platform.freeBytes(root) < RESERVE_BYTES) throw insufficientStorage()
+                    if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
                 }
             }
         }
-        if (platform.freeBytes(root) < RESERVE_BYTES) throw insufficientStorage()
+        if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
     }
 
     private fun insufficientStorage() =
-        HttpException(507, "insufficient_storage", "Not enough storage: less than 100 MB would remain free after the upload.")
+        HttpException(
+            507,
+            "insufficient_storage",
+            "Not enough storage: less than the storage reserve of ${reserveBytes / StorageReserve.MIB} MiB would remain free after the upload.",
+        )
 
     private fun unsupported(name: String) = HttpException(415, "unsupported_format", "$name has no supported format")
 
     companion object {
-        const val RESERVE_BYTES = 100L * 1024 * 1024
         private const val SPACE_CHECK_BYTES = 4L * 1024 * 1024
         private const val STAGING = ".upload"
         private const val PART = ".part"
         private const val TAG = "library"
         private const val FORBIDDEN = "<>:\"/\\|?*"
 
-        /** File name without path and without characters that lead outside the target folder or upset file systems. */
+        /** The most bytes of UTF-8 an uploaded file's name keeps, below the limit of 255 for ` (n)` and an extension. */
+        const val MAX_NAME_BYTES = 200
+
+        /**
+         * File name without path and without characters that lead outside the target folder or upset file systems, at
+         * most [MAX_NAME_BYTES] bytes of UTF-8 with its image extension kept, cut at code point boundaries (design
+         * decision 9 of `library-performance`). A long extension of another kind counts as part of the stem.
+         */
         fun sanitizeName(raw: String): String {
-            val base = raw.substringAfterLast('/').substringAfterLast('\\')
-            return cleanLevel(base).take(120).ifEmpty { "upload" }
+            val base = cleanLevel(raw.substringAfterLast('/').substringAfterLast('\\'))
+            val extension = if (ImageFormats.hasImageExtension(base)) "." + base.substringAfterLast('.') else ""
+            val stem = cutToBytes(base.dropLast(extension.length), MAX_NAME_BYTES - utf8Bytes(extension)).trimEnd()
+            return if (stem.isEmpty()) "upload$extension" else stem + extension
+        }
+
+        /** [text] cut at a code point boundary to at most [maxBytes] bytes of UTF-8. */
+        internal fun cutToBytes(
+            text: String,
+            maxBytes: Int,
+        ): String {
+            var bytes = 0
+            var i = 0
+            while (i < text.length) {
+                val codePoint = text.codePointAt(i)
+                bytes += utf8Bytes(codePoint)
+                if (bytes > maxBytes) break
+                i += Character.charCount(codePoint)
+            }
+            return text.substring(0, i)
+        }
+
+        private fun utf8Bytes(codePoint: Int): Int =
+            when {
+                codePoint < 0x80 -> 1
+                codePoint < 0x800 -> 2
+                codePoint < 0x10000 -> 3
+                else -> 4
+            }
+
+        private fun utf8Bytes(text: String): Int {
+            var bytes = 0
+            var i = 0
+            while (i < text.length) {
+                val codePoint = text.codePointAt(i)
+                bytes += utf8Bytes(codePoint)
+                i += Character.charCount(codePoint)
+            }
+            return bytes
+        }
+
+        /** [text] cut to at most [n] UTF-16 units, but never inside a surrogate pair. */
+        private fun takeUnits(
+            text: String,
+            n: Int,
+        ): String {
+            if (text.length <= n) return text
+            val end = if (Character.isHighSurrogate(text[n - 1])) n - 1 else n
+            return text.substring(0, end)
         }
 
         /**
@@ -238,7 +459,7 @@ class PhotoLibrary(
             val path =
                 raw
                     .split('/')
-                    .map { cleanLevel(it).take(64).trimEnd() }
+                    .map { takeUnits(cleanLevel(it), 64).trimEnd() }
                     .filter { it.isNotEmpty() }
                     .joinToString("/")
             if (path.length > MAX_ALBUM_PATH) {
@@ -252,15 +473,17 @@ class PhotoLibrary(
             return path.ifEmpty { null }
         }
 
+        /** [name] in [dir], or `name (n).ext` with the first `n` for which [taken] is false. */
         fun uniqueFile(
             dir: File,
             name: String,
+            taken: (File) -> Boolean = { it.exists() },
         ): File {
             val stem = name.substringBeforeLast('.')
             val ext = name.substringAfterLast('.', "")
             var candidate = File(dir, name)
             var n = 1
-            while (candidate.exists()) {
+            while (taken(candidate)) {
                 candidate = File(dir, if (ext.isEmpty()) "$stem ($n)" else "$stem ($n).$ext")
                 n++
             }

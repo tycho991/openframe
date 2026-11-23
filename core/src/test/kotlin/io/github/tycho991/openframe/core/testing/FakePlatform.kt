@@ -14,6 +14,8 @@ class FakePlatform(
     override var appDebuggable: Boolean = false,
     override var otherActivityEndsApp: Boolean = false,
     var free: Long? = null,
+    /** The size of the data volume, `null` for the real one of the folder. */
+    var total: Long? = null,
     var ips: List<String> = listOf("192.168.100.215"),
     override var systemLocale: Locale = Locale.ENGLISH,
     var mounted: Boolean = true,
@@ -23,4 +25,6 @@ class FakePlatform(
     override fun ipAddresses() = ips
 
     override fun freeBytes(dir: File): Long = free ?: super.freeBytes(dir)
+
+    override fun totalBytes(dir: File): Long = total ?: super.totalBytes(dir)
 }

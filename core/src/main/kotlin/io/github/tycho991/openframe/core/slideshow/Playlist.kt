@@ -102,6 +102,38 @@ class Playlist(
         return current
     }
 
+    /** The position in the order, to go back to with [reset] after looking ahead with [next] or [previous]. */
+    class Mark internal constructor(
+        internal val pass: List<String>,
+        internal val previousPass: List<String>,
+        internal val pos: Int,
+        internal val advanced: Boolean,
+    )
+
+    fun mark(): Mark = Mark(pass.toList(), previousPass, pos, advanced)
+
+    /**
+     * Goes back to [mark], also to the pass it was in: looking ahead across the end of a pass must not shuffle away the
+     * photos of this pass that have not been shown yet. Photos that left the order since are dropped.
+     */
+    fun reset(mark: Mark) {
+        val id = mark.pass.getOrNull(mark.pos)
+        pass = mark.pass.filter { it in photos }.toMutableList()
+        previousPass = mark.previousPass.filter { it in photos }
+        val found = id?.let { pass.indexOf(it) }?.takeIf { it >= 0 }
+        // The marked photo left the order: as in [update], the position points to the one after it already.
+        pos = found ?: mark.pass
+            .take(mark.pos)
+            .count { it in photos }
+            .coerceAtMost((pass.size - 1).coerceAtLeast(0))
+        advanced = if (found == null) pass.isNotEmpty() else mark.advanced
+        if (pass.size < photos.size) {
+            // A photo that came meanwhile goes after the current one, as in [update].
+            val known = pass.toHashSet()
+            photos.keys.filter { it !in known }.forEach { pass.add((pos + 1).coerceAtMost(pass.size), it) }
+        }
+    }
+
     /** Jumps to the photo [id] if it is in the current pass. */
     fun moveTo(id: String): PhotoEntry? {
         val i = pass.indexOf(id)

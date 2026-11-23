@@ -192,6 +192,11 @@ fun Router.libraryRoutes(
     platform: PlatformInfo,
     /** Safe mode: images and uploads answer 503 `safe_mode`, so that nothing decodes. */
     safeMode: () -> Boolean = { false },
+    /**
+     * A client fetches photos, albums or skipped files: the frame may scan its folder now (design decision 7 of
+     * `library-performance`). Not for `GET /state`, which clients poll.
+     */
+    onListed: () -> Unit = {},
 ) {
     val index = library.index
 
@@ -202,6 +207,7 @@ fun Router.libraryRoutes(
     fun entryOrThrow(id: String) = index.library.value.photos[id] ?: throw HttpException.notFound("No such photo")
 
     get("/api/v1/photos") { req ->
+        onListed()
         val sort =
             req.queryParam("sort")?.let { s ->
                 Sort.entries.firstOrNull { it.apiName == s }
@@ -264,31 +270,10 @@ fun Router.libraryRoutes(
         val body = req.bodyAs(BatchRequestDto.serializer())
         if (body.ids.isEmpty() || body.ids.size > 10_000) throw HttpException.badRequest("1 to 10000 IDs")
         if (body.action !in BATCH_ACTIONS) throw HttpException.badRequest("action is hide, show or delete")
-        val missing = mutableListOf<String>()
-        val failed = mutableListOf<String>()
-        var processed = 0
-        for (id in body.ids.distinct()) {
-            // One photo that cannot be processed must not stop the rest, so every ID ends in exactly one list.
-            try {
-                val found =
-                    if (body.action == "delete") {
-                        library.delete(id)
-                    } else {
-                        try {
-                            library.setHidden(id, body.action == "hide")
-                            true
-                        } catch (e: HttpException) {
-                            if (e.status == 404) false else throw e
-                        }
-                    }
-                if (found) processed++ else missing += id
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                failed += id
-            }
-        }
-        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(processed, missing, failed))
+        // One change of the library for the whole batch; every ID ends in exactly one list (spec "Batch changes").
+        val result =
+            if (body.action == "delete") library.deleteAll(body.ids) else library.setHiddenAll(body.ids, body.action == "hide")
+        HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(result.processed.size, result.missing, result.failed))
     }
 
     patch("/api/v1/photos/{photoId}") { req ->
@@ -333,6 +318,7 @@ fun Router.libraryRoutes(
     }
 
     get("/api/v1/skipped-files") {
+        onListed()
         val items =
             index.library.value.skipped.map {
                 SkippedFileDto(it.path, it.reason.apiName, it.fileSize, Instant.ofEpochMilli(it.modifiedMs).toString())
@@ -360,7 +346,10 @@ fun Router.libraryRoutes(
         return HttpResponse.json(AlbumListDto.serializer(), AlbumListDto(albums, noAlbum))
     }
 
-    get("/api/v1/albums") { req -> albumList(req.clientId!!) }
+    get("/api/v1/albums") { req ->
+        onListed()
+        albumList(req.clientId!!)
+    }
 
     // The album is in the body because its path contains `/`, and the answer is the whole
     // list because switching an album resets its sub-albums.

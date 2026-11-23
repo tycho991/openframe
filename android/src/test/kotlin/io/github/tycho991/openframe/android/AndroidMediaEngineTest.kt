@@ -82,6 +82,53 @@ class AndroidMediaEngineTest {
         assertNull(engine.probe(fixture("rotated8.jpg")).takenAt)
     }
 
+    /** Spec `photo-library`: Implausible capture dates › Camera without a set clock. */
+    @Test
+    fun `A date that is not on the calendar is no capture date`() {
+        assertNull(AndroidMediaEngine.parseExifDate("0000:00:00 00:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("2024:00:00 00:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("2024:02:30 12:00:00"))
+        assertNull(AndroidMediaEngine.parseExifDate("    :  :     :  :  "))
+        val valid = AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00")
+        val expected =
+            SimpleDateFormat(
+                "yyyy:MM:dd HH:mm:ss",
+                Locale.US,
+            ).apply { timeZone = TimeZone.getDefault() }.parse("2024:07:14 12:30:00")!!
+        assertEquals(expected.time, valid?.toEpochMilli())
+    }
+
+    /** A time in the gap of the switch to summer time is a capture date, moved forward as java.time does. */
+    @Test
+    fun `A time in the gap of the switch to summer time is a capture date`() {
+        val before = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Europe/Berlin"))
+            val inGap = AndroidMediaEngine.parseExifDate("2024:03:31 02:30:00")
+            assertEquals(java.time.Instant.parse("2024-03-31T01:30:00Z"), inGap)
+            assertEquals(java.time.Instant.parse("2024-07-14T10:30:00Z"), AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00"))
+        } finally {
+            TimeZone.setDefault(before)
+        }
+    }
+
+    /** The offset the camera recorded applies; an unknown zone of the device falls back to UTC (review). */
+    @Test
+    fun `The recorded offset applies and an unknown device zone falls back to UTC`() {
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T10:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00", "+02:00") { java.time.ZoneOffset.UTC },
+        )
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T12:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00", "garbage") { java.time.ZoneOffset.UTC },
+        )
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T12:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00") { throw java.time.zone.ZoneRulesException("Unknown time-zone ID") },
+        )
+    }
+
     @Test
     fun gpsPositionFromExif() {
         val siena = engine.probe(fixture("gps-siena.jpg")).gps!!

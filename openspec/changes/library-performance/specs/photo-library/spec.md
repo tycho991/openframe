@@ -62,7 +62,7 @@ It SHALL be possible to upload photos through the API, one or several, optionall
 - **THEN** the API answers with 507, stores nothing and leaves no partial file behind
 
 ### Requirement: Photo folder kept
-The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT switch to internal storage while the external storage is unavailable. While the storage is not mounted or the folder cannot be listed, a scan SHALL NOT remove entries, and uploads and deletes SHALL be rejected with 503 and the error code `storage_unavailable`. A folder deleted over USB on mounted storage SHALL be created again, and its entries removed.
+The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT switch to internal storage while the external storage is unavailable. While the storage is not mounted or the folder cannot be listed, a scan SHALL NOT remove entries, and uploads and deletes of local photos SHALL be rejected with 503 and the error code `storage_unavailable`. A folder deleted over USB on mounted storage SHALL be created again, and its entries removed.
 
 #### Scenario: Storage mounted late after a restart
 - **WHEN** the device restarts and its storage is mounted only after the app has started

@@ -9,6 +9,7 @@ import {
   FIXTURES,
   foldButton,
   frameSecret,
+  inPhotoFolder,
   many,
   openAlbum,
   pairInUi,
@@ -85,6 +86,56 @@ test("Confirm delete", async ({ page }) => {
   await page.getByRole("button", { name: "Löschen" }).click();
   await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
   await expect(page.locator(".count")).toHaveText("1 Foto");
+});
+
+/** The bodies of the batch requests the page sends, and the URLs of single DELETE requests, of which there are none. */
+function deleteRequests(page: Page) {
+  const batches: { action: string; ids: string[] }[] = [];
+  const singles: string[] = [];
+  page.on("request", (r: Request) => {
+    if (r.method() === "DELETE" && r.url().includes("/api/v1/photos/")) singles.push(r.url());
+    if (r.method() === "POST" && r.url().endsWith("/api/v1/photos:batch")) batches.push(r.postDataJSON());
+  });
+  return { batches, singles };
+}
+
+test("Delete a single photo through the batch endpoint", async ({ page }) => {
+  await usb("landscape.jpg", "weg.jpg");
+  await usb("landscape.jpg", "bleibt.jpg");
+  await pairInUi(page);
+  await openAlbum(page, "");
+  const before = await apiAsBrowser<PhotoList>(page, "/photos");
+  const { batches, singles } = deleteRequests(page);
+  await page.locator(".tile").first().click();
+  await page.getByRole("button", { name: "Löschen" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
+  await expect(page.locator(".count")).toHaveText("1 Foto");
+  const after = await apiAsBrowser<PhotoList>(page, "/photos");
+  const gone = before.items.find((p) => !after.items.some((q) => q.id === p.id))!;
+  expect(batches).toEqual([{ action: "delete", ids: [gone.id] }]);
+  expect(singles).toEqual([]);
+  expect(await inPhotoFolder(gone.path)).toBe(false);
+  expect(await inPhotoFolder(after.items[0].path)).toBe(true);
+});
+
+test("Delete a selection through the batch endpoint", async ({ page }) => {
+  for (const n of [1, 2, 3, 4]) await usb("landscape.jpg", `p${n}.jpg`);
+  await pairInUi(page);
+  await openAlbum(page, "");
+  await expect(page.locator(".tile")).toHaveCount(4);
+  const { batches, singles } = deleteRequests(page);
+  await page.getByRole("button", { name: "Auswählen" }).click();
+  for (const i of [0, 1, 2]) await page.locator(".tile").nth(i).click();
+  await page.getByRole("toolbar").getByRole("button", { name: "Löschen" }).click();
+  await expect(page.getByText("3 Fotos endgültig löschen?")).toBeVisible();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
+  await expect(page.locator(".count")).toHaveText("1 Foto");
+  expect(singles).toEqual([]);
+  expect(batches).toHaveLength(1);
+  expect(batches[0].action).toBe("delete");
+  expect(batches[0].ids).toHaveLength(3);
+  const left = (await apiAsBrowser<PhotoList>(page, "/photos")).items.map((p) => p.path);
+  for (const n of [1, 2, 3, 4]) expect(await inPhotoFolder(`p${n}.jpg`)).toBe(left.includes(`p${n}.jpg`));
 });
 
 test("Partial failure on upload", async ({ page }) => {

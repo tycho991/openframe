@@ -13,9 +13,11 @@ import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -51,7 +53,6 @@ class SourceOriginalsTest {
             index,
             engine,
             File(dir, "sources"),
-            {},
             TestClock(),
             log,
         ).also {
@@ -121,6 +122,87 @@ class SourceOriginalsTest {
         assertEquals(listOf("holiday/b.jpg"), remote("s0000beef").downloads)
         assertEquals(emptyList<String>(), remote("nextcloud").downloads)
         assertTrue(originals.has(entry))
+    }
+
+    /** The original of [entry] is evicted; [hook] runs in place of its next download, with the limits it got. */
+    private fun evicted(
+        entry: PhotoEntry,
+        hook: (DownloadLimits) -> Unit,
+    ): OriginalsStore {
+        val store = registry.source(entry.source)!!.originals
+        store.fileOf(entry).delete()
+        val folder = remote(entry.source)
+        folder.downloads.clear()
+        folder.beforeDownload = { hook(folder.limits.last()) }
+        return store
+    }
+
+    private fun waitUntil(
+        what: String,
+        condition: () -> Boolean,
+    ) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!condition()) {
+            check(System.currentTimeMillis() < deadline) { "$what did not happen" }
+            Thread.sleep(5)
+        }
+    }
+
+    /**
+     * Spec `slideshow-display`: Bounded rendering ahead › Window moves on: a running download for the window ends at its
+     * next read once the window moved on (design decision 6 of `library-performance`).
+     */
+    @Test
+    fun `A download that left the window ends at its next read, leaves no part file and releases its pin`() {
+        val entry = syncedEntry("nextcloud", "b.jpg")
+        val started = java.util.concurrent.CountDownLatch(1)
+        lateinit var store: OriginalsStore
+        store =
+            evicted(entry) { limits ->
+                store.partOf(entry).writeBytes(ByteArray(100))
+                started.countDown()
+                // A read of the real stream checks this; the fake checks it until it is set.
+                while (!limits.cancelled()) Thread.sleep(5)
+                throw SourceException(SourceException.Kind.UNREACHABLE, "The download of b.jpg was ended")
+            }
+        cache.prefetchAhead(listOf(entry), emptyList(), emptyList())
+        assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+        waitUntil("the end of the download") { !store.partOf(entry).exists() }
+        // Not pinned any more: a trim to nothing removes an original of the photo.
+        waitUntil("the pin released") {
+            store.fileOf(entry).writeBytes(ByteArray(10))
+            store.refresh()
+            store.trim(0)
+            !store.has(entry)
+        }
+        assertEquals(emptyList<String>(), remote("nextcloud").downloads, "nothing downloaded")
+    }
+
+    @Test
+    fun `A get that joins a cancelled download gets its file through a second download`() {
+        val entry = syncedEntry("nextcloud", "b.jpg")
+        val started = java.util.concurrent.CountDownLatch(1)
+        val joined = java.util.concurrent.CountDownLatch(1)
+        evicted(entry) { limits ->
+            started.countDown()
+            while (!limits.cancelled()) Thread.sleep(5)
+            joined.await()
+            throw SourceException(SourceException.Kind.UNREACHABLE, "The download of b.jpg was ended")
+        }
+        cache.prefetchAhead(listOf(entry), emptyList(), emptyList())
+        assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        remote("nextcloud").beforeDownload = {}
+        cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+        runBlocking {
+            val waiting = async(kotlinx.coroutines.Dispatchers.IO) { cache.get(entry, RenderSize.DISPLAY) }
+            // The worker hands the request over to the running download, which then fails.
+            Thread.sleep(300)
+            joined.countDown()
+            assertTrue(withTimeout(10_000) { waiting.await() }.isFile)
+        }
+        assertEquals(listOf("b.jpg"), remote("nextcloud").downloads, "the second download")
+        assertEquals(listOf(true, false), remote("nextcloud").limits.takeLast(2).map { it.cancelled() }, "the first one cancelled")
     }
 
     @Test

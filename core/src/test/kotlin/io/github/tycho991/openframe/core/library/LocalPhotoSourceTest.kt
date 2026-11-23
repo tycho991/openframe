@@ -1,5 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
+import io.github.tycho991.openframe.core.api.PhotoPageDto
+import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -8,6 +10,7 @@ import io.github.tycho991.openframe.core.store.JsonStore
 import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.JvmMediaEngine
 import io.github.tycho991.openframe.core.testing.TestClock
+import io.github.tycho991.openframe.core.testing.TestFrame
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,6 +22,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.time.Instant
+import javax.imageio.ImageIO
 
 /** Spec `photo-library`: Formats, local photo folder, stable IDs, metadata, albums. */
 class LocalPhotoSourceTest {
@@ -126,6 +130,101 @@ class LocalPhotoSourceTest {
         assertEquals(probes, engine.probes.get(), "No image file opened, not even the skipped one")
         assertEquals(0, engine.metadataReads.get(), "Not even for its metadata")
         assertTrue(before === index.library.value, "Index unchanged")
+    }
+
+    /**
+     * Spec `photo-library`: Stable photo IDs › Another file at the path of a removed photo, also with a damaged file in
+     * between (design decision 5 of `library-performance`).
+     */
+    @Test
+    fun `Another file at the path of a removed photo gets a version it never had`() {
+        for (damagedInBetween in listOf(false, true)) {
+            TestFrame(File(dir, "frame-$damagedInBetween")).use { frame ->
+                val file = Fixtures.copy("landscape.jpg", File(frame.photos, "holiday/1.jpg"))
+                frame.scan()
+                val id = PhotoEntry.idFor("local", "holiday/1.jpg")
+                val before = photoOf(frame, id)
+                val etags = listOf("thumb", "display").map { etagOf(frame, id, it) }
+                if (damagedInBetween) {
+                    Fixtures.copy("broken.jpg", file).setLastModified(file.lastModified() + 10_000)
+                    frame.scan()
+                    assertNull(frame.core.library.index.library.value.photos[id], "skipped")
+                } else {
+                    file.delete()
+                    frame.scan()
+                }
+                file.writeBytes(Fixtures.solidJpeg(400, 300, 0xFF0000))
+                file.setLastModified(file.lastModified() + 20_000)
+                frame.scan()
+                val after = photoOf(frame, id)
+                assertTrue(after.version > before.version, "${after.version} after ${before.version}")
+                assertNotEquals(before.urls.thumb, after.urls.thumb)
+                assertNotEquals(before.urls.display, after.urls.display)
+                assertNotEquals(etags, listOf("thumb", "display").map { etagOf(frame, id, it) })
+                // Thumbnail and display size are rendered again, from the new picture.
+                for (size in listOf("thumb", "display")) {
+                    val image = ImageIO.read(frame.get("/api/v1/photos/$id/image?size=$size").bytes().inputStream())
+                    val red = image.getRGB(image.width / 2, image.height / 2) shr 16 and 0xFF
+                    assertTrue(red > 200, "the new picture in $size: red $red")
+                }
+            }
+        }
+    }
+
+    private fun photoOf(
+        frame: TestFrame,
+        id: String,
+    ) = ApiJson
+        .decodeFromString(PhotoPageDto.serializer(), frame.get("/api/v1/photos").body())
+        .items
+        .single { it.id == id }
+
+    private fun etagOf(
+        frame: TestFrame,
+        id: String,
+        size: String,
+    ): String {
+        val res = frame.get("/api/v1/photos/$id/image?size=$size")
+        assertEquals(200, res.statusCode())
+        return res.header("ETag")!!
+    }
+
+    /** Design decision 7 of `library-performance`: a rescan without a change does not edit the index. */
+    @Test
+    fun `Rescan without changes makes no edit`() {
+        Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        Fixtures.copy("photo.heic", File(photos, "b.heic"))
+        scan()
+        val edits = index.edits
+        val before = index.library.value
+        scan()
+        assertEquals(edits, index.edits, "no edit call")
+        assertTrue(before === index.library.value, "the same state")
+        File(photos, "a.jpg").delete()
+        scan()
+        assertEquals(edits + 1, index.edits, "a removed file is one edit")
+    }
+
+    /** Design decision 7 of `library-performance`: a slow scan is reported, but at most once an hour. */
+    @Test
+    fun `A slow scan logs a warning at most once an hour`() {
+        val clock = TestClock()
+        val log = AppLog(clock)
+        val slow =
+            LocalPhotoSource(photos, engine, index, log, listFiles = { root ->
+                clock.advance(java.time.Duration.ofMillis(1_500))
+                LocalPhotoSource.listImageFiles(root)
+            }, clock = clock)
+        photos.mkdirs()
+
+        fun warnings() = log.recent(100).count { it.message.startsWith("A scan of the photo folder took") }
+        runBlocking { slow.scan() }
+        assertEquals(1, warnings())
+        runBlocking { slow.scan() }
+        assertEquals(1, warnings(), "not again within the hour")
+        clock.advance(java.time.Duration.ofMinutes(60))
+        runBlocking { slow.scan() }
+        assertEquals(2, warnings(), "again after an hour")
     }
 
     @Test

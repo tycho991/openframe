@@ -107,7 +107,6 @@ class HostileServerTest {
             index,
             engine,
             originals,
-            {},
             log,
             unknownSizeBytes = unknownSizeBytes,
         )
@@ -261,7 +260,7 @@ class HostileServerTest {
                     return null
                 }
             }
-        val large = RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { listedHere }, index, engine, originals, {}, log)
+        val large = RemoteSource("nextcloud", { configs.get("nextcloud") }, FakeKind { listedHere }, index, engine, originals, log)
         val result = runBlocking { large.scan() }
         assertEquals(20_000, result.added)
         assertEquals(20_000, photos().size)
@@ -448,7 +447,7 @@ class HostileServerTest {
     @Test
     fun `A download that would go below the reserve fails with storage and skips nothing`() {
         nextcloud.files["Photos/a.jpg"] = FakeNextcloud.Remote(jpg() + ByteArray(10_000), "e1", listedSize = 0, sendLength = false)
-        freeBytes = OriginalsStore.RESERVE_BYTES + 5_000
+        freeBytes = OriginalsStore.ON_DEMAND_FLOOR_BYTES + 5_000
         val failure = failedSync()
         assertEquals(SourceException.Kind.STORAGE, failure.kind)
         assertTrue(
@@ -500,7 +499,6 @@ class HostileServerTest {
             index,
             engine,
             originals,
-            {},
             log,
             onStale = { stale++ },
         )

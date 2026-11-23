@@ -98,11 +98,17 @@ class SlideshowControllerTest {
             }
         }
 
-        override fun prefetch(
-            entries: List<PhotoEntry>,
-            priority: RenderPriority,
+        /** Every window set with [ahead]: the IDs of next and later, and the files kept. */
+        val windows = mutableListOf<Triple<List<String>, List<String>, List<File>>>()
+
+        override fun ahead(
+            next: List<PhotoEntry>,
+            later: List<PhotoEntry>,
+            keep: List<File>,
         ) {
-            entries.forEach { prefetched += it.id to priority }
+            next.forEach { prefetched += it.id to RenderPriority.NEXT }
+            later.forEach { prefetched += it.id to RenderPriority.PREFETCH }
+            windows += Triple(next.map { it.id }, later.map { it.id }, keep)
         }
     }
 
@@ -111,6 +117,7 @@ class SlideshowControllerTest {
         photos: List<PhotoEntry>,
         allReady: Boolean = true,
         settings: Settings = Settings.defaults("x").copy(order = Order.CHRONOLOGICAL, intervalSeconds = 30),
+        configure: FakeImages.() -> Unit = {},
     ) {
         val visible = MutableStateFlow(photos)
         val library = photos.map { it.id }.toMutableSet()
@@ -121,6 +128,7 @@ class SlideshowControllerTest {
                     readyIds += photos.map { it.id }
                     renderedFor(photos)
                 }
+                configure()
             }
         val controller =
             SlideshowController(visible, { it in library }, this.settings, images, scope.backgroundScope, AppLog(TestClock())).also {
@@ -132,6 +140,232 @@ class SlideshowControllerTest {
     }
 
     private val photos = (1..5).map(::photo)
+
+    /**
+     * Spec `slideshow-display`: Bounded rendering ahead › Cold cache with 5,000 photos, › Server of all photos
+     * unreachable; counted with 1,000 photos (design decision 13 of `library-performance`).
+     */
+    @Test
+    fun `A cold cache of 1,000 photos asks for at most 10 ahead and renders at most 3 on demand`() =
+        runTest {
+            val many = (1..1000).map(::photo)
+            val s = Setup(this, many, allReady = false) { broken += many.map { it.id } }
+            runCurrent()
+            val ahead =
+                s.images.prefetched
+                    .map { it.first }
+                    .toSet()
+            assertTrue(ahead.size <= 10, "${ahead.size} photos asked for ahead")
+            assertTrue(s.images.demanded.size <= 3, "${s.images.demanded.size} photos rendered on demand")
+        }
+
+    /** Spec `slideshow-display`: Bounded rendering ahead › Server of all photos unreachable. */
+    @Test
+    fun `After three failed renderings on demand the next interval tries the following photos`() =
+        runTest {
+            val many = (1..20).map(::photo)
+            val s = Setup(this, many, allReady = false) { broken += many.map { it.id } }
+            runCurrent()
+            assertEquals(many.take(3).map { it.id }, s.images.demanded, "three in a row")
+            assertEquals(SlideState.Loading, s.controller.state.value)
+            advanceTimeBy(29_000)
+            runCurrent()
+            assertEquals(3, s.images.demanded.size, "then it waits")
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(many.take(6).map { it.id }, s.images.demanded, "one interval later the following ones")
+            s.images.broken -= many[6].id
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(many[6].id, s.images.demanded.last())
+            s.images.pending
+                .getValue(many[6].id)
+                .complete(File("p07.jpg"))
+            runCurrent()
+            assertEquals(many[6], s.shown(), "and keeps trying every interval")
+        }
+
+    /** Spec `slideshow-display`: Bounded rendering ahead › Window moves on. */
+    @Test
+    fun `Swiping forward moves the window, so waiting renderings that left it are dropped`() =
+        runTest {
+            val many = (1..30).map(::photo)
+            val s = Setup(this, many)
+            val first = s.images.windows.last()
+            assertEquals(many.subList(1, 3).map { it.id }, first.first, "the next two")
+            assertEquals(many.subList(3, 11).map { it.id }, first.second, "and eight more")
+            repeat(5) { s.controller.next() }
+            runCurrent()
+            val moved = s.images.windows.last()
+            assertEquals(many.subList(6, 8).map { it.id }, moved.first)
+            assertEquals(many.subList(8, 16).map { it.id }, moved.second)
+            assertTrue((first.first + first.second).take(5).none { it in moved.first + moved.second }, "the passed ones left it")
+            assertEquals(
+                listOfNotNull(
+                    (s.controller.state.value as SlideState.Showing).file,
+                    s.controller.nextUp.value
+                        ?.second,
+                ),
+                moved.third,
+                "the files on screen and next up are kept",
+            )
+        }
+
+    /** Spec `display-schedule`: Slideshow rests while the display is off › Renderings queued before the night. */
+    @Test
+    fun `Resting empties the window and waking sets it again`() =
+        runTest {
+            val s = Setup(this, photos)
+            s.controller.setResting(true)
+            runCurrent()
+            val night = s.images.windows.last()
+            assertEquals(emptyList<String>(), night.first + night.second, "nothing is rendered ahead at night")
+            assertTrue((s.controller.state.value as SlideState.Showing).file in night.third, "the photo on screen stays")
+            s.controller.setResting(false)
+            runCurrent()
+            val morning = s.images.windows.last()
+            assertEquals(photos.subList(1, 3).map { it.id }, morning.first)
+        }
+
+    /** A controller of its own with a seeded shuffle; [setup] runs on its images before it starts. */
+    private fun TestScope.seeded(
+        photos: List<PhotoEntry>,
+        order: Order,
+        seed: Int,
+    ): Triple<SlideshowController, FakeImages, MutableStateFlow<Settings>> {
+        val images = FakeImages().apply { readyIds += photos.map { it.id } }
+        val settings = MutableStateFlow(Settings.defaults("x").copy(order = order, intervalSeconds = 30))
+        val controller =
+            SlideshowController(
+                MutableStateFlow(photos),
+                { true },
+                settings,
+                images,
+                backgroundScope,
+                AppLog(TestClock()),
+                kotlin.random.Random(seed),
+            )
+        controller.start()
+        runCurrent()
+        return Triple(controller, images, settings)
+    }
+
+    private fun SlideshowController.shown() = (state.value as SlideState.Showing).photo
+
+    /** Review of `library-performance`: a result of a rendering on demand after the order changed follows the new order. */
+    @Test
+    fun `A result on demand after the order changed goes by the new order`() =
+        runTest {
+            val many = (1..8).map(::photo)
+            val (controller, images, settings) = seeded(many, Order.SHUFFLE, 5)
+            val before = controller.shown()
+            images.readyIds.retainAll(setOf(before.id))
+            controller.next()
+            runCurrent()
+            val demanded = images.demanded.last()
+            settings.value = settings.value.copy(order = Order.CHRONOLOGICAL)
+            runCurrent()
+            images.readyIds += many.map { it.id }
+            images.pending.getValue(demanded).complete(File("x.jpg"))
+            runCurrent()
+            val order = mutableListOf(controller.shown())
+            repeat(3) {
+                controller.next()
+                runCurrent()
+                order += controller.shown()
+            }
+            for ((a, b) in order.zipWithNext()) assertEquals(many[(many.indexOf(a) + 1) % many.size], b, "chronological after $a")
+        }
+
+    /** Review of `library-performance`: a failed search after a change of the library does not try the same photos again. */
+    @Test
+    fun `A failed search after a library change goes on after the last one tried`() =
+        runTest {
+            val many = (1..10).map(::photo)
+            val visible = MutableStateFlow(many)
+            val images = FakeImages().apply { readyIds += many[0].id }
+            val settings = MutableStateFlow(Settings.defaults("x").copy(order = Order.CHRONOLOGICAL, intervalSeconds = 30))
+            val controller = SlideshowController(visible, { true }, settings, images, backgroundScope, AppLog(TestClock()))
+            controller.start()
+            runCurrent()
+            assertEquals(many[0], controller.shown())
+            controller.next()
+            runCurrent()
+            assertEquals(listOf(many[1].id), images.demanded)
+            // The library changes while the renderings on demand run; then all three fail.
+            visible.value = many + photo(11)
+            runCurrent()
+            for (photo in many.subList(1, 4)) {
+                images.pending.getValue(photo.id).completeExceptionally(IllegalStateException("broken"))
+                runCurrent()
+            }
+            assertEquals(many.subList(1, 4).map { it.id }, images.demanded)
+            images.broken += many.map { it.id }
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(many.subList(1, 7).map { it.id }, images.demanded, "the following ones, not the same again")
+        }
+
+    /** Review of `library-performance`: renderings on demand after a step back. */
+    @Test
+    fun `A step back renders on demand backwards and a failure does not try the same photos again`() =
+        runTest {
+            val (controller, images, _) = seeded(photos, Order.CHRONOLOGICAL, 1)
+            repeat(2) { controller.next() }
+            runCurrent()
+            assertEquals(photos[2], controller.shown())
+            images.readyIds.retainAll(setOf(photos[2].id))
+            controller.previous()
+            runCurrent()
+            assertEquals(photos[1].id, images.demanded.last())
+            images.pending.getValue(photos[1].id).complete(File("p02.jpg"))
+            runCurrent()
+            assertEquals(photos[1], controller.shown(), "the photo before")
+            images.readyIds += photos.map { it.id }
+            controller.previous()
+            runCurrent()
+            assertEquals(photos[0], controller.shown(), "and on backwards")
+
+            // Back again with every photo before failing: the next tick goes forward, not to the failed ones.
+            controller.next()
+            controller.next()
+            runCurrent()
+            assertEquals(photos[2], controller.shown())
+            images.readyIds.retainAll(setOf(photos[2].id))
+            images.broken += listOf(photos[1].id, photos[0].id, photos[4].id)
+            images.demanded.clear()
+            controller.previous()
+            runCurrent()
+            assertEquals(listOf(photos[1].id, photos[0].id, photos[4].id), images.demanded)
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[3].id, images.demanded.last(), "the tick tries the photo after the one on screen")
+            assertEquals(4, images.demanded.size)
+        }
+
+    /** Review of `library-performance`: a rendering on demand across the end of a shuffled pass keeps that pass. */
+    @Test
+    fun `A result on demand across the end of a pass keeps the new pass`() =
+        runTest {
+            val (controller, images, _) = seeded(photos, Order.SHUFFLE, 9)
+            repeat(4) { controller.next() }
+            runCurrent()
+            images.readyIds.retainAll(setOf(controller.shown().id))
+            controller.next()
+            runCurrent()
+            val demanded = images.demanded.last()
+            images.pending.getValue(demanded).complete(File("x.jpg"))
+            runCurrent()
+            assertEquals(demanded, controller.shown().id)
+            images.readyIds += photos.map { it.id }
+            val pass = mutableListOf(controller.shown())
+            repeat(4) {
+                controller.next()
+                runCurrent()
+                pass += controller.shown()
+            }
+            assertEquals(photos.toSet(), pass.toSet(), "every photo once in the new pass")
+        }
 
     @Test
     fun `Change after interval and wrap-around`() =

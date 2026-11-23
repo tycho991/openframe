@@ -1,6 +1,7 @@
 package io.github.tycho991.openframe.core.library
 
 import io.github.tycho991.openframe.core.log.AppLog
+import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DecoderUnavailableException
 import io.github.tycho991.openframe.core.platform.ImageException
 import io.github.tycho991.openframe.core.platform.ImageFormats
@@ -40,15 +41,42 @@ class LocalPhotoSource(
     private val log: AppLog,
     /** Whether the storage that holds [root] is mounted (`PlatformInfo.storageMounted`). */
     private val mounted: (File) -> Boolean = { true },
+    /** Times each scan, on [Clock.monotonicMillis]. */
+    private val clock: Clock = Clock.System,
     /** Lists the image files below [root]; replaced only by tests that act while the folder is listed. */
     private val listFiles: (File) -> Map<String, File> = { listImageFiles(it) },
 ) : PhotoSource {
     override val id = SOURCE_ID
 
+    /** When a slow scan was last reported, on [Clock.monotonicMillis]; `null` before the first. */
+    @Volatile private var slowReportedAt: Long? = null
+
     /** Whether the folder can be used now: its storage mounted, and the folder listable if it exists. */
     fun available(): Boolean = mounted(root) && (!root.exists() || root.list() != null)
 
+    /**
+     * Reconciles the index with the folder. A scan without a change does not edit the index (design decision 7 of
+     * `library-performance`); one that takes longer than [SLOW_SCAN_MS] is reported at most once an hour, since the frame
+     * scans every 15 s and the log files are small.
+     */
     override suspend fun scan(): ScanResult {
+        val started = clock.monotonicMillis()
+        try {
+            return scanFolder()
+        } finally {
+            val took = clock.monotonicMillis() - started
+            if (took > SLOW_SCAN_MS) {
+                val now = clock.monotonicMillis()
+                val due = slowReportedAt.let { it == null || now - it >= HOUR_MS }
+                if (due) {
+                    slowReportedAt = now
+                    log.w(TAG, "A scan of the photo folder took $took ms")
+                }
+            }
+        }
+    }
+
+    private fun scanFolder(): ScanResult {
         if (!mounted(root)) {
             log.w(TAG, "The storage of the photo folder is not mounted; the scan changes nothing")
             return NOTHING
@@ -78,7 +106,7 @@ class LocalPhotoSource(
             if (entry != null && entry.fileSize == size && entry.modifiedMs == mtime) continue
             val skip = skippedKnown[path]
             if (skip != null && skip.fileSize == size && skip.modifiedMs == mtime) continue
-            val result = runCatching { read(path, file, previous = entry) }
+            val result = runCatching { read(path, file) }
             if (result.exceptionOrNull() is DecoderUnavailableException) {
                 // Says nothing about the file; every further file would wait for the decoder as well.
                 log.w(TAG, "The decoder is not available; the remaining files are checked at the next scan")
@@ -86,6 +114,8 @@ class LocalPhotoSource(
             }
             probed[path] = result
         }
+        // Nothing new or changed, and every known file and every known skipped file still there: no edit, no new state.
+        if (probed.isEmpty() && known.keys.all { it in files } && skippedKnown.keys.all { it in files }) return NOTHING
 
         return index
             .edit { edit ->
@@ -98,7 +128,9 @@ class LocalPhotoSource(
                         .onSuccess {
                             val current = edit.get(it.id)
                             if (current == null) added++ else updated++
-                            edit.put(it.withStateOf(current))
+                            // The version from the entry in the edit, so a file at the path of a removed photo gets
+                            // one this ID never had (design decision 5 of `library-performance`).
+                            edit.put(it.withStateOf(current).copy(version = edit.versionFor(current)))
                         }.onFailure { e ->
                             val reason = (e as? ImageException)?.reason ?: io.github.tycho991.openframe.core.platform.SkipReason.CORRUPT
                             if (e !is ImageException) log.w(TAG, "Error reading $path", e)
@@ -135,16 +167,33 @@ class LocalPhotoSource(
         info: ImageInfo? = null,
     ): PhotoEntry {
         val path = relativePath(root, file)
-        val entry = read(path, file, previous = index.library.value.photos[PhotoEntry.idFor(id, path)], info)
-        return index.edit { edit -> entry.withStateOf(edit.get(entry.id)).also(edit::put) }
+        val entry = read(path, file, info)
+        return index.edit { edit ->
+            val current = edit.get(entry.id)
+            entry.withStateOf(current).copy(version = edit.versionFor(current)).also(edit::put)
+        }
+    }
+
+    /**
+     * Accepts several files created by the app itself in one edit, an upload of several files, with the [ImageInfo] of
+     * their checks. Throws [ImageException].
+     */
+    fun addAll(files: List<Pair<File, ImageInfo>>): List<PhotoEntry> {
+        val read = files.map { (file, info) -> read(relativePath(root, file), file, info) }
+        return index.edit { edit ->
+            read.map { entry ->
+                val current = edit.get(entry.id)
+                entry.withStateOf(current).copy(version = edit.versionFor(current)).also(edit::put)
+            }
+        }
     }
 
     fun fileOf(entry: PhotoEntry): File = File(root, entry.path)
 
+    /** The entry of [file]; its version is assigned when it is applied ([LibraryEdit.versionFor]). */
     private fun read(
         path: String,
         file: File,
-        previous: PhotoEntry?,
         known: ImageInfo? = null,
     ): PhotoEntry {
         val info = known ?: engine.probe(file)
@@ -155,11 +204,12 @@ class LocalPhotoSource(
             path = path,
             width = info.width,
             height = info.height,
-            takenAtMs = info.takenAt?.toEpochMilli() ?: mtime,
+            takenAtMs = CaptureDates.plausible(info.takenAt)?.toEpochMilli() ?: mtime,
             fileSize = file.length(),
             modifiedMs = mtime,
-            // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf).
-            version = (previous?.version ?: 0) + 1,
+            // Hidden state, comment and section are taken over when the entry is applied (PhotoEntry.withStateOf), and
+            // the version is assigned there.
+            version = 0,
             gps = info.gps,
             metadataVersion = PhotoEntry.METADATA_VERSION,
         )
@@ -168,6 +218,8 @@ class LocalPhotoSource(
     companion object {
         const val SOURCE_ID = "local"
         private const val TAG = "scan"
+        private const val SLOW_SCAN_MS = 1_000L
+        private const val HOUR_MS = 60 * 60 * 1000L
         private val NOTHING = ScanResult(0, 0, 0, 0)
 
         /** All files with an image extension below [root] by relative path, hidden files and folders excluded. */

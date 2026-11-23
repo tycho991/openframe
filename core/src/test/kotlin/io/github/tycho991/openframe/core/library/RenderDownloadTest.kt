@@ -46,6 +46,19 @@ class RenderDownloadTest {
 
     @Volatile private var fetchFailure: Throwable? = null
 
+    /** Counts down when a fetch begins, before it waits for [gate]. */
+    @Volatile private var fetching = CountDownLatch(1)
+
+    /** Whether each fetch was on demand, in order. */
+    private val onDemand = Collections.synchronizedList(ArrayList<Boolean>())
+
+    /** The free storage the cache sees, and its reserve; by default far above it. */
+    @Volatile private var free = Long.MAX_VALUE / 2
+    private val reserve = 600L * 1024 * 1024
+
+    /** Throws for a fetch, after [gate], instead of [fetchFailure] when set; gets whether it is on demand. */
+    @Volatile private var failFetch: ((OriginalRequest) -> Throwable?)? = null
+
     private val cache by lazy {
         RenderCache(
             File(dir, "cache"),
@@ -56,13 +69,18 @@ class RenderDownloadTest {
             { 10L * 1024 * 1024 },
             AppLog(TestClock()),
             onCrashed = { crashed += it.id },
-            fetch = { entry ->
+            fetch = { entry, request ->
+                fetching.countDown()
                 gate.await()
                 fetched += entry.id
+                onDemand += request.onDemand
+                failFetch?.invoke(request)?.let { throw it }
                 fetchFailure?.let { throw it }
                 File(photos, entry.path).also { onFrame[entry.id] = it }
             },
             release = { released += it.id },
+            freeBytes = { free },
+            reserveBytes = reserve,
         )
     }
 
@@ -188,7 +206,7 @@ class RenderDownloadTest {
         runBlocking {
             val a = async(start = CoroutineStart.UNDISPATCHED) { cache.get(first, RenderSize.DISPLAY, RenderPriority.PREFETCH) }
             handedOver()
-            cache.prefetch(listOf(later))
+            cache.prefetchAhead(emptyList(), listOf(later), emptyList())
             val c = async(start = CoroutineStart.UNDISPATCHED) { cache.get(urgent, RenderSize.DISPLAY, RenderPriority.DEMAND) }
             handedOver()
             gate.countDown()
@@ -199,6 +217,137 @@ class RenderDownloadTest {
         }
         waitUntil("all three downloads") { fetched.size == 3 }
         assertEquals(listOf(first.id, urgent.id, later.id), fetched.toList())
+    }
+
+    /**
+     * Spec `photo-library`: Going below the storage reserve › Remote photo without its original below the reserve
+     * (design decisions 1 and 2 of `library-performance`).
+     */
+    @Test
+    fun `Below the reserve an awaited rendering downloads on demand and a window job downloads nothing`() {
+        free = reserve - 1
+        val awaited = remote("a.jpg")
+        val ahead = remote("b.jpg")
+        cache.prefetchAhead(listOf(ahead), emptyList(), emptyList())
+        handedOver()
+        assertEquals(emptyList<String>(), fetched.toList(), "no request for the window")
+        assertTrue(runBlocking { withTimeout(10_000) { cache.get(awaited, RenderSize.DISPLAY) } }.isFile)
+        assertEquals(listOf(awaited.id), fetched.toList())
+        assertEquals(listOf(true), onDemand.toList(), "asked for on demand")
+    }
+
+    /** Design decision 2 of `library-performance`: a job that arrives later. */
+    @Test
+    fun `A get that joins a window download failing with storage gets its file through a second download`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        failFetch = { request ->
+            if (request.onDemand) null else SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame")
+        }
+        cache.prefetchAhead(listOf(photo), emptyList(), emptyList())
+        assertTrue(fetching.await(10, TimeUnit.SECONDS), "the window download has started")
+        runBlocking {
+            val waiting = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { waiting.await() }.isFile)
+        }
+        assertEquals(listOf(photo.id, photo.id), fetched.toList(), "a second download")
+        assertEquals(listOf(false, true), onDemand.toList(), "the second one on demand")
+    }
+
+    /** Spec `slideshow-display`: Bounded rendering ahead › Window moves on, for a download that has not started. */
+    @Test
+    fun `A queued download that left the window makes no request`() {
+        gate = CountDownLatch(1)
+        val busy = remote("busy.jpg")
+        val ahead = remote("ahead.jpg")
+        runBlocking {
+            // An awaited download holds the download thread; the window's waits behind it.
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(busy, RenderSize.DISPLAY) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            cache.prefetchAhead(listOf(ahead), emptyList(), emptyList())
+            handedOver()
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { first.await() }.isFile)
+        }
+        Thread.sleep(200)
+        assertEquals(listOf(busy.id), fetched.toList())
+    }
+
+    @Test
+    fun `A download with an awaited job is never cancelled`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        lateinit var request: OriginalRequest
+        failFetch = {
+            request = it
+            null
+        }
+        runBlocking {
+            val waiting = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY, RenderPriority.NEXT) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { waiting.await() }.isFile)
+        }
+        assertFalse(request.cancelled(), "the refresh of the photo on screen awaits it")
+    }
+
+    /**
+     * Task 7.2 of `library-performance`: a window job is dropped, a get() for the same name follows, and a duplicate of
+     * the dropped job that comes later leaves the new job's entry alone, so a second get() joins it.
+     */
+    @Test
+    fun `A dropped job leaves the entry of a later request for the same file alone`() {
+        gate = CountDownLatch(1)
+        val busy = remote("busy.jpg")
+        val photo = remote("p.jpg")
+        runBlocking {
+            // An awaited download holds the download thread.
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(busy, RenderSize.THUMB) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            // The window asks for p at PREFETCH and then at NEXT: two jobs for one entry; then it moves on.
+            cache.prefetchAhead(emptyList(), listOf(photo), emptyList())
+            cache.prefetchAhead(listOf(photo), emptyList(), emptyList())
+            cache.prefetchAhead(emptyList(), emptyList(), emptyList())
+            handedOver()
+            val second = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            val third = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            handedOver()
+            gate.countDown()
+            withTimeout(10_000) {
+                assertTrue(first.await().isFile)
+                assertTrue(second.await().isFile)
+                assertEquals(second.await(), third.await())
+            }
+        }
+        assertEquals(listOf(busy.id, photo.id), fetched.toList(), "one download for both requests")
+    }
+
+    /** Review of `library-performance`: one of two awaiters gives up; the other still gets the file. */
+    @Test
+    fun `When one of two awaiters gives up the other gets the file and the download goes on`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        lateinit var request: OriginalRequest
+        failFetch = {
+            request = it
+            null
+        }
+        runBlocking {
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            val second = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            first.cancel()
+            kotlinx.coroutines.delay(200)
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { second.await() }.isFile)
+        }
+        assertFalse(request.cancelled(), "the download was not cancelled")
+        assertEquals(listOf(photo.id), fetched.toList())
     }
 
     @Test

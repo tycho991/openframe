@@ -35,6 +35,66 @@ class PhotoIndexStoreTest {
         hidden: Boolean = false,
     ) = PhotoEntry(PhotoEntry.idFor("local", path), "local", path, 4, 3, taken, 10, 1, 1, hidden)
 
+    /** Design decision 4 of `library-performance`: one notification when photos leave the index. */
+    @Test
+    fun `The listener gets exactly the entries that left the index`() {
+        val reports = mutableListOf<List<PhotoEntry>>()
+        val s = PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)) { reports += it }
+        s.load()
+        val a = entry("a.jpg")
+        val b = entry("b.jpg")
+        val c = entry("c.jpg")
+        s.edit {
+            it.put(a)
+            it.put(b)
+            it.put(c)
+        }
+        assertEquals(emptyList<List<PhotoEntry>>(), reports, "nothing left")
+        s.edit { it.put(b.copy(version = 2)) }
+        assertEquals(emptyList<List<PhotoEntry>>(), reports, "a new version is no removal")
+        s.edit { it.remove(a.id) }
+        assertEquals(listOf(listOf(a)), reports)
+        s.edit { it.skip(SkippedFile("local", "b.jpg", SkipReason.CORRUPT, 1, 2)) }
+        assertEquals(listOf(b.copy(version = 2)), reports.last(), "skipped, with the entry as it was")
+        s.edit {
+            it.remove(c.id)
+            it.put(c)
+        }
+        assertEquals(2, reports.size, "removed and put back is no removal")
+        s.edit { it.remove("local-unknown") }
+        s.edit { }
+        assertEquals(2, reports.size, "an edit without a change reports nothing")
+    }
+
+    /** An applied edit stays applied when the cleanup after it fails (review of `library-performance`). */
+    @Test
+    fun `A failing listener does not make an applied edit fail`() {
+        val log = AppLog(TestClock())
+        val s = PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log), log) { error("closed") }
+        s.load()
+        val a = entry("a.jpg")
+        s.edit { it.put(a) }
+        val result = s.edit { it.remove(a.id) }
+        assertEquals(a, result)
+        assertFalse(
+            s.library.value.photos
+                .containsKey(a.id),
+        )
+        assertTrue(log.recent(10).any { it.message.startsWith("Cleaning up after 1 removed photos failed") })
+    }
+
+    @Test
+    fun `A new entry gets a version above every earlier one`() {
+        val s = store()
+        s.edit { it.put(entry("a.jpg")) }
+        s.edit { it.remove(entry("a.jpg").id) }
+        val version = s.edit { it.newVersion }
+        assertEquals(s.library.value.version + 1, version.toLong())
+        assertTrue(version > 1)
+        s.edit { edit -> assertEquals(edit.newVersion, edit.versionFor(null)) }
+        s.edit { edit -> assertEquals(8, edit.versionFor(entry("x.jpg").copy(version = 7))) }
+    }
+
     @Test
     fun `Round trip and restart`() =
         runBlocking {
