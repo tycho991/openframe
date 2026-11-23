@@ -177,10 +177,10 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 6. Widening proof in the core
 
-- [ ] 6.1 `widens(prev, next)` (design decision 13). Verify, a table test: `/Photos`→`/`, →`/Photos/2024` with
+- [x] 6.1 `widens(prev, next)` (design decision 13). Verify, a table test: `/Photos`→`/`, →`/Photos/2024` with
   subfolders on and off before, →`/Other`, →`/photos`, subfolders switched on, empty→`/Photos`, `""` (stored as `/`),
   narrowing, and a share-link kind (`remote-sources` › Widening the folder of an account, all scenarios).
-- [ ] 6.2 `AccountGrants` and the guard (design decision 14): `SourceConfigStore.patch(id, patch, guard)`,
+- [x] 6.2 `AccountGrants` and the guard (design decision 14): `SourceConfigStore.patch(id, patch, guard)`,
   `SourceRegistry.patch(id, patch, clientId)`, `SourcesRoutes` passes the client ID, 403 `account_login_required` with
   `fields`, grants dropped with the source and ignored for revoked clients. Verify, `SourcesApiTest` with the contract
   check on and `TestClock`:
@@ -194,12 +194,12 @@ removal notification, image versions and tombstones, scan apply step and upload 
   - an invalid interval with a wider folder gives 400 naming the interval (› Invalid value and widening together);
   - narrowing, renaming and the interval need no grant (› Narrowing and other settings);
   - `SourceRegistryTest` and the existing `SourcesApiTest` cases pass with the new signatures.
-- [ ] 6.3 One login flow per device (design decision 15), with `FakeLoginFlow` approving per flow and per user.
+- [x] 6.3 One login flow per device (design decision 15), with `FakeLoginFlow` approving per flow and per user.
   Verify, `NextcloudConnectorTest`: two clients log in at once, each flow approved separately, and both complete; a
   poll with another client's flow ID gives `expired` and the starting client still completes it (`nextcloud-source` ›
   Login flows per device, both scenarios); after the starting client is revoked, its flow is gone at the next start or
   poll.
-- [ ] 6.4 Confirmation login (design decision 16): `confirmSourceId` in the start, no `too_many_sources` for it, match
+- [x] 6.4 Confirmation login (design decision 16): `confirmSourceId` in the start, no `too_many_sources` for it, match
   against that source's connection only, grant plus `revokeNew` on a match, `failed`/`other_account` plus `revokeNew`
   otherwise, 404 for an unknown and 400 for a share-link source. Verify, `NextcloudConnectorTest` with `FakeLoginFlow`:
   - the same user gives `done` with the source's ID, `revoked` counts one, the stored connection and the result are
@@ -209,7 +209,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
     neither source reconnects (› Account of another source);
   - a share-link source gives 400 and an unknown ID 404, and no flow starts (› Share-link source);
   - a confirmation on a full frame starts.
-- [ ] 6.5 `./gradlew :core:check` is green. Verify: the command ends with exit 0.
+- [x] 6.5 `./gradlew :core:check` is green. Verify: the command ends with exit 0.
 
 ## 7. Wider folder in the web UI
 

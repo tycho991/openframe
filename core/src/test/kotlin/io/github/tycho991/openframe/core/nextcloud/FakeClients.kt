@@ -68,7 +68,10 @@ class FakeClients(
     }
 }
 
-/** A login flow that the test approves by hand. */
+/**
+ * A login flow that the test approves by hand: every flow at once with [approved] as [userId], or one flow with
+ * [approve] as any user (design decision 15 of `paired-device-guards`), keyed by its poll token, which is new per start.
+ */
 class FakeLoginFlow(
     var serverUrl: String = "https://cloud.example.org",
     val loginName: String = "Anna",
@@ -101,17 +104,40 @@ class FakeLoginFlow(
     /** The flow of the last approved poll. */
     @Volatile var poll: LoginStart? = null
 
+    /** Every flow started, in order. */
+    val flows = java.util.concurrent.CopyOnWriteArrayList<LoginStart>()
+
+    /** The user each flow was approved as, by its poll token. */
+    private val approvals = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** The user each app password handed out belongs to. */
+    private val users = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** The user approves [flow], by default the last one started, as the Nextcloud user [user]. */
+    fun approve(
+        user: String = userId,
+        flow: LoginStart = flows.last(),
+    ) {
+        approvals[flow.pollToken] = user
+    }
+
     override fun start(serverUrl: String): LoginStart {
         startFailure?.let { throw it }
         started += serverUrl
-        return LoginStart(serverUrl, "$serverUrl/index.php/login/v2/flow/abc", "$serverUrl/index.php/login/v2/poll", "token")
+        val token = "token-${flows.size + 1}"
+        return LoginStart(serverUrl, "$serverUrl/index.php/login/v2/flow/abc", "$serverUrl/index.php/login/v2/poll", token).also {
+            flows += it
+        }
     }
 
     override fun poll(start: LoginStart): LoginPoll {
-        if (!approved) return LoginPoll.Pending
+        val user = approvals[start.pollToken] ?: (if (approved) userId else return LoginPoll.Pending)
         if (donePollDelayMs > 0) Thread.sleep(donePollDelayMs)
         poll = start
-        return LoginPoll.Done(reportedServer ?: start.serverUrl, loginName, appPassword)
+        // A flow approved by itself gets an app password of its own, so that its user can be told apart.
+        val password = if (approvals.containsKey(start.pollToken)) "$appPassword-${start.pollToken}" else appPassword
+        users[password] = user
+        return LoginPoll.Done(reportedServer ?: start.serverUrl, loginName, password)
     }
 
     override fun userId(
@@ -120,7 +146,7 @@ class FakeLoginFlow(
         appPassword: String,
     ): String {
         userIdFailure?.let { throw it }
-        return userId
+        return users[appPassword] ?: userId
     }
 
     override fun revoke(

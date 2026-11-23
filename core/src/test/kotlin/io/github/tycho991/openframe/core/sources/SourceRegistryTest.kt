@@ -266,6 +266,7 @@ class SourceRegistryTest {
         registry.patch(
             "sa",
             kotlinx.serialization.json.buildJsonObject { put("folder", kotlinx.serialization.json.JsonPrimitive("/Other")) },
+            clientId = null,
         )
         assertEquals("/", configs.get("sb")!!.folder)
         assertEquals(setOf("b.jpg"), pathsOf("sb"))

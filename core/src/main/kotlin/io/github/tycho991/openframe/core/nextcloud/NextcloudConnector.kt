@@ -36,36 +36,45 @@ class NextcloudConnector(
     private val sources: SourceRegistry,
     private val clients: NextcloudClients,
     private val clock: Clock,
+    /** Whether a client is still paired; the flow of one that is not ends (design decision 15 of `paired-device-guards`). */
+    private val paired: (String) -> Boolean = { true },
     private val random: SecureRandom = SecureRandom(),
 ) {
     private class Flow(
         val id: String,
         val start: LoginStart,
         val startedAtMs: Long,
+        /** The account source a confirmation login is for, `null` for a login that adds or renews a source. */
+        val confirmSourceId: String?,
     )
 
-    private var flow: Flow? = null
+    /** At most one flow per paired device, by client ID; only that device sees it. */
+    private val flows = HashMap<String, Flow>()
 
     private val configs get() = sources.configs
 
+    private val grants get() = sources.grants
+
     /**
-     * Starts the login flow at [serverUrl]. Throws a 400 for an address that is none, a 409 if the frame is full and has no
-     * account the login could renew, and a 502 if the server cannot be asked.
+     * Starts the login flow at [serverUrl] for [clientId], replacing only that client's own flow. With [confirmSourceId]
+     * it is a confirmation login for that account source, on its stored server address, and [serverUrl] is ignored
+     * (design decision 16 of `paired-device-guards`): 404 for an unknown ID, 400 for a source that is no account; a full
+     * frame does not refuse it, since nothing is added. Otherwise a 400 for an address that is none and a 409 if the frame
+     * is full and has no account the login could renew. A 502 if the server cannot be asked.
      */
     @Synchronized
-    fun startLogin(serverUrl: String): StartedLogin {
-        val typed = SourceConfigStore.normalizeServerUrl(serverUrl)
-        val all = configs.sources.value
-        if (all.size >= StoredSource.MAX_SOURCES && all.none { it.connection is Connection.Account }) throw SourceConfigStore.tooMany()
-        // An account that is on https already stays there, also when its address is typed with http: the whole flow,
-        // the app password included, runs over https from its first request.
+    fun startLogin(
+        serverUrl: String?,
+        clientId: String,
+        confirmSourceId: String? = null,
+    ): StartedLogin {
+        sweep()
         val url =
-            all
-                .map { it.connection }
-                .filterIsInstance<Connection.Account>()
-                .firstOrNull {
-                    it.serverUrl.startsWith("https://") && SourceConfigStore.serverKey(it.serverUrl) == SourceConfigStore.serverKey(typed)
-                }?.serverUrl ?: typed
+            if (confirmSourceId != null) {
+                confirmedServer(confirmSourceId)
+            } else {
+                typedServer(serverUrl ?: throw ValidationException(mapOf("serverUrl" to "An address starting with http:// or https://")))
+            }
         val start =
             try {
                 clients.loginFlow().start(url)
@@ -73,37 +82,72 @@ class NextcloudConnector(
                 if (e.kind == SourceException.Kind.INSECURE_LOGIN) throw HttpException(502, "nextcloud_insecure_login", e.message.orEmpty())
                 throw HttpException(502, "nextcloud_unreachable", e.message.orEmpty())
             }
-        val started = Flow(randomId(), start, clock.millis())
-        flow = started
+        val started = Flow(randomId(), start, clock.millis(), confirmSourceId)
+        flows[clientId] = started
         return StartedLogin(started.id, start.loginUrl, Instant.ofEpochMilli(started.startedAtMs + LOGIN_VALIDITY_MS))
     }
 
+    /** The server of the account source [id] for a confirmation login. */
+    private fun confirmedServer(id: String): String {
+        val source = configs.get(id) ?: throw HttpException.notFound("No such source")
+        val account = source.connection as? Connection.Account
+        if (account == null || sources.kindOf(source)?.needsFolder != true) {
+            throw ValidationException(mapOf("confirmSourceId" to "Only an account source is confirmed by a login"))
+        }
+        return account.serverUrl
+    }
+
+    /** The server for a login that adds or renews a source. */
+    private fun typedServer(serverUrl: String): String {
+        val typed = SourceConfigStore.normalizeServerUrl(serverUrl)
+        val all = configs.sources.value
+        if (all.size >= StoredSource.MAX_SOURCES && all.none { it.connection is Connection.Account }) throw SourceConfigStore.tooMany()
+        // An account that is on https already stays there, also when its address is typed with http: the whole flow,
+        // the app password included, runs over https from its first request.
+        return all
+            .map { it.connection }
+            .filterIsInstance<Connection.Account>()
+            .firstOrNull {
+                it.serverUrl.startsWith("https://") && SourceConfigStore.serverKey(it.serverUrl) == SourceConfigStore.serverKey(typed)
+            }?.serverUrl ?: typed
+    }
+
+    /** Ends the flows that expired and those of clients that are no longer paired, so a revoked device's flow ends. */
+    private fun sweep() {
+        val now = clock.millis()
+        flows.entries.removeAll { (client, flow) -> now - flow.startedAtMs >= LOGIN_VALIDITY_MS || !paired(client) }
+    }
+
     /**
-     * Asks the server once whether the user has approved. On approval the account becomes a source, or a source that is the
-     * same server and user gets the new credentials and keeps its photos and settings. An app password the frame cannot
-     * use after the approval is revoked again in the background (spec "No orphaned app passwords").
+     * Asks the server once whether the user has approved the flow [flowId] of [clientId]; a flow of another client counts
+     * as unknown (`expired`) and stays as it is. On approval the account becomes a source, or a source that is the same
+     * server and user gets the new credentials and keeps its photos and settings; either way [clientId] may widen its
+     * folder for a while. A confirmation login only checks the account and revokes its new app password. An app password
+     * the frame cannot use after the approval is revoked again in the background (spec "No orphaned app passwords").
      */
     @Synchronized
-    fun pollLogin(flowId: String): LoginState {
-        val current = flow
-        if (current == null || current.id != flowId || clock.millis() - current.startedAtMs >= LOGIN_VALIDITY_MS) {
-            if (current?.id == flowId) flow = null
-            return LoginState("expired")
-        }
+    fun pollLogin(
+        flowId: String,
+        clientId: String,
+    ): LoginState {
+        sweep()
+        val current = flows[clientId]
+        if (current == null || current.id != flowId) return LoginState("expired")
         val login = clients.loginFlow()
         val polled =
             try {
                 login.poll(current.start)
             } catch (e: SourceException) {
-                flow = null
+                flows.remove(clientId)
                 return LoginState("failed", error = e.message, code = e.kind.code)
             }
         if (polled == LoginPoll.Pending) return LoginState("pending")
         val done = polled as LoginPoll.Done
-        flow = null
+        flows.remove(clientId)
         return try {
             val userId = login.userId(done.serverUrl, done.loginName, done.appPassword)
             val account = Connection.Account(done.serverUrl, userId, done.loginName, done.appPassword)
+            if (current.confirmSourceId != null) return confirm(current, done, account, clientId)
             val all = configs.sources.value
             // By the address the server reports, else by the one the login started with: a server that moved to https on
             // another port is still the same source.
@@ -112,6 +156,7 @@ class NextcloudConnector(
                     ?: all.firstOrNull { sameAccount(it.connection, account.copy(serverUrl = current.start.serverUrl)) }
             if (known != null) {
                 sources.reconnect(known.id, account)
+                grants.grant(clientId, known.id)
                 LoginState("done", user = done.loginName, sourceId = known.id)
             } else if (all.size >= StoredSource.MAX_SOURCES) {
                 // The server issued an app password the frame cannot use: it must not stay active there.
@@ -126,6 +171,7 @@ class NextcloudConnector(
                     sources.add(
                         StoredSource(configs.newId(), NextcloudAccountKind.ID, SourceConfigStore.hostOf(done.serverUrl), account),
                     )
+                grants.grant(clientId, added.id)
                 LoginState("done", user = done.loginName, sourceId = added.id)
             }
         } catch (e: SourceException) {
@@ -136,6 +182,35 @@ class NextcloudConnector(
             val code = if (e.code == "too_many_sources") SourceErrorCodes.TOO_MANY_SOURCES else SourceErrorCodes.UNEXPECTED
             LoginState("failed", error = e.message, code = code)
         }
+    }
+
+    /**
+     * A confirmation login was approved as [account] (design decision 16): compared with the connection of the source it
+     * confirms only, by the reported address and then by the start address. On a match [clientId] may widen that
+     * source's folder; any other account, also that of another source, fails with `other_account`. Either way the new
+     * app password is revoked, and no source is added or reconnected: the source keeps its password, status and result.
+     */
+    private fun confirm(
+        flow: Flow,
+        done: LoginPoll.Done,
+        account: Connection.Account,
+        clientId: String,
+    ): LoginState {
+        revokeNew(done)
+        val id = flow.confirmSourceId!!
+        val stored = configs.get(id)?.connection as? Connection.Account
+        val same =
+            stored != null &&
+                (sameAccount(stored, account) || sameAccount(stored, account.copy(serverUrl = flow.start.serverUrl)))
+        if (!same) {
+            return LoginState(
+                "failed",
+                error = "The login was approved by another account than the one of this source",
+                code = SourceErrorCodes.OTHER_ACCOUNT,
+            )
+        }
+        grants.grant(clientId, id)
+        return LoginState("done", user = done.loginName, sourceId = id)
     }
 
     /** The app password of [done] is not used: revoked in the background, as a silent server would hold the request up. */

@@ -340,11 +340,17 @@ object TestServerMain {
                             ok(text?.line.orEmpty() + "\n" + text?.place.orEmpty())
                         }
 
-                        // The user approves the login in the Nextcloud tab; `slow=3000` makes the answer take that many ms.
+                        // The user approves the last login started in the Nextcloud tab; `slow=3000` makes the answer take
+                        // that many ms, `user=other` approves it as another Nextcloud user than the default one.
                         "/nextcloud/approve" -> {
-                            (nextcloud.login as FakeLoginFlow).donePollDelayMs = q["slow"]?.toLong() ?: 0L
-                            (nextcloud.login as FakeLoginFlow).approved = true
-                            ok("approved")
+                            val login = nextcloud.login as FakeLoginFlow
+                            login.donePollDelayMs = q["slow"]?.toLong() ?: 0L
+                            if (login.flows.isEmpty()) {
+                                newFixedLengthResponse(Response.Status.CONFLICT, "text/plain", "no login started")
+                            } else {
+                                login.approve(q["user"] ?: login.userId)
+                                ok("approved")
+                            }
                         }
 
                         // A share on the server: `/nextcloud/share?token=AbC123&password=pw`, `file=1` for the share of a single file,

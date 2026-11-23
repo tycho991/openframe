@@ -39,6 +39,8 @@ class SourceRegistry(
     private val reserveBytes: Long = OriginalsStore.ON_DEMAND_FLOOR_BYTES,
     /** Frees old trash entries for the download of an original a rendering needs ([OriginalsStore.ensureRoomOnDisk]). */
     private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
+    /** Who may widen the folder of an account now (design decision 14 of `paired-device-guards`). */
+    val grants: AccountGrants = AccountGrants(clock),
 ) {
     private class Running(
         val source: RemoteSource,
@@ -150,12 +152,30 @@ class SourceRegistry(
         }
     }
 
-    /** Validates and applies a partial change of [id], then lets that source sync again soon. */
+    /**
+     * Validates and applies a partial change of [id], then lets that source sync again soon. A change that widens what an
+     * account reads ([Widening]) is refused as a whole with 403 `account_login_required` unless [clientId] completed a
+     * login for this account within [AccountGrants.VALIDITY_MS] (spec `remote-sources`, "Proof for widening an account
+     * folder"); a 400 for an invalid field comes first.
+     */
     fun patch(
         id: String,
         patch: JsonObject,
+        clientId: String?,
     ): StoredSource {
-        val next = configs.patch(id, patch)
+        val next =
+            configs.patch(id, patch) guard@{ prev, changed ->
+                if (kindOf(prev)?.needsFolder != true) return@guard
+                val fields = Widening.fields(prev, changed)
+                if (fields.isNotEmpty() && !grants.has(clientId, id)) {
+                    throw HttpException(
+                        403,
+                        "account_login_required",
+                        "A wider folder of this account needs a Nextcloud login to it on this device within 30 minutes",
+                        fields.associateWith { "Widens what the source reads; confirm the account by a login first" },
+                    )
+                }
+            }
         running[id]?.scheduler?.configChanged()
         return next
     }
@@ -183,6 +203,7 @@ class SourceRegistry(
         val refused = refusedCredentials(id)
         // The configuration goes first: a sync that is still running sees it gone and applies nothing.
         val config = configs.remove(id) ?: return false
+        grants.sourceRemoved(id)
         val gone = running.remove(id)
         gone?.scheduler?.stop()
         results.remove(id)

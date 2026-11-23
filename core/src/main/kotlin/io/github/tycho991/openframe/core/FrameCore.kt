@@ -74,6 +74,7 @@ import io.github.tycho991.openframe.core.slideshow.SlideState
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import io.github.tycho991.openframe.core.slideshow.StoredTransitionGovernor
 import io.github.tycho991.openframe.core.slideshow.TransitionGovernor
+import io.github.tycho991.openframe.core.sources.AccountGrants
 import io.github.tycho991.openframe.core.sources.SourceConfigStore
 import io.github.tycho991.openframe.core.sources.SourceOriginals
 import io.github.tycho991.openframe.core.sources.SourceRegistry
@@ -271,10 +272,14 @@ class FrameCore(
             onSynced = { backfill.request() },
             reserveBytes = reserveBytes,
             makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
+            grants = AccountGrants(clock, ::isPaired),
         )
 
-    /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
-    val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock)
+    /** Adding Nextcloud sources: the login flow for an account, the link of a share, and confirmation logins. */
+    val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock, ::isPaired)
+
+    private fun isPaired(clientId: String) = clients.clients.value.any { it.id == clientId }
+
     private val originals = SourceOriginals(localSource, sources, trash)
     val cache: RenderCache =
         RenderCache(
