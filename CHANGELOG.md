@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/tycho991/openframe/compare/v0.13.0...v0.14.0) (2026-11-23)
+
+
+### Features
+
+* library performance for 10,000 photos and one storage reserve ([#131](https://github.com/tycho991/openframe/issues/131)) ([0261617](https://github.com/tycho991/openframe/commit/0261617c9b5f257bec841c8f08584fb7a0f4c277))
+* trash for deleted photos, pairing origin and a login proof for wider account folders ([#133](https://github.com/tycho991/openframe/issues/133)) ([bd1c6b7](https://github.com/tycho991/openframe/commit/bd1c6b7c73913c43a40850e82dea15b718ff4e02))
+
+
+### Bug Fixes
+
+* count only the LAN for the display schedule, Android 16 opt-out, no code in local-only mode ([#130](https://github.com/tycho991/openframe/issues/130)) ([2844b0c](https://github.com/tycho991/openframe/commit/2844b0ca1ba81a713912cda61278db24d6474bb3))
+
 ## [0.13.0](https://github.com/tycho991/openframe/compare/v0.12.0...v0.13.0) (2026-11-21)
 
 
