@@ -405,6 +405,19 @@ class NextcloudConnectorTest {
         assertEquals(8, configs.sources.value.size)
         assertEquals("done", confirm(id, "anna").state)
     }
+
+    @Test
+    fun `A confirmation for a source removed meanwhile fails as not found`() {
+        val id = login("https://cloud.example.org", "pw-old-1111")
+        val flow = connector.startLogin(null, PHONE, confirmSourceId = id)
+        registry.remove(id)
+        login.approve()
+        val state = connector.pollLogin(flow.flowId, PHONE)
+        assertEquals("failed", state.state)
+        assertEquals("not_found", state.code)
+        background()
+        assertTrue(login.revokedPasswords.any { it.contains("token") }, "the new app password is revoked")
+    }
 }
 
 /** The client that logs in, as the route passes it. */

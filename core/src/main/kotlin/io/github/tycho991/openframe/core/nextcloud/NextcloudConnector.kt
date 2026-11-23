@@ -198,7 +198,14 @@ class NextcloudConnector(
     ): LoginState {
         revokeNew(done)
         val id = flow.confirmSourceId!!
-        val stored = configs.get(id)?.connection as? Connection.Account
+        val source =
+            configs.get(id)
+                ?: return LoginState(
+                    "failed",
+                    error = "The source this login was to confirm was removed meanwhile",
+                    code = SourceException.Kind.NOT_FOUND.code,
+                )
+        val stored = source.connection as? Connection.Account
         val same =
             stored != null &&
                 (sameAccount(stored, account) || sameAccount(stored, account.copy(serverUrl = flow.start.serverUrl)))

@@ -1233,7 +1233,8 @@ components:
       description: >-
         Why a sync or a login failed. `unreachable`: no connection, or an answer too slow; `tls`: the certificate is
         not trusted; `tls_handshake`: no secure connection for another reason; `unauthorized`: the credentials or the
-        password of a share were refused; `not_found`: the folder is not there; `gone`: the share was withdrawn;
+        password of a share were refused; `not_found`: the folder is not there, or the source a confirmation login
+        was for was removed meanwhile; `gone`: the share was withdrawn;
         `not_readable`: the share only accepts uploads; `server`: the server answered with an error; `throttled`: the
         server asks to wait (HTTP 429); `protocol`: an answer that is not one of Nextcloud, or a listing with a DOCTYPE
         or an entry outside the folder; `limit`: an answer beyond a fixed limit; `changed`: a file was replaced during
