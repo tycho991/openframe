@@ -693,6 +693,10 @@ class LibraryApiTest {
         assertTrue(batched.body().contains("storage_unavailable"), batched.body())
         assertTrue(File(frame.photos, "a.jpg").exists() && File(frame.photos, "b.jpg").exists(), "nothing deleted")
         assertEquals(3, frame.core.library.index.library.value.photos.size, "the photos stay in the library")
+        // Without a local photo the batch answers as before: a Nextcloud photo is failed, an unknown ID missing.
+        val remoteOnly = batchResult(batch("delete", listOf(remote, "local-${"e".repeat(40)}")))
+        assertEquals(listOf(remote), remoteOnly.failed)
+        assertEquals(409, frame.send("DELETE", "/api/v1/photos/$remote").statusCode())
         frame.platform.mounted = true
         assertEquals(204, frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}").statusCode())
     }

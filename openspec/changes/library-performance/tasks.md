@@ -214,7 +214,7 @@
 
 ## 11. Capture dates
 
-- [x] 11.1 `AndroidMediaEngine.parseExifDate` with `isLenient = false`; `CaptureDates.plausible` (before 1800 →
+- [x] 11.1 `AndroidMediaEngine.parseExifDate` strict (fields checked, then placed in the device zone); `CaptureDates.plausible` (before 1800 →
   `null`) in `LocalPhotoSource` and `RemoteSource` before the file date applies (design decision 10). Verify:
   `AndroidMediaEngineTest`: `0000:00:00 00:00:00` and `2024:00:00 00:00:00` give `null`; a `:core` test with an
   engine wrapper returning year −1: `GET /photos` with the contract check gives the file date as a valid `date-time`

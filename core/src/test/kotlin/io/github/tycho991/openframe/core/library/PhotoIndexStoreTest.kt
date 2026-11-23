@@ -66,6 +66,23 @@ class PhotoIndexStoreTest {
         assertEquals(2, reports.size, "an edit without a change reports nothing")
     }
 
+    /** An applied edit stays applied when the cleanup after it fails (review of `library-performance`). */
+    @Test
+    fun `A failing listener does not make an applied edit fail`() {
+        val log = AppLog(TestClock())
+        val s = PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log), log) { error("closed") }
+        s.load()
+        val a = entry("a.jpg")
+        s.edit { it.put(a) }
+        val result = s.edit { it.remove(a.id) }
+        assertEquals(a, result)
+        assertFalse(
+            s.library.value.photos
+                .containsKey(a.id),
+        )
+        assertTrue(log.recent(10).any { it.message.startsWith("Cleaning up after 1 removed photos failed") })
+    }
+
     @Test
     fun `A new entry gets a version above every earlier one`() {
         val s = store()

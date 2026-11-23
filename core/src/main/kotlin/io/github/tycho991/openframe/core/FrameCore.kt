@@ -222,6 +222,7 @@ class FrameCore(
     private val index =
         PhotoIndexStore(
             JsonStore(File(dirs.state, "index.json"), StoredIndex.serializer(), scope, log, backupOnLoad = true),
+            log,
             ::photosRemoved,
         )
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)

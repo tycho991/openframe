@@ -21,10 +21,7 @@ import io.github.tycho991.openframe.core.platform.SkipReason
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.text.ParseException
-import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.TimeZone
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -308,20 +305,25 @@ class AndroidMediaEngine(
          * EXIF date without time zone, as the device's local time. Strict: a date that is not on the calendar, such as
          * `0000:00:00 00:00:00` of a camera without a set clock, is `null` instead of a date rolled into the year 1 BC
          * (spec `photo-library`, "Implausible capture dates"). `CaptureDates` in the core drops dates before 1800 as well.
+         * The fields are checked on their own and then placed in the device's zone, so that a time in the gap of the
+         * switch to summer time is moved forward as `ZonedDateTime` does instead of being refused.
          */
         fun parseExifDate(value: String?): java.time.Instant? {
             if (value.isNullOrBlank()) return null
-            val format =
-                SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply {
-                    timeZone = TimeZone.getDefault()
-                    isLenient = false
-                }
             return try {
-                format.parse(value.trim())?.let { java.time.Instant.ofEpochMilli(it.time) }
-            } catch (e: ParseException) {
+                java.time.LocalDateTime
+                    .parse(value.trim(), EXIF_DATE)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toInstant()
+            } catch (e: java.time.DateTimeException) {
                 null
             }
         }
+
+        private val EXIF_DATE: java.time.format.DateTimeFormatter =
+            java.time.format.DateTimeFormatter
+                .ofPattern("uuuu:MM:dd HH:mm:ss", Locale.US)
+                .withResolverStyle(java.time.format.ResolverStyle.STRICT)
 
         fun orientationMatrix(
             orientation: Int,

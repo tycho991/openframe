@@ -271,8 +271,11 @@ class RemoteSource(
                 }
             }
         }
-        // The originals and renderings of removed photos go through the index's notification (design decision 4 of
-        // `library-performance`), as those of photos whose new version was skipped.
+        // The renderings of removed photos go through the index's notification (design decision 4 of
+        // `library-performance`), and so do the originals of photos whose new version was skipped. The originals of
+        // vanished photos go here as well, before the trim: counted in the total, they would make it evict originals of
+        // photos that stay. The notification's removal later finds nothing left.
+        if (removed.isNotEmpty()) originals.removeAll(removed.map { it.id })
         originals.trim(budget)
         val result = ScanResult(added, updated, removed.size, skipped)
         if (result.added + result.updated + result.removed + result.skipped > 0) log.i(TAG, "Sync of $id: $result")

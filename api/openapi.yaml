@@ -358,8 +358,8 @@ paths:
       summary: Hide, unhide or delete several photos.
       description: >-
         One change of the library: `libraryVersion` changes at most once, however many IDs the batch has. A delete
-        batch is refused with 503 (`storage_unavailable`) while the photo folder is unavailable, and then deletes
-        nothing.
+        batch with a local photo is refused with 503 (`storage_unavailable`) while the photo folder is unavailable, and
+        then deletes nothing.
       requestBody:
         required: true
         content:
@@ -419,8 +419,8 @@ paths:
       summary: Remove file, index entry and rendered sizes.
       description: >-
         A photo of a read-only source (any source but `local`) is refused with 409 and the error code
-        `read_only_source`. While the photo folder is unavailable, for example because the storage is not mounted,
-        nothing is deleted (503, `storage_unavailable`).
+        `read_only_source`. While the photo folder is unavailable, for example because the storage is not mounted, a
+        local photo is not deleted (503, `storage_unavailable`).
       responses:
         "204": { description: Deleted. }
         "401": { $ref: "#/components/responses/Unauthorized" }

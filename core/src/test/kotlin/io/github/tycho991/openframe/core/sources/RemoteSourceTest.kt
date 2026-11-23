@@ -50,11 +50,13 @@ class RemoteSourceTest {
         }
     }
 
-    /** Removed photos are reported by the index; their originals go there as `SourceRegistry.photosRemoved` does. */
+    /**
+     * Removed photos are reported by the index; `SourceRegistry.photosRemoved` removes their originals later, on its
+     * scope, which this test leaves out so that the sync's own removal shows.
+     */
     private val index by lazy {
         PhotoIndexStore(JsonStore(File(dir, "index.json"), StoredIndex.serializer(), TestScope(), log)) { removed ->
             removedPhotos += removed
-            originals.removeAll(removed.map { it.id })
         }.also { it.load() }
     }
     private val originals by lazy { OriginalsStore(File(dir, "originals"), freeBytes = { freeBytes }) }
@@ -428,6 +430,29 @@ class RemoteSourceTest {
         originals.fileOf(after).delete()
         assertEquals(ScanResult(0, 0, 0, 0), sync())
         assertEquals(libraryVersion, index.library.value.version)
+    }
+
+    /** The trim after a sync does not count the originals of photos that vanished in it (review of `library-performance`). */
+    @Test
+    fun `Originals of vanished photos do not make the trim evict ones that stay`() {
+        // Three originals of 400 KiB and a budget of 1 MiB: only the vanished one has to go.
+        val padded = jpg() + ByteArray(400 * 1024)
+        for (name in listOf("a.jpg", "b.jpg", "c.jpg")) remote.put(name, padded, "e-$name")
+        sync()
+        File(dir, "tight.json").writeText(
+            StoreJson.encodeToString(
+                StoredSources.serializer(),
+                StoredSources(sources = listOf(FakeKind.source("nextcloud").copy(originalsBudgetMb = 1))),
+            ),
+        )
+        val tightConfigs =
+            SourceConfigStore(JsonStore(File(dir, "tight.json"), StoredSources.serializer(), TestScope(), log)).also { it.load() }
+        val tight = RemoteSource("nextcloud", { tightConfigs.get("nextcloud") }, kind, index, engine, originals, log)
+        val (a, b, c) = listOf("a.jpg", "b.jpg", "c.jpg").map { photos().getValue(it) }
+        remote.remove("c.jpg")
+        runBlocking { tight.scan() }
+        assertFalse(originals.has(c), "the vanished photo's original is gone")
+        assertTrue(originals.has(a) && originals.has(b), "the ones that stay are not evicted")
     }
 
     @Test

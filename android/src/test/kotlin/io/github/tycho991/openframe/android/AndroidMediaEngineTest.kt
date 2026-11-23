@@ -98,6 +98,20 @@ class AndroidMediaEngineTest {
         assertEquals(expected.time, valid?.toEpochMilli())
     }
 
+    /** A time in the gap of the switch to summer time is a capture date, moved forward as java.time does. */
+    @Test
+    fun `A time in the gap of the switch to summer time is a capture date`() {
+        val before = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Europe/Berlin"))
+            val inGap = AndroidMediaEngine.parseExifDate("2024:03:31 02:30:00")
+            assertEquals(java.time.Instant.parse("2024-03-31T01:30:00Z"), inGap)
+            assertEquals(java.time.Instant.parse("2024-07-14T10:30:00Z"), AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00"))
+        } finally {
+            TimeZone.setDefault(before)
+        }
+    }
+
     @Test
     fun gpsPositionFromExif() {
         val siena = engine.probe(fixture("gps-siena.jpg")).gps!!

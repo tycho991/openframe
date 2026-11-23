@@ -414,6 +414,8 @@ class LibraryEdit internal constructor(
  */
 class PhotoIndexStore(
     private val store: JsonStore<StoredIndex>,
+    /** Reports a failure of [onRemoved], which must not make an edit that is applied look failed. */
+    private val log: io.github.tycho991.openframe.core.log.AppLog? = null,
     /**
      * Photos left the index (design decision 4 of `library-performance`): called after the new state is published,
      * inside the edit's lock, so reports come in the order of the edits, with the entries as they were. It only changes
@@ -466,7 +468,14 @@ class PhotoIndexStore(
                 ),
             )
             val removed = edit.takenOut.filter { it !in next.photos }.mapNotNull { current.photos[it] }
-            if (removed.isNotEmpty()) onRemoved(removed)
+            if (removed.isNotEmpty()) {
+                try {
+                    onRemoved(removed)
+                } catch (e: Exception) {
+                    // The edit is applied and stored; only the cleanup of caches failed, which the next start completes.
+                    log?.w("library", "Cleaning up after ${removed.size} removed photos failed", e)
+                }
+            }
         }
         return result
     }

@@ -60,6 +60,8 @@ class PhotoLibrary(
         val processed: List<String>,
         val missing: List<String>,
         val failed: List<String>,
+        /** The failed IDs of photos of a remote source, which the frame only reads; the others failed to delete. */
+        val readOnly: Set<String> = emptySet(),
     )
 
     /** Deletes a file; a test makes it fail. */
@@ -94,22 +96,36 @@ class PhotoLibrary(
      * Deletes the files of the photos with [ids] and removes them in one edit, with one report to the media store; the
      * renderings go through the index's notification. Unknown IDs are missing; a photo of a remote source, which would
      * come back with the next sync, and a file that cannot be deleted are failed; a file already gone counts as deleted.
-     * While the photo folder is unavailable a missing file says nothing, so nothing is deleted: 503
-     * `storage_unavailable` (spec "Photo folder kept").
+     * While the photo folder is unavailable a missing file says nothing, so a batch with a local photo deletes nothing:
+     * 503 `storage_unavailable` (spec "Photo folder kept"). A batch of remote and unknown IDs answers as before.
      */
     fun deleteAll(ids: Collection<String>): BatchResult {
-        if (!local.available()) throw storageUnavailable()
         val library = index.library.value
+        val distinct = ids.distinct()
+        if (distinct.any { library.photos[it]?.source == LocalPhotoSource.SOURCE_ID } && !local.available()) throw storageUnavailable()
         val deleted = ArrayList<PhotoEntry>()
         val missing = ArrayList<String>()
         val failed = ArrayList<String>()
-        for (id in ids.distinct()) {
+        val readOnly = HashSet<String>()
+        for (id in distinct) {
             val entry = library.photos[id]
             when {
-                entry == null -> missing += id
-                entry.source != LocalPhotoSource.SOURCE_ID -> failed += id
-                local.fileOf(entry).let { !it.exists() || runCatching { deleteFile(it) }.getOrDefault(false) } -> deleted += entry
-                else -> failed += id
+                entry == null -> {
+                    missing += id
+                }
+
+                entry.source != LocalPhotoSource.SOURCE_ID -> {
+                    failed += id
+                    readOnly += id
+                }
+
+                local.fileOf(entry).let { !it.exists() || runCatching { deleteFile(it) }.getOrDefault(false) } -> {
+                    deleted += entry
+                }
+
+                else -> {
+                    failed += id
+                }
             }
         }
         if (deleted.isNotEmpty()) {
@@ -117,7 +133,7 @@ class PhotoLibrary(
             notifier.notifyChanged(deleted.map(local::fileOf))
             if (deleted.size == 1) log.i(TAG, "Deleted: ${deleted.single().path}") else log.i(TAG, "Deleted: ${deleted.size} photos")
         }
-        return BatchResult(deleted.map { it.id }, missing, failed)
+        return BatchResult(deleted.map { it.id }, missing, failed, readOnly)
     }
 
     /**
@@ -129,9 +145,7 @@ class PhotoLibrary(
         if (result.missing.isNotEmpty()) return false
         if (result.failed.isEmpty()) return true
         // A photo that the frame only reads would come back with the next sync.
-        if (index.library.value.photos[id]
-                ?.source != LocalPhotoSource.SOURCE_ID
-        ) {
+        if (id in result.readOnly) {
             throw HttpException(
                 409,
                 "read_only_source",
@@ -241,7 +255,7 @@ class PhotoLibrary(
         // Concurrent uploads with the same name must not overwrite each other.
         val targets =
             synchronized(this) {
-                val dir = albumFolder(album)
+                val (dir, created) = albumFolder(album)
                 val taken = HashSet<String>()
                 val targets =
                     staged.map { s ->
@@ -253,6 +267,8 @@ class PhotoLibrary(
                 for ((s, target) in staged.zip(targets)) {
                     if (!renameFile(s.tmp, target)) {
                         moved.forEach { it.delete() }
+                        // Folders this upload created go as well, deepest first; delete() leaves one that is not empty.
+                        created.asReversed().forEach { it.delete() }
                         throw HttpException(500, "move_failed", "File could not be put in place")
                     }
                     moved += target
@@ -265,27 +281,35 @@ class PhotoLibrary(
         return entries
     }
 
+    /** The names in a folder; a test makes the photo folder behave as one that does not tell letter case apart. */
+    @Volatile
+    internal var listNames: (File) -> Array<String>? = { it.list() }
+
     /**
-     * The folder of [album], created if needed. Each level goes into an existing folder of that name, the same name
-     * first and then one that differs only in letter case (spec "Upload into an album in another letter case"), so
-     * the index path matches the folder on the frame's file system. A level that exists as a file is 400
-     * `invalid_album`.
+     * The folder of [album], created if needed, and the folders created for it, top first. Each level is resolved from
+     * the listing of its parent: the same name if it is there, else a folder whose name differs only in letter case
+     * (spec "Upload into an album in another letter case"), else a new one. Never by `exists()`, which says yes for
+     * `holiday` on the frames' file system when only `Holiday` is there, so that the index path would not match the
+     * listing of the next scan. A level that exists as a file is 400 `invalid_album`.
      */
-    private fun albumFolder(album: String?): File {
+    private fun albumFolder(album: String?): Pair<File, List<File>> {
         var dir = local.root
+        val created = ArrayList<File>()
         if (album != null) {
             for (level in album.split('/')) {
-                val exact = File(dir, level)
-                dir =
-                    if (exact.exists()) {
-                        exact
-                    } else {
-                        dir.listFiles { f -> f.isDirectory && f.name.equals(level, ignoreCase = true) }?.firstOrNull() ?: exact
+                val names = listNames(dir).orEmpty()
+                val name =
+                    when {
+                        level in names -> level
+                        else -> names.firstOrNull { it.equals(level, ignoreCase = true) && File(dir, it).isDirectory } ?: level
                     }
+                dir = File(dir, name)
+                if (name !in names) created += dir
             }
         }
         dir.mkdirs()
         if (!dir.isDirectory) {
+            created.asReversed().forEach { it.delete() }
             throw HttpException(
                 400,
                 "invalid_album",
@@ -293,7 +317,7 @@ class PhotoLibrary(
                 mapOf("album" to "A level of the album path is a file in the photo folder"),
             )
         }
-        return dir
+        return dir to created
     }
 
     private fun copyWithSpaceCheck(

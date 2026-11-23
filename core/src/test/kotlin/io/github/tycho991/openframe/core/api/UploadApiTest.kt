@@ -196,6 +196,31 @@ class UploadApiTest {
         )
     }
 
+    /**
+     * The reference frames' photo folder does not tell letter case apart: `holiday` "exists" when only `Holiday` is
+     * there, but its listing shows `Holiday`. Simulated with a folder `holiday` that the listing does not show.
+     */
+    @Test
+    fun `On a folder that does not tell letter case apart the upload goes by the listing`() {
+        File(frame.photos, "Holiday").mkdirs()
+        File(frame.photos, "holiday").mkdirs()
+        frame.core.library.listNames = { dir -> dir.list()?.filter { it != "holiday" }?.toTypedArray() }
+        val res = frame.upload("holiday", "x.jpg" to jpeg)
+        assertEquals(201, res.statusCode(), res.body())
+        assertEquals("Holiday/x.jpg", result(res).photos.single().path)
+    }
+
+    @Test
+    fun `A failed upload into a new album leaves no new folder`() {
+        File(frame.photos, "family").mkdirs()
+        var renames = 0
+        frame.core.library.renameFile = { from, to -> ++renames < 2 && from.renameTo(to) }
+        val res = frame.upload("family/new/2025", "a.jpg" to jpeg, "b.jpg" to jpeg)
+        assertEquals(500, res.statusCode())
+        assertTrue(File(frame.photos, "family").isDirectory, "the folder that was there stays")
+        assertFalse(File(frame.photos, "family/new").exists(), "the folders of the upload go")
+    }
+
     /** Spec `photo-library`: Names of uploaded files › Second file fails. */
     @Test
     fun `When the second file cannot be put in place nothing is stored`() {
