@@ -368,7 +368,9 @@ class TrashStore(
         var bytes = 0L
         walk(folder) { file ->
             bytes += file.length()
-            if (!file.name.startsWith('.') && ImageFormats.hasImageExtension(file.name)) images += file
+            // As the scan sees it: no hidden file and no file in a hidden folder, which a restore would put out of its sight.
+            val hidden = file.relativeTo(folder).invariantSeparatorsPath.split('/').any { it.startsWith('.') }
+            if (!hidden && ImageFormats.hasImageExtension(file.name)) images += file
         }
         val image = images.singleOrNull()
         val path = image?.relativeTo(folder)?.invariantSeparatorsPath

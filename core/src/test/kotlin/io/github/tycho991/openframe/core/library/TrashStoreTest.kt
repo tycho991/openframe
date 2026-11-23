@@ -122,11 +122,13 @@ class TrashStoreTest {
         val stray = File(photos, ".trash/notes.jpg").also { Fixtures.copy("landscape.jpg", it) }
         val oddName = File(photos, ".trash/1795400000000-XYZ/x.jpg").also { Fixtures.copy("landscape.jpg", it) }
         folder("1795400000000-0000000c", "a.jpg", "b.jpg")
+        // An image only in a hidden folder would leave the scan's sight if restored.
+        folder("1795400000000-0000000b", ".upload/x.jpg")
         folder("1795400000000-0000000d")
         File(photos, ".trash/1795400000000-0000000d/readme.txt").writeText("no photo")
         val trash = store()
         val items = trash.items().associateBy { it.id }
-        assertEquals(setOf("1795400000000-0000000c", "1795400000000-0000000d"), items.keys)
+        assertEquals(setOf("1795400000000-0000000b", "1795400000000-0000000c", "1795400000000-0000000d"), items.keys)
         assertTrue(items.values.all { it.damaged && it.path == null && it.photoId == null })
         // Old entries all of them, by the clock: the purge removes the entries but nothing else.
         clock.advance(Duration.ofDays(400))
