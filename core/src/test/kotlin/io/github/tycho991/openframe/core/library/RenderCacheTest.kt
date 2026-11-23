@@ -815,6 +815,22 @@ class RenderCacheTest {
             c.close()
         }
 
+    /** Review of `library-performance`: a rendering that cannot be renamed into place leaves no `.tmp` file. */
+    @Test
+    fun `A failed rename deletes its temporary file`() {
+        val c = cache()
+        try {
+            val e = entry("a.jpg")
+            // A folder in the way of the target: the rename fails.
+            File(File(dir, "cache"), c.target(e, RenderSize.THUMB).name).apply { mkdirs() }.resolve("x").writeBytes(ByteArray(1))
+            val result = runCatching { runBlocking { c.get(e, RenderSize.THUMB) } }
+            assertTrue(result.isFailure)
+            assertEquals(emptyList<String>(), File(dir, "cache").list()!!.filter { it.endsWith(".tmp") })
+        } finally {
+            c.close()
+        }
+    }
+
     /** A folder that counts how often it is listed. */
     private class CountingDir(
         file: File,

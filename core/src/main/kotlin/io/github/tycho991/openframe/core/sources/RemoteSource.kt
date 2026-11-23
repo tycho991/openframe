@@ -194,6 +194,10 @@ class RemoteSource(
                 .associateBy { it.path }
         val skippedKnown = library.skipped.filter { it.source == id }.associateBy { it.path }
         val budget = config.budgetBytes
+        // Photos that vanished from the server: if the sync removes them, their originals go with them, so the trims
+        // during the downloads do not count them and evict originals of photos that stay.
+        val listed = listing.mapTo(HashSet()) { it.path }
+        val vanishing = if (config.removeVanished) known.values.filter { it.path !in listed } else emptyList()
 
         val results = LinkedHashMap<String, Result<PhotoEntry>>()
         var failure: SourceException? = null
@@ -214,7 +218,7 @@ class RemoteSource(
                     break
                 }
                 results[file.path] = result
-                originals.trim(budget)
+                originals.trim(budget, uncounted = vanishing)
             }
         } catch (e: SourceException) {
             // The folder was listed: whatever a download says, it is about a file, not about access to the folder.

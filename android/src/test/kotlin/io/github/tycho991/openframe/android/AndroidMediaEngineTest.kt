@@ -112,6 +112,23 @@ class AndroidMediaEngineTest {
         }
     }
 
+    /** The offset the camera recorded applies; an unknown zone of the device falls back to UTC (review). */
+    @Test
+    fun `The recorded offset applies and an unknown device zone falls back to UTC`() {
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T10:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00", "+02:00") { java.time.ZoneOffset.UTC },
+        )
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T12:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00", "garbage") { java.time.ZoneOffset.UTC },
+        )
+        assertEquals(
+            java.time.Instant.parse("2024-07-14T12:30:00Z"),
+            AndroidMediaEngine.parseExifDate("2024:07:14 12:30:00") { throw java.time.zone.ZoneRulesException("Unknown time-zone ID") },
+        )
+    }
+
     @Test
     fun gpsPositionFromExif() {
         val siena = engine.probe(fixture("gps-siena.jpg")).gps!!

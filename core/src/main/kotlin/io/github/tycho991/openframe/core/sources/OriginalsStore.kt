@@ -117,24 +117,28 @@ class OriginalsStore(
     fun trim(
         budgetBytes: Long,
         keep: File? = null,
+        /** Photos that are about to leave the library: their originals count for nothing and are not trimmed here. */
+        uncounted: Collection<PhotoEntry> = emptyList(),
     ): Int {
-        if (totalBytes() <= budgetBytes) return 0
+        val leaving = uncounted.mapTo(HashSet()) { fileOf(it).name }
+        val leavingBytes = uncounted.sumOf { fileOf(it).length() }
+        if (totalBytes() - leavingBytes <= budgetBytes) return 0
         // Each file is asked for its time and size once.
         val all =
             files()
                 .filter { !it.name.endsWith(PART) }
                 .map { Triple(it, it.lastModified(), it.length()) }
-        var sum = all.sumOf { it.third }
+        var sum = all.filter { it.first.name !in leaving }.sumOf { it.third }
         var removed = 0
         for ((file, _, length) in all.sortedBy { it.second }) {
             if (sum <= budgetBytes) break
-            if (file == keep || file.name in pinned) continue
+            if (file == keep || file.name in pinned || file.name in leaving) continue
             if (file.delete()) {
                 sum -= length
                 removed++
             }
         }
-        total = sum
+        total = sum + all.filter { it.first.name in leaving }.sumOf { it.third }
         return removed
     }
 

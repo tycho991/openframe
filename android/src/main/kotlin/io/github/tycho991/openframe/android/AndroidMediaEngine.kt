@@ -204,8 +204,18 @@ class AndroidMediaEngine(
         return GeoPoint.fromExif(fromFloat(latLong[0]), fromFloat(latLong[1]))
     }
 
-    private fun takenAt(exif: ExifInterface): java.time.Instant? =
-        parseExifDate(exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(ExifInterface.TAG_DATETIME))
+    /**
+     * The capture date with the offset the camera recorded for it, if any (EXIF 2.31; the tags are read by name, since
+     * their constants need API 24 and an older ExifInterface returns `null` for them).
+     */
+    private fun takenAt(exif: ExifInterface): java.time.Instant? {
+        val original = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        return if (original != null) {
+            parseExifDate(original, exif.getAttribute("OffsetTimeOriginal"))
+        } else {
+            parseExifDate(exif.getAttribute(ExifInterface.TAG_DATETIME), exif.getAttribute("OffsetTime"))
+        }
+    }
 
     companion object {
         private const val HEIF_MIN_SDK = 28
@@ -308,16 +318,36 @@ class AndroidMediaEngine(
          * The fields are checked on their own and then placed in the device's zone, so that a time in the gap of the
          * switch to summer time is moved forward as `ZonedDateTime` does instead of being refused.
          */
-        fun parseExifDate(value: String?): java.time.Instant? {
+        fun parseExifDate(
+            value: String?,
+            /** The EXIF offset of the date, `+02:00`; when present and valid it applies instead of the device's zone. */
+            offset: String? = null,
+            zone: () -> java.time.ZoneId = { java.time.ZoneId.systemDefault() },
+        ): java.time.Instant? {
             if (value.isNullOrBlank()) return null
-            return try {
-                java.time.LocalDateTime
-                    .parse(value.trim(), EXIF_DATE)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toInstant()
-            } catch (e: java.time.DateTimeException) {
-                null
-            }
+            val local =
+                try {
+                    java.time.LocalDateTime.parse(value.trim(), EXIF_DATE)
+                } catch (e: java.time.DateTimeException) {
+                    return null
+                }
+            val recorded =
+                offset?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    try {
+                        java.time.ZoneOffset.of(it)
+                    } catch (e: java.time.DateTimeException) {
+                        null
+                    }
+                }
+            if (recorded != null) return local.toInstant(recorded)
+            // A zone ID the device's time zone data does not know would make every capture date unknown: UTC then.
+            val deviceZone =
+                try {
+                    zone()
+                } catch (e: java.time.DateTimeException) {
+                    java.time.ZoneOffset.UTC
+                }
+            return local.atZone(deviceZone).toInstant()
         }
 
         private val EXIF_DATE: java.time.format.DateTimeFormatter =

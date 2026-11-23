@@ -227,6 +227,117 @@ class SlideshowControllerTest {
             assertEquals(photos.subList(1, 3).map { it.id }, morning.first)
         }
 
+    /** A controller of its own with a seeded shuffle; [setup] runs on its images before it starts. */
+    private fun TestScope.seeded(
+        photos: List<PhotoEntry>,
+        order: Order,
+        seed: Int,
+    ): Triple<SlideshowController, FakeImages, MutableStateFlow<Settings>> {
+        val images = FakeImages().apply { readyIds += photos.map { it.id } }
+        val settings = MutableStateFlow(Settings.defaults("x").copy(order = order, intervalSeconds = 30))
+        val controller =
+            SlideshowController(
+                MutableStateFlow(photos),
+                { true },
+                settings,
+                images,
+                backgroundScope,
+                AppLog(TestClock()),
+                kotlin.random.Random(seed),
+            )
+        controller.start()
+        runCurrent()
+        return Triple(controller, images, settings)
+    }
+
+    private fun SlideshowController.shown() = (state.value as SlideState.Showing).photo
+
+    /** Review of `library-performance`: a result of a rendering on demand after the order changed follows the new order. */
+    @Test
+    fun `A result on demand after the order changed goes by the new order`() =
+        runTest {
+            val many = (1..8).map(::photo)
+            val (controller, images, settings) = seeded(many, Order.SHUFFLE, 5)
+            val before = controller.shown()
+            images.readyIds.retainAll(setOf(before.id))
+            controller.next()
+            runCurrent()
+            val demanded = images.demanded.last()
+            settings.value = settings.value.copy(order = Order.CHRONOLOGICAL)
+            runCurrent()
+            images.readyIds += many.map { it.id }
+            images.pending.getValue(demanded).complete(File("x.jpg"))
+            runCurrent()
+            val order = mutableListOf(controller.shown())
+            repeat(3) {
+                controller.next()
+                runCurrent()
+                order += controller.shown()
+            }
+            for ((a, b) in order.zipWithNext()) assertEquals(many[(many.indexOf(a) + 1) % many.size], b, "chronological after $a")
+        }
+
+    /** Review of `library-performance`: renderings on demand after a step back. */
+    @Test
+    fun `A step back renders on demand backwards and a failure does not try the same photos again`() =
+        runTest {
+            val (controller, images, _) = seeded(photos, Order.CHRONOLOGICAL, 1)
+            repeat(2) { controller.next() }
+            runCurrent()
+            assertEquals(photos[2], controller.shown())
+            images.readyIds.retainAll(setOf(photos[2].id))
+            controller.previous()
+            runCurrent()
+            assertEquals(photos[1].id, images.demanded.last())
+            images.pending.getValue(photos[1].id).complete(File("p02.jpg"))
+            runCurrent()
+            assertEquals(photos[1], controller.shown(), "the photo before")
+            images.readyIds += photos.map { it.id }
+            controller.previous()
+            runCurrent()
+            assertEquals(photos[0], controller.shown(), "and on backwards")
+
+            // Back again with every photo before failing: the next tick goes forward, not to the failed ones.
+            controller.next()
+            controller.next()
+            runCurrent()
+            assertEquals(photos[2], controller.shown())
+            images.readyIds.retainAll(setOf(photos[2].id))
+            images.broken += listOf(photos[1].id, photos[0].id, photos[4].id)
+            images.demanded.clear()
+            controller.previous()
+            runCurrent()
+            assertEquals(listOf(photos[1].id, photos[0].id, photos[4].id), images.demanded)
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(photos[3].id, images.demanded.last(), "the tick tries the photo after the one on screen")
+            assertEquals(4, images.demanded.size)
+        }
+
+    /** Review of `library-performance`: a rendering on demand across the end of a shuffled pass keeps that pass. */
+    @Test
+    fun `A result on demand across the end of a pass keeps the new pass`() =
+        runTest {
+            val (controller, images, _) = seeded(photos, Order.SHUFFLE, 9)
+            repeat(4) { controller.next() }
+            runCurrent()
+            images.readyIds.retainAll(setOf(controller.shown().id))
+            controller.next()
+            runCurrent()
+            val demanded = images.demanded.last()
+            images.pending.getValue(demanded).complete(File("x.jpg"))
+            runCurrent()
+            assertEquals(demanded, controller.shown().id)
+            images.readyIds += photos.map { it.id }
+            val pass = mutableListOf(controller.shown())
+            repeat(4) {
+                controller.next()
+                runCurrent()
+                pass += controller.shown()
+            }
+            assertEquals(photos.toSet(), pass.toSet(), "every photo once in the new pass")
+        }
+
     @Test
     fun `Change after interval and wrap-around`() =
         runTest {

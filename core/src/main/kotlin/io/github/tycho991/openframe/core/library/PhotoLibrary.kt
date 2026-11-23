@@ -268,7 +268,7 @@ class PhotoLibrary(
                     if (!renameFile(s.tmp, target)) {
                         moved.forEach { it.delete() }
                         // Folders this upload created go as well, deepest first; delete() leaves one that is not empty.
-                        created.asReversed().forEach { it.delete() }
+                        removeFolders(created)
                         throw HttpException(500, "move_failed", "File could not be put in place")
                     }
                     moved += target
@@ -294,31 +294,52 @@ class PhotoLibrary(
      */
     private fun albumFolder(album: String?): Pair<File, List<File>> {
         var dir = local.root
-        val created = ArrayList<File>()
+        val levels = ArrayList<File>()
         if (album != null) {
             for (level in album.split('/')) {
-                val names = listNames(dir).orEmpty()
+                val names =
+                    when {
+                        // Below a level that is still to be created there is nothing.
+                        !dir.exists() -> emptyArray()
+
+                        !dir.isDirectory -> throw invalidAlbum()
+
+                        // A folder that cannot be listed says nothing about what is in it.
+                        else -> listNames(dir) ?: throw HttpException(500, "move_failed", "The album folder could not be read")
+                    }
                 val name =
                     when {
                         level in names -> level
                         else -> names.firstOrNull { it.equals(level, ignoreCase = true) && File(dir, it).isDirectory } ?: level
                     }
                 dir = File(dir, name)
-                if (name !in names) created += dir
+                levels += dir
             }
         }
-        dir.mkdirs()
-        if (!dir.isDirectory) {
-            created.asReversed().forEach { it.delete() }
-            throw HttpException(
-                400,
-                "invalid_album",
-                "The album path is invalid",
-                mapOf("album" to "A level of the album path is a file in the photo folder"),
-            )
+        // Level by level, so that only folders this upload really created are recorded, never an existing file.
+        val created = ArrayList<File>()
+        for (level in levels) {
+            if (!level.exists() && level.mkdir()) created += level
+            if (!level.isDirectory) {
+                removeFolders(created)
+                throw invalidAlbum()
+            }
         }
         return dir to created
     }
+
+    /** Deletes the folders this upload created, deepest first: only folders, and only empty ones. */
+    private fun removeFolders(created: List<File>) {
+        created.asReversed().forEach { if (it.isDirectory) it.delete() }
+    }
+
+    private fun invalidAlbum() =
+        HttpException(
+            400,
+            "invalid_album",
+            "The album path is invalid",
+            mapOf("album" to "A level of the album path is a file in the photo folder"),
+        )
 
     private fun copyWithSpaceCheck(
         input: java.io.InputStream,

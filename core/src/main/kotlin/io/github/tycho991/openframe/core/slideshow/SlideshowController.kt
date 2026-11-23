@@ -165,6 +165,7 @@ class SlideshowController(
         data class DemandFailed(
             val generation: Long,
             val last: PhotoEntry,
+            val step: Int,
         ) : Command
 
         /** [command], and [done] completes once it has been handled, also if handling it failed. */
@@ -197,6 +198,9 @@ class SlideshowController(
 
     /** Where the latest search of [show] found each candidate: the order goes there for a result of it. */
     private var demandMarks: Map<String, Playlist.Mark> = emptyMap()
+
+    /** Where the latest search of [show] began. */
+    private var demandStart: Playlist.Mark? = null
 
     /** The renderings on demand of the latest search of [show]; a newer search, resting or a shown photo ends it. */
     private var demand: Job? = null
@@ -347,9 +351,10 @@ class SlideshowController(
             is Command.DemandFailed -> {
                 if (command.generation != demandGeneration || isResting) return
                 demand = null
-                // The next tick tries the photos after the last one tried, in the direction of the step (spec "Bounded
-                // rendering ahead"), from where the search found it.
-                demandMarks[command.last.id]?.let(playlist::reset)
+                // The next tick tries the photos after the last one tried (spec "Bounded rendering ahead"), from where the
+                // search found it. After a step back the tick goes forward, so the order goes back to where the search
+                // began instead, and the tick does not render the failed photos behind it again.
+                (if (command.step < 0) demandStart else demandMarks[command.last.id])?.let(playlist::reset)
                 armTimer()
             }
 
@@ -391,6 +396,10 @@ class SlideshowController(
     private suspend fun onLibrary(command: Command.Library) {
         val current = (_state.value as? SlideState.Showing)?.photo
         val removed = playlist.update(command.photos, command.order)
+        // Positions found in the order before it changed no longer hold: a result of the renderings on demand then goes
+        // through a new search from the photo on screen.
+        demandMarks = emptyMap()
+        demandStart = null
         // The order follows the library at once; what the display shows waits until it comes on.
         if (isResting) return
         when {
@@ -470,6 +479,7 @@ class SlideshowController(
         val start = playlist.mark()
         val candidates = ArrayList<PhotoEntry>()
         val marks = HashMap<String, Playlist.Mark>()
+        val seen = HashSet<String>()
         var due = true
         for (i in 0 until playlist.size) {
             val entry =
@@ -493,7 +503,9 @@ class SlideshowController(
                 refreshShown()
                 return
             }
-            if (candidates.size < PREFETCH_AHEAD) {
+            // Across the end of a pass the same photo can come again: it is a candidate once.
+            if (candidates.size < PREFETCH_AHEAD && entry.id !in seen) {
+                seen += entry.id
                 candidates += entry
                 if (candidates.size <= MAX_DEMAND_ATTEMPTS) marks[entry.id] = playlist.mark()
             }
@@ -511,6 +523,7 @@ class SlideshowController(
         if (!stays) _state.value = SlideState.Loading
         val generation = demandGeneration
         demandMarks = marks
+        demandStart = start
         val tries = candidates.take(MAX_DEMAND_ATTEMPTS)
         demand =
             scope.launch {
@@ -528,7 +541,7 @@ class SlideshowController(
                     commands.send(Command.Demanded(generation, entry, file, step))
                     return@launch
                 }
-                commands.send(Command.DemandFailed(generation, tries.last()))
+                commands.send(Command.DemandFailed(generation, tries.last(), step))
             }
     }
 
@@ -537,6 +550,7 @@ class SlideshowController(
         demand?.cancel()
         demand = null
         demandMarks = emptyMap()
+        demandStart = null
         demandGeneration++
     }
 

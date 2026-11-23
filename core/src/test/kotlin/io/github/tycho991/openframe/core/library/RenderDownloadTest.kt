@@ -327,6 +327,29 @@ class RenderDownloadTest {
         assertEquals(listOf(busy.id, photo.id), fetched.toList(), "one download for both requests")
     }
 
+    /** Review of `library-performance`: one of two awaiters gives up; the other still gets the file. */
+    @Test
+    fun `When one of two awaiters gives up the other gets the file and the download goes on`() {
+        gate = CountDownLatch(1)
+        val photo = remote("p.jpg")
+        lateinit var request: OriginalRequest
+        failFetch = {
+            request = it
+            null
+        }
+        runBlocking {
+            val first = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            val second = async(start = CoroutineStart.UNDISPATCHED) { cache.get(photo, RenderSize.DISPLAY) }
+            assertTrue(fetching.await(10, TimeUnit.SECONDS))
+            first.cancel()
+            kotlinx.coroutines.delay(200)
+            gate.countDown()
+            assertTrue(withTimeout(10_000) { second.await() }.isFile)
+        }
+        assertFalse(request.cancelled(), "the download was not cancelled")
+        assertEquals(listOf(photo.id), fetched.toList())
+    }
+
     @Test
     fun `Closing during a download returns`() {
         gate = CountDownLatch(1)

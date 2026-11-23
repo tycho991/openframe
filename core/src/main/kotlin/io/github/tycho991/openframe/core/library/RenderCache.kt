@@ -873,6 +873,7 @@ class RenderCache(
         val storage = e is SourceException && e.kind == SourceException.Kind.STORAGE
         val failed = ArrayList<Job>()
         val dropped = ArrayList<Job>()
+        var handedOver = 0
         synchronized(lock) {
             if (pendingDownloads[download.entry.id] === download) pendingDownloads.remove(download.entry.id)
             for (job in download.jobs) {
@@ -884,7 +885,9 @@ class RenderCache(
                         else -> false
                     }
                 when {
-                    again && handOverLocked(job) -> {}
+                    again && handOverLocked(job) -> {
+                        handedOver++
+                    }
 
                     download.cancelled || removed(job.entry) -> {
                         removeInFlight(job)
@@ -900,7 +903,7 @@ class RenderCache(
         }
         if (failed.isNotEmpty()) {
             log.w(TAG, "The original of ${download.entry.path} could not be fetched: ${e.message}")
-        } else if (!download.cancelled) {
+        } else if (handedOver > 0 && !download.cancelled) {
             log.i(TAG, "The original of ${download.entry.path} is fetched again on demand: ${e.message}")
         }
         // Only the decoder crashing on a fetched original, in the check of its dimensions, quarantines it; a failed
@@ -1021,8 +1024,14 @@ class RenderCache(
     private fun deleteNow(files: List<File>) {
         if (files.isEmpty()) return
         files.forEach { it.delete() }
-        synchronized(lock) { files.forEach { deleting -= it.name } }
+        synchronized(lock) {
+            files.forEach { deleting -= it.name }
+            deletedDuringRebuild?.let { set -> files.forEach { set += it.name } }
+        }
     }
+
+    /** Names deleted while a [rebuild] lists the folder, which it must not take back; `null` outside a rebuild. */
+    private var deletedDuringRebuild: HashSet<String>? = null
 
     /** Under [lock]: [name] leaves the index. */
     private fun forget(name: String) {
@@ -1039,7 +1048,11 @@ class RenderCache(
      * stays; the order of use of known names stays.
      */
     private fun rebuild() {
-        val (since, known) = synchronized(lock) { uses to (items.keys + deleting) }
+        val (since, known) =
+            synchronized(lock) {
+                deletedDuringRebuild = HashSet()
+                uses to (items.keys + deleting)
+            }
         val listed = listFolder(dir).orEmpty().filter { !it.name.startsWith('.') }
         val names = listed.mapTo(HashSet()) { it.name }
         // A file the index does not know is asked for its time and size outside the lock, once.
@@ -1048,9 +1061,12 @@ class RenderCache(
             for (name in items.keys.toList()) {
                 if (name !in names && items.getValue(name).since <= since) forget(name)
             }
+            val deletedMeanwhile = deletedDuringRebuild.orEmpty()
+            deletedDuringRebuild = null
             for ((name, size, time) in found) {
-                // Not a file being deleted, nor one of a photo that left the library meanwhile.
-                if (name in items || name in deleting) continue
+                // Not a file being deleted or deleted while the folder was listed, nor one of a photo that left the
+                // library meanwhile.
+                if (name in items || name in deleting || name in deletedMeanwhile) continue
                 val (photoId, version) = parse(name) ?: continue
                 if (tombstones[photoId]?.let { version <= it } == true) continue
                 add(name, size, time)

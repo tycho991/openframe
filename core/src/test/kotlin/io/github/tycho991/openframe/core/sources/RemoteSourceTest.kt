@@ -455,6 +455,31 @@ class RemoteSourceTest {
         assertTrue(originals.has(a) && originals.has(b), "the ones that stay are not evicted")
     }
 
+    /** Review of `library-performance`: the trims during the downloads do not count vanished originals either. */
+    @Test
+    fun `A download during a sync does not evict originals because of vanished ones`() {
+        val padded = jpg() + ByteArray(600 * 1024)
+        for (name in listOf("a.jpg", "b.jpg", "c.jpg")) remote.put(name, padded, "e-$name")
+        sync()
+        val (a, b, c) = listOf("a.jpg", "b.jpg", "c.jpg").map { photos().getValue(it) }
+        listOf(a, b, c).forEachIndexed { i, e -> originals.fileOf(e).setLastModified(1_000L * (i + 1)) }
+        File(dir, "tight.json").writeText(
+            StoreJson.encodeToString(
+                StoredSources.serializer(),
+                StoredSources(sources = listOf(FakeKind.source("nextcloud").copy(originalsBudgetMb = 2))),
+            ),
+        )
+        val tightConfigs =
+            SourceConfigStore(JsonStore(File(dir, "tight.json"), StoredSources.serializer(), TestScope(), log)).also { it.load() }
+        val tight = RemoteSource("nextcloud", { tightConfigs.get("nextcloud") }, kind, index, engine, originals, log)
+        remote.remove("c.jpg")
+        remote.put("d.jpg", padded, "e-d.jpg")
+        runBlocking { tight.scan() }
+        val d = photos().getValue("d.jpg")
+        assertFalse(originals.has(c))
+        assertTrue(originals.has(a) && originals.has(b) && originals.has(d), "the ones that stay are not evicted")
+    }
+
     @Test
     fun `A library larger than the budget is not downloaded again at every run`() {
         remote.put("a.jpg", jpg(), "e1")

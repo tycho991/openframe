@@ -210,6 +210,30 @@ class UploadApiTest {
         assertEquals("Holiday/x.jpg", result(res).photos.single().path)
     }
 
+    /**
+     * On the frames' file system a file `Photo.JPG` also answers to `photo.jpg`. Simulated with a file `photo.jpg` that
+     * the listing does not show: the refused upload must not delete it (review of `library-performance`).
+     */
+    @Test
+    fun `A refused album never deletes a file of the same name in another letter case`() {
+        val photo = File(frame.photos, "photo.jpg").apply { parentFile.mkdirs() }.also { it.writeBytes(jpeg) }
+        File(frame.photos, "Photo.JPG").writeBytes(jpeg)
+        frame.core.library.listNames = { dir -> dir.list()?.filter { it != "photo.jpg" }?.toTypedArray() }
+        val res = frame.upload("photo.jpg/2025", "a.jpg" to jpeg)
+        assertEquals(400, res.statusCode(), res.body())
+        assertTrue(photo.isFile, "the file stays")
+    }
+
+    @Test
+    fun `A folder that cannot be listed refuses the upload and deletes nothing`() {
+        val family = File(frame.photos, "family").apply { parentFile.mkdirs() }.also { it.writeBytes(jpeg) }
+        frame.core.library.listNames = { null }
+        val res = frame.upload("family/2025", "a.jpg" to jpeg)
+        assertTrue(res.statusCode() >= 400, res.body())
+        assertTrue(family.isFile, "the file stays")
+        assertEquals(listOf("family"), files())
+    }
+
     @Test
     fun `A failed upload into a new album leaves no new folder`() {
         File(frame.photos, "family").mkdirs()

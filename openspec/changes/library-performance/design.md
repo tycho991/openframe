@@ -171,7 +171,8 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   `cache.remove` in `PhotoLibrary.delete`. Scan, `skip` (local and remote), sync, source removal, orphan cleanup and API
   delete then all take the same path. (After review:) `RemoteSource.sync` still removes the originals of vanished
   photos itself before its trim, since the registry's removal runs later and the trim would count them and evict
-  originals of photos that stay; the notification's removal then finds nothing left.
+  originals of photos that stay; the notification's removal then finds nothing left. The trims during the downloads
+  leave the originals of photos the sync is going to remove out of the count.
 - **Leftovers:** after `index.load` and before `slideshow.start`, `FrameCore.start` removes the renderings whose photo
   ID is not in the index, and those whose version is above the entry's version (an index restored from its backup, or
   a debounced save lost at the end of the process, would otherwise meet renderings of versions it will assign again).
@@ -244,8 +245,12 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
     rendered on demand.
   - **Found in the implementation:** the search walks the order with `next()`, which shuffles a new pass at the end of
     one; it returns to the position and the pass it began with (`Playlist.mark`/`reset`), so a search without a ready
-    photo does not shuffle away the photos of the pass not shown yet. A result of the renderings on demand, a photo
-    or the failure of all, moves the order to where the search found that photo, in the direction of its step.
+    photo does not shuffle away the photos of the pass not shown yet. A result of the renderings on demand moves the
+    order to where the search found that photo; after a change of the library or the order those positions are
+    dropped and the result goes through a new search from the photo on screen. When all fail after a step forward the
+    order goes to the last one tried; after a step back it goes back to where the search began, since the tick steps
+    forward and would otherwise render the failed photos again. A photo that comes again across the end of a pass is
+    a candidate once.
 - **Log:** a failed rendering logs the stack trace only for unexpected errors, not for a `SourceException` or a dropped
   job.
 
@@ -308,7 +313,10 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   level then has at most 192 bytes in UTF-8, below the 255-byte name limit, so no byte budget is needed there.
 - **Case:** each album level is resolved against the existing folder by listing its parent: an exact match first, then
   a case-insensitive one that is a folder, otherwise a new folder. Never by `exists()`, which on the frames' FUSE says
-  yes for `holiday` when only `Holiday` is there (found in review). The index path then matches the folder on the frame's FUSE file
+  yes for `holiday` when only `Holiday` is there (found in review). The folders are created level by level, and only
+  those this upload really created are recorded and removed again on a failure, and only as empty folders, so a file
+  that answers to the same name in another letter case is never deleted. A folder that cannot be listed refuses the
+  upload (500) instead of counting as empty. The index path then matches the folder on the frame's FUSE file
   system. The same happens on a case-sensitive file system, so the JVM tests see it. `nested-albums` decision 1 (two
   albums that differ in case) then holds only for remote sources.
 - **Folder check:** after `mkdirs`, `move` checks `isDirectory` and answers 400 `invalid_album` naming `album`
@@ -324,7 +332,9 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
 
 - **Parse:** `AndroidMediaEngine.parseExifDate` parses the fields strictly (`java.time`, `ResolverStyle.STRICT`) and
   then places the local date-time in the device's zone, so that a time in the gap of the switch to summer time is moved
-  forward instead of refused, as a strict `SimpleDateFormat` would (after review).
+  forward instead of refused, as a strict `SimpleDateFormat` would (after review). The offset the camera recorded
+  (`OffsetTimeOriginal`, `OffsetTime`) applies when present; a device zone that the time zone data does not know falls
+  back to UTC instead of making every capture date unknown.
 - **Plausibility in `:core`:** `CaptureDates.plausible(instant)` turns a date before 1800-01-01 into `null`.
   `LocalPhotoSource` and `RemoteSource` apply it before falling back to the file date. This is the real guard: the
   Robolectric tests run the host JDK's `java.text`, not the libcore of Android 5 and 6.
