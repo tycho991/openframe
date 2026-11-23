@@ -246,6 +246,7 @@ The API 37 emulator's `eth0` is a cellular network; images from Android 11 on al
 (`AndroidWifi` on `wlan0`). Task 6.1 checks that first (`adb shell cmd wifi status`, `dumpsys connectivity`); if the
 image has no Wi-Fi, the end-to-end check cannot run there and the result says so. Wi-Fi goes off with
 `adb shell svc wifi disable` (or `cmd wifi set-wifi-enabled disabled`) while the display is off by the schedule and back
-with `svc wifi enable`; device administration is activated on the emulator only (`dpm set-active-admin`). Turning the
+with `svc wifi enable`; with the display off the image may not rejoin `AndroidWifi` by itself, then
+`cmd wifi connect-network AndroidWifi open` does it (during a dark wake it rejoined unaided); device administration is activated on the emulator only (`dpm set-active-admin`). Turning the
 emulator's Wi-Fi off is no device change in the sense of the project rules. The API 21 emulator has no Wi-Fi radio and
 freezes while its display is off, so it gives only the negative check with the display on.

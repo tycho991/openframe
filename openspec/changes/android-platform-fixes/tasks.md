@@ -109,11 +109,11 @@
   ended and exactly one "Network available" with one rebind; `GET /info` answers afterwards (`display-schedule` › Asking
   for the network while the display is off › Mobile data stays on, › Network back; › Dark wake for the network › Still
   no network after ten minutes)
-- [ ] 6.2 API 21 emulator (no Wi-Fi radio, mobile data only), display on: start the debug build and read the log.
+- [x] 6.2 API 21 emulator (no Wi-Fi radio, mobile data only), display on: start the debug build and read the log.
   Verify: "Network available" appears for the mobile data network and the server answers through `adb forward`, but no
   "LAN network available" line appears (`display-schedule` › Asking for the network while the display is off › Mobile
   data only)
-- [ ] 6.3 Emulator with a tablet display (smallest width of 600 dp or more, e.g. 1920×1200 at 240 dpi), the device
+- [x] 6.3 Emulator with a tablet display (smallest width of 600 dp or more, e.g. 1920×1200 at 240 dpi), the device
   held in landscape, first on an API 36 image (what the opt-out property is defined for), then on API 37: switch the
   orientation setting to `portrait` and back, first with 0.13.0, then with this build (`adb install -r`, same
   certificate, data kept). Verify: on API 36 screenshots show 0.13.0 staying in landscape with the portrait setting
