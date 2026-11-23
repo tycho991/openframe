@@ -45,6 +45,7 @@
   "safe.restarting": "Der Rahmen startet im normalen Modus neu …",
   "error.delete_failed": "Die Datei konnte nicht gelöscht werden.",
   "error.move_failed": "Die Datei konnte nicht gespeichert werden.",
+  "error.album_unreadable": "Der Albumordner auf dem Rahmen ließ sich nicht lesen. Es wurde nichts gespeichert.",
   "error.render_failed": "Das Foto konnte nicht aufbereitet werden.",
   "error.internal_error": "Der Rahmen meldet einen internen Fehler.",
   "error.method_not_allowed": "Diese Anfrage ist nicht erlaubt.",

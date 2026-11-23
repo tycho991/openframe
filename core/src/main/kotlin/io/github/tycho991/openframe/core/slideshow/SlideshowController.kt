@@ -354,7 +354,14 @@ class SlideshowController(
                 // The next tick tries the photos after the last one tried (spec "Bounded rendering ahead"), from where the
                 // search found it. After a step back the tick goes forward, so the order goes back to where the search
                 // began instead, and the tick does not render the failed photos behind it again.
-                (if (command.step < 0) demandStart else demandMarks[command.last.id])?.let(playlist::reset)
+                val mark = if (command.step < 0) demandStart else demandMarks[command.last.id]
+                // Without a mark (the library changed meanwhile) the order goes to the last one tried, if it is still
+                // there, so the tick does not render the failed photos again.
+                if (mark != null) {
+                    playlist.reset(mark)
+                } else if (command.step >= 0) {
+                    playlist.moveTo(command.last.id)
+                }
                 armTimer()
             }
 

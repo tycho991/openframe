@@ -45,6 +45,7 @@
   "safe.restarting": "The frame restarts in normal mode …",
   "error.delete_failed": "The file could not be deleted.",
   "error.move_failed": "The file could not be saved.",
+  "error.album_unreadable": "The album folder on the frame could not be read. Nothing was saved.",
   "error.render_failed": "The photo could not be prepared.",
   "error.internal_error": "The frame reported an internal error.",
   "error.method_not_allowed": "This request is not allowed.",

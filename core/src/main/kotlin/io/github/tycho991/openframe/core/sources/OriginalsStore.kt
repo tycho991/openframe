@@ -117,12 +117,11 @@ class OriginalsStore(
     fun trim(
         budgetBytes: Long,
         keep: File? = null,
-        /** Photos that are about to leave the library: their originals count for nothing and are not trimmed here. */
-        uncounted: Collection<PhotoEntry> = emptyList(),
+        /** Originals of photos about to leave the library, worked out once with [leaving]: not counted, not trimmed. */
+        uncounted: Leaving = Leaving.NONE,
     ): Int {
-        val leaving = uncounted.mapTo(HashSet()) { fileOf(it).name }
-        val leavingBytes = uncounted.sumOf { fileOf(it).length() }
-        if (totalBytes() - leavingBytes <= budgetBytes) return 0
+        val leaving = uncounted.names
+        if (totalBytes() - uncounted.bytes <= budgetBytes) return 0
         // Each file is asked for its time and size once.
         val all =
             files()
@@ -140,6 +139,23 @@ class OriginalsStore(
         }
         total = sum + all.filter { it.first.name in leaving }.sumOf { it.third }
         return removed
+    }
+
+    /** The file names of originals about to leave the library and their bytes, for [trim]. */
+    class Leaving internal constructor(
+        val names: Set<String>,
+        val bytes: Long,
+    ) {
+        companion object {
+            val NONE = Leaving(emptySet(), 0)
+        }
+    }
+
+    /** The originals of [entries] that are on the frame, each asked for its size once. */
+    fun leaving(entries: Collection<PhotoEntry>): Leaving {
+        if (entries.isEmpty()) return Leaving.NONE
+        val files = entries.map { fileOf(it) }
+        return Leaving(files.mapTo(HashSet()) { it.name }, files.sumOf { it.length() })
     }
 
     /** Removes the original of the photo with [id], whatever its extension. */

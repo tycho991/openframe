@@ -229,7 +229,8 @@ class UploadApiTest {
         val family = File(frame.photos, "family").apply { parentFile.mkdirs() }.also { it.writeBytes(jpeg) }
         frame.core.library.listNames = { null }
         val res = frame.upload("family/2025", "a.jpg" to jpeg)
-        assertTrue(res.statusCode() >= 400, res.body())
+        assertEquals(500, res.statusCode(), res.body())
+        assertEquals("album_unreadable", errorOf(res)["code"]!!.jsonPrimitive.content)
         assertTrue(family.isFile, "the file stays")
         assertEquals(listOf("family"), files())
     }

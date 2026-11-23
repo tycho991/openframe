@@ -197,7 +197,7 @@ class RemoteSource(
         // Photos that vanished from the server: if the sync removes them, their originals go with them, so the trims
         // during the downloads do not count them and evict originals of photos that stay.
         val listed = listing.mapTo(HashSet()) { it.path }
-        val vanishing = if (config.removeVanished) known.values.filter { it.path !in listed } else emptyList()
+        val vanishing = originals.leaving(if (config.removeVanished) known.values.filter { it.path !in listed } else emptyList())
 
         val results = LinkedHashMap<String, Result<PhotoEntry>>()
         var failure: SourceException? = null

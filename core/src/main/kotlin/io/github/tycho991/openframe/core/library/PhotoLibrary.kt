@@ -305,7 +305,7 @@ class PhotoLibrary(
                         !dir.isDirectory -> throw invalidAlbum()
 
                         // A folder that cannot be listed says nothing about what is in it.
-                        else -> listNames(dir) ?: throw HttpException(500, "move_failed", "The album folder could not be read")
+                        else -> listNames(dir) ?: throw HttpException(500, "album_unreadable", "The album folder could not be read")
                     }
                 val name =
                     when {

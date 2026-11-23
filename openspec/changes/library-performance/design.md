@@ -172,7 +172,8 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   delete then all take the same path. (After review:) `RemoteSource.sync` still removes the originals of vanished
   photos itself before its trim, since the registry's removal runs later and the trim would count them and evict
   originals of photos that stay; the notification's removal then finds nothing left. The trims during the downloads
-  leave the originals of photos the sync is going to remove out of the count.
+  leave the originals of photos the sync is going to remove out of the count, with their names and bytes worked out
+  once per sync.
 - **Leftovers:** after `index.load` and before `slideshow.start`, `FrameCore.start` removes the renderings whose photo
   ID is not in the index, and those whose version is above the entry's version (an index restored from its backup, or
   a debounced save lost at the end of the process, would otherwise meet renderings of versions it will assign again).
@@ -248,7 +249,7 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
     photo does not shuffle away the photos of the pass not shown yet. A result of the renderings on demand moves the
     order to where the search found that photo; after a change of the library or the order those positions are
     dropped and the result goes through a new search from the photo on screen. When all fail after a step forward the
-    order goes to the last one tried; after a step back it goes back to where the search began, since the tick steps
+    order goes to the last one tried, by its mark or, after such a change, by its ID; after a step back it goes back to where the search began, since the tick steps
     forward and would otherwise render the failed photos again. A photo that comes again across the end of a pass is
     a candidate once.
 - **Log:** a failed rendering logs the stack trace only for unexpected errors, not for a `SourceException` or a dropped
@@ -316,7 +317,7 @@ See proposal.md for the motivation. The state on `main` (0.13.0) that shapes the
   yes for `holiday` when only `Holiday` is there (found in review). The folders are created level by level, and only
   those this upload really created are recorded and removed again on a failure, and only as empty folders, so a file
   that answers to the same name in another letter case is never deleted. A folder that cannot be listed refuses the
-  upload (500) instead of counting as empty. The index path then matches the folder on the frame's FUSE file
+  upload (500 `album_unreadable`) instead of counting as empty. The index path then matches the folder on the frame's FUSE file
   system. The same happens on a case-sensitive file system, so the JVM tests see it. `nested-albums` decision 1 (two
   albums that differ in case) then holds only for remote sources.
 - **Folder check:** after `mkdirs`, `move` checks `isDirectory` and answers 400 `invalid_album` naming `album`

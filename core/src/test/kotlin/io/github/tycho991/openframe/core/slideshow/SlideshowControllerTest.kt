@@ -277,6 +277,35 @@ class SlideshowControllerTest {
             for ((a, b) in order.zipWithNext()) assertEquals(many[(many.indexOf(a) + 1) % many.size], b, "chronological after $a")
         }
 
+    /** Review of `library-performance`: a failed search after a change of the library does not try the same photos again. */
+    @Test
+    fun `A failed search after a library change goes on after the last one tried`() =
+        runTest {
+            val many = (1..10).map(::photo)
+            val visible = MutableStateFlow(many)
+            val images = FakeImages().apply { readyIds += many[0].id }
+            val settings = MutableStateFlow(Settings.defaults("x").copy(order = Order.CHRONOLOGICAL, intervalSeconds = 30))
+            val controller = SlideshowController(visible, { true }, settings, images, backgroundScope, AppLog(TestClock()))
+            controller.start()
+            runCurrent()
+            assertEquals(many[0], controller.shown())
+            controller.next()
+            runCurrent()
+            assertEquals(listOf(many[1].id), images.demanded)
+            // The library changes while the renderings on demand run; then all three fail.
+            visible.value = many + photo(11)
+            runCurrent()
+            for (photo in many.subList(1, 4)) {
+                images.pending.getValue(photo.id).completeExceptionally(IllegalStateException("broken"))
+                runCurrent()
+            }
+            assertEquals(many.subList(1, 4).map { it.id }, images.demanded)
+            images.broken += many.map { it.id }
+            advanceTimeBy(30_001)
+            runCurrent()
+            assertEquals(many.subList(1, 7).map { it.id }, images.demanded, "the following ones, not the same again")
+        }
+
     /** Review of `library-performance`: renderings on demand after a step back. */
     @Test
     fun `A step back renders on demand backwards and a failure does not try the same photos again`() =
