@@ -20,7 +20,10 @@ describe("Origin of a paired device", () => {
   const phone = client("aaaaaaaaaaaaaaaa", "Anna's phone", { pairedVia: "code" });
   const qr = client("bbbbbbbbbbbbbbbb", "Laptop", { pairedVia: "qr" });
   const tablet = client("cccccccccccccccc", "Tablet", { pairedVia: "invite", invitedBy: phone.id });
-  const orphan = client("dddddddddddddddd", "Visitor", { pairedVia: "invite", invitedBy: "eeeeeeeeeeeeeeee" });
+  const orphan = client("dddddddddddddddd", "Visitor", {
+    pairedVia: "invite",
+    invitedBy: "eeeeeeeeeeeeeeee",
+  });
   const old = client("ffffffffffffffff", "Old phone");
   const all = [phone, qr, tablet, orphan, old];
 

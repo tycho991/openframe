@@ -57,3 +57,28 @@ test("Album with only quarantined photos: placeholders, no image request", async
   await page.waitForLoadState("networkidle");
   expect(requested).toEqual([]);
 });
+
+test("A deleted quarantined photo shows the placeholder in the trash without an image request", async ({
+  page,
+}) => {
+  await usb("landscape.jpg", "holiday/a.jpg");
+  await usb("gps-siena.jpg", "holiday/b.jpg");
+  const id = await quarantine("holiday/a.jpg");
+  const requested: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/v1/trash/") && r.url().includes("/thumb")) requested.push(r.url());
+  });
+  await pairInUi(page);
+  await openAlbum(page, "holiday");
+  await page.locator(`.tile[data-photo="${id}"]`).click();
+  await photoDetail(page).getByRole("button", { name: "Löschen" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
+  const trash = page.getByRole("region", { name: "Papierkorb" });
+  await trash.getByRole("button", { name: "Anzeigen" }).click();
+  const row = trash.getByRole("listitem");
+  await expect(row.getByRole("img", { name: "a.jpg: nicht angezeigt", exact: false })).toBeVisible();
+  await expect(row.locator("img")).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Wiederherstellen" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(requested).toEqual([]);
+});

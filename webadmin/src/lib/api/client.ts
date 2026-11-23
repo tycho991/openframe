@@ -20,6 +20,8 @@ export type AlbumCounts = S["AlbumCounts"];
 export type Client = S["Client"];
 export type Invite = S["Invite"];
 export type SkippedFile = S["SkippedFile"];
+export type TrashEntry = S["TrashEntry"];
+export type TrashRestoreResult = S["TrashRestoreResult"];
 export type State = S["State"];
 export type BatchResult = S["BatchResult"];
 export type UploadResult = S["UploadResult"];
@@ -165,6 +167,9 @@ export function createApi(options: ApiOptions) {
     batch: (action: "hide" | "show" | "delete", ids: string[]) =>
       call<BatchResult>("POST", "/photos:batch", { action, ids }),
     skippedFiles: () => call<S["SkippedFileList"]>("GET", "/skipped-files").then((r) => r.items),
+    /** The local photos deleted within the last 7 days, newest first. */
+    trash: () => call<S["TrashList"]>("GET", "/trash"),
+    restoreTrash: (ids: string[]) => call<TrashRestoreResult>("POST", "/trash:restore", { ids }),
     /** Every album with the counts of its branch, and the counts of the photos without an album. */
     albums: () => call<AlbumList>("GET", "/albums"),
     /** Switches an album with its whole branch; answers with the whole list, since sub-albums change too. */
@@ -179,6 +184,9 @@ export function createApi(options: ApiOptions) {
     removeSource: (id: string) => call<void>("DELETE", `/sources/${encodeURIComponent(id)}`),
     syncSource: (id: string) => call<S["SyncRequest"]>("POST", `/sources/${encodeURIComponent(id)}/sync`),
     startSourceLogin: (serverUrl: string) => call<SourceLogin>("POST", "/sources/login", { serverUrl }),
+    /** A login that only confirms the account of [sourceId], so that this device may widen its folder. */
+    confirmSourceLogin: (sourceId: string) =>
+      call<SourceLogin>("POST", "/sources/login", { confirmSourceId: sourceId }),
     pollSourceLogin: (flowId: string) =>
       call<SourceLoginState>("GET", `/sources/login/${encodeURIComponent(flowId)}`),
     display: () => call<DisplayState>("GET", "/display"),

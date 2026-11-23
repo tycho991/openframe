@@ -49,7 +49,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
     (`admin-access` › Equal rights of paired devices › Invited device revokes another one);
   - a client that revokes every new pairing loses its own token through `PairingAdmin.resetAll` ("Unpair all
     devices"), and the next pairing stays (› A hostile device keeps revoking).
-- [ ] 2.2 Web UI: an origin line per device in `DevicesView.svelte` (code, QR code, "invited by {name}", "invited by a
+- [x] 2.2 Web UI: an origin line per device in `DevicesView.svelte` (code, QR code, "invited by {name}", "invited by a
   removed device", "origin unknown"), the name looked up by ID in the same list; `devices.inviteHint` names the full
   rights; texts in `en.json` and `de.json`. Verify:
   - Vitest for the origin text of each case, an unknown inviter ID included;
@@ -161,7 +161,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 5. Trash in the web UI
 
-- [ ] 5.1 `TrashPanel.svelte` in `PhotosView` (design decision 19): count and size, rows with thumbnail or placeholder
+- [x] 5.1 `TrashPanel.svelte` in `PhotosView` (design decision 19): count and size, rows with thumbnail or placeholder
   (quarantined, damaged, no preview), name, album, deletion time, deleting device, "kept until", "Restore" (not for a
   damaged entry) and "Restore all" in chunks of at most 500 IDs; the delete confirmations and
   `error.insufficient_storage` name the trash and no fixed size; texts in `en.json` and `de.json`. Verify:
@@ -172,7 +172,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
     the confirmation text names the trash (`web-admin` › Edit photos › Confirm delete);
   - e2e in `quarantine.spec.ts`: a deleted quarantined photo shows the placeholder and the browser requests no
     thumbnail (› Quarantined entry).
-- [ ] 5.2 README: the photo section says that deleting moves photos to the trash for 7 days; the security model gets
+- [x] 5.2 README: the photo section says that deleting moves photos to the trash for 7 days; the security model gets
   the trash bullet (design decision 17); neither names "100 MB". Verify: both texts are there and match the spec.
 
 ## 6. Widening proof in the core
