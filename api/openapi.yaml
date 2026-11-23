@@ -13,7 +13,11 @@ info:
     Access: a client pairs with the code that the frame shows, with the secret
     from the frame's QR code or with an invitation from a paired device, and
     receives a token (`Authorization: Bearer`). Image URLs carry a server-issued signature
-    `t` instead, which is valid for one photo only and for at most two hours.
+    `t` instead, which is valid for one photo or one trash entry only and for at most two hours.
+
+    Every paired device has the same rights, however it paired. Two guards apply to all of them: a deleted local
+    photo goes to the trash for 7 days (`GET /trash`), and widening the folder of an account source needs a login to
+    that account on the same device within 30 minutes (`account_login_required`).
 
     Mutating requests from foreign origins are rejected with 403. Every request whose `Host` is not an IP
     address, `localhost`, a single-label name or a local name such as `frame.local` or `frame.fritz.box` gets 421
@@ -358,8 +362,9 @@ paths:
       summary: Hide, unhide or delete several photos.
       description: >-
         One change of the library: `libraryVersion` changes at most once, however many IDs the batch has. A delete
-        batch with a local photo is refused with 503 (`storage_unavailable`) while the photo folder is unavailable, and
-        then deletes nothing.
+        moves the files of local photos to the trash (`GET /trash`), where they stay for 7 days. A delete batch with a
+        local photo is refused with 503 (`storage_unavailable`) while the photo folder is unavailable, and then deletes
+        nothing.
       requestBody:
         required: true
         content:
@@ -369,7 +374,8 @@ paths:
         "200":
           description: |
             Done. Unknown IDs are listed in `missing`, IDs the frame could not process
-            (for example a file that could not be deleted) in `failed`. The other IDs are processed.
+            (for example a file that could not be moved to the trash, or a photo of a read-only source) in `failed`.
+            The other IDs are processed.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BatchResult" }
@@ -416,13 +422,14 @@ paths:
     delete:
       tags: [photos]
       operationId: deletePhoto
-      summary: Remove file, index entry and rendered sizes.
+      summary: Move the file to the trash and remove index entry and rendered sizes.
       description: >-
-        A photo of a read-only source (any source but `local`) is refused with 409 and the error code
+        The file of a local photo is moved to the trash (`GET /trash`), where every paired device can see and restore
+        it for 7 days. A photo of a read-only source (any source but `local`) is refused with 409 and the error code
         `read_only_source`. While the photo folder is unavailable, for example because the storage is not mounted, a
         local photo is not deleted (503, `storage_unavailable`).
       responses:
-        "204": { description: Deleted. }
+        "204": { description: Moved to the trash. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -494,6 +501,123 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
         "503":
           description: "The image could not be rendered (`render_failed`), also for a quarantined photo without a rendering attempt, or the frame is in safe mode (`safe_mode`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /trash:
+    get:
+      tags: [photos]
+      operationId: listTrash
+      summary: Local photos deleted within the last 7 days.
+      description: >-
+        Newest first. Every paired device can list the trash. An entry stays 7 days after its deletion; under storage
+        pressure an entry deleted more than 24 hours ago may go earlier, and only if that frees enough. There is no
+        way to empty the trash through the API.
+      responses:
+        "200":
+          description: The trash.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrashList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          description: "The photo folder is unavailable (`storage_unavailable`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /trash:restore:
+    post:
+      tags: [photos]
+      operationId: restoreTrash
+      summary: Restore entries of the trash.
+      description: >-
+        A restored photo returns to its path with its ID, a new image version, its hidden state, comment, section and
+        quarantine. On a path that is taken meanwhile it gets a unique name and so a new ID. An entry without its saved
+        state is checked like a photo copied over USB and added hidden. An entry that cannot be restored stays in the
+        trash. Refused in safe mode (503, `safe_mode`) and while the photo folder is unavailable (503,
+        `storage_unavailable`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrashRestoreRequest" }
+      responses:
+        "200":
+          description: >-
+            Done. Restored entries are listed with their photo IDs in `restored`, unknown IDs and entries whose file
+            is gone in `missing`, damaged entries and entries that could not be put in place in `failed`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrashRestoreResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMedia" }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          description: "The photo folder is unavailable (`storage_unavailable`), or the frame is in safe mode (`safe_mode`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /trash/{trashId}/thumb:
+    parameters:
+      - $ref: "#/components/parameters/TrashId"
+    get:
+      tags: [photos]
+      operationId: getTrashThumb
+      summary: Thumbnail of a trash entry as JPEG.
+      description: >-
+        Retrievable with a token or with the signature `t` from the trash list, which is valid for this entry only.
+        An entry never changes, so the answer is `immutable`.
+      security:
+        - bearerAuth: []
+        - imageSignature: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The thumbnail.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "206":
+          description: "The part of the thumbnail a `Range` header asked for (one range of bytes)."
+          headers:
+            Content-Range: { required: true, schema: { type: string, pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$" } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "304": { description: Not modified. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "416":
+          description: "The `Range` lies outside the thumbnail. `Content-Range` gives its length."
+          headers:
+            Content-Range: { required: true, schema: { type: string, pattern: "^bytes \\*/[0-9]+$" } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+        "421": { $ref: "#/components/responses/MisdirectedHost" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          description: >-
+            The thumbnail could not be rendered (`render_failed`), also without a rendering attempt for an entry that
+            is quarantined, damaged or without its saved state, or the frame is in safe mode (`safe_mode`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -722,7 +846,11 @@ paths:
       summary: Start Nextcloud's Login Flow v2 for an account.
       description: >-
         The frame asks the server for a login page; the client opens `loginUrl` in a new browser tab and polls
-        `GET /sources/login/{flowId}`. There is at most one flow, a new one replaces the old. Refused with
+        `GET /sources/login/{flowId}`. Each paired device has at most one flow; a new one replaces only that device's
+        own. With `confirmSourceId` the flow is a confirmation login for that account source, on its stored server
+        address (`serverUrl` is then ignored): it adds and changes no source, and its success lets this device widen
+        the source's folder for 30 minutes. An unknown `confirmSourceId` is 404, a share-link source 400. Without
+        `confirmSourceId`, refused with
         `too_many_sources` when eight sources exist and none of them is an account that the login could renew. An
         address with `http` for an account that is a source on `https` already starts the flow on `https`. Refused with
         `nextcloud_insecure_login` (502) when the server answers with a poll address or login page that is not `https`
@@ -741,6 +869,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
         "415": { $ref: "#/components/responses/UnsupportedMedia" }
@@ -760,8 +889,11 @@ paths:
       operationId: pollSourceLogin
       summary: Ask whether the user has approved the login.
       description: >-
-        Makes the frame ask the server once. On `done` the account is a source: a new one, or, for a server and user
-        that already are a source, that source with the new credentials. An unknown or old flow is `expired`.
+        Makes the frame ask the server once. Only the device that started the flow sees it; for any other device, and
+        for an unknown or old flow, it is `expired`. On `done` the account is a source: a new one, or, for a server and
+        user that already are a source, that source with the new credentials. For a confirmation login `done` means
+        that the approved account is that source's account: its new app password is revoked and the source keeps its
+        credentials; any other account fails with `other_account`, its app password is revoked, and no source changes.
       responses:
         "200":
           description: The state of the flow.
@@ -793,7 +925,14 @@ paths:
       tags: [sources]
       operationId: patchSource
       summary: Change settings of one source.
-      description: "Partial change, validated completely or not at all. A change makes the source sync again soon."
+      description: >-
+        Partial change, validated completely or not at all. A change makes the source sync again soon. For an
+        account source a change that widens what it reads (the first folder, subfolders switched on, a folder that is
+        neither the old one nor below it, or a folder below the old one while subfolders are off; compared by path
+        segment and with exact case) is applied only if this device completed a login for this account within the
+        last 30 minutes (adding it, renewing its credentials or a confirmation login with `confirmSourceId`).
+        Otherwise the whole change is refused with 403 `account_login_required`, after the fields are checked, and
+        `fields` names the widening fields. Narrowing, the other settings and share-link sources need no login.
       requestBody:
         required: true
         content:
@@ -974,6 +1113,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    TrashId:
+      name: trashId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9]{13}-[0-9a-f]{8}$" }
 
   responses:
     RequestTimeout:
@@ -1002,7 +1146,9 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: Mutating request from a foreign origin.
+      description: >-
+        Mutating request from a foreign origin (`forbidden_origin`), or a change that widens the folder of an account
+        source without a recent login to that account on this device (`account_login_required`, with `fields`).
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1046,7 +1192,10 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     InsufficientStorage:
-      description: Not enough free storage.
+      description: >-
+        Not enough free storage: less than the storage reserve would remain free (`insufficient_storage`). Photos
+        deleted within the last 24 hours stay in the trash; older ones are removed for room only when that frees
+        enough.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1080,7 +1229,7 @@ components:
       type: string
       enum:
         [unreachable, tls, tls_handshake, unauthorized, not_found, gone, not_readable, server, throttled, protocol,
-         limit, changed, insecure_login, login_failed, storage, unexpected, too_many_sources]
+         limit, changed, insecure_login, login_failed, storage, unexpected, too_many_sources, other_account]
       description: >-
         Why a sync or a login failed. `unreachable`: no connection, or an answer too slow; `tls`: the certificate is
         not trusted; `tls_handshake`: no secure connection for another reason; `unauthorized`: the credentials or the
@@ -1090,7 +1239,8 @@ components:
         or an entry outside the folder; `limit`: an answer beyond a fixed limit; `changed`: a file was replaced during
         the sync; `insecure_login`: the login pointed to an insecure address; `login_failed`: the login was not
         completed; `storage`: not enough free storage; `unexpected`: any other failure; `too_many_sources`: a login on
-        a full frame. A stored result never carries `changed` or `insecure_login`.
+        a full frame; `other_account`: a confirmation login approved by another account than the source's. A stored
+        result never carries `changed`, `insecure_login` or `other_account`.
 
     SourceSettings:
       type: object
@@ -1185,9 +1335,16 @@ components:
     SourceLoginRequest:
       type: object
       additionalProperties: false
-      required: [serverUrl]
+      anyOf:
+        - required: [serverUrl]
+        - required: [confirmSourceId]
       properties:
-        serverUrl: { type: string, description: "Address of the server, `http://` or `https://`." }
+        serverUrl: { type: string, description: "Address of the server, `http://` or `https://`. Ignored with `confirmSourceId`." }
+        confirmSourceId:
+          type: string
+          description: >-
+            The ID of an account source to confirm: the login runs on its server and succeeds only for its account,
+            without changing it.
 
     SourceLogin:
       type: object
@@ -1269,13 +1426,26 @@ components:
     Client:
       type: object
       additionalProperties: false
-      required: [id, name, pairedAt, lastSeenAt, current]
+      required: [id, name, pairedAt, lastSeenAt, current, pairedVia, invitedBy]
       properties:
         id: { type: string }
         name: { type: string }
         pairedAt: { type: string, format: date-time }
         lastSeenAt: { type: string, format: date-time }
         current: { type: boolean, description: "The requesting device." }
+        pairedVia:
+          description: >-
+            How the device paired: with the code shown on the frame (`code`), with the frame's QR code (`qr`) or with
+            an invitation (`invite`). `null` for a pairing from before the frame recorded it, or with a value this
+            version does not know. Every paired device has the same rights, however it paired.
+          anyOf:
+            - { type: string, enum: [code, qr, invite] }
+            - { type: "null" }
+        invitedBy:
+          type: [string, "null"]
+          description: >-
+            The ID of the device whose invitation was redeemed, kept after that device is revoked; `null` for any
+            other pairing.
 
     ClientUpdate:
       type: object
@@ -1718,6 +1888,72 @@ components:
       required: [processed, missing, failed]
       properties:
         processed: { type: integer }
+        missing:
+          type: array
+          items: { type: string }
+        failed:
+          type: array
+          items: { type: string }
+
+    TrashEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [id, photoId, path, album, fileSize, deletedAt, purgeAfter, deletedBy, quarantined, damaged, thumb]
+      properties:
+        id: { type: string, pattern: "^[0-9]{13}-[0-9a-f]{8}$", description: "The trash ID, which changes when the entry is re-stamped after the clock was set." }
+        photoId: { type: [string, "null"], description: "The photo's former ID; `null` for a damaged entry." }
+        path: { type: [string, "null"], description: "The photo's former path in the photo folder; `null` for a damaged entry." }
+        album: { type: [string, "null"], description: "The album of `path`, `null` for a photo in no album." }
+        fileSize: { type: integer, minimum: 0, description: "Bytes of the entry." }
+        deletedAt: { type: string, format: date-time }
+        purgeAfter:
+          type: [string, "null"]
+          format: date-time
+          description: "Deleted for good after this, 7 days after `deletedAt`; `null` while the frame's clock is not yet set."
+        deletedBy: { type: [string, "null"], description: "The ID of the deleting device, `null` when unknown." }
+        quarantined: { type: boolean, description: "The photo crashed the decoder; it is never rendered." }
+        damaged: { type: boolean, description: "The entry holds no or several image files and cannot be restored." }
+        thumb:
+          type: [string, "null"]
+          description: >-
+            Signed URL of the thumbnail; `null` for an entry that is quarantined, damaged or without its saved state.
+
+    TrashList:
+      type: object
+      additionalProperties: false
+      required: [items, totalBytes]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TrashEntry" }
+        totalBytes: { type: integer, minimum: 0 }
+
+    TrashRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: { type: string }
+
+    TrashRestoreResult:
+      type: object
+      additionalProperties: false
+      required: [restored, missing, failed]
+      properties:
+        restored:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, photoId]
+            properties:
+              id: { type: string, description: "The trash ID." }
+              photoId: { type: string, description: "The ID of the restored photo, new if its path was taken." }
         missing:
           type: array
           items: { type: string }

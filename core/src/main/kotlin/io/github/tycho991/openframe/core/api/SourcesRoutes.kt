@@ -66,7 +66,10 @@ data class ShareRequestDto(
 
 @Serializable
 data class SourceLoginRequestDto(
-    val serverUrl: String,
+    /** Ignored with [confirmSourceId]. */
+    val serverUrl: String? = null,
+    /** An account source to confirm by the login (design decision 16 of `paired-device-guards`). */
+    val confirmSourceId: String? = null,
 )
 
 @Serializable
@@ -158,7 +161,10 @@ fun Router.sourcesRoutes(
 
     post("/api/v1/sources/login") { req ->
         val body = req.bodyAs(SourceLoginRequestDto.serializer())
-        val started = nextcloud.startLogin(body.serverUrl)
+        val started =
+            nextcloud.startLogin(
+                body.serverUrl ?: throw ValidationException(mapOf("serverUrl" to "An address starting with http:// or https://")),
+            )
         HttpResponse.json(
             SourceLoginDto.serializer(),
             SourceLoginDto(started.flowId, started.loginUrl, started.expiresAt.toString()),

@@ -5,7 +5,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 1. Contract first
 
-- [ ] 1.1 Confirm that `library-performance` is merged and archived (its `StorageReserve`, `deleteAll(ids)`,
+- [x] 1.1 Confirm that `library-performance` is merged and archived (its `StorageReserve`, `deleteAll(ids)`,
   `LibraryEdit.newVersion`, removal listener and album case resolver exist on `main`). Then `api/openapi.yaml`, before
   any Kotlin:
   - `Client`: `pairedVia` (`anyOf: [{ enum: [code, qr, invite] }, null]`, required) and `invitedBy` (string or

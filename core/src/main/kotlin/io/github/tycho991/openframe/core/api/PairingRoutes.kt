@@ -2,6 +2,7 @@ package io.github.tycho991.openframe.core.api
 
 import io.github.tycho991.openframe.core.auth.ClientRegistry
 import io.github.tycho991.openframe.core.auth.DeviceName
+import io.github.tycho991.openframe.core.auth.PairedVia
 import io.github.tycho991.openframe.core.auth.PairingManager
 import io.github.tycho991.openframe.core.auth.StoredClient
 import io.github.tycho991.openframe.core.http.Access
@@ -41,6 +42,10 @@ data class ClientDto(
     val pairedAt: String,
     val lastSeenAt: String,
     val current: Boolean,
+    /** `code`, `qr` or `invite`; `null` for a pairing from before it was recorded or with a value this build does not know. */
+    val pairedVia: String?,
+    /** The inviting device's ID for a pairing by invitation, else `null`. */
+    val invitedBy: String?,
 )
 
 @Serializable
@@ -54,7 +59,8 @@ data class ClientListDto(
     val clients: List<ClientDto>,
 )
 
-private fun StoredClient.toDto(currentId: String?) = ClientDto(id, name, pairedAt.toString(), lastSeenAt.toString(), id == currentId)
+private fun StoredClient.toDto(currentId: String?) =
+    ClientDto(id, name, pairedAt.toString(), lastSeenAt.toString(), id == currentId, PairedVia.served(pairedVia), invitedBy)
 
 /** A pairing body without a token is small (spec `admin-access`, Size of request bodies without token). */
 private const val MAX_PAIRING_BODY = 4L * 1024
