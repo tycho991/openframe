@@ -234,9 +234,9 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 8. Checks
 
-- [ ] 8.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
+- [x] 8.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
   with an own `OPENFRAME_E2E_PORT` (for example 8190) are green. Verify: the command outputs.
-- [ ] 8.2 `openspec validate paired-device-guards --strict` exits 0 without warnings. Verify: the output.
+- [x] 8.2 `openspec validate paired-device-guards --strict` exits 0 without warnings. Verify: the output.
 
 ## 9. Devices (each persistent device change only with the owner's consent at that moment)
 
