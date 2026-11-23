@@ -189,7 +189,7 @@
   storage is unavailable).
 - [x] 9.2 `AndroidMediaStoreNotifier` overrides `notifyChanged(files)` with one `MediaScannerConnection.scanFile` call.
   Verify: a Robolectric test sees one scan request with all paths; `./gradlew :android:check` is green.
-- [ ] 9.3 Web UI: e2e cases for deleting a single photo and a selection of photos, both through `photos:batch` (own
+- [x] 9.3 Web UI: e2e cases for deleting a single photo and a selection of photos, both through `photos:batch` (own
   `OPENFRAME_E2E_PORT`). Verify: `npm run e2e` is green, and both photos are gone from the list and from the dev
   server's folder.
 
@@ -238,9 +238,9 @@
 
 ## 13. Checks
 
-- [ ] 13.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
+- [x] 13.1 `./gradlew check` and, in `webadmin/`, `npm run lint`, `npm run typecheck`, `npm test` and `npm run e2e`
   (own `OPENFRAME_E2E_PORT`) are green. Verify: the command outputs.
-- [ ] 13.2 `openspec validate library-performance` exits 0 without warnings. Verify: the output.
+- [x] 13.2 `openspec validate library-performance` exits 0 without warnings. Verify: the output.
 
 ## 14. Devices (each persistent device change only with the owner's consent at that moment)
 
