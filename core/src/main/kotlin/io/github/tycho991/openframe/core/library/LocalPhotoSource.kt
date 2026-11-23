@@ -124,6 +124,15 @@ class LocalPhotoSource(
                 var skipped = 0
                 for ((path, result) in probed) {
                     val file = files.getValue(path)
+                    // An entry the frame has put in place while the folder was listed (a restore, an upload) for this very
+                    // file stays as it is, with its version, state and quarantine (spec "Restore during a scan"; design
+                    // decision 6 of `paired-device-guards`): the same size and time, as for an unchanged file above.
+                    val placed = edit.get(PhotoEntry.idFor(id, path))
+                    if (placed != null && placed.path == path && placed.fileSize == file.length() &&
+                        placed.modifiedMs == file.lastModified()
+                    ) {
+                        continue
+                    }
                     result
                         .onSuccess {
                             val current = edit.get(it.id)
@@ -190,8 +199,11 @@ class LocalPhotoSource(
 
     fun fileOf(entry: PhotoEntry): File = File(root, entry.path)
 
-    /** The entry of [file]; its version is assigned when it is applied ([LibraryEdit.versionFor]). */
-    private fun read(
+    /**
+     * The entry of [file] at [path], probed unless [known] is given; its version is assigned when it is applied
+     * ([LibraryEdit.versionFor]). Throws [ImageException].
+     */
+    internal fun read(
         path: String,
         file: File,
         known: ImageInfo? = null,

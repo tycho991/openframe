@@ -559,4 +559,52 @@ class LocalPhotoSourceTest {
         assertTrue(photos.isDirectory)
         assertNull(index.library.value.photos[kept.id])
     }
+
+    /**
+     * Spec `photo-library`, "Restore during a scan" › Restore while the folder is scanned (design decision 6 of
+     * `paired-device-guards`): a quarantined photo put in place after the scan read the index and before it listed the
+     * folder keeps the version the restore gave it and its quarantine, and the scan changes nothing.
+     */
+    @Test
+    fun `A photo restored while the folder is listed keeps its version and quarantine`() {
+        photos.mkdirs()
+        val held = Fixtures.copy("landscape.jpg", File(dir, "held/a.jpg"))
+        var restoredVersion = 0
+        val racing =
+            LocalPhotoSource(photos, engine, index, log, listFiles = { root ->
+                // What PhotoLibrary.restore does in its one edit: the file into place and its saved entry with a new version.
+                index.edit { edit ->
+                    val target = File(root, "a.jpg")
+                    check(held.renameTo(target))
+                    restoredVersion = edit.newVersion
+                    edit.put(
+                        PhotoEntry(
+                            PhotoEntry.idFor("local", "a.jpg"),
+                            "local",
+                            "a.jpg",
+                            800,
+                            600,
+                            1,
+                            target.length(),
+                            target.lastModified(),
+                            version = restoredVersion,
+                            hidden = true,
+                            comment = "Kept",
+                            quarantinedVersion = restoredVersion,
+                        ),
+                    )
+                }
+                LocalPhotoSource.listImageFiles(root)
+            })
+        val probes = engine.probes.get()
+        runBlocking { racing.scan() }
+        val after = index.library.value
+        val entry = after.photos.getValue(PhotoEntry.idFor("local", "a.jpg"))
+        assertEquals(restoredVersion, entry.version, "the version the restore gave it")
+        assertTrue(entry.quarantined, "still quarantined")
+        assertTrue(entry.hidden)
+        assertEquals("Kept", entry.comment)
+        assertEquals(restoredVersion.toLong(), after.version, "the scan made no change of its own")
+        assertEquals(probes + 1, engine.probes.get(), "probed once as a new file, then kept as it is")
+    }
 }

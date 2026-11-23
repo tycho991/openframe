@@ -1,8 +1,13 @@
 package io.github.tycho991.openframe.core.library
 
+import io.github.tycho991.openframe.core.api.AlbumListDto
+import io.github.tycho991.openframe.core.api.TrashListDto
+import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.store.JsonStore
+import io.github.tycho991.openframe.core.testing.Fixtures
 import io.github.tycho991.openframe.core.testing.TestClock
+import io.github.tycho991.openframe.core.testing.TestFrame
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -271,5 +276,84 @@ class AlbumTreeTest {
         }
         val loose = photos.filter { it.album == null }
         assertEquals(AlbumCounts(loose.size, loose.count { lib.isVisible(it) }), lib.noAlbum)
+    }
+
+    /**
+     * Design decision 7 of `paired-device-guards`: the setting of an album that loses its last photo stays while it is
+     * empty, so a photo restored into it takes the album's state as before. A later pruning must not drop it silently.
+     */
+    @Test
+    fun `An emptied album keeps its own setting`() {
+        putAll("holiday/a.jpg", "holiday/2024/b.jpg")
+        hide("holiday")
+        hide("holiday/2024", false)
+        assertEquals(mapOf("holiday" to true, "holiday/2024" to false), library().albumStates)
+        store.edit { it.remove(PhotoEntry.idFor("local", "holiday/2024/b.jpg")) }
+        assertFalse("holiday/2024" in library().albums, "the empty album is not listed")
+        assertEquals(mapOf("holiday" to true, "holiday/2024" to false), library().albumStates, "its setting stays")
+        putAll("holiday/2024/b.jpg")
+        assertEquals(setOf("holiday/2024/b.jpg"), visiblePaths())
+    }
+
+    private fun albumsOf(frame: TestFrame) =
+        ApiJson.decodeFromString(AlbumListDto.serializer(), frame.get("/api/v1/albums").body()).albums.associateBy { it.name }
+
+    /** Deletes the only photo of `holiday/2024` and returns its trash ID. */
+    private fun deleteOnly(frame: TestFrame): String {
+        val id = PhotoEntry.idFor("local", "holiday/2024/b.jpg")
+        assertEquals(204, frame.send("DELETE", "/api/v1/photos/$id").statusCode())
+        return ApiJson
+            .decodeFromString(TrashListDto.serializer(), frame.get("/api/v1/trash").body())
+            .items
+            .single()
+            .id
+    }
+
+    private fun shownInHiddenHoliday(frame: TestFrame) {
+        Fixtures.copy("landscape.jpg", File(frame.photos, "holiday/a.jpg"))
+        Fixtures.copy("landscape.jpg", File(frame.photos, "holiday/2024/b.jpg"))
+        frame.scan()
+        assertEquals(200, frame.send("PATCH", "/api/v1/albums", """{"name":"holiday","hidden":true}""").statusCode())
+        assertEquals(200, frame.send("PATCH", "/api/v1/albums", """{"name":"holiday/2024","hidden":false}""").statusCode())
+    }
+
+    private fun restore(
+        frame: TestFrame,
+        trashId: String,
+    ) = assertEquals(200, frame.send("POST", "/api/v1/trash:restore", """{"ids":["$trashId"]}""").statusCode())
+
+    /** Spec `photo-library`, "Album state of a restored photo" › Hidden album that lost its last photo. */
+    @Test
+    fun `A photo restored into a shown sub-album of a hidden album is visible`() {
+        TestFrame(File(dir, "frame")).use { frame ->
+            shownInHiddenHoliday(frame)
+            restore(frame, deleteOnly(frame))
+            val album = albumsOf(frame).getValue("holiday/2024")
+            assertFalse(album.hidden)
+            assertTrue(album.overridesParent, "still a setting of its own")
+            assertTrue(
+                frame.core.visiblePhotos.value
+                    .none { it.path == "holiday/a.jpg" },
+            )
+            val restored = frame.core.library.index.library.value
+            assertTrue(restored.isVisible(restored.photos.getValue(PhotoEntry.idFor("local", "holiday/2024/b.jpg"))))
+        }
+    }
+
+    /** Spec `photo-library`, "Album state of a restored photo" › Parent switched while the photo was in the trash. */
+    @Test
+    fun `Switching the parent while the photo is in the trash resets the sub-album`() {
+        TestFrame(File(dir, "frame")).use { frame ->
+            shownInHiddenHoliday(frame)
+            val trashId = deleteOnly(frame)
+            assertEquals(200, frame.send("PATCH", "/api/v1/albums", """{"name":"holiday","hidden":false}""").statusCode())
+            assertEquals(200, frame.send("PATCH", "/api/v1/albums", """{"name":"holiday","hidden":true}""").statusCode())
+            restore(frame, trashId)
+            val album = albumsOf(frame).getValue("holiday/2024")
+            assertTrue(album.hidden)
+            assertFalse(album.overridesParent, "no setting of its own")
+            val restored = frame.core.library.index.library.value
+            assertFalse(restored.isVisible(restored.photos.getValue(PhotoEntry.idFor("local", "holiday/2024/b.jpg"))))
+        }
     }
 }

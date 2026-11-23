@@ -311,7 +311,13 @@ fun Router.libraryRoutes(
         if (body.action !in BATCH_ACTIONS) throw HttpException.badRequest("action is hide, show or delete")
         // One change of the library for the whole batch; every ID ends in exactly one list (spec "Batch changes").
         val result =
-            if (body.action == "delete") library.deleteAll(body.ids) else library.setHiddenAll(body.ids, body.action == "hide")
+            if (body.action ==
+                "delete"
+            ) {
+                library.deleteAll(body.ids, req.clientId)
+            } else {
+                library.setHiddenAll(body.ids, body.action == "hide")
+            }
         HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(result.processed.size, result.missing, result.failed))
     }
 
@@ -322,7 +328,7 @@ fun Router.libraryRoutes(
     }
 
     delete("/api/v1/photos/{photoId}") { req ->
-        if (!library.delete(req.pathParam("photoId"))) throw HttpException.notFound("No such photo")
+        if (!library.delete(req.pathParam("photoId"), req.clientId)) throw HttpException.notFound("No such photo")
         HttpResponse.noContent()
     }
 

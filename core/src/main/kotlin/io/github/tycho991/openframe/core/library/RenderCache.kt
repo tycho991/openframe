@@ -147,6 +147,11 @@ class RenderCache(
     private val reserveBytes: Long = 0,
     /** For the file times of the renderings and the hourly limits. */
     private val clock: Clock = Clock.System,
+    /**
+     * Frees storage outside the cache for the given free bytes in a folder, `false` if that does not help: old trash
+     * entries (design decision 9 of `paired-device-guards`). Asked only after the cache's own trim, never under its lock.
+     */
+    private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
 ) {
     private class Job(
         val priority: RenderPriority,
@@ -720,6 +725,8 @@ class RenderCache(
         val victims = synchronized(lock) { victimsLocked(reserveBytes - free, protectedLocked(job.key)) }
         deleteNow(victims)
         if (freeBytes(dir) >= reserveBytes) return true
+        // Its own renderings render again; trash entries do not come back, so they come second.
+        if (makeRoom(dir, reserveBytes)) return true
         val awaited = synchronized(lock) { job.pending.awaited }
         val now = clock.monotonicMillis()
         val warn = synchronized(lock) { reserveWarnedAt.let { it == null || now - it >= HOUR_MS }.also { if (it) reserveWarnedAt = now } }

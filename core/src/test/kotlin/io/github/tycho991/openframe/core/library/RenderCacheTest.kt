@@ -576,6 +576,50 @@ class RenderCacheTest {
         }
     }
 
+    /**
+     * Spec `photo-library`, "Where storage pressure frees the trash" (design decision 9 of `paired-device-guards`): below
+     * the reserve the cache asks the trash for room only after its own renderings are gone, which render again.
+     */
+    @Test
+    fun `Below the reserve old trash entries make room only after the cache's own renderings`() {
+        val volume = Volume(Long.MAX_VALUE / 2)
+        var filesWhenAsked = -1
+        var trashBytes = 20L * 1024 * 1024
+        val c =
+            RenderCache(
+                volume.folder,
+                engine,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                freeBytes = { volume.free() },
+                reserveBytes = RESERVE,
+                makeRoom = { _, needed ->
+                    filesWhenAsked = volume.folder.list()!!.size
+                    volume.capacity += trashBytes
+                    trashBytes = 0
+                    volume.free() >= needed
+                },
+            )
+        try {
+            val (a, b, h) = listOf("a", "b", "h").map { entry("$it.jpg") }
+            runBlocking {
+                c.get(a, RenderSize.THUMB)
+                c.get(b, RenderSize.THUMB)
+            }
+            // Removing every rendering would not free the reserve: only the trash can.
+            volume.capacity = volume.capacity - volume.free() + RESERVE - 10L * 1024 * 1024
+            c.prefetchAhead(listOf(h), emptyList(), emptyList())
+            waitUntilIdle(c)
+            assertEquals(0, filesWhenAsked, "the cache's own renderings went first")
+            assertNotNull(c.peek(h, RenderSize.DISPLAY), "a rendering ahead after the trash made room")
+        } finally {
+            c.close()
+        }
+    }
+
     private operator fun <T> List<T>.component6() = this[5]
 
     private fun waitUntilIdle(c: RenderCache) {

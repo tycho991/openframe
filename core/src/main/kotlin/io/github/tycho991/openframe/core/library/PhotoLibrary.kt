@@ -25,6 +25,8 @@ class PhotoLibrary(
     private val notifier: MediaStoreNotifier,
     private val platform: PlatformInfo,
     private val log: AppLog,
+    /** Where deleted local photos go (spec "Trash for deleted photos"). */
+    val trash: TrashStore,
     /** The storage reserve an upload leaves free ([StorageReserve]). */
     val reserveBytes: Long = StorageReserve.MARGIN_BYTES,
 ) {
@@ -64,10 +66,6 @@ class PhotoLibrary(
         val readOnly: Set<String> = emptySet(),
     )
 
-    /** Deletes a file; a test makes it fail. */
-    @Volatile
-    internal var deleteFile: (File) -> Boolean = { it.delete() }
-
     /**
      * Hides or shows the photos with [ids] in one edit, so the library version changes at most once (design decision 8
      * of `library-performance`). Unknown IDs are missing; a photo already in that state counts as processed.
@@ -93,17 +91,23 @@ class PhotoLibrary(
     }
 
     /**
-     * Deletes the files of the photos with [ids] and removes them in one edit, with one report to the media store; the
-     * renderings go through the index's notification. Unknown IDs are missing; a photo of a remote source, which would
-     * come back with the next sync, and a file that cannot be deleted are failed; a file already gone counts as deleted.
-     * While the photo folder is unavailable a missing file says nothing, so a batch with a local photo deletes nothing:
-     * 503 `storage_unavailable` (spec "Photo folder kept"). A batch of remote and unknown IDs answers as before.
+     * Moves the files of the photos with [ids] into the trash and removes them in one edit, with one report to the media
+     * store (design decision 4 of `paired-device-guards`, on top of decision 8 of `library-performance`); the renderings
+     * go through the index's notification. [clientId] is the deleting device, kept with each trash entry and logged.
+     * Unknown IDs are missing; a photo of a remote source, which would come back with the next sync, and a file that
+     * cannot be moved are failed; a file already gone has nothing to keep and counts as deleted. While the photo folder
+     * is unavailable a missing file says nothing, so a batch with a local photo deletes nothing: 503
+     * `storage_unavailable` (spec "Photo folder kept"). A batch of remote and unknown IDs answers as before.
      */
-    fun deleteAll(ids: Collection<String>): BatchResult {
+    fun deleteAll(
+        ids: Collection<String>,
+        clientId: String?,
+    ): BatchResult {
         val library = index.library.value
         val distinct = ids.distinct()
         if (distinct.any { library.photos[it]?.source == LocalPhotoSource.SOURCE_ID } && !local.available()) throw storageUnavailable()
         val deleted = ArrayList<PhotoEntry>()
+        val moved = ArrayList<PhotoEntry>()
         val missing = ArrayList<String>()
         val failed = ArrayList<String>()
         val readOnly = HashSet<String>()
@@ -119,8 +123,13 @@ class PhotoLibrary(
                     readOnly += id
                 }
 
-                local.fileOf(entry).let { !it.exists() || runCatching { deleteFile(it) }.getOrDefault(false) } -> {
+                !local.fileOf(entry).exists() -> {
                     deleted += entry
+                }
+
+                trash.moveIn(entry, local.fileOf(entry), clientId) -> {
+                    deleted += entry
+                    moved += entry
                 }
 
                 else -> {
@@ -131,17 +140,22 @@ class PhotoLibrary(
         if (deleted.isNotEmpty()) {
             index.edit { edit -> deleted.forEach { edit.remove(it.id) } }
             notifier.notifyChanged(deleted.map(local::fileOf))
-            if (deleted.size == 1) log.i(TAG, "Deleted: ${deleted.single().path}") else log.i(TAG, "Deleted: ${deleted.size} photos")
+            for (entry in moved) log.i(TAG, "Moved to trash: ${entry.path} by ${clientId ?: "?"}")
+            val gone = deleted.size - moved.size
+            if (gone > 0) log.i(TAG, "Deleted: $gone photos whose files were gone already")
         }
         return BatchResult(deleted.map { it.id }, missing, failed, readOnly)
     }
 
     /**
-     * Deletes file, index entry and rendered sizes: [deleteAll] of one ID. `false` if the photo does not exist, 409 for a
-     * photo of a read-only source, 500 if its file cannot be deleted, 503 while the photo folder is unavailable.
+     * Moves file and removes index entry and rendered sizes: [deleteAll] of one ID. `false` if the photo does not exist,
+     * 409 for a photo of a read-only source, 500 if its file cannot be moved, 503 while the photo folder is unavailable.
      */
-    fun delete(id: String): Boolean {
-        val result = deleteAll(listOf(id))
+    fun delete(
+        id: String,
+        clientId: String?,
+    ): Boolean {
+        val result = deleteAll(listOf(id), clientId)
         if (result.missing.isNotEmpty()) return false
         if (result.failed.isEmpty()) return true
         // A photo that the frame only reads would come back with the next sync.
@@ -152,7 +166,128 @@ class PhotoLibrary(
                 "This photo comes from a remote source and cannot be deleted here. Hide it instead.",
             )
         }
-        throw HttpException(500, "delete_failed", "File could not be deleted")
+        throw HttpException(500, "delete_failed", "File could not be moved to the trash")
+    }
+
+    /** What a restore did with each ID; every ID ends in exactly one of the lists. */
+    class RestoreResult(
+        /** Trash ID to the ID of the restored photo. */
+        val restored: List<Pair<String, String>>,
+        val missing: List<String>,
+        val failed: List<String>,
+    )
+
+    /** A trash entry to restore, with the entry it gets and the decision whether its file was probed. */
+    private class Restoring(
+        val item: TrashItem,
+        val file: File,
+        /** The entry without ID, path and version, which the edit assigns. */
+        val entry: PhotoEntry,
+        /** The saved entry was quarantined and the file is the same: it stays quarantined. */
+        val quarantined: Boolean,
+    )
+
+    /**
+     * Restores the trash entries [ids] (design decision 5 of `paired-device-guards`): an ID that does not have the form
+     * of a trash ID, an unknown one and one whose file is gone are missing, a damaged entry, one whose changed file
+     * fails its check and one that cannot be put in place are failed and stay in the trash. A file that is the one saved
+     * is not probed, so a quarantined photo is never decoded here. Under the library's lock the album levels are resolved
+     * against the existing folders and the targets chosen, also against each other; one edit of the index, under the
+     * trash's lock, renames the files into place and puts their entries with a new image version, so no scan sees a file
+     * before its entry. 503 while the photo folder is unavailable; the route refuses in safe mode.
+     */
+    fun restore(
+        ids: Collection<String>,
+        clientId: String?,
+    ): RestoreResult {
+        if (!local.available()) throw storageUnavailable()
+        val missing = ArrayList<String>()
+        val failed = ArrayList<String>()
+        val candidates = ArrayList<Restoring>()
+        for (id in ids.distinct()) {
+            // Checked before any File is built from it.
+            val item = if (TrashStore.PATTERN.matches(id)) trash.get(id) else null
+            val file = item?.file
+            when {
+                item == null -> missing += id
+                item.damaged || item.path == null -> failed += id
+                file == null || !file.isFile -> missing += id
+                else -> prepare(item, file)?.let(candidates::add) ?: failed.add(id)
+            }
+        }
+        val restored = ArrayList<Pair<String, PhotoEntry>>()
+        val created = ArrayList<File>()
+        val renderings =
+            synchronized(this) {
+                trash.locked {
+                    // Resolved for every entry first, also against each other, and then all renamed in one edit.
+                    val targets = LinkedHashMap<Restoring, File>()
+                    val taken = HashSet<String>()
+                    for (c in candidates) {
+                        val path = c.item.path!!
+                        try {
+                            val (dir, made) = albumFolder(AlbumPaths.parent(path))
+                            created += made
+                            val target = uniqueFile(dir, path.substringAfterLast('/')) { it.exists() || it.path.lowercase() in taken }
+                            taken += target.path.lowercase()
+                            targets[c] = target
+                        } catch (e: HttpException) {
+                            failed += c.item.id
+                        }
+                    }
+                    index.edit { edit ->
+                        for ((c, target) in targets) {
+                            if (!c.file.isFile || !trash.renameFile(c.file, target)) {
+                                failed += c.item.id
+                                continue
+                            }
+                            val path = target.relativeTo(local.root).invariantSeparatorsPath
+                            val version = edit.newVersion
+                            val entry =
+                                c.entry.copy(
+                                    id = PhotoEntry.idFor(LocalPhotoSource.SOURCE_ID, path),
+                                    path = path,
+                                    version = version,
+                                    quarantinedVersion = if (c.quarantined) version else null,
+                                )
+                            edit.put(entry)
+                            restored += c.item.id to entry
+                        }
+                    }
+                    // Folders created for an entry that could not be put in place go again; delete() leaves full ones.
+                    removeFolders(created)
+                    trash.restored(restored.map { it.first })
+                }
+            }
+        trash.takeRenderings(renderings)
+        if (restored.isNotEmpty()) {
+            notifier.notifyChanged(restored.map { local.fileOf(it.second) })
+            for ((_, entry) in restored) log.i(TAG, "Restored: ${entry.path} by ${clientId ?: "?"}")
+        }
+        return RestoreResult(restored.map { (trashId, entry) -> trashId to entry.id }, missing, failed)
+    }
+
+    /**
+     * The entry [item] gets, outside the locks: the saved one if the file is unchanged, else the probed file with the
+     * saved state, or hidden without a record. `null` if the probe fails.
+     */
+    private fun prepare(
+        item: TrashItem,
+        file: File,
+    ): Restoring? {
+        val saved = item.record?.entry
+        if (saved != null && file.length() == saved.fileSize && file.lastModified() == saved.modifiedMs) {
+            return Restoring(item, file, saved, quarantined = saved.quarantined)
+        }
+        val probed =
+            try {
+                local.read(item.path!!, file)
+            } catch (e: Exception) {
+                log.w(TAG, "Trash entry ${item.id} could not be restored: its file failed the check (${e.message})")
+                return null
+            }
+        val entry = if (saved != null) probed.withStateOf(saved) else probed.copy(hidden = true)
+        return Restoring(item, file, entry, quarantined = false)
     }
 
     private fun storageUnavailable() =
@@ -174,8 +309,14 @@ class PhotoLibrary(
         val root = local.root
         if (!local.available()) throw storageUnavailable()
         val staging = File(root, STAGING).apply { mkdirs() }
+        // The announced length deletes nothing from the trash, but counts what the trash could free while the body is
+        // written: a client could announce any length for a body that never comes (design decision 9).
         request.contentLength?.let { length ->
-            if (platform.freeBytes(root) - length < reserveBytes) throw insufficientStorage()
+            if (platform.freeBytes(root) - length < reserveBytes &&
+                platform.freeBytes(root) + trash.reclaimableBytes(root) - length < reserveBytes
+            ) {
+                throw insufficientStorage()
+            }
         }
         val staged = mutableListOf<Staged>()
         var album: String? = null
@@ -356,11 +497,17 @@ class PhotoLibrary(
                 sinceCheck += n
                 if (sinceCheck >= SPACE_CHECK_BYTES) {
                     sinceCheck = 0
-                    if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
+                    ensureRoom(root)
                 }
             }
         }
-        if (platform.freeBytes(root) < reserveBytes) throw insufficientStorage()
+        ensureRoom(root)
+    }
+
+    /** Below the storage reserve, old trash entries make room if they free enough (design decision 9); else 507. */
+    private fun ensureRoom(root: File) {
+        if (platform.freeBytes(root) >= reserveBytes) return
+        if (!trash.makeRoom(root, reserveBytes)) throw insufficientStorage()
     }
 
     private fun insufficientStorage() =

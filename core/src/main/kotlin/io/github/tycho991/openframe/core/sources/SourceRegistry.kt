@@ -37,6 +37,8 @@ class SourceRegistry(
     private val onSynced: () -> Unit = {},
     /** The storage reserve that downloads leave free ([io.github.tycho991.openframe.core.library.StorageReserve]). */
     private val reserveBytes: Long = OriginalsStore.ON_DEMAND_FLOOR_BYTES,
+    /** Frees old trash entries for the download of an original a rendering needs ([OriginalsStore.ensureRoomOnDisk]). */
+    private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
 ) {
     private class Running(
         val source: RemoteSource,
@@ -275,7 +277,7 @@ class SourceRegistry(
                 kind,
                 index,
                 engine,
-                OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes),
+                OriginalsStore(File(originalsDir, id), freeBytes, reserveBytes, makeRoom = makeRoom),
                 log,
                 onStale = { running[id]?.scheduler?.staleOriginal() },
                 clock = clock,

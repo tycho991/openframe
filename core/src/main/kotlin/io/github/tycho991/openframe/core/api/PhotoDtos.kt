@@ -30,6 +30,15 @@ class PhotoDtos(
         return ImageUrlsDto("$base&size=thumb", "$base&size=display&p=${RenderCache.displayKey(presentation)}", "$base&size=full")
     }
 
+    /**
+     * The thumbnail URL of the trash entry [trashId], signed for the subject `trash/<trashId>`, so that the signature of
+     * a photo never opens a trash entry and the other way round (design decision 10 of `paired-device-guards`).
+     */
+    fun trashThumbUrl(
+        trashId: String,
+        clientId: String,
+    ): String = "/api/v1/trash/$trashId/thumb?t=${signer.sign(trashSubject(trashId), clientId)}"
+
     fun dto(
         entry: PhotoEntry,
         lib: Library,
@@ -78,3 +87,6 @@ class PhotoDtos(
         return dto(lib.photos[entry.id] ?: entry, lib, clientId)
     }
 }
+
+/** The signed subject of a trash entry's thumbnail; a photo ID never contains `/`. */
+fun trashSubject(trashId: String) = "trash/$trashId"

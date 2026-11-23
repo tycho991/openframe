@@ -104,6 +104,8 @@ class UpdateManager(
     private val dir: File,
     private val clock: Clock,
     private val log: AppLog,
+    /** Frees old trash entries for the given free bytes in a folder; `false` if that does not help. */
+    private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
 ) {
     private enum class Running { NONE, CHECKING, DOWNLOADING }
 
@@ -481,7 +483,9 @@ class UpdateManager(
     ) {
         dir.mkdirs()
         val needed = 2 * asset.size + RESERVE_BYTES
-        if (platform.freeBytes(dir) < needed) {
+        // Old trash entries make room if they free enough, so that the trash does not block a security update (design
+        // decision 9 of `paired-device-guards`).
+        if (platform.freeBytes(dir) < needed && !makeRoom(dir, needed)) {
             throw UpdateException(UpdateErrorCode.UPDATE_STORAGE, "Not enough free storage for the update (${needed / MIB} MiB needed)")
         }
         synchronized(lock) {

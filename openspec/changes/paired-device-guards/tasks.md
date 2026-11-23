@@ -62,7 +62,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 3. Trash in the library
 
-- [ ] 3.1 `TrashStore` (design decisions 2 and 3): the layout `.trash/<trashId>/<relative path>` with `.nomedia`; only
+- [x] 3.1 `TrashStore` (design decisions 2 and 3): the layout `.trash/<trashId>/<relative path>` with `.nomedia`; only
   pattern-named real directories are entries; one image file per entry, otherwise `damaged`; a walker that skips
   symbolic links (canonical paths, API 21) and no `deleteRecursively`; `trash.json` with `backupOnLoad`, the saved
   `PhotoEntry` and `deletedBy`; the mirror built on the core's scope after start, operations waiting for it; the wiring
@@ -75,7 +75,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
   - a symbolic link inside an entry to a folder outside the photo folder is neither followed when measuring nor when
     purging, and the outside folder keeps its files (skipped where the test file system has no symlinks);
   - the first build runs after the server has started, not before it.
-- [ ] 3.2 `PhotoLibrary.deleteAll(ids, clientId)` moves local files into the trash per design decision 4, outside the
+- [x] 3.2 `PhotoLibrary.deleteAll(ids, clientId)` moves local files into the trash per design decision 4, outside the
   index lock, then one edit and one `notifyChanged(files)`; no `cache.remove`; `LibraryRoutes` passes the client ID
   (single delete and batch, `LibraryRoutes.kt:274`). Verify, `LibraryApiTest` and `QuarantineTest` with `TestFrame`:
   - after a delete the file is under `.trash/<trashId>/holiday/beach.jpg`, the entry and its renderings are gone, and
@@ -85,7 +85,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
     (› Delete › Batch with Nextcloud photos);
   - a failed move leaves no record and puts the ID in `failed`;
   - a quarantined photo's record keeps its `quarantinedVersion` (› Quarantined photos › Delete a quarantined photo).
-- [ ] 3.3 `PhotoLibrary.restore(ids, clientId)` per design decision 5: IDs checked against the pattern before any
+- [x] 3.3 `PhotoLibrary.restore(ids, clientId)` per design decision 5: IDs checked against the pattern before any
   `File`, the case resolver for albums, renames and puts in one edit, `edit.newVersion` for every restored entry,
   `quarantinedVersion = newVersion` when the saved entry was quarantined, hidden without a record, 503 in safe mode and
   while the folder is unavailable. Verify, JVM tests:
@@ -103,21 +103,21 @@ removal notification, image versions and tombstones, scan apply step and upload 
     failed (› Trash without its saved state › State file lost);
   - a damaged entry and an ID like `../x` are `failed` and `missing`, and nothing outside `.trash` is touched;
   - in safe mode the request answers 503 `safe_mode` (› Restore from the trash › Safe mode).
-- [ ] 3.4 Scan keeps an entry the frame has put in place, inside `library-performance`'s apply step (design decision
+- [x] 3.4 Scan keeps an entry the frame has put in place, inside `library-performance`'s apply step (design decision
   6). Verify: a `LocalPhotoSourceTest` case restores a quarantined photo between the scan's index read and its listing
   (through the `listFiles` seam); after the scan the photo has the version the restore gave it and is still
   quarantined, and the scan made no edit. Before keeping it, check once that the test fails without the fix
   (`photo-library` › Restore during a scan).
-- [ ] 3.5 Album state of a restored photo (design decision 7). Verify, `AlbumTreeTest`: the setting of an emptied
+- [x] 3.5 Album state of a restored photo (design decision 7). Verify, `AlbumTreeTest`: the setting of an emptied
   album is kept; the two scenarios of `photo-library` › Album state of a restored photo pass as written.
-- [ ] 3.6 Purge per design decision 8 (after the first build, hourly, the clock floor `TRASH_CLOCK_FLOOR` fixed in this
+- [x] 3.6 Purge per design decision 8 (after the first build, hourly, the clock floor `TRASH_CLOCK_FLOOR` fixed in this
   PR, and the re-stamp with a new trash ID). Verify, tests with `TestClock`:
   - an entry 7 days and 1 hour old is gone, one 6 days old stays (`photo-library` › Retention of the trash › After 7
     days);
   - an entry stamped below the floor is re-stamped once the clock passes it, gets a new ID and stays 7 more days
     (› Clock not yet set at the deletion);
   - while the clock is below the floor nothing is purged by age.
-- [ ] 3.7 `makeRoom(dir, neededFreeBytes)` per design decision 9 and its callers: the upload's streaming checks (not the
+- [x] 3.7 `makeRoom(dir, neededFreeBytes)` per design decision 9 and its callers: the upload's streaming checks (not the
   announced length), `library-performance`'s below-reserve path of the render cache and originals after the cache's
   own trim, and the updater before `update_storage`. Verify, tests with `TestClock`, `FakePlatform.free` and
   `FakePlatform` total bytes:
@@ -130,13 +130,13 @@ removal notification, image versions and tombstones, scan apply step and upload 
   - `UpdateApiTest`: a download short of storage succeeds after old entries are deleted (› Update on a full frame);
   - a render below the reserve frees old trash entries only after the cache's own entries;
   - a `dir` reported on another volume (different total bytes) frees nothing.
-- [ ] 3.8 Log lines `Moved to trash`, `Restored` and `Trash purged` with client IDs (design decisions 4, 5, 8).
+- [x] 3.8 Log lines `Moved to trash`, `Restored` and `Trash purged` with client IDs (design decisions 4, 5, 8).
   Verify: a test with two clients finds both IDs and the path in the log and no token (`photo-library` › Log of trash
   actions › Deleted and restored by two devices). `./gradlew :core:check` is green (API 21 check included).
 
 ## 4. Trash API and thumbnails
 
-- [ ] 4.1 `GET /trash`, `POST /trash:restore` in `LibraryRoutes` (design decision 11). Verify, `TestHttp(checkContract
+- [x] 4.1 `GET /trash`, `POST /trash:restore` in `LibraryRoutes` (design decision 11). Verify, `TestHttp(checkContract
   = true)`:
   - the list after a delete has path, album, the deleting client's ID, `deletedAt` and `purgeAfter` 7 days later
     (`photo-library` › Trash list through the API › List after a delete); with unmounted storage it answers 503
@@ -145,7 +145,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
   - `DELETE /api/v1/trash` gives 405 and `DELETE /api/v1/trash/{id}` gives 404 (› Trash for deleted photos › No way to
     empty the trash);
   - `RouteAccessTest` stays green with the new routes in router and contract, its 401 loop substituting `{trashId}`.
-- [ ] 4.2 Thumbnails per design decision 10: the signed subject `trash/<trashId>`, the subject from the route parameter
+- [x] 4.2 Thumbnails per design decision 10: the signed subject `trash/<trashId>`, the subject from the route parameter
   in `HttpPipeline`, `Authenticator.hasValidImageSignature(request, subject)`, rendering through `RenderCache` with the
   `trash` source in `SourceOriginals.onFrame`, `fileOf` and `release`, the quarantine callback for that source outside
   the cache lock, no URL and 503 without decoding for quarantined, damaged and record-less entries, 503 `safe_mode`,

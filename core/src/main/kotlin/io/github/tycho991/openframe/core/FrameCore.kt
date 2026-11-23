@@ -10,6 +10,7 @@ import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
 import io.github.tycho991.openframe.core.api.slideshowRoutes
 import io.github.tycho991.openframe.core.api.sourcesRoutes
+import io.github.tycho991.openframe.core.api.trashRoutes
 import io.github.tycho991.openframe.core.api.updateRoutes
 import io.github.tycho991.openframe.core.auth.AccessControl
 import io.github.tycho991.openframe.core.auth.ClientRegistry
@@ -40,6 +41,9 @@ import io.github.tycho991.openframe.core.library.RenderCache
 import io.github.tycho991.openframe.core.library.RenderSizes
 import io.github.tycho991.openframe.core.library.StorageReserve
 import io.github.tycho991.openframe.core.library.StoredIndex
+import io.github.tycho991.openframe.core.library.StoredTrash
+import io.github.tycho991.openframe.core.library.TrashItem
+import io.github.tycho991.openframe.core.library.TrashStore
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.log.LogSink
 import io.github.tycho991.openframe.core.log.RotatingFileLog
@@ -226,6 +230,19 @@ class FrameCore(
             ::photosRemoved,
         )
     val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
+
+    /** Deleted local photos, for 7 days (spec `photo-library`, "Trash for deleted photos"). */
+    val trash =
+        TrashStore(
+            dirs.photos,
+            JsonStore(File(dirs.state, "trash.json"), StoredTrash.serializer(), scope, log, backupOnLoad = true),
+            clock,
+            log,
+            localSource::available,
+            platform::freeBytes,
+            platform::totalBytes,
+            removeRenderings = { cache.removeAll(it) },
+        )
     private val sourceConfigs = SourceConfigStore(JsonStore(File(dirs.state, "sources.json"), StoredSources.serializer(), scope, log))
     private val syncResults =
         SyncResultStore(JsonStore(File(dirs.state, "sources-status.json"), StoredSyncResults.serializer(), scope, log))
@@ -253,11 +270,12 @@ class FrameCore(
             freeBytes = platform::freeBytes,
             onSynced = { backfill.request() },
             reserveBytes = reserveBytes,
+            makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share. */
     val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock)
-    private val originals = SourceOriginals(localSource, sources)
+    private val originals = SourceOriginals(localSource, sources, trash)
     val cache: RenderCache =
         RenderCache(
             File(dirs.cache, RenderCache.FOLDER),
@@ -273,8 +291,9 @@ class FrameCore(
             freeBytes = platform::freeBytes,
             reserveBytes = reserveBytes,
             clock = clock,
+            makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
         )
-    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, reserveBytes)
+    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, trash, reserveBytes)
 
     /** Updates of the app from GitHub's releases (spec `app-update`). Android reports installation results here. */
     val update =
@@ -289,6 +308,7 @@ class FrameCore(
             dirs.updates,
             clock,
             log,
+            makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
         )
 
     /** Place names of photo positions, offline; loads its data on the first lookup. */
@@ -371,6 +391,7 @@ class FrameCore(
         clients.load()
         signer.load()
         index.load()
+        trash.load()
         syncResults.load()
         // Only a frame that never had a sources.json migrates; one that could not be read must not become 0.1.0 again.
         val loadedSources = sourceConfigs.load()
@@ -474,6 +495,23 @@ class FrameCore(
         scope.launch { settings.localOnly.drop(1).collect { requestBind() } }
         requestBind()
         firstBind.await()
+        // After the server started: a large trash on an SD card must not delay it (design decision 3 of
+        // `paired-device-guards`). Then the purge check hourly, also in safe mode, since it decodes nothing.
+        scope.launch { trashLoop() }
+    }
+
+    private suspend fun trashLoop() {
+        while (scope.isActive) {
+            try {
+                trash.ensureBuilt()
+                trash.purge()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e(TAG, "The purge check of the trash failed", e)
+            }
+            delay(TRASH_CHECK_MS)
+        }
     }
 
     private fun logHealth() {
@@ -655,8 +693,15 @@ class FrameCore(
         if (corrected > 0) log.i(TAG, "$corrected implausible capture dates replaced by the file date")
     }
 
-    /** Quarantines the version of [entry] whose rendering crashed the decoder, unless the file changed meanwhile. */
+    /**
+     * Quarantines the version of [entry] whose rendering crashed the decoder, unless the file changed meanwhile; for a
+     * trash thumbnail its trash record (design decision 10 of `paired-device-guards`). Outside the cache's lock.
+     */
     private fun quarantine(entry: PhotoEntry) {
+        if (entry.source == TrashItem.SOURCE) {
+            trash.quarantine(entry)
+            return
+        }
         index.edit { edit ->
             val current = edit.get(entry.id) ?: return@edit
             if (current.version == entry.version) edit.put(current.copy(quarantinedVersion = entry.version))
@@ -693,6 +738,7 @@ class FrameCore(
         settings.flush()
         clients.flush()
         index.flush()
+        trash.flush()
         sourceConfigs.flush()
         syncResults.flush()
         update.flush()
@@ -705,6 +751,7 @@ class FrameCore(
         router.settingsRoutes(settings)
         val photos = PhotoDtos(library, settings, signer, places, platform)
         router.libraryRoutes(library, settings, photos, transitions, platform, health::safe) { if (!health.safe) scanForClient() }
+        router.trashRoutes(library, photos, clock, health::safe)
         router.sourcesRoutes(sources, nextcloud, health::safe)
         router.healthRoutes(::leaveSafeMode)
         router.displayRoutes(display)
@@ -744,6 +791,9 @@ class FrameCore(
         private const val HANDLER_THREADS = 8
         private const val LAN_ADDRESS_TTL_MS = 5_000L
         private const val STOP_WAIT_MS = 5_000L
+
+        /** How often the trash is checked for entries to purge (spec "Retention of the trash"). */
+        private const val TRASH_CHECK_MS = 60 * 60_000L
 
         /** A client's fetch scans the folder only when the last scan began longer ago than this. */
         private const val CLIENT_SCAN_MS = 15_000L
