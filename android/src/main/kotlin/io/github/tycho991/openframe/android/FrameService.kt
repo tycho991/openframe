@@ -65,7 +65,17 @@ class FrameService : Service() {
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
 
     override fun onDestroy() {
-        networkCallback?.let { (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) }
+        val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        (application as FrameApp).networkLink.unregister(connectivity)
+        networkCallback?.let {
+            // From API 26 a callback the system does not know throws; the rest of the cleanup must still run.
+            try {
+                connectivity.unregisterNetworkCallback(it)
+            } catch (e: IllegalArgumentException) {
+                core.log.w(TAG, "Network callback was not registered")
+            }
+        }
+        networkCallback = null
         debugReceivers.forEach(::unregisterReceiver)
         screenReceiver?.let(::unregisterReceiver)
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -118,19 +128,22 @@ class FrameService : Service() {
     }
 
     /**
-     * Rebind after a Wi-Fi change so that the server accepts on the new address. The core learns of losses through the
-     * [AndroidNetworkLink], to ask for the network while the display is off. A network reported available again without
-     * a loss in between changes nothing: rebinding would drop every open connection, and Android 5 reports that on every
-     * change of the network's score, several times a minute after roaming.
+     * Two callbacks. The unfiltered one here follows every network, mobile data included, and rebinds the server after
+     * a change so that it accepts on the new address; [FrameCore.onNetworkChanged] also restarts the sources and the
+     * updater. A network reported available again without a loss in between changes nothing ([KnownNetworks]):
+     * rebinding would drop every open connection, and Android 5 reports that on every change of the network's score,
+     * several times a minute after roaming. The [AndroidNetworkLink] registers its own callback for Wi-Fi and Ethernet
+     * only, through which the core asks for the network while the display is off.
      */
     private fun watchNetwork() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val link = (application as FrameApp).networkLink
+        val app = application as FrameApp
+        val known = app.knownNetworks
         val restart = Runnable { if (core.ready.value) core.onNetworkChanged() }
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    if (!link.available(network)) return
+                    if (!known.add(network)) return
                     core.log.i(TAG, "Network available")
                     main.removeCallbacks(restart)
                     main.postDelayed(restart, NETWORK_SETTLE_MS)
@@ -138,11 +151,12 @@ class FrameService : Service() {
 
                 override fun onLost(network: Network) {
                     core.log.i(TAG, "Network lost")
-                    link.lost(network)
+                    known.remove(network)
                 }
             }
         connectivity.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
         networkCallback = callback
+        app.networkLink.register(connectivity) { core.log.i(TAG, it) }
     }
 
     /**

@@ -71,11 +71,23 @@ class DimScheduleTest {
     }
 
     @Test
-    fun `Dim time in the DST gap moves to after the gap`() {
+    fun `Dim time in the DST gap moves forward by the gap's length`() {
         // 2026-03-29 is a Sunday; in Berlin 02:00 to 03:00 does not exist.
         val s = defaults.copy(weekend = DisplayWindow("01:00", "04:00", "02:30"))
         assertNull(DisplaySchedule.dimAt(at("2026-03-29T03:15", berlin), s))
         assertEquals(dim("2026-03-29T03:30", "2026-03-29T04:00", berlin), DisplaySchedule.dimAt(at("2026-03-29T03:45", berlin), s))
+    }
+
+    @Test
+    fun `Dim time moved past the end by the DST gap gives no dim period`() {
+        // 2026-03-29 is a Sunday; the dim time 02:30 becomes 03:30, after the off time 03:20.
+        val s = defaults.copy(weekend = DisplayWindow("01:00", "03:20", "02:30"))
+        assertNull(DisplaySchedule.dimAt(at("2026-03-29T03:10", berlin), s))
+        assertNull(DisplaySchedule.dimAt(at("2026-03-29T03:19", berlin), s))
+        assertEquals(
+            Period(true, instant("2026-03-29T01:00", berlin), instant("2026-03-29T03:20", berlin)),
+            DisplaySchedule.periodAt(at("2026-03-29T03:19", berlin), s),
+        )
     }
 
     @Test

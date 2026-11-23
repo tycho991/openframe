@@ -29,6 +29,19 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Locale
 
+/**
+ * The kind of a network from its transports, VPN first: the address shown on the frame and the [AndroidNetworkLink]
+ * use it.
+ */
+internal fun connectionKind(capabilities: NetworkCapabilities): ConnectionKind =
+    when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> ConnectionKind.VPN
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionKind.CELLULAR
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionKind.WIFI
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionKind.ETHERNET
+        else -> ConnectionKind.OTHER
+    }
+
 /** Device data from the system. */
 class AndroidPlatformInfo(
     private val context: Context,
@@ -114,15 +127,6 @@ class AndroidPlatformInfo(
             classified + fromInterfaces(owned)
         }.getOrElse { fromInterfaces(emptySet()) }
     }
-
-    private fun connectionKind(capabilities: NetworkCapabilities): ConnectionKind =
-        when {
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> ConnectionKind.VPN
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionKind.CELLULAR
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionKind.WIFI
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionKind.ETHERNET
-            else -> ConnectionKind.OTHER
-        }
 
     /** Resolution in the device's natural orientation, independent of the current rotation. */
     @Suppress("DEPRECATION")

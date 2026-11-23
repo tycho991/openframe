@@ -86,4 +86,15 @@ class FakeDisplayPower(
         available = value
         listener?.availabilityChanged()
     }
+
+    /**
+     * Device administration ends in Android's order: the disable broadcast arrives while the admin is still active, so
+     * the event is read with [available] still true; [deliver] lets the controller handle it (e.g. `scope::runCurrent`),
+     * and only then is the admin gone, without a second event.
+     */
+    fun deactivateLikeAndroid(deliver: () -> Unit) {
+        listener?.availabilityChanged()
+        deliver()
+        available = false
+    }
 }
