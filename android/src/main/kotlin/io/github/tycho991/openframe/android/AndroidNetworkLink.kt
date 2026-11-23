@@ -171,8 +171,12 @@ class AndroidNetworkLink(
         fun lanSnapshot(connectivity: ConnectivityManager): Boolean =
             try {
                 connectivity.allNetworks.any { network ->
-                    val kind = connectivity.getNetworkCapabilities(network)?.let(::connectionKind)
+                    val capabilities = connectivity.getNetworkCapabilities(network) ?: return@any false
+                    val kind = connectionKind(capabilities)
+                    // As the request: its builder asks for NOT_RESTRICTED and TRUSTED by default.
                     (kind == ConnectionKind.WIFI || kind == ConnectionKind.ETHERNET) &&
+                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED) &&
+                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED) &&
                         connectivity.getNetworkInfo(network)?.isConnected == true
                 }
             } catch (e: Exception) {

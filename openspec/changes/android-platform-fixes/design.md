@@ -72,11 +72,11 @@ archive stays as it is. `AndroidNetworkLink` registers its own `NetworkCallback`
 `NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).addTransportType(TRANSPORT_ETHERNET)
 .addCapability(NET_CAPABILITY_NOT_VPN).build()`. Transports in a request are alternatives, so either matches.
 `NOT_VPN` is among the builder's defaults already (with `NOT_RESTRICTED` and `TRUSTED`) and is set explicitly so that
-the request says what it relies on; `INTERNET` is not asked for, so a Wi-Fi without an internet uplink still counts, since the LAN is what the
-admin interface needs. Everything used is available from API 21. The callback's `onAvailable`/`onLost` update the
-link's set of networks as today and write "LAN network available" and "LAN network lost" through the logger handed to
-`register`, which `FrameService` points at `core.log`, so the lines are in `GET /api/v1/logs`. A repeated
-`onAvailable` for a known network (Android 5 after a score change) logs nothing.
+the request says what it relies on; `INTERNET` is not asked for, so a Wi-Fi without an internet uplink still counts,
+since the LAN is what the admin interface needs. Everything used is available from API 21. The callback's
+`onAvailable`/`onLost` update the link's set of networks as today and write "LAN network available" and "LAN network
+lost" through the logger handed to `register`, which `FrameService` points at `core.log`, so the lines are in
+`GET /api/v1/logs`. A repeated `onAvailable` for a known network (Android 5 after a score change) logs nothing.
 
 *Alternative:* keep the one unfiltered callback and filter in `onAvailable` with `getNetworkCapabilities`. Rejected:
 below API 26 `onAvailable` is not guaranteed to be followed by `onCapabilitiesChanged`, and `getNetworkCapabilities`
@@ -247,6 +247,7 @@ The API 37 emulator's `eth0` is a cellular network; images from Android 11 on al
 image has no Wi-Fi, the end-to-end check cannot run there and the result says so. Wi-Fi goes off with
 `adb shell svc wifi disable` (or `cmd wifi set-wifi-enabled disabled`) while the display is off by the schedule and back
 with `svc wifi enable`; with the display off the image may not rejoin `AndroidWifi` by itself, then
-`cmd wifi connect-network AndroidWifi open` does it (during a dark wake it rejoined unaided); device administration is activated on the emulator only (`dpm set-active-admin`). Turning the
-emulator's Wi-Fi off is no device change in the sense of the project rules. The API 21 emulator has no Wi-Fi radio and
+`cmd wifi connect-network AndroidWifi open` does it (during a dark wake it rejoined unaided); device administration
+is activated on the emulator only (`dpm set-active-admin`). Turning the emulator's Wi-Fi off is no device change in
+the sense of the project rules. The API 21 emulator has no Wi-Fi radio and
 freezes while its display is off, so it gives only the negative check with the display on.

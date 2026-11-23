@@ -66,9 +66,16 @@ class FrameService : Service() {
 
     override fun onDestroy() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback?.let(connectivity::unregisterNetworkCallback)
-        networkCallback = null
         (application as FrameApp).networkLink.unregister(connectivity)
+        networkCallback?.let {
+            // From API 26 a callback the system does not know throws; the rest of the cleanup must still run.
+            try {
+                connectivity.unregisterNetworkCallback(it)
+            } catch (e: IllegalArgumentException) {
+                core.log.w(TAG, "Network callback was not registered")
+            }
+        }
+        networkCallback = null
         debugReceivers.forEach(::unregisterReceiver)
         screenReceiver?.let(::unregisterReceiver)
         wakeLock?.takeIf { it.isHeld }?.release()

@@ -258,6 +258,8 @@ class DisplayActivity : Activity() {
         scope?.cancel()
         scope = null
         pairingSync?.send(false)
+        // A pending auto-hide of the hint still hides it, but tells the core nothing until the next attach.
+        pairingSync = null
         if (bound) unbindService(connection)
         bound = false
         renderer?.clear()

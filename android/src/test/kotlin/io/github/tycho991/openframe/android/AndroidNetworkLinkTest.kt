@@ -34,18 +34,28 @@ class AndroidNetworkLinkTest {
 
     private val connectivity get() = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    /** Adds a connected network of [transports] to Robolectric's `ConnectivityManager`. */
+    /**
+     * Adds a connected network of [transports] to Robolectric's `ConnectivityManager`, unrestricted and trusted unless
+     * [restricted].
+     */
     @Suppress("DEPRECATION")
     private fun addConnected(
         id: Int,
         type: Int,
         vararg transports: Int,
+        restricted: Boolean = false,
     ): Network {
         val network = ShadowNetwork.newInstance(id)
         val info = ShadowNetworkInfo.newInstance(NetworkInfo.DetailedState.CONNECTED, type, 0, true, NetworkInfo.State.CONNECTED)
         shadowOf(connectivity).addNetwork(network, info)
         val capabilities = ShadowNetworkCapabilities.newInstance()
         transports.forEach { shadowOf(capabilities).addTransportType(it) }
+        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED)
+        if (restricted) {
+            shadowOf(capabilities).removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+        } else {
+            shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+        }
         shadowOf(connectivity).setNetworkCapabilities(network, capabilities)
         return network
     }
@@ -101,6 +111,13 @@ class AndroidNetworkLinkTest {
     fun `A connected Ethernet is the LAN`() {
         addConnected(100, ConnectivityManager.TYPE_ETHERNET, NetworkCapabilities.TRANSPORT_ETHERNET)
         assertTrue(AndroidNetworkLink.lanSnapshot(connectivity))
+    }
+
+    @Config(sdk = [23, 28])
+    @Test
+    fun `A restricted Wi-Fi is no LAN, as the request does not match it`() {
+        addConnected(100, ConnectivityManager.TYPE_WIFI, NetworkCapabilities.TRANSPORT_WIFI, restricted = true)
+        assertFalse(AndroidNetworkLink.lanSnapshot(connectivity))
     }
 
     @Config(sdk = [23, 28])
@@ -190,15 +207,19 @@ class AndroidNetworkLinkTest {
         old.onAvailable(ShadowNetwork.newInstance(100))
         assertTrue(link.connected)
         link.unregister(connectivity)
+        var changes = 0
+        link.setListener { changes++ }
         // Lost while no callback was registered; the snapshot says no LAN.
         link.register(connectivity) {}
         assertFalse(link.connected)
+        assertEquals("the snapshot reports the loss", 1, changes)
         val other = ShadowNetwork.newInstance(101)
         registered().onAvailable(other)
         registered().onLost(other)
         assertFalse("the network of the last registration is gone", link.connected)
         old.onAvailable(ShadowNetwork.newInstance(102))
         assertFalse("a late callback of the last registration changes nothing", link.connected)
+        assertEquals("the snapshot, then the other network's two changes", 3, changes)
     }
 
     /** Spec `kiosk-host` › Network is optional › Same network reported again. */

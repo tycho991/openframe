@@ -13,6 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowNetwork
 import java.io.File
 
 /**
@@ -38,11 +39,17 @@ class FrameServiceNetworkTest {
         val light = TestCore.create(File(app.cacheDir, "service-core-${System.nanoTime()}"))
         core = light
         app.coreFactory = { light }
+        val wifi = ShadowNetwork.newInstance(100)
         repeat(2) {
             val service = Robolectric.buildService(FrameService::class.java).create()
-            assertEquals(2, shadowOf(connectivity).networkCallbacks.size)
+            val callbacks = shadowOf(connectivity).networkCallbacks
+            assertEquals(2, callbacks.size)
+            // The rebind's callback; a restarted service hears of the network it is on again.
+            callbacks.single { it.javaClass.name.startsWith(FrameService::class.java.name) }.onAvailable(wifi)
             service.destroy()
             assertEquals(0, shadowOf(connectivity).networkCallbacks.size)
         }
+        val available = light.log.recent(100).count { it.message == "Network available" }
+        assertEquals("the set of known networks lives as long as the process", 1, available)
     }
 }
