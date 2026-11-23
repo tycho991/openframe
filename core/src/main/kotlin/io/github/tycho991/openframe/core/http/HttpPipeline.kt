@@ -10,10 +10,13 @@ interface Authenticator {
     /** Returns the ID of the client for the request's bearer token or `null`. */
     fun clientFor(request: HttpRequest): String?
 
-    /** Whether the request carries a valid image signature for the photo [photoId]. */
+    /**
+     * Whether the request carries a valid image signature for [subject]: a photo ID, or `trash/<trashId>` for the
+     * thumbnail of a trash entry.
+     */
     fun hasValidImageSignature(
         request: HttpRequest,
-        photoId: String,
+        subject: String,
     ): Boolean
 }
 
@@ -89,8 +92,9 @@ class HttpPipeline(
             return
         }
         if (route.access == Access.TOKEN_OR_IMAGE_SIGNATURE) {
-            val photoId = request.pathParams["photoId"]
-            if (photoId != null && authenticator.hasValidImageSignature(request, photoId)) return
+            // The signed subject comes from the route's own path parameter, so a signature opens only what it was made for.
+            val subject = request.pathParams["photoId"] ?: request.pathParams["trashId"]?.let { "trash/$it" }
+            if (subject != null && authenticator.hasValidImageSignature(request, subject)) return
             throw HttpException.unauthorized("No valid token and no valid signature")
         }
         throw HttpException.unauthorized()

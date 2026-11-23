@@ -1,4 +1,4 @@
-import type { SourceErrorCode, SourceSettings, SourceStatus } from "./api/client";
+import type { SourceErrorCode, SourceLoginState, SourceSettings, SourceStatus } from "./api/client";
 import type de from "./i18n/de.json";
 import { sourceErrorKeys } from "./i18n/errorCodes";
 
@@ -125,3 +125,47 @@ export const sourceRanges: Record<string, [number, number]> = {
 
 /** The frame holds at most this many sources. */
 export const MAX_SOURCES = 8;
+
+/** How a login flow ended: approved (with the source it is for), expired, or failed with an error. */
+export type LoginOutcome =
+  { state: "done"; sourceId: string | null } | { state: "expired" } | { state: "failed"; error: SourceError };
+
+/**
+ * Asks the frame every [intervalMs] whether the user approved the login [flowId], one question at a time, until the
+ * flow ends; then [onEnd] gets the outcome, or [onError] the error of a question that failed. Returns a function that
+ * stops it: an answer that comes after that is dropped. For a new login and a confirmation login alike.
+ */
+export function pollLogin(
+  poll: (flowId: string) => Promise<SourceLoginState>,
+  flowId: string,
+  onEnd: (outcome: LoginOutcome) => void,
+  onError: (e: unknown) => void,
+  intervalMs = 2000,
+): () => void {
+  let over = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ask = async () => {
+    try {
+      const polled = await poll(flowId);
+      if (over) return;
+      if (polled.state === "pending") {
+        timer = setTimeout(() => void ask(), intervalMs);
+        return;
+      }
+      over = true;
+      if (polled.state === "done") onEnd({ state: "done", sourceId: polled.sourceId });
+      else if (polled.state === "failed")
+        onEnd({ state: "failed", error: sourceError(polled.errorCode, polled.error) });
+      else onEnd({ state: "expired" });
+    } catch (e) {
+      if (over) return;
+      over = true;
+      onError(e);
+    }
+  };
+  timer = setTimeout(() => void ask(), intervalMs);
+  return () => {
+    over = true;
+    clearTimeout(timer);
+  };
+}

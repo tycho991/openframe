@@ -576,6 +576,75 @@ class RenderCacheTest {
         }
     }
 
+    /**
+     * Spec `photo-library`, "Where storage pressure frees the trash" (design decision 9 of `paired-device-guards`): below
+     * the reserve the cache asks the trash for room only after its own renderings are gone, which render again.
+     */
+    @Test
+    fun `Below the reserve old trash entries make room only after the cache's own renderings`() {
+        val volume = Volume(Long.MAX_VALUE / 2)
+        var filesWhenAsked = -1
+        var trashBytes = 20L * 1024 * 1024
+        val c =
+            RenderCache(
+                volume.folder,
+                engine,
+                { File(photos, it.path) },
+                { screen },
+                { fillMode },
+                { budget },
+                AppLog(TestClock()),
+                freeBytes = { volume.free() },
+                reserveBytes = RESERVE,
+                makeRoom = { _, needed ->
+                    filesWhenAsked = volume.folder.list()!!.size
+                    volume.capacity += trashBytes
+                    trashBytes = 0
+                    volume.free() >= needed
+                },
+            )
+        try {
+            val (a, b, h) = listOf("a", "b", "h").map { entry("$it.jpg") }
+            runBlocking {
+                c.get(a, RenderSize.THUMB)
+                c.get(b, RenderSize.THUMB)
+            }
+            // Removing every rendering would not free the reserve: only the trash can.
+            volume.capacity = volume.capacity - volume.free() + RESERVE - 10L * 1024 * 1024
+            c.prefetchAhead(listOf(h), emptyList(), emptyList())
+            waitUntilIdle(c)
+            assertEquals(0, filesWhenAsked, "the cache's own renderings went first")
+            assertNotNull(c.peek(h, RenderSize.DISPLAY), "a rendering ahead after the trash made room")
+        } finally {
+            c.close()
+        }
+    }
+
+    /** Design decision 9 of `paired-device-guards`: the download of an original asks the cache for room first. */
+    @Test
+    fun `The cache makes room for a download from its own renderings, protected ones excepted`() {
+        val volume = Volume(Long.MAX_VALUE / 2)
+        val c = volume.cache()
+        try {
+            val (a, b, k) = listOf("a", "b", "k").map { entry("$it.jpg") }
+            runBlocking {
+                c.get(a, RenderSize.THUMB)
+                c.get(b, RenderSize.THUMB)
+                c.get(k, RenderSize.DISPLAY)
+            }
+            c.prefetchAhead(listOf(k), emptyList(), emptyList())
+            val thumb = File(volume.folder, c.target(a, RenderSize.THUMB).name).length()
+            volume.capacity = volume.capacity - volume.free() + 1_000
+            assertTrue(c.trimFor(volume.folder, 1_000 + thumb), "one thumbnail is enough")
+            assertNull(c.peek(a, RenderSize.THUMB), "unused longest")
+            assertNotNull(c.peek(b, RenderSize.THUMB))
+            assertFalse(c.trimFor(volume.folder, Long.MAX_VALUE / 4), "not more than it has")
+            assertNotNull(c.peek(k, RenderSize.DISPLAY), "the window stays")
+        } finally {
+            c.close()
+        }
+    }
+
     private operator fun <T> List<T>.component6() = this[5]
 
     private fun waitUntilIdle(c: RenderCache) {

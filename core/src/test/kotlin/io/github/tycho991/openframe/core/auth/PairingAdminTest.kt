@@ -81,4 +81,26 @@ class PairingAdminTest {
         pairing.setShownOnFrame(true)
         assertNotNull(pairing.display.value.code)
     }
+
+    /** Spec `admin-access`, "Equal rights of paired devices" › A hostile device keeps revoking. */
+    @Test
+    fun `Unpair all devices ends a device that revokes every new pairing`() {
+        val clients = clients()
+        val signer = signer()
+        val pairing = PairingManager(clients, clock, log, { "http://192.168.100.215:8080/" })
+        val (hostileToken, hostile) = clients.create("Visitor", PairedVia.INVITE, "0123456789abcdef")
+        // Every new pairing is revoked by the hostile device as soon as it appears.
+        val (_, victim) = clients.create("Phone", PairedVia.CODE, null)
+        assertNotNull(clients.authenticate(hostileToken))
+        assertTrue(clients.remove(victim.id))
+
+        PairingAdmin(clients, signer, pairing, log).resetAll()
+
+        assertNull(clients.authenticate(hostileToken), "the hostile token is gone as well")
+        assertFalse(clients.clients.value.any { it.id == hostile.id })
+        pairing.setShownOnFrame(true)
+        val (token, _) = pairing.pair(pairing.display.value.code!!, "Phone")
+        assertNotNull(clients.authenticate(token), "the next pairing stays")
+        assertNotNull(clients().authenticate(token), "also stored")
+    }
 }

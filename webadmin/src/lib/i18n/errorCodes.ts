@@ -51,6 +51,7 @@ export const sourceErrorKeys: Record<SourceErrorCode, Key> = {
   storage: "sources.error.storage",
   unexpected: "sources.error.unexpected",
   too_many_sources: "error.too_many_sources",
+  other_account: "sources.error.other_account",
 };
 
 /** The text of every refusal of an installation request, as for [updateErrorKeys]. */
@@ -99,6 +100,7 @@ export const errorKeys: Record<string, Key> = {
   nextcloud_insecure_login: "error.nextcloud_insecure_login",
   source_no_folder: "error.source_no_folder",
   too_many_sources: "error.too_many_sources",
+  account_login_required: "error.account_login_required",
   source_exists: "error.source_exists",
   share_not_found: "error.share_not_found",
   share_not_a_folder: "error.share_not_a_folder",

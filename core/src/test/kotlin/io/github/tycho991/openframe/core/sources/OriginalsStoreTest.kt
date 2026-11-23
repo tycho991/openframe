@@ -148,4 +148,23 @@ class OriginalsStoreTest {
         assertEquals((10..20).map { store.fileOf(entry(it)).name }.toSet(), File(dir, "many").list()!!.toSet())
         assertEquals(110, store.totalBytes())
     }
+
+    /** Design decision 9 of `paired-device-guards`: an original a rendering needs may ask the trash for room. */
+    @Test
+    fun `An original short of room asks for room once and only then`() {
+        var free = 1_000L
+        val asked = ArrayList<Long>()
+        val store =
+            OriginalsStore(File(dir, "s1"), { free }, reserveBytes = 500, makeRoom = { _, needed ->
+                asked += needed
+                free = needed
+                true
+            })
+        assertTrue(store.ensureRoomOnDisk(400))
+        assertEquals(emptyList<Long>(), asked, "enough room: the trash is not asked")
+        assertTrue(store.ensureRoomOnDisk(800))
+        assertEquals(listOf(1_300L), asked, "the need and the reserve")
+        val refused = OriginalsStore(File(dir, "s2"), { 0L }, reserveBytes = 500, makeRoom = { _, _ -> false })
+        assertFalse(refused.ensureRoomOnDisk(1))
+    }
 }

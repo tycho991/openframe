@@ -20,11 +20,14 @@ class FakePlatform(
     override var systemLocale: Locale = Locale.ENGLISH,
     var mounted: Boolean = true,
 ) : PlatformInfo {
+    /** The free bytes of a folder, ahead of [free]; for storage that changes with what the frame deletes. */
+    @Volatile var freeOf: ((File) -> Long)? = null
+
     override fun storageMounted(dir: File) = mounted
 
     override fun ipAddresses() = ips
 
-    override fun freeBytes(dir: File): Long = free ?: super.freeBytes(dir)
+    override fun freeBytes(dir: File): Long = freeOf?.invoke(dir) ?: free ?: super.freeBytes(dir)
 
     override fun totalBytes(dir: File): Long = total ?: super.totalBytes(dir)
 }

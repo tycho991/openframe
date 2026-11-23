@@ -20,9 +20,28 @@ data class StoredClient(
     val tokenHash: String,
     val pairedAtMs: Long,
     val lastSeenAtMs: Long,
+    /**
+     * How the device paired: [PairedVia.CODE], [PairedVia.QR] or [PairedVia.INVITE]; `null` for a pairing from before
+     * this was recorded (design decision 12 of `paired-device-guards`). A string, not an enum: a value a later build
+     * writes must not make `clients.json` unreadable, which would lose every pairing.
+     */
+    val pairedVia: String? = null,
+    /** The ID of the device whose invitation was redeemed, kept after that device is revoked; `null` otherwise. */
+    val invitedBy: String? = null,
 ) {
     val pairedAt: Instant get() = Instant.ofEpochMilli(pairedAtMs)
     val lastSeenAt: Instant get() = Instant.ofEpochMilli(lastSeenAtMs)
+}
+
+/** The values of [StoredClient.pairedVia] this build writes and serves. */
+object PairedVia {
+    const val CODE = "code"
+    const val QR = "qr"
+    const val INVITE = "invite"
+    private val KNOWN = setOf(CODE, QR, INVITE)
+
+    /** [stored] as the API serves it: a value this build does not know becomes `null`. */
+    fun served(stored: String?): String? = stored?.takeIf { it in KNOWN }
 }
 
 @Serializable
@@ -49,11 +68,15 @@ class ClientRegistry(
      * published only once it is stored; if storing fails, nothing changes and the exception is passed on.
      */
     @Synchronized
-    fun create(name: String): Pair<String, StoredClient> {
+    fun create(
+        name: String,
+        pairedVia: String? = null,
+        invitedBy: String? = null,
+    ): Pair<String, StoredClient> {
         val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes))
         val now = clock.millis()
         val id = ByteArray(8).also(random::nextBytes).joinToString("") { "%02x".format(it) }
-        val client = StoredClient(id, name, hash(token), now, now)
+        val client = StoredClient(id, name, hash(token), now, now, pairedVia, invitedBy)
         update(_clients.value + client, Persist.BEFORE_PUBLISH)
         return token to client
     }

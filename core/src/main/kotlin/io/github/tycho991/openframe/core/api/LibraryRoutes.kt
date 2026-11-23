@@ -99,6 +99,45 @@ data class BatchResultDto(
 )
 
 @Serializable
+data class TrashEntryDto(
+    val id: String,
+    val photoId: String?,
+    val path: String?,
+    val album: String?,
+    val fileSize: Long,
+    val deletedAt: String,
+    val purgeAfter: String?,
+    val deletedBy: String?,
+    val quarantined: Boolean,
+    val damaged: Boolean,
+    val thumb: String?,
+)
+
+@Serializable
+data class TrashListDto(
+    val items: List<TrashEntryDto>,
+    val totalBytes: Long,
+)
+
+@Serializable
+data class TrashRestoreRequestDto(
+    val ids: List<String>,
+)
+
+@Serializable
+data class RestoredDto(
+    val id: String,
+    val photoId: String,
+)
+
+@Serializable
+data class TrashRestoreResultDto(
+    val restored: List<RestoredDto>,
+    val missing: List<String>,
+    val failed: List<String>,
+)
+
+@Serializable
 data class SkippedFileDto(
     val path: String,
     val reason: String,
@@ -272,7 +311,13 @@ fun Router.libraryRoutes(
         if (body.action !in BATCH_ACTIONS) throw HttpException.badRequest("action is hide, show or delete")
         // One change of the library for the whole batch; every ID ends in exactly one list (spec "Batch changes").
         val result =
-            if (body.action == "delete") library.deleteAll(body.ids) else library.setHiddenAll(body.ids, body.action == "hide")
+            if (body.action ==
+                "delete"
+            ) {
+                library.deleteAll(body.ids, req.clientId)
+            } else {
+                library.setHiddenAll(body.ids, body.action == "hide")
+            }
         HttpResponse.json(BatchResultDto.serializer(), BatchResultDto(result.processed.size, result.missing, result.failed))
     }
 
@@ -283,7 +328,7 @@ fun Router.libraryRoutes(
     }
 
     delete("/api/v1/photos/{photoId}") { req ->
-        if (!library.delete(req.pathParam("photoId"))) throw HttpException.notFound("No such photo")
+        if (!library.delete(req.pathParam("photoId"), req.clientId)) throw HttpException.notFound("No such photo")
         HttpResponse.noContent()
     }
 

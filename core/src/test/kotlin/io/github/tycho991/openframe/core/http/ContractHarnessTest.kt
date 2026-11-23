@@ -64,7 +64,9 @@ class ContractHarnessTest {
 
     @Test
     fun `Formats are checked`() {
-        val client = """{"id":"a","name":"b","pairedAt":"yesterday","lastSeenAt":"2026-11-18T20:00:00Z","current":true}"""
+        val client =
+            """{"id":"a","name":"b","pairedAt":"yesterday","lastSeenAt":"2026-11-18T20:00:00Z",""" +
+                """"current":true,"pairedVia":null,"invitedBy":null}"""
         assertThrows<AssertionError> { Contract.check("PATCH", "/api/v1/clients/a", 200, "application/json", client) }
         assertDoesNotThrow {
             Contract.check(
@@ -79,7 +81,9 @@ class ContractHarnessTest {
 
     @Test
     fun `A 2xx answer to a request body outside the contract fails`() {
-        val client = """{"id":"a","name":"b","pairedAt":"2026-11-18T19:00:00Z","lastSeenAt":"2026-11-18T20:00:00Z","current":true}"""
+        val client =
+            """{"id":"a","name":"b","pairedAt":"2026-11-18T19:00:00Z","lastSeenAt":"2026-11-18T20:00:00Z",""" +
+                """"current":true,"pairedVia":null,"invitedBy":null}"""
         assertThrows<AssertionError> {
             Contract.check("PATCH", "/api/v1/clients/a", 200, "application/json", client, requestBody = """{"name":"b","admin":true}""")
         }

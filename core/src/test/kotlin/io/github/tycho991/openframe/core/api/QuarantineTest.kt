@@ -193,4 +193,73 @@ class QuarantineTest {
                 .toSet(),
         )
     }
+
+    private fun trashList() = ApiJson.decodeFromString(TrashListDto.serializer(), frame.get("/api/v1/trash").body())
+
+    private fun quarantineByRendering(path: String) {
+        frame.engine.renderFailure = { if (it.name == path.substringAfterLast('/')) crash() else null }
+        assertEquals(503, frame.get("/api/v1/photos/${id(path)}/image?size=full").statusCode())
+        waitFor(message = "quarantined") { photo(path).quarantined }
+    }
+
+    /** Spec `photo-library`: Quarantined photos › Delete a quarantined photo, › Restore a quarantined photo. */
+    @Test
+    fun `A deleted quarantined photo keeps its quarantine in the trash and comes back quarantined without decoding`() {
+        put("holiday/a.jpg")
+        frame.scan()
+        quarantineByRendering("holiday/a.jpg")
+        val quarantined =
+            frame.core.library.index.library.value.photos
+                .getValue(id("holiday/a.jpg"))
+        assertEquals(204, frame.send("DELETE", "/api/v1/photos/${id("holiday/a.jpg")}").statusCode())
+
+        val item = trashList().items.single()
+        assertTrue(item.quarantined)
+        assertNull(item.thumb, "no thumbnail URL")
+        assertEquals(
+            quarantined.version,
+            frame.core.trash
+                .get(item.id)!!
+                .record!!
+                .entry.quarantinedVersion,
+        )
+        val probes = frame.engine.probes.get()
+        val renders = frame.engine.renders.get()
+        val thumb = frame.get("/api/v1/trash/${item.id}/thumb")
+        assertEquals(503, thumb.statusCode())
+        assertEquals("render_failed", errorCode(thumb))
+
+        val restored = frame.send("POST", "/api/v1/trash:restore", """{"ids":["${item.id}"]}""")
+        assertEquals(200, restored.statusCode(), restored.body())
+        val back = photo("holiday/a.jpg")
+        assertTrue(back.quarantined, "still quarantined")
+        assertTrue(back.version > quarantined.version, "with a new image version")
+        assertEquals(503, frame.get("/api/v1/photos/${id("holiday/a.jpg")}/image?size=thumb").statusCode())
+        frame.scan()
+        assertTrue(photo("holiday/a.jpg").quarantined, "a scan keeps it")
+        assertEquals(probes, frame.engine.probes.get(), "never probed")
+        assertEquals(renders, frame.engine.renders.get(), "never rendered")
+    }
+
+    /** Spec `photo-library`: Thumbnails in the trash › Crash on a trash thumbnail. */
+    @Test
+    fun `A crash on a trash thumbnail quarantines the entry, and its restore gives a quarantined photo`() {
+        put("a.jpg")
+        frame.scan()
+        assertEquals(204, frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}").statusCode())
+        val item = trashList().items.single()
+        assertFalse(item.quarantined)
+        frame.engine.renderFailure = { crash() }
+        assertEquals(503, frame.get("/api/v1/trash/${item.id}/thumb").statusCode())
+        waitFor(message = "the entry quarantined") { trashList().items.single().quarantined }
+        assertNull(trashList().items.single().thumb)
+        val renders = frame.engine.renders.get()
+        assertEquals(503, frame.get("/api/v1/trash/${item.id}/thumb").statusCode())
+        assertEquals(renders, frame.engine.renders.get(), "not rendered again")
+
+        val restored = frame.send("POST", "/api/v1/trash:restore", """{"ids":["${item.id}"]}""")
+        assertEquals(200, restored.statusCode(), restored.body())
+        assertTrue(photo("a.jpg").quarantined)
+        assertEquals(renders, frame.engine.renders.get())
+    }
 }

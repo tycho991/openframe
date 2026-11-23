@@ -92,4 +92,37 @@ class ClientRegistryPersistenceTest {
         assertNull(restarted.authenticate(token))
         assertNull(restarted.authenticate(otherToken))
     }
+
+    /** Spec `admin-access`, "Origin of a pairing" › Pairing from before the update. */
+    @Test
+    fun `A clients json without the origin loads without one`() {
+        File(dir, "clients.json").writeText(
+            """{"clients":[{"id":"0123456789abcdef","name":"Phone","tokenHash":"${ClientRegistry.hash(
+                "t",
+            )}","pairedAtMs":1,"lastSeenAtMs":2}]}""",
+        )
+        val client = registry().clients.value.single()
+        assertEquals("Phone", client.name)
+        assertNull(client.pairedVia)
+        assertNull(client.invitedBy)
+        assertEquals(client.id, registry().authenticate("t")?.id)
+    }
+
+    /** Spec `admin-access`, "Origin of a pairing" › Origin from a newer version. */
+    @Test
+    fun `An origin this version does not know keeps every pairing and is served as none`() {
+        val hash = ClientRegistry.hash("t")
+        File(dir, "clients.json").writeText(
+            """{"clients":[""" +
+                """{"id":"0123456789abcdef","name":"Phone","tokenHash":"$hash","pairedAtMs":1,"lastSeenAtMs":2,"pairedVia":"nfc"},""" +
+                """{"id":"fedcba9876543210","name":"Tablet","tokenHash":"${ClientRegistry.hash("u")}","pairedAtMs":1,"lastSeenAtMs":2,""" +
+                """"pairedVia":"invite","invitedBy":"0123456789abcdef"}]}""",
+        )
+        val clients = registry().clients.value
+        assertEquals(listOf("Phone", "Tablet"), clients.map { it.name })
+        assertEquals("nfc", clients[0].pairedVia, "kept as stored")
+        assertNull(PairedVia.served(clients[0].pairedVia))
+        assertEquals("invite", PairedVia.served(clients[1].pairedVia))
+        assertFalse(dir.listFiles().orEmpty().any { it.name.contains("broken") }, "the file was not moved aside")
+    }
 }

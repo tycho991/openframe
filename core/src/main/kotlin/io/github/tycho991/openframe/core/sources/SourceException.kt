@@ -80,7 +80,11 @@ object SourceErrorCodes {
     const val UNEXPECTED = "unexpected"
     const val TOO_MANY_SOURCES = "too_many_sources"
 
-    val ALL: Set<String> = SourceException.Kind.entries.mapTo(LinkedHashSet()) { it.code } + UNEXPECTED + TOO_MANY_SOURCES
+    /** A confirmation login approved by another account than the source's (design decision 16 of `paired-device-guards`). */
+    const val OTHER_ACCOUNT = "other_account"
+
+    val ALL: Set<String> =
+        SourceException.Kind.entries.mapTo(LinkedHashSet()) { it.code } + UNEXPECTED + TOO_MANY_SOURCES + OTHER_ACCOUNT
 
     /** The kinds that put a source into the state of rejected access when listing its folder fails with them. */
     val REJECTED: Set<SourceException.Kind> =

@@ -1,8 +1,11 @@
 package io.github.tycho991.openframe.core.auth
 
+import io.github.tycho991.openframe.core.api.ClientListDto
 import io.github.tycho991.openframe.core.api.InviteDto
+import io.github.tycho991.openframe.core.api.PairingResponseDto
 import io.github.tycho991.openframe.core.api.adminUrlFromHost
 import io.github.tycho991.openframe.core.http.ApiJson
+import io.github.tycho991.openframe.core.log.LogLevel
 import io.github.tycho991.openframe.core.qr.QrMatrix
 import io.github.tycho991.openframe.core.testing.PairingHarness
 import io.github.tycho991.openframe.core.testing.PairingHarness.Companion.ADMIN_URL
@@ -152,5 +155,54 @@ class InviteTest {
     @Test
     fun `Without token no invitation`() {
         assertEquals(401, h.http.request("POST", "/api/v1/pairing/invites").statusCode())
+    }
+
+    /** Spec `admin-access`, "Origin of a pairing" › Paired by invitation. */
+    @Test
+    fun `Paired by invitation names the inviter, also after it is revoked and after a restart`() {
+        val phone = h.pairedAuth("Phone")
+        val phoneId =
+            h.clients.clients.value
+                .single()
+                .id
+        val res = h.pairWithSecret(secretOf(invite(phone).url))
+        assertEquals(201, res.statusCode(), res.body())
+        val paired = ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body())
+        assertEquals("invite", paired.client.pairedVia)
+        assertEquals(phoneId, paired.client.invitedBy)
+        val tablet = mapOf("Authorization" to "Bearer ${paired.token}")
+        assertEquals(204, h.http.request("DELETE", "/api/v1/clients/$phoneId", null, tablet).statusCode())
+        val listed = ApiJson.decodeFromString(ClientListDto.serializer(), h.http.get("/api/v1/clients", tablet).body()).clients.single()
+        assertEquals("invite", listed.pairedVia)
+        assertEquals(phoneId, listed.invitedBy)
+        val restarted =
+            h
+                .newRegistry()
+                .also { it.load() }
+                .clients.value
+                .single()
+        assertEquals("invite", restarted.pairedVia)
+        assertEquals(phoneId, restarted.invitedBy)
+    }
+
+    /** Spec `admin-access`, "Equal rights of paired devices" › Invited device revokes another one. */
+    @Test
+    fun `Invited device revokes the device that invited it`() {
+        val phone = h.pairedAuth("Phone")
+        val phoneId =
+            h.clients.clients.value
+                .single()
+                .id
+        val res = h.pairWithSecret(secretOf(invite(phone).url))
+        val paired = ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body())
+        val tablet = mapOf("Authorization" to "Bearer ${paired.token}")
+        assertEquals(204, h.http.request("DELETE", "/api/v1/clients/$phoneId", null, tablet).statusCode())
+        assertEquals(401, h.http.get("/api/v1/clients", phone).statusCode())
+        val lines =
+            h.log
+                .recent(100)
+                .filter { it.tag == "pairing" && it.level == LogLevel.INFO }
+                .map { it.message }
+        assertTrue(lines.any { it.startsWith("Device ${paired.client.id} revoked $phoneId") }, lines.toString())
     }
 }

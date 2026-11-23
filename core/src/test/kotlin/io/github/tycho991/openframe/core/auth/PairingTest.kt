@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.auth
 
+import io.github.tycho991.openframe.core.api.ClientListDto
 import io.github.tycho991.openframe.core.api.PairingResponseDto
 import io.github.tycho991.openframe.core.api.pairingRoutes
 import io.github.tycho991.openframe.core.api.settingsRoutes
@@ -122,7 +123,10 @@ class PairingTest {
             clients.clients.value
                 .single()
                 .id
-        assertEquals(listOf("Paired $id: Tablet X"), log.recent(100).filter { it.message.startsWith("Paired") }.map { it.message })
+        assertEquals(
+            listOf("Paired $id with the code: Tablet X"),
+            log.recent(100).filter { it.message.startsWith("Paired") }.map { it.message },
+        )
     }
 
     @Test
@@ -302,5 +306,33 @@ class PairingTest {
             ).also { it.load() }
         assertEquals(listOf("Phone"), reloaded.clients.value.map { it.name })
         assertNotNull(reloaded.authenticate(phone.token))
+    }
+
+    /** Spec `admin-access`, "Origin of a pairing" › Paired with the code. */
+    @Test
+    fun `Paired with the code`() {
+        val res = pair(requestCode(), "Laptop")
+        assertEquals(201, res.statusCode(), res.body())
+        val body = ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body())
+        assertEquals("code", body.client.pairedVia)
+        assertNull(body.client.invitedBy)
+        val listed = http.get("/api/v1/clients", mapOf("Authorization" to "Bearer ${body.token}"))
+        val client = ApiJson.decodeFromString(ClientListDto.serializer(), listed.body()).clients.single()
+        assertEquals("code", client.pairedVia)
+        assertNull(client.invitedBy)
+        // Also after a restart.
+        val restarted =
+            ClientRegistry(JsonStore(File(dir, "clients.json"), StoredClients.serializer(), TestScope(), log), clock).also { it.load() }
+        assertEquals(
+            "code",
+            restarted.clients.value
+                .single()
+                .pairedVia,
+        )
+        assertNull(
+            restarted.clients.value
+                .single()
+                .invitedBy,
+        )
     }
 }

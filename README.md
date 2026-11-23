@@ -113,7 +113,16 @@ keeps working.
 
 Further devices do not need the frame: on a paired device, "Paired devices" ›
 "Invite device" shows a QR code and a link that pair one more device once,
-within 5 minutes.
+within 5 minutes. The invited device gets the same rights as every paired
+device; the list of paired devices shows how each one paired.
+
+Deleting a local photo in the admin interface moves it into the trash, the
+hidden folder `.trash` in the photo folder, for 7 days. The photo overview
+lists the trash with the deleting device, and every paired device can restore
+from it. Its storage is freed after the 7 days, or earlier, but at the earliest
+a day after deleting, when an upload, the rendered sizes or an update run short
+of storage and the old entries free enough. Deleting `.trash` over USB frees
+the storage at once.
 
 The token lives in the browser per address. If the frame gets a new IP address,
 every browser has to pair again, so give the frame a fixed address (DHCP
@@ -220,7 +229,11 @@ Open "Sources" in the admin interface and choose "Add a source":
 - **Nextcloud account**: enter the address of the server and choose "Connect". A Nextcloud page opens in a new tab;
   approve the access there. The frame receives an app password, so no password is typed into the frame or the
   interface. Then choose the folder in the settings of the source; nothing is synced until one is chosen, `/` means
-  the whole account. Logging in again to the same account renews its access and keeps its photos.
+  the whole account. Logging in again to the same account renews its access and keeps its photos. Every paired
+  device sees the photos of the folder, with their paths. A folder that reads more than before (a higher or another
+  folder, `/`, or subfolders switched on) needs a Nextcloud login to that account on the device that sets it, within
+  30 minutes: the source card asks for it ("Confirm with Nextcloud"). For a frame that other people use, a share link
+  of just the folder you want to show is the better choice.
 
 For each source: whether subfolders are included (the first one is the album), how often the frame syncs (every 20
 minutes by default, at least 5), whether photos deleted on the server are removed, and the storage for its originals.
@@ -276,8 +289,28 @@ Read this before you install it.
   reachable from the internet: no port forwarding in the router, and switch off UPnP port mappings for it. Anyone on
   the same network can see the traffic between a browser and the frame.
 - **Pairing.** A browser gets a token by entering the code shown on the frame, by scanning its QR code or through an
-  invitation from a paired device. Every paired device has full rights for now: it can change settings, delete
-  photos, add sources and pair further devices. "Unpair all devices" in the device menu removes every token.
+  invitation from a paired device. Every paired device has the same rights, however it paired: it can change
+  settings, delete photos, add and change sources, rename and unpair other devices and invite further ones. "Paired
+  devices" shows how each device paired: with the code, with the QR code or by invitation of which device ("origin
+  unknown" for pairings from before the frame recorded it). "Unpair all devices" in the device menu removes every token and is the
+  remedy against a hostile paired device; review the list after an update and unpair devices nobody uses.
+- **Trash.** Deleting a local photo moves it into the trash (`.trash` in the photo folder) for 7 days, so no paired
+  device can delete a photo for good. Under storage pressure, an upload, the rendered sizes or an update short of
+  storage, entries deleted more than a day ago may go earlier, oldest first, and only if that frees enough. Every
+  paired device sees the trash with thumbnails and can restore from it; only USB frees its storage at once. Deleting,
+  restoring and purging are logged with the acting device.
+- **Widening an account folder needs a login.** A change that makes an account source read more (the first folder, a
+  higher or another folder, subfolders switched on) succeeds only if the same device completed a Nextcloud login for
+  that very account within the last 30 minutes. A visitor's phone can therefore not turn a source of one folder into
+  the whole account. Narrowing, the other settings and share links need no login.
+- **Accepted residual risks.** Every paired device can still revoke, rename and invite other devices; change settings,
+  `autoUpdateCheck` included (local-only mode stays on the frame); hide photos and overwrite comments and sections;
+  remove a source, which loses the hidden states, comments and sections of its photos and revokes its app password;
+  and restore and see photos another device deleted. The log (`GET /api/v1/logs`, open to every token) shows device
+  IDs and photo paths. An account owner who approves a login page that another device started, for example from a
+  link that device sent, gives that device the proof for widening. A forward jump of the frame's clock ages every
+  trash entry and can purge the whole trash at the next hourly check. Roles for owners and guests are to come as a
+  change of their own.
 - **Guessing the code.** A code exists only while the frame shows it on a display that is on. After 5 wrong codes,
   pairing by code is locked for 60 seconds, twice as long at each further lockout, at most an hour. After 20 wrong
   codes within 24 hours it pauses until the oldest of them is a day old. A pairing of any kind, or "Unpair all
@@ -311,8 +344,9 @@ Read this before you install it.
 - **Sources point anywhere (accepted).** A paired device can set a source to any `http` or `https` address the frame
   reaches, also the frame's own loopback services or, on a device with a SIM, the carrier's network. The frame then
   sends requests there in its own name (a blind server-side request forgery): it reports only whether the sync
-  worked and a class of error, never the content of an answer. This is accepted while every paired device has full
-  rights anyway; it is to be checked again when a permission model decides who may add sources.
+  worked and a class of error, never the content of an answer. This stays accepted while every paired device has the
+  same rights (change `paired-device-guards`): adding a share needs no account, so the widening proof does not apply.
+  It is to be checked again with roles, when they decide who may add sources.
 - **Answers of a source are bounded.** A Nextcloud server, or anything a source points at, can send at most fixed
   amounts: a listing of 64 MiB after decompression, 50,000 entries per folder answer, 32 levels of subfolders,
   5,000 folders and 100,000 files per sync, 64 KiB per login answer, and per download the listed size plus 1 MiB.

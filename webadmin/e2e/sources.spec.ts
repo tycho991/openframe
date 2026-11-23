@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  advanceFrameClock,
   albumTiles,
+  apiAsBrowser,
   foldButton,
   FRAME_ORIGIN,
   nextcloudApprove,
@@ -331,4 +333,57 @@ test("A double click on Connect starts one login", async ({ page }) => {
   await page.waitForTimeout(500);
   expect(starts).toHaveLength(1);
   expect(popups.length).toBeLessThanOrEqual(1);
+});
+
+// Spec web-admin: "Confirm a wider folder", "Folder of an account explained".
+
+test("A wider folder of an account: another account is refused, the same one confirms it", async ({
+  page,
+}) => {
+  await connect(page);
+  const account = card(page, "127.0.0.1");
+  const folder = account.getByLabel("Ordner auf dem Server");
+  // The hint at the folder of an account says the four things.
+  for (const part of [
+    "„/“ ist das ganze Konto",
+    "Jedes gekoppelte Gerät sieht die Fotos dieses Ordners",
+    "braucht auf dem Gerät, das ihn einstellt, eine Nextcloud-Anmeldung",
+    "passt ein Freigabe-Link",
+  ])
+    await expect(account.getByText(part, { exact: false })).toBeVisible();
+
+  // Narrowing needs no login. The "Gespeichert" of the first folder may still show, so the frame is asked.
+  type Sources = { sources: { id: string; settings: { folder: string } }[] };
+  const saved = async () => (await apiAsBrowser<Sources>(page, "/sources")).sources[0].settings.folder;
+  await folder.fill("/Fotos");
+  await account.getByRole("button", { name: "Speichern" }).click();
+  await expect.poll(saved).toBe("/Fotos");
+  await expect(account.getByRole("button", { name: "Speichern" })).toBeDisabled();
+  // Half an hour later the connecting login no longer counts.
+  await advanceFrameClock(31 * 60);
+
+  await folder.fill("/");
+  await account.getByRole("button", { name: "Speichern" }).click();
+  await expect(account.getByText("Damit liest die Quelle mehr als bisher.", { exact: false })).toBeVisible();
+
+  // Approved as another Nextcloud user: the error in German, and the form stays as it is.
+  let popup = page.waitForEvent("popup").catch(() => null);
+  await account.getByRole("button", { name: "Mit Nextcloud bestätigen" }).click();
+  await expect(account.getByText("Warte auf deine Zustimmung")).toBeVisible();
+  await popup;
+  await nextcloudApprove(0, "other");
+  await expect(
+    account.getByText("Die Anmeldung wurde mit einem anderen Nextcloud-Konto bestätigt", { exact: false }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(folder).toHaveValue("/");
+  expect(await saved()).toBe("/Fotos");
+
+  // Approved as the account of the source: the card saves the folder.
+  popup = page.waitForEvent("popup").catch(() => null);
+  await account.getByRole("button", { name: "Mit Nextcloud bestätigen" }).click();
+  await popup;
+  await nextcloudApprove();
+  await expect(account.getByText("Gespeichert")).toBeVisible({ timeout: 15_000 });
+  await expect(folder).toHaveValue("/");
+  await expect.poll(saved).toBe("/");
 });

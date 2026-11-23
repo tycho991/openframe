@@ -3,6 +3,9 @@ package io.github.tycho991.openframe.core.sources
 import io.github.tycho991.openframe.core.library.LocalPhotoSource
 import io.github.tycho991.openframe.core.library.OriginalRequest
 import io.github.tycho991.openframe.core.library.PhotoEntry
+import io.github.tycho991.openframe.core.library.RenderFailedException
+import io.github.tycho991.openframe.core.library.TrashItem
+import io.github.tycho991.openframe.core.library.TrashStore
 import java.io.File
 
 /**
@@ -13,6 +16,8 @@ import java.io.File
 class SourceOriginals(
     private val local: LocalPhotoSource,
     private val sources: SourceRegistry,
+    /** The trash, whose thumbnails render from the file in their entry ([TrashItem.SOURCE]); nothing to download. */
+    private val trash: TrashStore? = null,
 ) {
     /**
      * The file of [entry], fetched again first if it was removed from the cache. A remote original stays pinned until
@@ -23,15 +28,17 @@ class SourceOriginals(
         entry: PhotoEntry,
         request: OriginalRequest = OriginalRequest(onDemand = false) { false },
     ): File =
-        if (entry.source == LocalPhotoSource.SOURCE_ID) {
-            local.fileOf(entry)
-        } else {
-            sources.original(entry, pin = true, onDemand = request.onDemand, ended = request.cancelled)
+        when (entry.source) {
+            LocalPhotoSource.SOURCE_ID -> local.fileOf(entry)
+            TrashItem.SOURCE -> trashFile(entry) ?: throw RenderFailedException("The trash entry ${entry.id} is gone")
+            else -> sources.original(entry, pin = true, onDemand = request.onDemand, ended = request.cancelled)
         }
+
+    private fun trashFile(entry: PhotoEntry): File? = trash?.fileOf(entry)
 
     /** Ends the pin that [fileOf] set. */
     fun release(entry: PhotoEntry) {
-        if (entry.source != LocalPhotoSource.SOURCE_ID) sources.source(entry.source)?.unpin(entry)
+        if (entry.source != LocalPhotoSource.SOURCE_ID && entry.source != TrashItem.SOURCE) sources.source(entry.source)?.unpin(entry)
     }
 
     /**
@@ -43,14 +50,22 @@ class SourceOriginals(
         entry: PhotoEntry,
         markUsed: Boolean = true,
     ): File? =
-        if (entry.source == LocalPhotoSource.SOURCE_ID) {
-            local.fileOf(entry)
-        } else {
-            sources
-                .source(entry.source)
-                ?.originals
-                ?.let { store ->
-                    store.fileOf(entry).takeIf { it.isFile }?.also { if (markUsed) store.touch(entry) }
-                }
+        when (entry.source) {
+            LocalPhotoSource.SOURCE_ID -> {
+                local.fileOf(entry)
+            }
+
+            TrashItem.SOURCE -> {
+                trashFile(entry)
+            }
+
+            else -> {
+                sources
+                    .source(entry.source)
+                    ?.originals
+                    ?.let { store ->
+                        store.fileOf(entry).takeIf { it.isFile }?.also { if (markUsed) store.touch(entry) }
+                    }
+            }
         }
 }

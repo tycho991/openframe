@@ -108,6 +108,8 @@ test("Whole flow: QR code, invitation, rename, revoke the inviting device", asyn
   await expect(page.getByRole("navigation")).toBeVisible();
   await page.getByRole("link", { name: "Geräte" }).click();
   await page.getByRole("button", { name: "Gerät einladen" }).click();
+  // The invitation says which rights the invited device gets (web-admin › Invite a device › Show invitation).
+  await expect(page.getByText(/dieselben Rechte wie jedes gekoppelte Gerät/)).toBeVisible();
   const link = await page.getByLabel("Link").inputValue();
 
   // Phone 2 opens the invitation and renames itself.
@@ -119,10 +121,20 @@ test("Whole flow: QR code, invitation, rename, revoke the inviting device", asyn
   await second.getByRole("button", { name: "Speichern" }).click();
   await expect(second.getByText("Dieses Gerät ist als „Zweites Handy“ gekoppelt.")).toBeVisible();
 
-  // Phone 1 sees it, phone 2 revokes phone 1.
-  await expect(page.getByRole("listitem").filter({ hasText: "Zweites Handy" })).toBeVisible({
-    timeout: 30_000,
-  });
+  // Phone 1 sees it, with phone 1 as the inviting device (web-admin › Paired devices › Invited device).
+  const invited = page.getByRole("listitem").filter({ hasText: "Zweites Handy" });
+  await expect(invited).toBeVisible({ timeout: 30_000 });
+  const own = page.getByRole("listitem").filter({ hasText: "Dieses Gerät" });
+  await expect(own).toContainText("Gekoppelt mit dem QR-Code");
+  const ownName = (await own.getByRole("heading").innerText()).replace("Dieses Gerät", "").trim();
+  await expect(invited).toContainText(`Eingeladen von „${ownName}“`);
+  // After a rename of phone 1 the list shows its new name.
+  await own.getByRole("button", { name: "Umbenennen" }).click();
+  await page.getByLabel("Neuer Name").fill("Annas Handy");
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(invited).toContainText("Eingeladen von „Annas Handy“");
+
+  // Phone 2 revokes phone 1.
   await second.getByRole("link", { name: "Geräte" }).click();
   const first = second.getByRole("listitem").filter({ hasNotText: "Dieses Gerät" });
   await first.getByRole("button", { name: "Kopplung aufheben" }).click();

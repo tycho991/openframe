@@ -214,9 +214,9 @@ class LoginSecurityTest {
             ),
         )
         server.approved = true
-        val flow = connector.startLogin(server.baseUrl.replace("https://", "http://"))
+        val flow = connector.startLogin(server.baseUrl.replace("https://", "http://"), LAPTOP)
         assertTrue(flow.loginUrl.startsWith("https://"), flow.loginUrl)
-        val state = connector.pollLogin(flow.flowId)
+        val state = connector.pollLogin(flow.flowId, LAPTOP)
         assertEquals("done", state.state, state.error)
         assertEquals("s1", state.sourceId)
         assertEquals(
@@ -250,3 +250,6 @@ class LoginSecurityTest {
         assertTrue(server.revoked)
     }
 }
+
+/** The client that logs in, as the route passes it. */
+private const val LAPTOP = "0123456789abcdef"

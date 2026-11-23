@@ -1,5 +1,7 @@
 package io.github.tycho991.openframe.core.auth
 
+import io.github.tycho991.openframe.core.api.PairingResponseDto
+import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.testing.PairingHarness
 import io.github.tycho991.openframe.core.testing.PairingHarness.Companion.ADMIN_URL
 import io.github.tycho991.openframe.core.testing.PairingHarness.Companion.secretOf
@@ -152,5 +154,30 @@ class QrPairingTest {
         pairing.setShownOnFrame(true)
         assertNotNull(pairing.display.value.code)
         assertNull(pairing.display.value.url)
+    }
+
+    /** Spec `admin-access`, "Origin of a pairing": the QR code gives `qr` and no inviting device. */
+    @Test
+    fun `Paired with the QR code`() {
+        h.pairing.setShownOnFrame(true)
+        val res = h.pairWithSecret(secretOf(h.pairing.display.value.url!!))
+        assertEquals(201, res.statusCode(), res.body())
+        val client = ApiJson.decodeFromString(PairingResponseDto.serializer(), res.body()).client
+        assertEquals("qr", client.pairedVia)
+        assertNull(client.invitedBy)
+        assertEquals(
+            "qr",
+            h
+                .newRegistry()
+                .also { it.load() }
+                .clients.value
+                .single()
+                .pairedVia,
+        )
+        val id =
+            h.clients.clients.value
+                .single()
+                .id
+        assertTrue(h.log.recent(100).any { it.message.startsWith("Paired $id with the QR code: ") })
     }
 }

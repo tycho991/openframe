@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SourceErrorCode } from "./api/client";
 import de from "./i18n/de.json";
 import en from "./i18n/en.json";
@@ -8,6 +8,8 @@ import {
   isPlainHttp,
   isShareLink,
   isWebAddress,
+  type LoginOutcome,
+  pollLogin,
   settingsPatch,
   sourceError,
   statusLine,
@@ -182,6 +184,87 @@ describe("Source errors in the interface language", () => {
       "cloud.example.org",
     ]) {
       expect(isWebAddress(bad), bad).toBe(false);
+    }
+  });
+});
+
+describe("Polling a login", () => {
+  type State = Awaited<ReturnType<Parameters<typeof pollLogin>[0]>>;
+  const pending: State = { state: "pending", user: null, sourceId: null, error: null, errorCode: null };
+
+  /** Runs a poll whose frame answers [answers] one after the other; returns the outcome and the number of questions. */
+  async function run(answers: (State | Error)[]) {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      let outcome: LoginOutcome | null = null;
+      let failure: unknown = null;
+      pollLogin(
+        async () => {
+          const answer = answers[Math.min(asked++, answers.length - 1)] ?? pending;
+          if (answer instanceof Error) throw answer;
+          return answer;
+        },
+        "flow-1",
+        (o) => (outcome = o),
+        (e) => (failure = e),
+        2000,
+      );
+      for (let i = 0; i < answers.length; i++) await vi.advanceTimersByTimeAsync(2000);
+      return { outcome: outcome as LoginOutcome | null, asked, failure };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("asks again while pending and ends with done", async () => {
+    const result = await run([pending, pending, { ...pending, state: "done", user: "Anna", sourceId: "s1" }]);
+    expect(result.asked).toBe(3);
+    expect(result.outcome).toEqual({ state: "done", sourceId: "s1" });
+  });
+
+  it("ends with a failure in the interface language, other_account included", async () => {
+    const result = await run([
+      {
+        ...pending,
+        state: "failed",
+        error: "The login was approved by another account",
+        errorCode: "other_account",
+      },
+    ]);
+    expect(result.outcome?.state).toBe("failed");
+    const error = result.outcome?.state === "failed" ? result.outcome.error : null;
+    expect(error?.reason).toBe("sources.error.other_account");
+    expect(error?.detail).toBe("The login was approved by another account");
+  });
+
+  it("ends with expired and stops asking", async () => {
+    const result = await run([pending, { ...pending, state: "expired" }, pending, pending]);
+    expect(result.outcome).toEqual({ state: "expired" });
+    expect(result.asked).toBe(2);
+  });
+
+  it("hands over the error of a question that failed", async () => {
+    const result = await run([new Error("offline")]);
+    expect(result.outcome).toBeNull();
+    expect(String(result.failure)).toContain("offline");
+  });
+
+  it("drops an answer that comes after it was stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      let outcome: LoginOutcome | null = null;
+      const stop = pollLogin(
+        async () => ({ ...pending, state: "done" as const, sourceId: "s1" }),
+        "flow-1",
+        (o) => (outcome = o),
+        () => {},
+      );
+      stop();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(outcome).toBeNull();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

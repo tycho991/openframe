@@ -147,6 +147,11 @@ class RenderCache(
     private val reserveBytes: Long = 0,
     /** For the file times of the renderings and the hourly limits. */
     private val clock: Clock = Clock.System,
+    /**
+     * Frees storage outside the cache for the given free bytes in a folder, `false` if that does not help: old trash
+     * entries (design decision 9 of `paired-device-guards`). Asked only after the cache's own trim, never under its lock.
+     */
+    private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
 ) {
     private class Job(
         val priority: RenderPriority,
@@ -521,6 +526,22 @@ class RenderCache(
         return files.size
     }
 
+    /**
+     * Removes its own renderings unused longest, never a protected one, until [neededFreeBytes] are free in [dir]: for
+     * the download of an original a rendering needs, before old trash entries are asked (design decision 9 of
+     * `paired-device-guards`), since renderings render again and trash entries do not come back. Never under a lock of
+     * the caller's that the cache could wait for. Whether that much is free now.
+     */
+    fun trimFor(
+        dir: File,
+        neededFreeBytes: Long,
+    ): Boolean {
+        val free = freeBytes(dir)
+        if (free >= neededFreeBytes) return true
+        deleteNow(synchronized(lock) { victimsLocked(neededFreeBytes - free, protectedLocked(null)) })
+        return freeBytes(dir) >= neededFreeBytes
+    }
+
     /** Stays within the budget. [keep] is kept in any case, for example the image just rendered. */
     fun trim(keep: String? = null) {
         deleteNow(synchronized(lock) { overBudgetLocked(keep) })
@@ -720,6 +741,8 @@ class RenderCache(
         val victims = synchronized(lock) { victimsLocked(reserveBytes - free, protectedLocked(job.key)) }
         deleteNow(victims)
         if (freeBytes(dir) >= reserveBytes) return true
+        // Its own renderings render again; trash entries do not come back, so they come second.
+        if (makeRoom(dir, reserveBytes)) return true
         val awaited = synchronized(lock) { job.pending.awaited }
         val now = clock.monotonicMillis()
         val warn = synchronized(lock) { reserveWarnedAt.let { it == null || now - it >= HOUR_MS }.also { if (it) reserveWarnedAt = now } }

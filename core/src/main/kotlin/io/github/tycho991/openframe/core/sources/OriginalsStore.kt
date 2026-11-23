@@ -20,6 +20,8 @@ class OriginalsStore(
     private val now: () -> Long = System::currentTimeMillis,
     /** Lists the folder; every listing goes through here, so that a test can count them. */
     private val listFolder: (File) -> Array<File>? = { it.listFiles() },
+    /** Frees storage outside the store for the given free bytes in a folder: old trash entries (`paired-device-guards`). */
+    private val makeRoom: (File, Long) -> Boolean = { _, _ -> false },
 ) {
     init {
         dir.mkdirs()
@@ -86,6 +88,16 @@ class OriginalsStore(
         needed: Long,
         onDemand: Boolean = false,
     ): Boolean = freeBytes(dir) - needed >= floor(onDemand)
+
+    /**
+     * [hasRoomOnDisk] for the original of a rendering, after the render cache trimmed itself: if it is short, old trash
+     * entries make room when they free enough (design decision 9 of `paired-device-guards`). Never under this store's
+     * lock.
+     */
+    fun ensureRoomOnDisk(
+        needed: Long,
+        onDemand: Boolean = false,
+    ): Boolean = hasRoomOnDisk(needed, onDemand) || (makeRoom(dir, needed + floor(onDemand)) && hasRoomOnDisk(needed, onDemand))
 
     private fun floor(onDemand: Boolean) = if (onDemand) minOf(ON_DEMAND_FLOOR_BYTES, reserveBytes) else reserveBytes
 

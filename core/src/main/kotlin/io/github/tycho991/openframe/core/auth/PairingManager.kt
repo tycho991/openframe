@@ -143,7 +143,7 @@ class PairingManager(
             }
             consumeSession()
         }
-        return create(deviceName, null)
+        return create(deviceName, PairedVia.CODE, null)
     }
 
     /**
@@ -178,7 +178,7 @@ class PairingManager(
                 refresh()
                 invite.key
             }
-        return create(deviceName, inviter)
+        return create(deviceName, if (inviter == null) PairedVia.QR else PairedVia.INVITE, inviter)
     }
 
     /**
@@ -231,23 +231,24 @@ class PairingManager(
         wrongCodes.clear()
     }
 
-    /** Creates the client outside the lock and logs it (spec `admin-access`, "Log of device management"). */
+    /**
+     * Creates the client outside the lock with its origin [via] and the [inviter] of an invitation, and logs both (spec
+     * `admin-access`, "Log of device management" and "Origin of a pairing"). Every pairing passes here.
+     */
     private fun create(
         deviceName: String,
+        via: String,
         inviter: String?,
     ): Pair<String, StoredClient> {
-        val result = clients.create(deviceName)
+        val result = clients.create(deviceName, via, inviter)
         val client = result.second
-        log.i(
-            TAG,
-            if (inviter ==
-                null
-            ) {
-                "Paired ${client.id}: ${client.name}"
-            } else {
-                "Paired ${client.id} by invitation of $inviter: ${client.name}"
-            },
-        )
+        val origin =
+            when (via) {
+                PairedVia.CODE -> "with the code"
+                PairedVia.QR -> "with the QR code"
+                else -> "by invitation of $inviter"
+            }
+        log.i(TAG, "Paired ${client.id} $origin: ${client.name}")
         return result
     }
 

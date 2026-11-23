@@ -19,6 +19,8 @@
     PhotoSort,
     Settings,
     SkippedFile,
+    Client,
+    TrashEntry,
   } from "../lib/api/client";
   import { t, tn } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
@@ -29,6 +31,8 @@
   import Icon from "./Icon.svelte";
   import PhotoDetail from "./PhotoDetail.svelte";
   import SkippedFiles from "./SkippedFiles.svelte";
+  import TrashPanel from "./TrashPanel.svelte";
+  import { restoreInChunks, restoreMessage } from "../lib/trash";
   import UploadPanel from "./UploadPanel.svelte";
   import VirtualGrid from "./VirtualGrid.svelte";
 
@@ -37,6 +41,9 @@
 
   let albumList = $state.raw<AlbumList | null>(null);
   let skipped = $state<SkippedFile[]>([]);
+  let trash = $state.raw<{ items: TrashEntry[]; totalBytes: number }>({ items: [], totalBytes: 0 });
+  /** The paired devices, for the deleting device of a trash entry. */
+  let clients = $state.raw<Client[]>([]);
   let error = $state<string | null>(null);
   /**
    * What the error came from: `null` for an action of the user, which only the next action clears; otherwise the
@@ -333,6 +340,26 @@
     refreshDetail();
   }
 
+  async function loadTrash(): Promise<void> {
+    trash = await api.trash();
+    if (trash.items.length > 0) clients = await api.clients();
+  }
+
+  /**
+   * Restores trash entries in chunks, stopping at a chunk that fails; the new library version reloads album list and
+   * grids, the trash follows. One message names what stopped it, what failed and what was already gone.
+   */
+  async function restoreTrash(ids: string[]): Promise<void> {
+    clearError();
+    const outcome = await restoreInChunks(ids, api.restoreTrash);
+    await guard(async () => {
+      await loadTrash();
+      await refreshState();
+    });
+    const message = restoreMessage(outcome);
+    if (message) showError(message, null);
+  }
+
   /** The album list, then the pages of every open album. */
   async function reloadLibrary(): Promise<void> {
     albumList = await api.albums();
@@ -351,6 +378,8 @@
       if (changed) await reloadLibrary();
       else albumList = await api.albums();
       skipped = await api.skippedFiles();
+      // With the library version, so that the signed thumbnail URLs stay fresh.
+      await loadTrash();
     });
   });
 
@@ -440,6 +469,7 @@
         detail = null;
         endSelection();
         await reloadLibrary();
+        await loadTrash();
         if (result.failed.length > 0)
           showError(t("photos.batchFailed", { count: result.failed.length }), null);
       },
@@ -633,6 +663,7 @@
   </div>
 
   <SkippedFiles files={skipped} />
+  <TrashPanel items={trash.items} totalBytes={trash.totalBytes} {clients} onrestore={restoreTrash} />
 
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 

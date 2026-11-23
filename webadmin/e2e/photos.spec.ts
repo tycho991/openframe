@@ -79,7 +79,12 @@ test("Confirm delete", async ({ page }) => {
   await openAlbum(page, "");
   await page.locator(".tile").first().click();
   await page.getByRole("button", { name: "Löschen" }).click();
-  await expect(page.getByText("Dieses Foto endgültig löschen?")).toBeVisible();
+  // The confirmation names the trash, its 7 days and who sees it (web-admin › Edit photos › Confirm delete).
+  await expect(
+    page.getByText(
+      "Dieses Foto in den Papierkorb verschieben? Es bleibt dort 7 Tage, wo jedes gekoppelte Gerät es sehen und wiederherstellen kann.",
+    ),
+  ).toBeVisible();
   // Cancel deletes nothing.
   await page.getByRole("button", { name: "Abbrechen" }).click();
   expect((await apiAsBrowser<PhotoList>(page, "/photos")).total).toBe(2);
@@ -127,7 +132,7 @@ test("Delete a selection through the batch endpoint", async ({ page }) => {
   await page.getByRole("button", { name: "Auswählen" }).click();
   for (const i of [0, 1, 2]) await page.locator(".tile").nth(i).click();
   await page.getByRole("toolbar").getByRole("button", { name: "Löschen" }).click();
-  await expect(page.getByText("3 Fotos endgültig löschen?")).toBeVisible();
+  await expect(page.getByText("3 Fotos in den Papierkorb verschieben?")).toBeVisible();
   await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
   await expect(page.locator(".count")).toHaveText("1 Foto");
   expect(singles).toEqual([]);
@@ -590,4 +595,52 @@ test("An error appears above the overview, then the user scrolls", async ({ page
   await expect(page.getByRole("alert")).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 1500));
   await expect.poll(() => rowsOnScreen(page, "viele")).toBe("ok");
+});
+
+// Spec web-admin: "Trash in the interface".
+
+test("Restore a deleted photo", async ({ page }) => {
+  await usb("landscape.jpg", "urlaub/strand.jpg");
+  await usb("gps-siena.jpg", "urlaub/stadt.jpg");
+  await pairInUi(page);
+  await openAlbum(page, "urlaub");
+  await expect(albumTiles(page, "urlaub")).toHaveCount(2);
+  await page.locator(".tile").first().click();
+  await page.getByRole("button", { name: "Löschen" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
+  await expect(albumTiles(page, "urlaub")).toHaveCount(1);
+
+  const trash = page.getByRole("region", { name: "Papierkorb" });
+  await expect(trash.getByText(/^1 gelöschtes Foto im Papierkorb/)).toBeVisible();
+  await trash.getByRole("button", { name: "Anzeigen" }).click();
+  const row = trash.getByRole("listitem");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Album: urlaub");
+  await expect(row).toContainText("von diesem Gerät");
+  await expect(row).toContainText("frühestens einen Tag nach dem Löschen");
+  await expect(row.locator("img")).toHaveCount(1);
+  await row.getByRole("button", { name: "Wiederherstellen" }).click();
+
+  await expect(trash).toHaveCount(0);
+  await expect(albumTiles(page, "urlaub")).toHaveCount(2);
+  const { items } = await apiAsBrowser<PhotoList>(page, "/photos");
+  expect(items.map((p) => p.path).sort()).toEqual(["urlaub/stadt.jpg", "urlaub/strand.jpg"]);
+});
+
+test("Restore all", async ({ page }) => {
+  for (const n of [1, 2, 3]) await usb("landscape.jpg", `p${n}.jpg`);
+  await pairInUi(page);
+  await openAlbum(page, "");
+  await expect(page.locator(".tile")).toHaveCount(3);
+  await page.getByRole("button", { name: "Auswählen" }).click();
+  for (const i of [0, 1, 2]) await page.locator(".tile").nth(i).click();
+  await page.getByRole("toolbar").getByRole("button", { name: "Löschen" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Löschen" }).click();
+  const trash = page.getByRole("region", { name: "Papierkorb" });
+  await expect(trash.getByText(/^3 gelöschte Fotos im Papierkorb/)).toBeVisible();
+  await trash.getByRole("button", { name: "Anzeigen" }).click();
+  await trash.getByRole("button", { name: "Alle wiederherstellen" }).click();
+  await expect(trash).toHaveCount(0);
+  expect((await apiAsBrowser<PhotoList>(page, "/photos")).total).toBe(3);
+  for (const n of [1, 2, 3]) expect(await inPhotoFolder(`p${n}.jpg`)).toBe(true);
 });

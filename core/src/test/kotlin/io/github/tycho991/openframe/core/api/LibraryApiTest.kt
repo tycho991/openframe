@@ -678,11 +678,11 @@ class LibraryApiTest {
         val remote = putRemote()
         assertEquals(404, frame.send("DELETE", "/api/v1/photos/local-${"0".repeat(40)}").statusCode())
         assertEquals(409, frame.send("DELETE", "/api/v1/photos/$remote").statusCode())
-        frame.core.library.deleteFile = { false }
+        frame.core.trash.renameFile = { _, _ -> false }
         val failed = frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}")
         assertEquals(500, failed.statusCode())
         assertTrue(failed.body().contains("delete_failed"), failed.body())
-        frame.core.library.deleteFile = { it.delete() }
+        frame.core.trash.renameFile = { from, to -> from.renameTo(to) }
 
         frame.platform.mounted = false
         val single = frame.send("DELETE", "/api/v1/photos/${id("a.jpg")}")

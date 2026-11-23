@@ -66,7 +66,10 @@ data class ShareRequestDto(
 
 @Serializable
 data class SourceLoginRequestDto(
-    val serverUrl: String,
+    /** Ignored with [confirmSourceId]. */
+    val serverUrl: String? = null,
+    /** An account source to confirm by the login (design decision 16 of `paired-device-guards`). */
+    val confirmSourceId: String? = null,
 )
 
 @Serializable
@@ -158,7 +161,7 @@ fun Router.sourcesRoutes(
 
     post("/api/v1/sources/login") { req ->
         val body = req.bodyAs(SourceLoginRequestDto.serializer())
-        val started = nextcloud.startLogin(body.serverUrl)
+        val started = nextcloud.startLogin(body.serverUrl, req.clientId!!, body.confirmSourceId)
         HttpResponse.json(
             SourceLoginDto.serializer(),
             SourceLoginDto(started.flowId, started.loginUrl, started.expiresAt.toString()),
@@ -167,7 +170,7 @@ fun Router.sourcesRoutes(
     }
 
     get("/api/v1/sources/login/{flowId}") { req ->
-        val polled = nextcloud.pollLogin(req.pathParam("flowId"))
+        val polled = nextcloud.pollLogin(req.pathParam("flowId"), req.clientId!!)
         HttpResponse.json(
             SourceLoginStateDto.serializer(),
             SourceLoginStateDto(polled.state, polled.user, polled.sourceId, polled.error, SourceErrorCodes.served(polled.code)),
@@ -181,7 +184,7 @@ fun Router.sourcesRoutes(
     patch("/api/v1/sources/{sourceId}") { req ->
         val id = req.pathParam("sourceId")
         val patch = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
-        HttpResponse.json(SourceDto.serializer(), dto(sources.patch(id, patch)))
+        HttpResponse.json(SourceDto.serializer(), dto(sources.patch(id, patch, req.clientId)))
     }
 
     delete("/api/v1/sources/{sourceId}") { req ->

@@ -155,14 +155,20 @@ class SourceConfigStore(
         return source
     }
 
-    /** Applies a partial change of the settings of [id]. Throws [ValidationException] with the errors per field, a 404 for an unknown ID. */
+    /**
+     * Applies a partial change of the settings of [id]. Throws [ValidationException] with the errors per field, a 404 for
+     * an unknown ID. [guard] sees the source before and after, once every field is valid, and may refuse by throwing;
+     * under this store's lock, so the check and the change are one step (design decision 14 of `paired-device-guards`).
+     */
     @Synchronized
     fun patch(
         id: String,
         patch: JsonObject,
+        guard: (StoredSource, StoredSource) -> Unit = { _, _ -> },
     ): StoredSource {
+        val prev = get(id) ?: throw HttpException.notFound("No such source")
         val errors = LinkedHashMap<String, String>()
-        var next = get(id) ?: throw HttpException.notFound("No such source")
+        var next = prev
         for ((key, value) in patch) {
             when (key) {
                 "name" -> {
@@ -199,6 +205,7 @@ class SourceConfigStore(
             }
         }
         if (errors.isNotEmpty()) throw ValidationException(errors)
+        guard(prev, next)
         replace(next)
         return next
     }

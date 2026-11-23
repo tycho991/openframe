@@ -2,7 +2,7 @@
   import { ApiError, type Source } from "../lib/api/client";
   import { errorMessage, errorText } from "../lib/i18n/errors";
   import { t } from "../lib/i18n/i18n.svelte";
-  import { isPlainHttp, isShareLink, isWebAddress, MAX_SOURCES, sourceError } from "../lib/sources";
+  import { isPlainHttp, isShareLink, isWebAddress, MAX_SOURCES, pollLogin } from "../lib/sources";
   import { api } from "../lib/session.svelte";
   import SourceCard from "./SourceCard.svelte";
 
@@ -49,41 +49,28 @@
   // that comes after the flow was cancelled or ended is dropped.
   $effect(() => {
     if (!login) return;
-    const flowId = login.flowId;
-    let over = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const ask = async () => {
-      try {
-        const polled = await api.pollSourceLogin(flowId);
-        if (over) return;
-        if (polled.state === "pending") {
-          timer = setTimeout(ask, 2000);
-          return;
-        }
+    return pollLogin(
+      api.pollSourceLogin,
+      login.flowId,
+      (outcome) => {
         login = null;
-        if (polled.state === "expired") loginMessage = t("sources.loginExpired");
-        else if (polled.state === "failed") {
-          const failure = sourceError(polled.errorCode, polled.error);
+        if (outcome.state === "expired") loginMessage = t("sources.loginExpired");
+        else if (outcome.state === "failed") {
           loginMessage = t("sources.loginFailed", {
-            message: failure.reason ? t(failure.reason) : failure.text,
+            message: outcome.error.reason ? t(outcome.error.reason) : outcome.error.text,
           });
-          loginDetail = failure.detail;
+          loginDetail = outcome.error.detail;
         } else {
           loginMessage = null;
           serverUrl = "";
-          await load();
+          void load();
         }
-      } catch (e) {
-        if (over) return;
+      },
+      (e) => {
         login = null;
         loginMessage = errorText(e);
-      }
-    };
-    timer = setTimeout(ask, 2000);
-    return () => {
-      over = true;
-      clearTimeout(timer);
-    };
+      },
+    );
   });
 
   async function addShare(event: SubmitEvent) {

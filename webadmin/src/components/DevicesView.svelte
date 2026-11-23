@@ -2,6 +2,7 @@
   import type { Client, Invite } from "../lib/api/client";
   import { i18n, t } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
+  import { originText } from "../lib/devices";
   import { inviteDeadline } from "../lib/pairingLink";
   import { api, session, tokens } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -126,6 +127,7 @@
             </h2>
             <p class="muted">{t("devices.paired", { date: date(client.pairedAt) })}</p>
             <p class="muted">{t("devices.lastSeen", { date: date(client.lastSeenAt) })}</p>
+            <p class="muted origin">{originText(client, clients)}</p>
           </div>
           <div class="buttons">
             <button type="button" onclick={() => (renaming = client.id)}>{t("devices.rename")}</button>

@@ -71,8 +71,12 @@ export async function frameCaption(): Promise<{ line: string; place: string }> {
   return { line, place };
 }
 
-/** The user approves the login in the Nextcloud tab; with [slowMs] the frame's question after it takes that long. */
-export const nextcloudApprove = (slowMs = 0) => control(`/nextcloud/approve?slow=${slowMs}`);
+/**
+ * The user approves the last login started in the Nextcloud tab; with [slowMs] the frame's question after it takes that
+ * long, with [user] as another Nextcloud user than the default one.
+ */
+export const nextcloudApprove = (slowMs = 0, user = "") =>
+  control(`/nextcloud/approve?slow=${slowMs}` + (user ? `&user=${encodeURIComponent(user)}` : ""));
 
 /**
  * A share on the fake server, of a folder called [name]; `file` makes it the share of a single file, `drop` a

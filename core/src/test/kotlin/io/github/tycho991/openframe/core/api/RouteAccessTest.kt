@@ -32,7 +32,7 @@ class RouteAccessTest {
         val public = routes.filter { it.access == Access.PUBLIC }.map { "${it.method} ${it.pattern}" }.toSet()
         assertEquals(allowedPublic, public)
         val signed = routes.filter { it.access == Access.TOKEN_OR_IMAGE_SIGNATURE }.map { "${it.method} ${it.pattern}" }
-        assertEquals(listOf("GET /api/v1/photos/{photoId}/image"), signed)
+        assertEquals(listOf("GET /api/v1/photos/{photoId}/image", "GET /api/v1/trash/{trashId}/thumb"), signed.sorted())
     }
 
     @Test
@@ -42,6 +42,7 @@ class RouteAccessTest {
             val path =
                 route.pattern
                     .replace("{photoId}", "local-${"a".repeat(40)}")
+                    .replace("{trashId}", "1795461632388-0a1b2c3d")
                     .replace("{clientId}", "x")
                     .replace("{flowId}", "x")
                     .replace("{sourceId}", "s00000001")

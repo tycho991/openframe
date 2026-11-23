@@ -18,10 +18,10 @@ class AccessControl(
 
     override fun hasValidImageSignature(
         request: HttpRequest,
-        photoId: String,
+        subject: String,
     ): Boolean {
         val t = request.queryParam("t") ?: return false
-        val client = signer.verify(photoId, t) ?: return false
+        val client = signer.verify(subject, t) ?: return false
         return clients.clients.value.any { it.id == client }
     }
 }

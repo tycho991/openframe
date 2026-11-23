@@ -121,7 +121,7 @@ class RemoteSource(
         onDemand: Boolean,
         ended: () -> Boolean,
     ) {
-        if (!originals.hasRoomOnDisk(entry.fileSize, onDemand)) {
+        if (!originals.ensureRoomOnDisk(entry.fileSize, onDemand)) {
             throw SourceException(SourceException.Kind.STORAGE, "Not enough free storage on the frame for ${entry.path}")
         }
         val remote = kind.remoteFolder(config)
