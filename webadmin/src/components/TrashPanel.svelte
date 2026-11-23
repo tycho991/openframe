@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Client, TrashEntry } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
-  import { chunks, deletedAtText, deletedByText, entryName, keptUntilText, summaryText } from "../lib/trash";
+  import { deletedAtText, deletedByText, entryName, keptUntilText, summaryText } from "../lib/trash";
   import QuarantinedPlaceholder from "./QuarantinedPlaceholder.svelte";
 
   /**
@@ -18,7 +18,7 @@
     items: TrashEntry[];
     totalBytes: number;
     clients: Client[];
-    /** Restores the entries [ids], in requests of at most 500; throws to show the error. */
+    /** Restores the entries [ids] in requests of at most 500 and reports the outcome itself; never throws. */
     onrestore: (ids: string[]) => Promise<void>;
   } = $props();
 
@@ -30,7 +30,7 @@
   async function restore(ids: string[]) {
     busy = true;
     try {
-      for (const chunk of chunks(ids)) await onrestore(chunk);
+      await onrestore(ids);
     } finally {
       busy = false;
     }

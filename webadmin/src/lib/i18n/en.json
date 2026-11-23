@@ -417,5 +417,6 @@
   "trash.title": "Trash",
   "sources.folderHintShare": "The photos below this folder are shown. If you change it, the hidden states of the photos of the old folder are lost.",
   "sources.widenNote": "This makes the source read more than before. A wider folder needs a Nextcloud login to this account on this device.",
-  "sources.widenConfirm": "Confirm with Nextcloud"
+  "sources.widenConfirm": "Confirm with Nextcloud",
+  "trash.restoreMissing": "{count} entries were no longer in the trash."
 }

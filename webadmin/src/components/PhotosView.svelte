@@ -32,6 +32,7 @@
   import PhotoDetail from "./PhotoDetail.svelte";
   import SkippedFiles from "./SkippedFiles.svelte";
   import TrashPanel from "./TrashPanel.svelte";
+  import { restoreInChunks, restoreMessage } from "../lib/trash";
   import UploadPanel from "./UploadPanel.svelte";
   import VirtualGrid from "./VirtualGrid.svelte";
 
@@ -344,15 +345,19 @@
     if (trash.items.length > 0) clients = await api.clients();
   }
 
-  /** Restores trash entries; the new library version reloads album list and grids, the trash follows. */
+  /**
+   * Restores trash entries in chunks, stopping at a chunk that fails; the new library version reloads album list and
+   * grids, the trash follows. One message names what stopped it, what failed and what was already gone.
+   */
   async function restoreTrash(ids: string[]): Promise<void> {
+    clearError();
+    const outcome = await restoreInChunks(ids, api.restoreTrash);
     await guard(async () => {
-      const result = await api.restoreTrash(ids);
       await loadTrash();
       await refreshState();
-      if (result.failed.length > 0)
-        showError(t("trash.restoreFailed", { count: result.failed.length }), null);
     });
+    const message = restoreMessage(outcome);
+    if (message) showError(message, null);
   }
 
   /** The album list, then the pages of every open album. */

@@ -1,4 +1,5 @@
-import type { Client, TrashEntry } from "./api/client";
+import type { Client, TrashEntry, TrashRestoreResult } from "./api/client";
+import { errorText } from "./i18n/errors";
 import { i18n, t } from "./i18n/i18n.svelte";
 
 /** "Restore all" sends at most this many IDs per request. */
@@ -53,4 +54,44 @@ export function megabytes(bytes: number): string {
 export function summaryText(count: number, totalBytes: number): string {
   const size = megabytes(totalBytes);
   return count === 1 ? t("trash.summaryOne", { size }) : t("trash.summary", { n: count, size });
+}
+
+/** What restoring several chunks did: counts of the lists, and the error that stopped it, if one did. */
+export interface RestoreOutcome {
+  restored: number;
+  failed: number;
+  missing: number;
+  error: unknown;
+}
+
+/**
+ * Restores [ids] in requests of at most [RESTORE_CHUNK] IDs, one after the other, and stops at the first request that
+ * fails: a frame that answers 503 for one chunk would for the next as well. Never throws.
+ */
+export async function restoreInChunks(
+  ids: readonly string[],
+  restore: (chunk: string[]) => Promise<TrashRestoreResult>,
+): Promise<RestoreOutcome> {
+  const outcome: RestoreOutcome = { restored: 0, failed: 0, missing: 0, error: null };
+  for (const chunk of chunks(ids)) {
+    try {
+      const result = await restore(chunk);
+      outcome.restored += result.restored.length;
+      outcome.failed += result.failed.length;
+      outcome.missing += result.missing.length;
+    } catch (e) {
+      outcome.error = e;
+      break;
+    }
+  }
+  return outcome;
+}
+
+/** The message after a restore: the error that stopped it, entries that failed and entries already gone; `null` if none. */
+export function restoreMessage(outcome: RestoreOutcome): string | null {
+  const parts: string[] = [];
+  if (outcome.error !== null) parts.push(errorText(outcome.error));
+  if (outcome.failed > 0) parts.push(t("trash.restoreFailed", { count: outcome.failed }));
+  if (outcome.missing > 0) parts.push(t("trash.restoreMissing", { count: outcome.missing }));
+  return parts.length > 0 ? parts.join(" ") : null;
 }

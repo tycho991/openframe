@@ -417,5 +417,6 @@
   "trash.title": "Papierkorb",
   "sources.folderHintShare": "Die Fotos unter diesem Ordner werden gezeigt. Wenn du ihn änderst, gehen die versteckten Zustände der Fotos des alten Ordners verloren.",
   "sources.widenNote": "Damit liest die Quelle mehr als bisher. Ein weiterer Ordner braucht auf diesem Gerät eine Nextcloud-Anmeldung bei diesem Konto.",
-  "sources.widenConfirm": "Mit Nextcloud bestätigen"
+  "sources.widenConfirm": "Mit Nextcloud bestätigen",
+  "trash.restoreMissing": "{count} Einträge waren nicht mehr im Papierkorb."
 }

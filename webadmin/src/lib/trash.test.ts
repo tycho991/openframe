@@ -3,9 +3,17 @@ import type { Client, TrashEntry } from "./api/client";
 import { ApiError } from "./api/client";
 import de from "./i18n/de.json";
 import en from "./i18n/en.json";
-import { errorMessage } from "./i18n/errors";
+import { errorMessage, errorText } from "./i18n/errors";
 import { i18n } from "./i18n/i18n.svelte";
-import { chunks, deletedByText, entryName, keptUntilText, summaryText } from "./trash";
+import {
+  chunks,
+  deletedByText,
+  entryName,
+  keptUntilText,
+  restoreInChunks,
+  restoreMessage,
+  summaryText,
+} from "./trash";
 
 function client(id: string, name: string, current = false): Client {
   return {
@@ -91,5 +99,31 @@ describe("Trash in the interface", () => {
     expect(german).toBe(de["error.insufficient_storage"]);
     expect(german).toContain("Papierkorb");
     for (const text of [english, german]) expect(text).not.toMatch(/100\s*MB/);
+  });
+
+  it("restores in chunks, stops at a chunk that fails and names failed and missing entries", async () => {
+    const ids = Array.from({ length: 1200 }, (_, i) => String(i));
+    const asked: number[] = [];
+    const outcome = await restoreInChunks(ids, async (chunk) => {
+      asked.push(chunk.length);
+      if (asked.length === 2)
+        throw new ApiError(503, "storage_unavailable", "The photo folder is not available");
+      return {
+        restored: chunk.slice(2).map((id) => ({ id, photoId: "p" + id })),
+        failed: chunk.slice(0, 1),
+        missing: chunk.slice(1, 2),
+      };
+    });
+    expect(asked).toEqual([500, 500]);
+    expect(outcome.restored).toBe(498);
+    i18n.lang = "en";
+    expect(restoreMessage(outcome)).toBe(
+      errorText(outcome.error) + " 1 entries could not be restored. 1 entries were no longer in the trash.",
+    );
+    i18n.lang = "de";
+    expect(restoreMessage({ restored: 3, failed: 0, missing: 2, error: null })).toBe(
+      "2 Einträge waren nicht mehr im Papierkorb.",
+    );
+    expect(restoreMessage({ restored: 3, failed: 0, missing: 0, error: null })).toBeNull();
   });
 });
