@@ -98,7 +98,7 @@
 
 ## 6. Emulator (debug build, see the emulator note in design.md)
 
-- [ ] 6.1 API 37 emulator, end to end for the network: check that it has a virtual Wi-Fi next to the cellular `eth0`;
+- [x] 6.1 API 37 emulator, end to end for the network: check that it has a virtual Wi-Fi next to the cellular `eth0`;
   activate device administration there, set a schedule that puts the display off now, then turn its Wi-Fi off with
   `svc wifi disable` while the display is off; after 12 minutes turn it back on. First with the 0.13.0 release build,
   then with the debug build of this change, switched with `adb install -r` (same certificate, data kept). Verify: with 0.13.0 there is no "Dark wake for the network" within the
@@ -120,7 +120,7 @@
   (the finding reproduced) and this build turning to portrait and back without a restart; the API 37 result is
   recorded, and if API 37 ignores the opt-out for targetSdk 36 the main session enters a finding in the private
   findings list instead of failing this task (`slideshow-display` › Orientation of the frame › Switch to portrait)
-- [ ] 6.4 API 37 emulator, pairing smoke test: an empty frame without paired devices, the hint opened, then a device
+- [x] 6.4 API 37 emulator, pairing smoke test: an empty frame without paired devices, the hint opened, then a device
   paired, then local-only mode switched on in the device menu with the library emptied and all pairings revoked.
   Verify: screenshots show code and QR code in the empty state, the code in the hint, neither after pairing, and
   neither in local-only mode (`admin-access` › Code only while shown on the frame › Local-only mode)
