@@ -213,7 +213,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 7. Wider folder in the web UI
 
-- [ ] 7.1 The poll loop moves from `SourcesView.svelte` into a helper in `lib/sources.ts`; `SourceCard` handles 403
+- [x] 7.1 The poll loop moves from `SourcesView.svelte` into a helper in `lib/sources.ts`; `SourceCard` handles 403
   `account_login_required` with the note at the named field and "Confirm with Nextcloud", starts the login with
   `confirmSourceId`, opens it through the existing http(s) check, and saves the same patch again on `done`;
   `other_account` in `sourceErrorKeys`, `account_login_required` in `errorKeys`; `sources.folderHint` with the four
@@ -225,7 +225,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
     `other_account` and keeps the form (› Other account); the folder hint is shown (`web-admin` › Folder of an account
     explained);
   - the existing e2e "An account: connect, first sync, …" passes unchanged (first folder without a second login).
-- [ ] 7.2 README: "Photos from other sources" says that `/` is the whole account and visible to every paired device,
+- [x] 7.2 README: "Photos from other sources" says that `/` is the whole account and visible to every paired device,
   that a wider folder needs a login on the device that sets it, and recommends share links for frames others use; the
   security model gets the widening bullet, the list of accepted residual risks (confirmation phishing and a forward
   clock jump included), and the bullet "Sources point anywhere (accepted)" refers to this change and to roles as the

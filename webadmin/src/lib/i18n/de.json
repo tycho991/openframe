@@ -279,7 +279,7 @@
   "sources.enabled": "Abgleich ist an",
   "sources.folder": "Ordner auf dem Server",
   "sources.folderShare": "Ordner in der Freigabe",
-  "sources.folderHint": "Die Fotos unter diesem Ordner werden gezeigt. Wenn du ihn änderst, gehen die versteckten Zustände der Fotos des alten Ordners verloren.",
+  "sources.folderHint": "Die Fotos unter diesem Ordner werden gezeigt; „/“ ist das ganze Konto. Jedes gekoppelte Gerät sieht die Fotos dieses Ordners. Ein weiterer Ordner braucht auf dem Gerät, das ihn einstellt, eine Nextcloud-Anmeldung bei diesem Konto. Für einen Rahmen, den andere nutzen, passt ein Freigabe-Link nur des Ordners, den du zeigen willst, besser. Wenn du den Ordner änderst, gehen die versteckten Zustände der Fotos des alten Ordners verloren.",
   "sources.folderPlaceholder": "/Fotos",
   "sources.noFolder": "Wähle den Ordner, dessen Fotos gezeigt werden sollen, und speichere. Bis dahin wird nichts abgeglichen.",
   "sources.includeSubfolders": "Unterordner einbeziehen (jeder Ordner ist ein Album)",
@@ -414,5 +414,8 @@
   "trash.restore": "Wiederherstellen",
   "trash.restoreAll": "Alle wiederherstellen",
   "trash.restoreFailed": "{count} Einträge konnten nicht wiederhergestellt werden.",
-  "trash.title": "Papierkorb"
+  "trash.title": "Papierkorb",
+  "sources.folderHintShare": "Die Fotos unter diesem Ordner werden gezeigt. Wenn du ihn änderst, gehen die versteckten Zustände der Fotos des alten Ordners verloren.",
+  "sources.widenNote": "Damit liest die Quelle mehr als bisher. Ein weiterer Ordner braucht auf diesem Gerät eine Nextcloud-Anmeldung bei diesem Konto.",
+  "sources.widenConfirm": "Mit Nextcloud bestätigen"
 }

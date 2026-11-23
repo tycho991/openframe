@@ -452,3 +452,29 @@ on it; the line references below are to `main` (0.13.0, commit 7095820), the beh
 - **Rollback:** install the previous release over it. It ignores the new fields; its scan skips `.trash`, so photos in
   the trash stay there and are not purged until a newer version runs again or they are deleted over USB.
 - **Release:** through the updater; the device rows run afterwards with the owner's consent.
+
+## After implementation
+
+Details the code showed, recorded here; the requirements are unchanged.
+
+- **Task 1.1:** `library-performance` was merged (#131) but not yet archived when this change was implemented; its
+  code (`StorageReserve`, `deleteAll`, removal listener, versions and tombstones, apply step, case resolver) was on
+  `main`.
+- **Announced length of an upload (decision 9):** the check of the announced length deletes nothing, but counts what
+  old trash entries could free (`TrashStore.reclaimableBytes`). Otherwise every upload with a `Content-Length`, which
+  browsers always send, would be refused there before the streaming checks could make room, and "Upload makes room"
+  could not happen.
+- **Render cache (decision 9):** the cache asks the trash after its own trim whenever it is still below the reserve,
+  also for a rendering somebody awaits, as the requirement "Where storage pressure frees the trash" reads. For
+  originals only the download for a rendering asks (`OriginalsStore.ensureRoomOnDisk`), not the downloads of a sync.
+- **Clock (decision 8):** `TRASH_CLOCK_FLOOR` is 2026-01-01T00:00:00Z. While the clock is below it, storage pressure
+  frees nothing either, and an entry stamped below it is not eligible under pressure until it is re-stamped. Its
+  `purgeAfter` is `null` until then.
+- **Entries (decision 2):** an image file in a hidden folder inside an entry does not count, so an entry whose only
+  image lies there is damaged: a restore would put it out of the scan's sight.
+- **Restore (decision 5):** the route refuses in safe mode; `PhotoLibrary.restore` answers 503 `storage_unavailable`.
+  A thumbnail of an unknown trash ID is 404.
+- **Folder hint (decision 19):** the four points are the hint of an account's folder; a share link keeps the earlier
+  hint (`sources.folderHintShare`), since `/` is not a whole account there.
+- **Test server:** `/nextcloud/approve` approves the last login started, with `user=` as another Nextcloud user;
+  `FakeLoginFlow` approves per flow by its poll token, which is new per start.

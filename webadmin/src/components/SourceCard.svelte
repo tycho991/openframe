@@ -3,7 +3,14 @@
   import { ApiError, type Source, type SourceKind, type SourceSettings } from "../lib/api/client";
   import { errorText } from "../lib/i18n/errors";
   import { i18n, t, type Key } from "../lib/i18n/i18n.svelte";
-  import { isPlainHttp, settingsPatch, sourceRanges, statusLine } from "../lib/sources";
+  import {
+    isPlainHttp,
+    isWebAddress,
+    pollLogin,
+    settingsPatch,
+    sourceRanges,
+    statusLine,
+  } from "../lib/sources";
   import { api } from "../lib/session.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
@@ -29,6 +36,13 @@
   let saved = $state(false);
   let syncMessage = $state<string | null>(null);
   let confirmRemove = $state(false);
+  /**
+   * A change the frame refused with `account_login_required` (spec web-admin, "Confirm a wider folder"): the widening
+   * fields and the change itself, saved again after a successful confirmation login.
+   */
+  let widen = $state<{ fields: string[]; patch: Partial<SourceSettings> } | null>(null);
+  let confirming = $state<{ flowId: string; loginUrl: string } | null>(null);
+  let confirmError = $state<{ text: string; detail: string | null } | null>(null);
 
   const dirty = $derived(Object.keys(settingsPatch(base, form)).length > 0);
   const needsFolder = $derived(source.kind === "nextcloud-account" && source.settings.folder === "");
@@ -56,23 +70,80 @@
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
+    await store(settingsPatch(base, form));
+  }
+
+  /** Saves [patch]; a refusal for a wider folder offers the confirmation login instead of an error. */
+  async function store(patch: Partial<SourceSettings>) {
     saving = true;
     errors = {};
     error = null;
+    widen = null;
+    confirmError = null;
     try {
-      const next = await api.patchSource(source.id, settingsPatch(base, form));
+      const next = await api.patchSource(source.id, patch);
       base = next.settings;
       form = structuredClone(next.settings);
       saved = true;
       setTimeout(() => (saved = false), 3000);
       onchanged();
     } catch (e) {
-      if (e instanceof ApiError && Object.keys(e.fields).length > 0) errors = e.fields;
+      if (e instanceof ApiError && e.code === "account_login_required")
+        widen = { fields: Object.keys(e.fields), patch };
+      else if (e instanceof ApiError && Object.keys(e.fields).length > 0) errors = e.fields;
       else error = errorText(e);
     } finally {
       saving = false;
     }
   }
+
+  /** Starts the confirmation login on the source's server and opens its page, as for a new account. */
+  async function confirmAccount() {
+    if (confirming) return;
+    confirmError = null;
+    try {
+      const started = await api.confirmSourceLogin(source.id);
+      // A second guard after the frame's own: only a web address is opened.
+      if (!isWebAddress(started.loginUrl)) {
+        confirmError = { text: t("sources.loginUrlInvalid"), detail: null };
+        return;
+      }
+      confirming = { flowId: started.flowId, loginUrl: started.loginUrl };
+      window.open(started.loginUrl, "_blank", "noopener");
+    } catch (e) {
+      confirmError = { text: errorText(e), detail: null };
+    }
+  }
+
+  // Asks the frame about the confirmation login; on success the refused change is saved again, the form stays as it is
+  // after a failure.
+  $effect(() => {
+    if (!confirming) return;
+    return pollLogin(
+      api.pollSourceLogin,
+      confirming.flowId,
+      (outcome) => {
+        confirming = null;
+        if (outcome.state === "done") {
+          const patch = widen?.patch;
+          if (patch) void store(patch);
+        } else if (outcome.state === "expired") {
+          confirmError = { text: t("sources.loginExpired"), detail: null };
+        } else {
+          confirmError = {
+            text: t("sources.loginFailed", {
+              message: outcome.error.reason ? t(outcome.error.reason) : outcome.error.text,
+            }),
+            detail: outcome.error.detail,
+          };
+        }
+      },
+      (e) => {
+        confirming = null;
+        confirmError = { text: errorText(e), detail: null };
+      },
+    );
+  });
 
   async function syncNow() {
     syncMessage = null;
@@ -168,13 +239,17 @@
           bind:value={form.folder}
           aria-invalid={!!errors["folder"]}
         />
-        <span class="hint">{t("sources.folderHint")}</span>
+        <span class="hint"
+          >{source.kind === "nextcloud-share" ? t("sources.folderHintShare") : t("sources.folderHint")}</span
+        >
         {#if fieldError("folder")}<span class="error" role="alert">{fieldError("folder")}</span>{/if}
+        {#if widen?.fields.includes("folder")}{@render widenNote()}{/if}
       </div>
       <label class="check">
         <input type="checkbox" bind:checked={form.includeSubfolders} />
         <span>{t("sources.includeSubfolders")}</span>
       </label>
+      {#if widen && !widen.fields.includes("folder")}{@render widenNote()}{/if}
       <label class="check">
         <input type="checkbox" bind:checked={form.removeVanished} />
         <span>{t("sources.removeVanished")}</span>
@@ -213,6 +288,26 @@
     </form>
   </details>
 </section>
+
+{#snippet widenNote()}
+  <div class="widen" role="alert">
+    <span>{t("sources.widenNote")}</span>
+    {#if confirming}
+      <span role="status">{t("sources.waiting")}</span>
+      <a href={confirming.loginUrl} target="_blank" rel="noopener noreferrer">{t("sources.openLogin")}</a>
+    {:else}
+      <button type="button" onclick={confirmAccount}>{t("sources.widenConfirm")}</button>
+    {/if}
+    {#if confirmError}
+      <span class="error"
+        >{confirmError.text}
+        {#if confirmError.detail}<span class="detail"
+            >{t("sources.errorDetail", { detail: confirmError.detail })}</span
+          >{/if}</span
+      >
+    {/if}
+  </div>
+{/snippet}
 
 {#if confirmRemove}
   <ConfirmDialog
@@ -259,6 +354,12 @@
     flex-wrap: wrap;
   }
   .warn {
+    color: var(--warning);
+  }
+  .widen {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
     color: var(--warning);
   }
   .detail {

@@ -279,7 +279,7 @@
   "sources.enabled": "Sync is on",
   "sources.folder": "Folder on the server",
   "sources.folderShare": "Folder in the share",
-  "sources.folderHint": "The photos below this folder are shown. If you change it, the hidden states of the photos of the old folder are lost.",
+  "sources.folderHint": "The photos below this folder are shown; “/” is the whole account. Every paired device sees the photos of this folder. A wider folder needs a Nextcloud login to this account on the device that sets it. For a frame that others use, a share link of just the folder you want to show suits better. If you change the folder, the hidden states of the photos of the old folder are lost.",
   "sources.folderPlaceholder": "/Photos",
   "sources.noFolder": "Choose the folder whose photos should be shown, then save. Until then nothing is synced.",
   "sources.includeSubfolders": "Include subfolders (each folder is an album)",
@@ -414,5 +414,8 @@
   "trash.restore": "Restore",
   "trash.restoreAll": "Restore all",
   "trash.restoreFailed": "{count} entries could not be restored.",
-  "trash.title": "Trash"
+  "trash.title": "Trash",
+  "sources.folderHintShare": "The photos below this folder are shown. If you change it, the hidden states of the photos of the old folder are lost.",
+  "sources.widenNote": "This makes the source read more than before. A wider folder needs a Nextcloud login to this account on this device.",
+  "sources.widenConfirm": "Confirm with Nextcloud"
 }
