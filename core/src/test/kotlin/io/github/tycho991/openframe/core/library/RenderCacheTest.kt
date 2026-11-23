@@ -620,6 +620,31 @@ class RenderCacheTest {
         }
     }
 
+    /** Design decision 9 of `paired-device-guards`: the download of an original asks the cache for room first. */
+    @Test
+    fun `The cache makes room for a download from its own renderings, protected ones excepted`() {
+        val volume = Volume(Long.MAX_VALUE / 2)
+        val c = volume.cache()
+        try {
+            val (a, b, k) = listOf("a", "b", "k").map { entry("$it.jpg") }
+            runBlocking {
+                c.get(a, RenderSize.THUMB)
+                c.get(b, RenderSize.THUMB)
+                c.get(k, RenderSize.DISPLAY)
+            }
+            c.prefetchAhead(listOf(k), emptyList(), emptyList())
+            val thumb = File(volume.folder, c.target(a, RenderSize.THUMB).name).length()
+            volume.capacity = volume.capacity - volume.free() + 1_000
+            assertTrue(c.trimFor(volume.folder, 1_000 + thumb), "one thumbnail is enough")
+            assertNull(c.peek(a, RenderSize.THUMB), "unused longest")
+            assertNotNull(c.peek(b, RenderSize.THUMB))
+            assertFalse(c.trimFor(volume.folder, Long.MAX_VALUE / 4), "not more than it has")
+            assertNotNull(c.peek(k, RenderSize.DISPLAY), "the window stays")
+        } finally {
+            c.close()
+        }
+    }
+
     private operator fun <T> List<T>.component6() = this[5]
 
     private fun waitUntilIdle(c: RenderCache) {

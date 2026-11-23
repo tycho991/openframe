@@ -526,6 +526,22 @@ class RenderCache(
         return files.size
     }
 
+    /**
+     * Removes its own renderings unused longest, never a protected one, until [neededFreeBytes] are free in [dir]: for
+     * the download of an original a rendering needs, before old trash entries are asked (design decision 9 of
+     * `paired-device-guards`), since renderings render again and trash entries do not come back. Never under a lock of
+     * the caller's that the cache could wait for. Whether that much is free now.
+     */
+    fun trimFor(
+        dir: File,
+        neededFreeBytes: Long,
+    ): Boolean {
+        val free = freeBytes(dir)
+        if (free >= neededFreeBytes) return true
+        deleteNow(synchronized(lock) { victimsLocked(neededFreeBytes - free, protectedLocked(null)) })
+        return freeBytes(dir) >= neededFreeBytes
+    }
+
     /** Stays within the budget. [keep] is kept in any case, for example the image just rendered. */
     fun trim(keep: String? = null) {
         deleteNow(synchronized(lock) { overBudgetLocked(keep) })

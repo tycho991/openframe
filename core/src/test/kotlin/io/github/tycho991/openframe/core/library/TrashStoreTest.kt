@@ -41,7 +41,11 @@ class TrashStoreTest {
             log,
             freeBytes = { f -> free?.invoke(f) ?: f.usableSpace },
             totalBytes = { total(it) },
+            removeRenderings = { removedRenderings += it.map { e -> e.id } },
         ).also { it.load() }
+
+    /** The IDs of the trash thumbnails whose renderings the store asked to remove. */
+    private val removedRenderings = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     private fun entry(path: String): PhotoEntry {
         val file = File(photos, path)
@@ -330,5 +334,77 @@ class TrashStoreTest {
             val built = messages.indexOfFirst { it.startsWith("Trash: 1 entries") }
             assertTrue(server in 0 until built, messages.toString())
         }
+    }
+
+    /** Review finding: an entry whose re-stamp fails keeps its old time and must not count as 7 days old. */
+    @Test
+    fun `An entry whose re-stamp fails is not purged by its implausible time`() {
+        clock.instant = Instant.parse("2019-06-01T08:00:00Z")
+        val trash = store()
+        val early = delete(trash, "a.jpg")
+        clock.instant = Instant.parse("2026-11-20T10:00:00Z")
+        trash.renameFile = { _, _ -> false }
+        trash.purge()
+        assertEquals(listOf(early.id), trash.items().map { it.id }, "kept with its old ID")
+        assertTrue(File(photos, ".trash/${early.id}/a.jpg").isFile)
+        // Once the rename works, it is re-stamped, and the rendering of its old ID goes.
+        trash.renameFile = { from, to -> from.renameTo(to) }
+        trash.purge()
+        val stamped = trash.items().single()
+        assertEquals(clock.millis(), stamped.deletedAtMs)
+        assertEquals(listOf("trash-${early.id}"), removedRenderings.toList())
+    }
+
+    /** › Trash without its saved state › Deleted from the trash over USB, with the folders left behind. */
+    @Test
+    fun `An entry folder without any file left is gone and cleaned up`() {
+        val trash = store()
+        val item = delete(trash, "holiday/2024/a.jpg")
+        assertTrue(File(photos, ".trash/${item.id}/holiday/2024/a.jpg").delete())
+        assertTrue(File(photos, ".trash/${item.id}/holiday/2024").isDirectory, "the folders stay, as over MTP")
+        assertNull(trash.fresh(item.id), "a restore finds it missing")
+        assertFalse(File(photos, ".trash/${item.id}").exists(), "cleaned up")
+        val other = delete(trash, "b.jpg")
+        File(photos, ".trash/${other.id}/b.jpg").delete()
+        trash.purge()
+        assertTrue(trash.items().isEmpty())
+        assertFalse(File(photos, ".trash/${other.id}").exists())
+        runBlocking { trash.flush() }
+        assertFalse(File(dir, "trash.json").readText().contains(other.id), "its record went as well")
+    }
+
+    /** Review finding: free storage read twice for a folder inside the photo folder is no test of the volume. */
+    @Test
+    fun `Storage pressure in the photo folder frees entries while other writes change the free storage`() {
+        val trash = store()
+        val old = delete(trash, "old.jpg")
+        clock.advance(Duration.ofDays(2))
+        var reads = 0L
+        // Every read sees another value, as while an upload or a scan writes; freeing the entry adds its bytes.
+        free = { reads++ + (old.bytes - currentBytes()) }
+        assertTrue(trash.makeRoom(photos, old.bytes / 2))
+        assertTrue(trash.items().isEmpty())
+    }
+
+    @Test
+    fun `A batch of moves records each entry and writes the records once`() {
+        val trash = store()
+        val paths = (0 until 50).map { "many/$it.jpg" }
+        for (path in paths) photo(path)
+        val entries = paths.associate { PhotoEntry.idFor("local", it) to entry(it) }
+        val moved = trash.moveAllIn(entries.keys.toList(), { entries[it] }, { File(photos, it.path) }, "0123456789abcdef")
+        assertEquals(50, moved.size)
+        assertEquals(50, trash.items().size)
+        assertEquals(
+            50,
+            trash
+                .items()
+                .map { it.id }
+                .toSet()
+                .size,
+            "an ID each",
+        )
+        runBlocking { trash.flush() }
+        assertEquals(50, store().items().count { it.record?.deletedBy == "0123456789abcdef" })
     }
 }

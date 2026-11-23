@@ -106,8 +106,8 @@ class PhotoLibrary(
         val library = index.library.value
         val distinct = ids.distinct()
         if (distinct.any { library.photos[it]?.source == LocalPhotoSource.SOURCE_ID } && !local.available()) throw storageUnavailable()
-        val deleted = ArrayList<PhotoEntry>()
-        val moved = ArrayList<PhotoEntry>()
+        val gone = ArrayList<PhotoEntry>()
+        val toMove = ArrayList<String>()
         val missing = ArrayList<String>()
         val failed = ArrayList<String>()
         val readOnly = HashSet<String>()
@@ -124,25 +124,40 @@ class PhotoLibrary(
                 }
 
                 !local.fileOf(entry).exists() -> {
-                    deleted += entry
-                }
-
-                trash.moveIn(entry, local.fileOf(entry), clientId) -> {
-                    deleted += entry
-                    moved += entry
+                    gone += entry
                 }
 
                 else -> {
-                    failed += id
+                    toMove += id
                 }
             }
         }
+        // Each record takes the entry as the index has it at the moment of its move, so a change saved meanwhile is kept.
+        val moved =
+            trash.moveAllIn(
+                toMove,
+                { id ->
+                    index.library.value.photos[id]
+                        ?.takeIf { it.source == LocalPhotoSource.SOURCE_ID }
+                },
+                local::fileOf,
+                clientId,
+            )
+        val movedIds = moved.mapTo(HashSet()) { it.id }
+        for (id in toMove) {
+            if (id in movedIds) continue
+            if (index.library.value.photos[id] == null) missing += id else failed += id
+        }
+        val deleted = moved + gone
         if (deleted.isNotEmpty()) {
-            index.edit { edit -> deleted.forEach { edit.remove(it.id) } }
+            // Only the entries as they were moved or found gone: one that a restore put at the same path meanwhile has
+            // another version and stays (as in the scan's removal step).
+            index.edit { edit ->
+                for (entry in deleted) if (edit.get(entry.id)?.version == entry.version) edit.remove(entry.id)
+            }
             notifier.notifyChanged(deleted.map(local::fileOf))
             for (entry in moved) log.i(TAG, "Moved to trash: ${entry.path} by ${clientId ?: "?"}")
-            val gone = deleted.size - moved.size
-            if (gone > 0) log.i(TAG, "Deleted: $gone photos whose files were gone already")
+            if (gone.isNotEmpty()) log.i(TAG, "Deleted: ${gone.size} photos whose files were gone already")
         }
         return BatchResult(deleted.map { it.id }, missing, failed, readOnly)
     }
@@ -205,8 +220,8 @@ class PhotoLibrary(
         val failed = ArrayList<String>()
         val candidates = ArrayList<Restoring>()
         for (id in ids.distinct()) {
-            // Checked before any File is built from it.
-            val item = if (TrashStore.PATTERN.matches(id)) trash.get(id) else null
+            // Checked before any File is built from it; read again from its folder, not from a mirror up to an hour old.
+            val item = if (TrashStore.PATTERN.matches(id)) trash.fresh(id) else null
             val file = item?.file
             when {
                 item == null -> missing += id
@@ -220,13 +235,21 @@ class PhotoLibrary(
         val renderings =
             synchronized(this) {
                 trash.locked {
-                    // Resolved for every entry first, also against each other, and then all renamed in one edit.
+                    // Resolved for every entry first, also against each other, and then all renamed in one edit. Each album
+                    // is resolved once per request.
+                    val folders = HashMap<String?, Pair<File, List<File>>>()
                     val targets = LinkedHashMap<Restoring, File>()
                     val taken = HashSet<String>()
                     for (c in candidates) {
+                        // Purged or re-stamped since it was read: it is no longer under this ID.
+                        if (trash.get(c.item.id) == null) {
+                            missing += c.item.id
+                            continue
+                        }
                         val path = c.item.path!!
+                        val album = AlbumPaths.parent(path)
                         try {
-                            val (dir, made) = albumFolder(AlbumPaths.parent(path))
+                            val (dir, made) = folders[album] ?: albumFolder(album).also { folders[album] = it }
                             created += made
                             val target = uniqueFile(dir, path.substringAfterLast('/')) { it.exists() || it.path.lowercase() in taken }
                             taken += target.path.lowercase()
@@ -237,7 +260,11 @@ class PhotoLibrary(
                     }
                     index.edit { edit ->
                         for ((c, target) in targets) {
-                            if (!c.file.isFile || !trash.renameFile(c.file, target)) {
+                            if (!c.file.isFile) {
+                                missing += c.item.id
+                                continue
+                            }
+                            if (!trash.renameFile(c.file, target)) {
                                 failed += c.item.id
                                 continue
                             }
@@ -255,7 +282,7 @@ class PhotoLibrary(
                         }
                     }
                     // Folders created for an entry that could not be put in place go again; delete() leaves full ones.
-                    removeFolders(created)
+                    removeFolders(created.distinct())
                     trash.restored(restored.map { it.first })
                 }
             }

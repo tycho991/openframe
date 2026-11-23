@@ -271,7 +271,8 @@ class FrameCore(
             freeBytes = platform::freeBytes,
             onSynced = { backfill.request() },
             reserveBytes = reserveBytes,
-            makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
+            // For the download of an original a rendering needs: the cache's own renderings first, then old trash entries.
+            makeRoom = { dir, bytes -> cache.trimFor(dir, bytes) || trash.makeRoom(dir, bytes) },
             grants = AccountGrants(clock, ::isPaired),
         )
 

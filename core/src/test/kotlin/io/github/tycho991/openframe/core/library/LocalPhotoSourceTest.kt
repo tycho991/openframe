@@ -605,6 +605,47 @@ class LocalPhotoSourceTest {
         assertTrue(entry.hidden)
         assertEquals("Kept", entry.comment)
         assertEquals(restoredVersion.toLong(), after.version, "the scan made no change of its own")
-        assertEquals(probes + 1, engine.probes.get(), "probed once as a new file, then kept as it is")
+        assertEquals(probes, engine.probes.get(), "the restored quarantined photo is not decoded")
+    }
+
+    /**
+     * Design decision 6 of `paired-device-guards`, the apply step: a restore that lands while the scan opens the file
+     * (after the scan asked the index once more) is kept as it is when the scan applies what it read.
+     */
+    @Test
+    fun `A photo restored while the scan opens it keeps its version and quarantine`() {
+        photos.mkdirs()
+        val file = Fixtures.copy("landscape.jpg", File(photos, "a.jpg"))
+        var restoredVersion = 0
+        engine.probeFailure = { probed ->
+            if (probed.name == "a.jpg" && restoredVersion == 0) {
+                index.edit { edit ->
+                    restoredVersion = edit.newVersion
+                    edit.put(
+                        PhotoEntry(
+                            PhotoEntry.idFor("local", "a.jpg"),
+                            "local",
+                            "a.jpg",
+                            800,
+                            600,
+                            1,
+                            file.length(),
+                            file.lastModified(),
+                            version = restoredVersion,
+                            hidden = true,
+                            quarantinedVersion = restoredVersion,
+                        ),
+                    )
+                }
+            }
+            null
+        }
+        scan()
+        val after = index.library.value
+        val entry = after.photos.getValue(PhotoEntry.idFor("local", "a.jpg"))
+        assertEquals(restoredVersion, entry.version)
+        assertTrue(entry.quarantined)
+        assertTrue(entry.hidden)
+        assertEquals(restoredVersion.toLong(), after.version, "the scan made no change of its own")
     }
 }

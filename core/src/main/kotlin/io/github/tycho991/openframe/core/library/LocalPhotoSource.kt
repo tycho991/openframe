@@ -106,6 +106,12 @@ class LocalPhotoSource(
             if (entry != null && entry.fileSize == size && entry.modifiedMs == mtime) continue
             val skip = skippedKnown[path]
             if (skip != null && skip.fileSize == size && skip.modifiedMs == mtime) continue
+            // A file the index did not know when the scan began may have been put in place since (a restore, an
+            // upload): asked once more before it is opened, so a restored quarantined photo is not decoded.
+            if (entry == null) {
+                val placed = index.library.value.photos[PhotoEntry.idFor(id, path)]
+                if (placed != null && placed.path == path && placed.fileSize == size && placed.modifiedMs == mtime) continue
+            }
             val result = runCatching { read(path, file) }
             if (result.exceptionOrNull() is DecoderUnavailableException) {
                 // Says nothing about the file; every further file would wait for the decoder as well.

@@ -145,36 +145,82 @@ class TrashStore(
 
     /**
      * Moves [file], the file of the local photo [entry], into a new entry (design decision 4): its folder with the
-     * album levels, the record, then the rename. `false` if that fails; then nothing of it stays.
+     * album levels, then the rename, then the record. `false` if that fails; then nothing of it stays.
      */
-    @Synchronized
     fun moveIn(
         entry: PhotoEntry,
         file: File,
         deletedBy: String?,
-    ): Boolean {
+    ): Boolean = moveAllIn(listOf(entry.id), { if (it == entry.id) entry else null }, { file }, deletedBy).isNotEmpty()
+
+    /**
+     * Moves the files of the photos [ids] into new entries under one hold of the lock, with one write of the records
+     * (design decision 4). Each record takes the photo's entry as [current] gives it at the moment of its move, so a
+     * change saved while a large batch runs is kept; an ID [current] no longer knows is skipped. Returns the entries
+     * moved, as recorded; a failed move leaves nothing of its entry.
+     */
+    @Synchronized
+    fun moveAllIn(
+        ids: List<String>,
+        current: (String) -> PhotoEntry?,
+        fileOf: (PhotoEntry) -> File,
+        deletedBy: String?,
+    ): List<PhotoEntry> {
         ensureBuilt()
-        if (!prepareRoot()) return false
-        val id = newId(clock.millis())
-        val folder = File(root, id)
-        val target = File(folder, entry.path)
-        // The path of an index entry never leaves the photo folder, but a trash entry must not either.
-        if (!inside(target, folder)) return false
-        val record = TrashRecord(id, entry, deletedBy)
-        val moved =
-            try {
-                target.parentFile.mkdirs() && putRecord(record) && renameFile(file, target)
-            } catch (e: Exception) {
-                log.w(TAG, "Moving ${entry.path} to the trash failed", e)
-                false
+        if (ids.isEmpty() || !prepareRoot()) return emptyList()
+        val moved = ArrayList<PhotoEntry>()
+        val nextItems = HashMap(items)
+        val nextRecords = HashMap(records)
+        for (photoId in ids) {
+            val entry = current(photoId) ?: continue
+            val file = fileOf(entry)
+            val id = newId(clock.millis(), nextItems)
+            val folder = File(root, id)
+            val target = File(folder, entry.path)
+            // The path of an index entry never leaves the photo folder, but a trash entry must not either.
+            if (!inside(target, folder) || entry.path.isEmpty()) continue
+            val ok =
+                try {
+                    target.parentFile.mkdirs() && renameFile(file, target)
+                } catch (e: Exception) {
+                    log.w(TAG, "Moving ${entry.path} to the trash failed", e)
+                    false
+                }
+            if (!ok) {
+                deleteTree(folder)
+                continue
             }
-        if (!moved) {
-            dropRecords(listOf(id))
-            deleteTree(folder)
-            return false
+            val record = TrashRecord(id, entry, deletedBy)
+            nextRecords[id] = record
+            nextItems[id] = TrashItem(id, deletedAtOf(id), entry.path, target, target.length(), false, record)
+            moved += entry
         }
-        items = items + (id to TrashItem(id, deletedAtOf(id), entry.path, target, target.length(), false, record))
-        return true
+        if (moved.isNotEmpty()) {
+            items = nextItems
+            saveRecords(nextRecords)
+        }
+        return moved
+    }
+
+    /**
+     * The entry [id] as its folder is now, read again: `null` if it is gone, also when its folder holds no file any more
+     * (spec "Trash without its saved state" › Deleted from the trash over USB), which is then cleaned up. For a restore,
+     * which must not trust a mirror up to an hour old.
+     */
+    @Synchronized
+    fun fresh(id: String): TrashItem? {
+        if (!PATTERN.matches(id)) return null
+        ensureBuilt()
+        if (id !in items) return null
+        val folder = File(root, id)
+        val item = if (folder.isDirectory && !isLink(folder)) read(folder) else null
+        if (item == null) {
+            items = items - id
+            dropRecords(listOf(id))
+            return null
+        }
+        items = items + (id to item)
+        return item
     }
 
     /**
@@ -238,9 +284,13 @@ class TrashStore(
             buildLocked()
             val now = clock.millis()
             if (now < TRASH_CLOCK_FLOOR) return
-            restampLocked(now)
-            val due = items.values.filter { now - it.deletedAtMs >= RETENTION_MS }
-            removed = deleteLocked(due)
+            val restamped = restampLocked(now)
+            // Only by a plausible time: an entry whose re-stamp failed keeps its time from a clock not yet set.
+            val due =
+                items.values.filter {
+                    it.deletedAtMs >= TRASH_CLOCK_FLOOR && it.deletedAtMs <= now + RESTAMP_AHEAD_MS && now - it.deletedAtMs >= RETENTION_MS
+                }
+            removed = restamped + deleteLocked(due)
             count = due.size
             bytes = due.sumOf { it.bytes }
         }
@@ -298,13 +348,14 @@ class TrashStore(
     }
 
     /**
-     * Without `java.nio.file` on API 21, [dir] counts as the trash's volume when its total and free bytes equal those
-     * of the photo folder, read together (design decision 9).
+     * Whether [dir] is on the trash's volume. A folder inside the photo folder is; for any other, without
+     * `java.nio.file` on API 21, its total and free bytes must equal those of the photo folder, read together (design
+     * decision 9), which a write between the two reads can make fail: then nothing is freed (fail-closed).
      */
     private fun sameVolume(
         dir: File,
         free: Long,
-    ): Boolean = totalBytes(dir) == totalBytes(photoRoot) && free == freeBytes(photoRoot)
+    ): Boolean = inside(dir, photoRoot) || (totalBytes(dir) == totalBytes(photoRoot) && free == freeBytes(photoRoot))
 
     /** Under the lock: deletes [due] with their folders and records; returns the entries whose renderings go. */
     private fun deleteLocked(due: List<TrashItem>): List<PhotoEntry> {
@@ -316,14 +367,18 @@ class TrashStore(
         return due.mapNotNull { it.renderings }
     }
 
-    /** Under the lock: gives entries with an implausible time the current time and a new ID (design decision 8). */
-    private fun restampLocked(now: Long) {
+    /**
+     * Under the lock: gives entries with an implausible time the current time and a new ID (design decision 8). Returns
+     * the renderings of the old IDs, which no URL reaches any more.
+     */
+    private fun restampLocked(now: Long): List<PhotoEntry> {
         val wrong = items.values.filter { it.deletedAtMs < TRASH_CLOCK_FLOOR || it.deletedAtMs > now + RESTAMP_AHEAD_MS }
-        if (wrong.isEmpty()) return
+        if (wrong.isEmpty()) return emptyList()
+        val stale = ArrayList<PhotoEntry>()
         var next = items
         val nextRecords = records.toMutableMap()
         for (item in wrong) {
-            val id = newId(now)
+            val id = newId(now, next)
             if (!renameFile(File(root, item.id), File(root, id))) {
                 log.w(TAG, "Trash entry ${item.id} could not be given the current time")
                 continue
@@ -332,10 +387,12 @@ class TrashStore(
             nextRecords.remove(item.id)
             if (record != null) nextRecords[id] = record
             next = next - item.id + (id to item.moved(id, now, record))
+            item.renderings?.let(stale::add)
             log.i(TAG, "Trash entry ${item.id} was stamped by a clock not yet set; it is now $id")
         }
         items = next
         saveRecords(nextRecords)
+        return stale
     }
 
     /**
@@ -353,7 +410,7 @@ class TrashStore(
         if (!isLink(root)) {
             for (folder in listed) {
                 if (!PATTERN.matches(folder.name) || isLink(folder) || !folder.isDirectory) continue
-                found[folder.name] = read(folder)
+                read(folder)?.let { found[folder.name] = it }
             }
         }
         items = found
@@ -362,11 +419,17 @@ class TrashStore(
         if (kept.size != records.size) saveRecords(kept)
     }
 
-    /** One entry from its folder: its image files, its bytes and its record. */
-    private fun read(folder: File): TrashItem {
+    /**
+     * One entry from its folder: its image files, its bytes and its record. `null` for a folder that holds no file any
+     * more, only empty folders: its file was deleted over USB, or the frame stopped between creating it and the move, or
+     * a restore between the move and the clean-up. Such a folder is deleted (spec "Trash without its saved state").
+     */
+    private fun read(folder: File): TrashItem? {
         val images = ArrayList<File>()
         var bytes = 0L
+        var files = 0
         walk(folder) { file ->
+            files++
             bytes += file.length()
             // As the scan sees it: no hidden file and no file in a hidden folder, which a restore would put out of its sight.
             val hidden =
@@ -376,6 +439,10 @@ class TrashStore(
                     .split('/')
                     .any { it.startsWith('.') }
             if (!hidden && ImageFormats.hasImageExtension(file.name)) images += file
+        }
+        if (files == 0 && !holdsLink(folder)) {
+            deleteTree(folder)
+            return null
         }
         val image = images.singleOrNull()
         val path = image?.relativeTo(folder)?.invariantSeparatorsPath
@@ -415,10 +482,13 @@ class TrashStore(
         store.save(StoredTrash(next.values.sortedBy { it.trashId }))
     }
 
-    private fun newId(now: Long): String {
+    private fun newId(
+        now: Long,
+        taken: Map<String, TrashItem>,
+    ): String {
         while (true) {
             val id = String.format(Locale.ROOT, "%013d-%08x", now.coerceIn(0, MAX_STAMP), random.nextInt())
-            if (id !in items && !File(root, id).exists()) return id
+            if (id !in taken && !File(root, id).exists()) return id
         }
     }
 
@@ -479,16 +549,21 @@ class TrashStore(
             }
         }
 
-        /** Whether [file] lies below [folder] by its canonical path. */
+        /** Whether [file] lies below [folder] by its canonical path, or is that folder. */
         private fun inside(
             file: File,
             folder: File,
         ): Boolean =
             try {
-                file.canonicalPath.startsWith(folder.canonicalPath + File.separator)
+                val outer = folder.canonicalPath
+                val inner = file.canonicalPath
+                inner == outer || inner.startsWith(outer + File.separator)
             } catch (e: IOException) {
                 false
             }
+
+        /** Whether a symbolic link lies anywhere below [dir]; such a folder is no empty leftover. */
+        private fun holdsLink(dir: File): Boolean = listChildren(dir).orEmpty().any { isLink(it) || (it.isDirectory && holdsLink(it)) }
 
         /** Calls [visit] for every regular file below [dir], depth first; symbolic links are neither visited nor followed. */
         internal fun walk(

@@ -417,4 +417,119 @@ class TrashApiTest {
         assertNotEquals(null, item.thumb)
         assertTrue(TrashStore.PATTERN.matches(item.id))
     }
+
+    /** Review finding: a record takes the entry as it is at its move, also when it changed after the batch began. */
+    @Test
+    fun `A change saved during a batch delete is kept in the trash record`() {
+        put("a.jpg")
+        put("b.jpg")
+        frame.scan()
+        frame.core.trash.renameFile = { from, to ->
+            // While a.jpg moves, another device hides b.jpg and gives it a comment.
+            if (from.name == "a.jpg") frame.core.library.update(id("b.jpg")) { it.copy(hidden = true, comment = "Late") }
+            from.renameTo(to)
+        }
+        val res = frame.send("POST", "/api/v1/photos:batch", """{"action":"delete","ids":["${id("a.jpg")}","${id("b.jpg")}"]}""")
+        assertEquals(2, ApiJson.decodeFromString(BatchResultDto.serializer(), res.body()).processed)
+        val record =
+            frame.core.trash
+                .items()
+                .single { it.path == "b.jpg" }
+                .record!!
+                .entry
+        assertTrue(record.hidden)
+        assertEquals("Late", record.comment)
+    }
+
+    /** Review finding: an entry a restore put at the same path while the batch moved files stays in the index. */
+    @Test
+    fun `A photo restored to a path during a batch delete keeps its index entry`() {
+        put("a.jpg")
+        frame.scan()
+        var restored: PhotoEntry? = null
+        frame.core.trash.renameFile = { from, to ->
+            val ok = from.renameTo(to)
+            if (ok && from.name == "a.jpg" && restored == null) {
+                // A restore of an older a.jpg lands at the freed path, with a new version and its quarantine.
+                Fixtures.copy("gps-siena.jpg", from)
+                frame.core.library.index.edit { edit ->
+                    val v = edit.newVersion
+                    restored =
+                        PhotoEntry(
+                            id("a.jpg"),
+                            "local",
+                            "a.jpg",
+                            800,
+                            600,
+                            1,
+                            from.length(),
+                            from.lastModified(),
+                            v,
+                            quarantinedVersion = v,
+                        ).also(edit::put)
+                }
+            }
+            ok
+        }
+        delete("a.jpg")
+        assertEquals(restored, entry("a.jpg"), "the restored entry stays as it was put")
+        frame.scan()
+        assertTrue(entry("a.jpg")!!.quarantined)
+    }
+
+    /** › Trash without its saved state › Deleted from the trash over USB: its folders left behind. */
+    @Test
+    fun `An entry whose file was deleted over USB restores as missing`() {
+        put("holiday/a.jpg")
+        frame.scan()
+        delete("holiday/a.jpg")
+        val item = trash().items.single()
+        assertTrue(File(frame.photos, ".trash/${item.id}/holiday/a.jpg").delete())
+        val result = restore(item.id)
+        assertEquals(listOf(item.id), result.missing)
+        assertTrue(trash().items.isEmpty())
+    }
+
+    /** Review finding: an entry whose file goes between its check and the restore's edit is missing, not failed. */
+    @Test
+    fun `An entry whose file goes while the restore resolves its album restores as missing`() {
+        put("holiday/a.jpg")
+        frame.scan()
+        delete("holiday/a.jpg")
+        val item = trash().items.single()
+        // Under the restore's locks, while the album is resolved, the file is deleted over USB.
+        frame.core.library.listNames = {
+            File(frame.photos, ".trash/${item.id}/holiday/a.jpg").delete()
+            it.list()
+        }
+        val result = restore(item.id)
+        assertEquals(listOf(item.id), result.missing)
+        assertEquals(emptyList<String>(), result.failed)
+    }
+
+    /** Review finding: a restore resolves each album once per request. */
+    @Test
+    fun `A restore of many photos of one album lists its folder once`() {
+        for (n in 1..5) put("holiday/$n.jpg")
+        frame.scan()
+        val res =
+            frame.send(
+                "POST",
+                "/api/v1/photos:batch",
+                (1..5).joinToString(",", """{"action":"delete","ids":[""", "]}") {
+                    "\"${id("holiday/$it.jpg")}\""
+                },
+            )
+        assertEquals(200, res.statusCode(), res.body())
+        val listings =
+            java.util.concurrent.atomic
+                .AtomicInteger()
+        frame.core.library.listNames = {
+            listings.incrementAndGet()
+            it.list()
+        }
+        val result = restore(*trash().items.map { it.id }.toTypedArray())
+        assertEquals(5, result.restored.size)
+        assertEquals(1, listings.get(), "the photo folder is listed once to resolve the album")
+    }
 }
