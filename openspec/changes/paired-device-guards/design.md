@@ -466,7 +466,13 @@ Details the code showed, recorded here; the requirements are unchanged.
   could not happen.
 - **Render cache (decision 9):** the cache asks the trash after its own trim whenever it is still below the reserve,
   also for a rendering somebody awaits, as the requirement "Where storage pressure frees the trash" reads. For
-  originals only the download for a rendering asks (`OriginalsStore.ensureRoomOnDisk`), not the downloads of a sync.
+  originals only the download for a rendering asks (`OriginalsStore.ensureRoomOnDisk`), not the downloads of a sync,
+  and it asks the render cache first (`RenderCache.trimFor`, for the download's size plus the floor), the trash only
+  when that is not enough.
+- **Same volume (decision 9):** a folder inside the photo folder counts as the trash's volume without the heuristic.
+  For the cache, originals and update folders the heuristic stays and fails closed: a write between its two reads of
+  free storage makes it free nothing. On Android the photo folder is on the FUSE or sdcardfs view of external storage
+  and the cache folder on the data volume; whether both report the same total and free bytes is for the device row.
 - **Clock (decision 8):** `TRASH_CLOCK_FLOOR` is 2026-01-01T00:00:00Z. While the clock is below it, storage pressure
   frees nothing either, and an entry stamped below it is not eligible under pressure until it is re-stamped. Its
   `purgeAfter` is `null` until then.
@@ -478,3 +484,25 @@ Details the code showed, recorded here; the requirements are unchanged.
   hint (`sources.folderHintShare`), since `/` is not a whole account there.
 - **Test server:** `/nextcloud/approve` approves the last login started, with `user=` as another Nextcloud user;
   `FakeLoginFlow` approves per flow by its poll token, which is new per start.
+- **Review of PR #133:**
+  - A purge goes by plausible times only: an entry whose re-stamp failed keeps its time from a clock not yet set and
+    is not purged for it. A re-stamp removes the renderings of the old ID.
+  - An entry folder that holds no file any more (only empty folders) counts as gone: it is deleted at the next build,
+    and a restore reads its entry again from the folder (`TrashStore.fresh`) and reports it as missing. This also
+    covers a stop between creating the folder and the move, and in a restore between the move and the clean-up.
+  - `deleteAll` moves a batch under one hold of the trash's lock with one write of the records, and each record takes
+    the photo's entry from the index at its move. Its edit removes an entry only while it has the version that was
+    moved, so an entry a restore put at the same path meanwhile stays.
+  - A restore resolves each album once per request; an entry purged, re-stamped or whose file went before the edit is
+    missing, not failed.
+  - A confirmation login whose source was removed meanwhile fails with `not_found`; the contract's description of
+    `SourceErrorCode` says so.
+  - The scan asks the index once more before it opens a file the index did not know when the scan began, so a
+    restored quarantined photo is not decoded by a scan; the apply step still keeps an entry put in place while the
+    scan opens the file.
+  - "Restore all" in the web UI stops at the first chunk that fails and shows one message with that error, the
+    entries that failed and those already gone.
+  - Left as it was: `NextcloudConnector.startLogin` and `pollLogin` hold the connector's lock across the request to
+    the server, as before this change, so one device's slow server delays another device's login by up to the
+    request's time limit. A lock per device would need the shared checks (full frame, account matching, adding the
+    source) to move under a separate lock; that is a change of its own.
