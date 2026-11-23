@@ -34,7 +34,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 2. Origin of a pairing and equal rights
 
-- [ ] 2.1 `StoredClient.pairedVia` and `invitedBy` as nullable strings; `ClientRegistry.create(name, pairedVia,
+- [x] 2.1 `StoredClient.pairedVia` and `invitedBy` as nullable strings; `ClientRegistry.create(name, pairedVia,
   invitedBy)`; `PairingManager.create(deviceName, via, inviter)` sets `code` from `pair`, `qr` for the session secret
   and `invite` with the inviter in `pairWithSecret`; the pairing log line names the origin; `ClientDto` serves an
   unknown stored value as `null` (design decision 12). Verify, tests in `PairingTest`, `QrPairingTest`, `InviteTest`,
@@ -56,7 +56,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
   - e2e in `pairing.spec.ts`: after an invitation is redeemed, the list shows "invited by" with the inviting device's
     current name, and the invitation dialog shows the note on rights (`web-admin` › Paired devices › Invited device,
     `web-admin` › Invite a device › Show invitation).
-- [ ] 2.3 README "Security model": the pairing bullet says that every paired device has the same rights however it
+- [x] 2.3 README "Security model": the pairing bullet says that every paired device has the same rights however it
   paired, that the device list shows how it paired, and that "Unpair all devices" on the frame is the remedy (design
   decision 17). Verify: the text is there and names no real device or household detail.
 

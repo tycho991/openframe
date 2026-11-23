@@ -52,8 +52,8 @@ class DeviceLogTest {
                 .map { it.message }
         assertEquals(
             listOf(
-                "Paired $phoneId: Phone",
-                "Paired $laptopId: Laptop",
+                "Paired $phoneId with the code: Phone",
+                "Paired $laptopId with the code: Laptop",
                 "Device $phoneId renamed $laptopId to Old laptop",
                 "Device $phoneId created an invitation",
                 "Paired $tabletId by invitation of $phoneId: Tablet",
