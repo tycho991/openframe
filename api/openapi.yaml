@@ -926,7 +926,9 @@ paths:
       operationId: patchSource
       summary: Change settings of one source.
       description: >-
-        Partial change, validated completely or not at all. A change makes the source sync again soon. For an
+        Partial change, validated completely or not at all. Every field is checked by its JSON type: a switch sent
+        as a string (`"true"`) is invalid and refused with 400 `validation_failed` naming the field, and nothing is
+        changed. A change makes the source sync again soon. For an
         account source a change that widens what it reads (the first folder, subfolders switched on, a folder that is
         neither the old one nor below it, or a folder below the old one while subfolders are off; compared by path
         segment and with exact case) is applied only if this device completed a login for this account within the
