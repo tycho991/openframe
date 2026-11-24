@@ -132,7 +132,7 @@ again before editing.
 
 ## 6. Install e2e and update polling
 
-- [ ] 6.1 `FakeAppInstaller.awaitCommitted(timeoutMs)` with `committed` as a `ConcurrentHashMap` and a monitor
+- [x] 6.1 `FakeAppInstaller.awaitCommitted(timeoutMs)` with `committed` as a `ConcurrentHashMap` and a monitor
   signalled by `commit`, so the control thread sees a commit made on the core's IO thread. `/update/answer` in
   `TestServerMain` waits up to 5 s and answers the open session committed last, or 409 without one. `TestServerMain`
   gets an internal `installerFactory` used at start (:67) and on reset (:223) (design decision 9). Verify:

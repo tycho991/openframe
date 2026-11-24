@@ -64,7 +64,13 @@ object TestServerMain {
      * of the core, as GitHub and Android's sessions outlive the app, and are new after a reset.
      */
     private var releases = FakeReleaseSource()
-    private var installer = FakeAppInstaller()
+    private lateinit var installer: FakeAppInstaller
+
+    /** Builds Android's installer at the start and at a reset; a test may put in a slower one before [start]. */
+    internal var installerFactory: () -> FakeAppInstaller = { FakeAppInstaller() }
+
+    /** How long `/update/answer` waits for the installation dialog, which opens only once its session is committed. */
+    private const val DIALOG_WAIT_MS = 5_000L
 
     /** The device; it reports the version of `version.txt`, so that the web UI built from it sees no update. */
     private var platform = platformOfVersionTxt()
@@ -92,21 +98,11 @@ object TestServerMain {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        port = args.getOrNull(0)?.toInt() ?: 8090
+        val port = args.getOrNull(0)?.toInt() ?: 8090
         val controlPort = args.getOrNull(1)?.toInt() ?: 8091
-        dist = File(args.getOrNull(2) ?: "webadmin/dist").absoluteFile
-        // One folder per port, so that the servers of parallel worktrees never share their data. Emptied first: a
-        // server that was killed could not delete it.
-        val home = File(System.getProperty(DATA_DIR_PROPERTY) ?: "core/build/testserver").absoluteFile.apply { mkdirs() }
-        dataDir = File(home, port.toString())
-        // Claimed before it is emptied: a second server on the same port must not wipe the data of the running one.
-        // The system releases the lock when the process ends, also when it is killed.
-        dataLock = RandomAccessFile(File(home, "$port.lock"), "rw").channel.tryLock()
-            ?: error("Another test server already uses $dataDir")
-        dataDir.deleteRecursively()
-        dataDir.mkdirs()
-        synchronized(TestServerMain) { startCore() }
-        Control(controlPort).start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+        val dist = File(args.getOrNull(2) ?: "webadmin/dist").absoluteFile
+        val home = File(System.getProperty(DATA_DIR_PROPERTY) ?: "core/build/testserver").absoluteFile
+        start(port, controlPort, dist, home)
         // Only after a successful start: a server that could not start leaves the folder to the next start.
         Runtime.getRuntime().addShutdownHook(Thread(::shutdown, "testserver-shutdown"))
         println(
@@ -114,6 +110,43 @@ object TestServerMain {
                 "(control on 127.0.0.1:$controlPort with the header $CONTROL_HEADER: 1, data in $dataDir)",
         )
         Thread.currentThread().join()
+    }
+
+    /** Starts the frame on [port] with its data in a folder of [home], and the control port; [stop] ends both. */
+    internal fun start(
+        port: Int,
+        controlPort: Int,
+        dist: File,
+        home: File,
+    ): Control {
+        this.port = port
+        this.dist = dist
+        // One folder per port, so that the servers of parallel worktrees never share their data. Emptied first: a
+        // server that was killed could not delete it.
+        home.mkdirs()
+        dataDir = File(home, port.toString())
+        // Claimed before it is emptied: a second server on the same port must not wipe the data of the running one.
+        // The system releases the lock when the process ends, also when it is killed.
+        dataLock = RandomAccessFile(File(home, "$port.lock"), "rw").channel.tryLock()
+            ?: error("Another test server already uses $dataDir")
+        dataDir.deleteRecursively()
+        dataDir.mkdirs()
+        synchronized(TestServerMain) {
+            installer = installerFactory()
+            startCore()
+        }
+        return Control(controlPort).also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false) }
+    }
+
+    /** Ends what [start] started, for a test: the control port, the frame and its data, and the lock of the folder. */
+    internal fun stop(control: Control) {
+        control.stop()
+        shutdown()
+        dataLock?.let {
+            it.release()
+            it.channel().close()
+        }
+        dataLock = null
     }
 
     /**
@@ -220,7 +253,7 @@ object TestServerMain {
         runBlocking { core.stop() }
         TestServerClock.offset = Duration.ZERO
         releases = FakeReleaseSource()
-        installer = FakeAppInstaller()
+        installer = installerFactory()
         platform = platformOfVersionTxt()
         dataDir.deleteRecursively()
         dataDir.mkdirs()
@@ -455,9 +488,16 @@ object TestServerMain {
 
                         // Someone answers the installation dialog on the frame: `result=confirmed`, `cancelled` or
                         // `failed`. Confirmed, Android replaces the app: the ready version is installed and the core
-                        // starts again.
+                        // starts again. As on Android, the dialog is there only once its session is committed: the
+                        // answer waits for that up to 5 s, and is a 409 without a dialog.
                         "/update/answer" -> {
-                            val session = installer.openSession()
+                            val session =
+                                installer.awaitCommitted(DIALOG_WAIT_MS)
+                                    ?: return@synchronized newFixedLengthResponse(
+                                        Response.Status.CONFLICT,
+                                        "text/plain",
+                                        "No installation dialog is open",
+                                    )
                             when (q.getValue("result")) {
                                 "confirmed" -> {
                                     val version = core.update.state.value.readyVersion ?: error("No dialog open")
