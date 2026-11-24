@@ -64,7 +64,8 @@ object TestServerMain {
      * of the core, as GitHub and Android's sessions outlive the app, and are new after a reset.
      */
     private var releases = FakeReleaseSource()
-    private lateinit var installer: FakeAppInstaller
+
+    @Volatile private lateinit var installer: FakeAppInstaller
 
     /** Builds Android's installer at the start and at a reset; a test may put in a slower one before [start]. */
     internal var installerFactory: () -> FakeAppInstaller = { FakeAppInstaller() }
@@ -267,6 +268,9 @@ object TestServerMain {
             controlRefusal(session.method, session.headers, controlPort)?.let { (status, reason) ->
                 return newFixedLengthResponse(status, "text/plain", reason).apply { closeConnection(true) }
             }
+            // The answer waits for its dialog outside the lock, so that it holds up no other control request, such as
+            // the next test's reset.
+            val dialog = if (session.uri == "/update/answer") installer.awaitCommitted(DIALOG_WAIT_MS) else null
             return synchronized(TestServerMain) {
                 val q = session.parameters.mapValues { it.value.first() }
                 try {
@@ -492,7 +496,7 @@ object TestServerMain {
                         // answer waits for that up to 5 s, and is a 409 without a dialog.
                         "/update/answer" -> {
                             val session =
-                                installer.awaitCommitted(DIALOG_WAIT_MS)
+                                dialog
                                     ?: return@synchronized newFixedLengthResponse(
                                         Response.Status.CONFLICT,
                                         "text/plain",

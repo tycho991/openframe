@@ -120,12 +120,37 @@ describe("Reload after a frame update", () => {
     expect(updatePollMs(undefined)).toBe(30_000);
   });
 
+  it("aborts a poll that hangs and polls again", async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const load = vi
+        .fn<(signal: AbortSignal) => Promise<void>>()
+        .mockImplementationOnce((signal) => {
+          signals.push(signal);
+          return new Promise<void>(() => {});
+        })
+        .mockResolvedValue(undefined);
+      const stop = pollUpdate(load, () => "ready", 10_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(signals[0]?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(signals[0]?.aborted).toBe(true);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(load).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("polls again after a failed request, at the interval of the phase then, until stopped", async () => {
     vi.useFakeTimers();
     try {
       let phase: UpdateState["phase"] | undefined = "ready";
       const load = vi
-        .fn<() => Promise<void>>()
+        .fn<(signal: AbortSignal) => Promise<void>>()
         .mockRejectedValueOnce(new TypeError("Failed to fetch"))
         .mockImplementationOnce(async () => {
           phase = "downloading";

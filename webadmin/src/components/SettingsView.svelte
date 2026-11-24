@@ -135,9 +135,9 @@
   /** The frame stopped answering while its installation dialog was open: it restarts with the new version. */
   let restarting = $state(false);
 
-  async function loadUpdate() {
+  async function loadUpdate(signal?: AbortSignal) {
     try {
-      const next = await api.update();
+      const next = await api.update(signal);
       if (next.phase !== "installing") installRequested = false;
       update = next;
       restarting = false;

@@ -5,24 +5,42 @@ export function updatePollMs(phase: UpdateState["phase"] | undefined): number {
   return phase === "checking" || phase === "downloading" || phase === "installing" ? 2_000 : 30_000;
 }
 
+/** How long one poll of the update state may take before it counts as failed and is aborted. */
+export const UPDATE_POLL_TIMEOUT_MS = 10_000;
+
 /**
  * Polls the update state with [load] until the returned function is called: the next poll is scheduled after every
  * attempt, failed or not, at [updatePollMs] of the phase [phase] reports then, so that a failed request does not end
- * the polling (spec web-admin, "Software update in the interface"; design decision 9 of core-cleanup).
+ * the polling (spec web-admin, "Software update in the interface"; design decision 9 of core-cleanup). An attempt
+ * that takes longer than [timeoutMs] counts as failed: its signal is aborted and the next poll is scheduled.
  */
 export function pollUpdate(
-  load: () => Promise<void>,
+  load: (signal: AbortSignal) => Promise<void>,
   phase: () => UpdateState["phase"] | undefined,
+  timeoutMs = UPDATE_POLL_TIMEOUT_MS,
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  const attempt = async () => {
+    const controller = new AbortController();
+    let guard: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<void>((resolve) => {
+      guard = setTimeout(() => {
+        controller.abort(new DOMException("The update state did not arrive in time", "TimeoutError"));
+        resolve();
+      }, timeoutMs);
+    });
+    try {
+      await Promise.race([load(controller.signal), timedOut]);
+    } catch {
+      // A failed poll only schedules the next one.
+    } finally {
+      clearTimeout(guard);
+    }
+  };
   const schedule = () => {
     if (stopped) return;
-    timer = setTimeout(() => {
-      void load()
-        .catch(() => {})
-        .finally(schedule);
-    }, updatePollMs(phase()));
+    timer = setTimeout(() => void attempt().finally(schedule), updatePollMs(phase()));
   };
   schedule();
   return () => {
