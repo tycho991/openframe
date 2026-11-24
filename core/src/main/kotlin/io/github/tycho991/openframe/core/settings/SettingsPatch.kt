@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.settings
 
+import io.github.tycho991.openframe.core.http.JsonFields
 import io.github.tycho991.openframe.core.singleLine
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -7,8 +8,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.intOrNull
 
 /** Result of a change: new settings and the errors per field. */
 data class PatchResult(
@@ -41,7 +40,7 @@ object SettingsPatch {
                 }
 
                 "intervalSeconds" -> {
-                    int(value, key, Settings.INTERVAL_SECONDS, errors)?.let { s = s.copy(intervalSeconds = it) }
+                    JsonFields.int(value, key, Settings.INTERVAL_SECONDS, errors)?.let { s = s.copy(intervalSeconds = it) }
                 }
 
                 "order" -> {
@@ -53,7 +52,7 @@ object SettingsPatch {
                 }
 
                 "transitionDurationMs" -> {
-                    int(value, key, Settings.TRANSITION_DURATION_MS, errors)?.let { s = s.copy(transitionDurationMs = it) }
+                    JsonFields.int(value, key, Settings.TRANSITION_DURATION_MS, errors)?.let { s = s.copy(transitionDurationMs = it) }
                 }
 
                 "fillMode" -> {
@@ -77,7 +76,7 @@ object SettingsPatch {
                 }
 
                 "cacheBudgetMb" -> {
-                    int(value, key, Settings.CACHE_BUDGET_MB, errors)?.let { s = s.copy(cacheBudgetMb = it) }
+                    JsonFields.int(value, key, Settings.CACHE_BUDGET_MB, errors)?.let { s = s.copy(cacheBudgetMb = it) }
                 }
 
                 "displaySchedule" -> {
@@ -85,7 +84,7 @@ object SettingsPatch {
                 }
 
                 "autoUpdateCheck" -> {
-                    bool(value, key, errors)?.let { s = s.copy(autoUpdateCheck = it) }
+                    JsonFields.bool(value, key, errors)?.let { s = s.copy(autoUpdateCheck = it) }
                 }
 
                 "brightness" -> {
@@ -113,9 +112,9 @@ object SettingsPatch {
         for ((key, v) in value) {
             val path = "clock.$key"
             when (key) {
-                "enabled" -> bool(v, path, errors)?.let { c = c.copy(enabled = it) }
+                "enabled" -> JsonFields.bool(v, path, errors)?.let { c = c.copy(enabled = it) }
                 "position" -> enum(v, path, Corner.serializer(), errors)?.let { c = c.copy(position = it) }
-                "sizePercent" -> int(v, path, Settings.CLOCK_SIZE_PERCENT, errors)?.let { c = c.copy(sizePercent = it) }
+                "sizePercent" -> JsonFields.int(v, path, Settings.CLOCK_SIZE_PERCENT, errors)?.let { c = c.copy(sizePercent = it) }
                 "format" -> enum(v, path, ClockFormat.serializer(), errors)?.let { c = c.copy(format = it) }
                 else -> errors[path] = "Unknown field"
             }
@@ -136,8 +135,8 @@ object SettingsPatch {
         for ((key, v) in value) {
             val path = "caption.$key"
             when (key) {
-                "albumTitle" -> bool(v, path, errors)?.let { c = c.copy(albumTitle = it) }
-                "place" -> bool(v, path, errors)?.let { c = c.copy(place = it) }
+                "albumTitle" -> JsonFields.bool(v, path, errors)?.let { c = c.copy(albumTitle = it) }
+                "place" -> JsonFields.bool(v, path, errors)?.let { c = c.copy(place = it) }
                 "position" -> enum(v, path, Corner.serializer(), errors)?.let { c = c.copy(position = it) }
                 else -> errors[path] = "Unknown field"
             }
@@ -158,11 +157,11 @@ object SettingsPatch {
         for ((key, v) in value) {
             val path = "displaySchedule.$key"
             when (key) {
-                "enabled" -> bool(v, path, errors)?.let { d = d.copy(enabled = it) }
+                "enabled" -> JsonFields.bool(v, path, errors)?.let { d = d.copy(enabled = it) }
                 "weekdays" -> d = d.copy(weekdays = applyWindow(d.weekdays, v, path, errors))
                 "weekend" -> d = d.copy(weekend = applyWindow(d.weekend, v, path, errors))
-                "wakeMinutes" -> int(v, path, DisplayScheduleSettings.WAKE_MINUTES, errors)?.let { d = d.copy(wakeMinutes = it) }
-                "dimLevel" -> int(v, path, DisplayScheduleSettings.DIM_LEVEL, errors)?.let { d = d.copy(dimLevel = it) }
+                "wakeMinutes" -> JsonFields.int(v, path, DisplayScheduleSettings.WAKE_MINUTES, errors)?.let { d = d.copy(wakeMinutes = it) }
+                "dimLevel" -> JsonFields.int(v, path, DisplayScheduleSettings.DIM_LEVEL, errors)?.let { d = d.copy(dimLevel = it) }
                 else -> errors[path] = "Unknown field"
             }
         }
@@ -211,7 +210,7 @@ object SettingsPatch {
             val path = "brightness.$key"
             when (key) {
                 "mode" -> enum(v, path, BrightnessMode.serializer(), errors)?.let { b = b.copy(mode = it) }
-                "level" -> int(v, path, BrightnessSettings.LEVEL, errors)?.let { b = b.copy(level = it) }
+                "level" -> JsonFields.int(v, path, BrightnessSettings.LEVEL, errors)?.let { b = b.copy(level = it) }
                 else -> errors[path] = "Unknown field"
             }
         }
@@ -239,33 +238,6 @@ object SettingsPatch {
         if (value is JsonPrimitive && value.isString) return value.content
         errors[key] = "Expected a text"
         return null
-    }
-
-    /** A JSON `true` or `false`; a string such as `"true"` is not one. */
-    fun strictBoolean(value: JsonElement?): Boolean? = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
-
-    private fun bool(
-        value: JsonElement,
-        key: String,
-        errors: MutableMap<String, String>,
-    ): Boolean? {
-        val b = strictBoolean(value)
-        if (b == null) errors[key] = "Expected true or false"
-        return b
-    }
-
-    private fun int(
-        value: JsonElement,
-        key: String,
-        range: IntRange,
-        errors: MutableMap<String, String>,
-    ): Int? {
-        val n = (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
-        if (n == null || n !in range) {
-            errors[key] = "Expected an integer from ${range.first} to ${range.last}"
-            return null
-        }
-        return n
     }
 
     private fun <E : Enum<E>> enum(

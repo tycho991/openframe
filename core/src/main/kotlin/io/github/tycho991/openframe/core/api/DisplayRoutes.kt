@@ -4,13 +4,10 @@ import io.github.tycho991.openframe.core.display.DisplayController
 import io.github.tycho991.openframe.core.display.DisplayState
 import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpResponse
+import io.github.tycho991.openframe.core.http.JsonFields
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.settings.BrightnessSettings
-import io.github.tycho991.openframe.core.settings.SettingsPatch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.intOrNull
 
 @Serializable
 data class BrightnessStateDto(
@@ -48,18 +45,11 @@ fun Router.displayRoutes(display: DisplayController) {
         HttpResponse.json(DisplayStateDto.serializer(), display.state.value.toDto())
     }
     put("/api/v1/display") { req ->
-        val body = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
+        val body = req.bodyObject()
         val fields = LinkedHashMap<String, String>()
         body.keys.filter { it != "on" && it != "brightness" }.forEach { fields[it] = "Unknown field" }
-        val on =
-            body["on"]?.let { value ->
-                SettingsPatch.strictBoolean(value).also { if (it == null) fields["on"] = "Expected true or false" }
-            }
-        val level =
-            body["brightness"]?.let { value ->
-                val n = (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull?.takeIf { it in BrightnessSettings.LEVEL }
-                n.also { if (it == null) fields["brightness"] = "Expected an integer from 1 to 100" }
-            }
+        val on = body["on"]?.let { JsonFields.bool(it, "on", fields) }
+        val level = body["brightness"]?.let { JsonFields.int(it, "brightness", BrightnessSettings.LEVEL, fields) }
         if (fields.isNotEmpty()) throw HttpException.badRequest("Invalid display switch", fields)
         if (on == null && level == null) throw HttpException.badRequest("Expected `on`, `brightness` or both")
         if (on != null && !display.available) {

@@ -5,7 +5,7 @@ again before editing.
 
 ## 1. Contract first
 
-- [ ] 1.1 `api/openapi.yaml`, before any Kotlin: the description of `patchSource` says that every field is checked by
+- [x] 1.1 `api/openapi.yaml`, before any Kotlin: the description of `patchSource` says that every field is checked by
   its JSON type and that a switch sent as a string (`"true"`) is invalid and refused with 400 `validation_failed`
   naming the field, with nothing changed (design decision 2). `SourceSettingsPatch` keeps `type: boolean`; no schema
   changes, so no DTO changes. Then `npm run gen:api` in `webadmin/`. Verify: `npm run lint` (Redocly included) and
@@ -13,7 +13,7 @@ again before editing.
 
 ## 2. Strict JSON fields in one helper
 
-- [ ] 2.1 Failing tests first, run against `main` and noted in the pull request:
+- [x] 2.1 Failing tests first, run against `main` and noted in the pull request:
   - `SourcesApiTest` (`TestFrame`, contract check on): `PATCH /api/v1/sources/{id}` with `{"enabled":"true"}`,
     `{"includeSubfolders":"FALSE"}` and `{"removeVanished":"false"}` each gives 400 `validation_failed` naming exactly
     that field (`remote-sources` › Configuration › Switch sent as text); `{"name":"New","includeSubfolders":"false"}`
@@ -21,17 +21,19 @@ again before editing.
   - `LibraryApiTest`: `{"hidden":"true"}` added to the table of invalid photo patches; `{"quarantined":"false"}` gives
     400 naming `quarantined`; `PATCH /albums` with `"hidden":"true"` gives 400 (already refused by `ApiJson`, kept as
     a guard);
+    *(Done without the albums guard: `ApiJson` accepts `"true"` for `AlbumPatchDto.hidden`; see design.md, After
+    implementation.)*
   - `PATCH /photos/{id}` with the body `[true]` gives 400 `bad_request` with the message "Expected a JSON object".
 
   Verify: the sources cases fail on `main` (as contract violations or 200). The `[true]` case fails on `main` only in
   its message: today it answers 400 `bad_request` "Invalid body" (`Http.kt:70-82` through `LibraryRoutes.kt:325`),
   and 2.3 changes that. The other cases pass already.
-- [ ] 2.2 `core/.../http/JsonFields.kt` with `internal object JsonFields` (`bool`, `int`, both taking the error map) and
+- [x] 2.2 `core/.../http/JsonFields.kt` with `internal object JsonFields` (`bool`, `int`, both taking the error map) and
   `HttpRequest.bodyObject()` in `http/Http.kt` (design decision 1). New `JsonFieldsTest`: `bool` for `true`, `false`,
   `"true"`, `"TRUE"`, `1`, `JsonNull`, `[]` and an object; `int` for `20`, `"20"`, `20.5`, `1e1`, both range limits and
   one past each; the messages "Expected true or false" and "Expected an integer from 5 to 1440". Verify: the test
   passes and `./gradlew :core:check` is green.
-- [ ] 2.3 Switch the callers (design decision 1): `SourceConfigStore.patch` (drop its private `bool` and `int`),
+- [x] 2.3 Switch the callers (design decision 1): `SourceConfigStore.patch` (drop its private `bool` and `int`),
   `SettingsPatch` (drop `strictBoolean`, `bool`, `int`; `autoUpdateCheck` and `brightness.level` included),
   `PUT /display` (`on` and `brightness` into its `fields`, still `bad_request`), `photoPatch` (`hidden`, and
   `quarantined` through `bool` with its own message kept), and `bodyObject()` in `SettingsRoutes`, `SourcesRoutes`,
@@ -39,7 +41,7 @@ again before editing.
   "false"}`, `[true]`), `SettingsRoutesTest`, `MalformedJsonTest` and `SlideshowApiTest` pass unchanged;
   `grep -rn "strictBoolean\|booleanOrNull\|as? JsonObject ?: throw" core/src/main` finds only `JsonFields.kt` and
   `bodyObject()`.
-- [ ] 2.4 Source names through `singleLine` (design decision 3): `SourceConfigStore.normalizeName` trims with
+- [x] 2.4 Source names through `singleLine` (design decision 3): `SourceConfigStore.normalizeName` trims with
   `singleLine` and then checks 1 to 64 characters. Verify, `SourcesApiTest` with the contract check: a rename to
   "Summer\n2026" stores "Summer 2026" (`remote-sources` › Source names on one line › Name with a line break); a name of
   only control characters gives 400 naming `name` and the old name stays (› Only control characters); a

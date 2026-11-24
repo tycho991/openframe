@@ -380,6 +380,54 @@ class SourcesApiTest {
     }
 
     @Test
+    fun `A switch sent as text is refused naming the field and changes nothing`() {
+        val id = shared("AbC123").id
+        val before = source(id).settings
+        for ((field, body) in listOf(
+            "enabled" to """{"enabled":"true"}""",
+            "includeSubfolders" to """{"includeSubfolders":"FALSE"}""",
+            "removeVanished" to """{"removeVanished":"false"}""",
+        )) {
+            val res = frame.send("PATCH", "/api/v1/sources/$id", body)
+            assertEquals(400, res.statusCode(), "$body: ${res.body()}")
+            assertEquals("validation_failed", errorCode(res.body()), body)
+            assertEquals(setOf(field), fields(res.body()), body)
+        }
+        assertEquals(before, source(id).settings)
+    }
+
+    @Test
+    fun `A name with a line break is stored on one line`() {
+        val id = shared("AbC123").id
+        val res = frame.send("PATCH", "/api/v1/sources/$id", """{"name":"Summer\n2026"}""")
+        assertEquals(200, res.statusCode(), res.body())
+        assertEquals("Summer 2026", source(id).settings.name)
+    }
+
+    @Test
+    fun `A name of only control characters is refused naming the field and the old name stays`() {
+        val id = shared("AbC123").id
+        val before = source(id).settings.name
+        val res = frame.send("PATCH", "/api/v1/sources/$id", """{"name":"\n\t\u0007"}""")
+        assertEquals(400, res.statusCode(), res.body())
+        assertEquals(setOf("name"), fields(res.body()))
+        assertEquals(before, source(id).settings.name)
+    }
+
+    @Test
+    fun `A valid name with a switch sent as text is refused as a whole`() {
+        val id = shared("AbC123").id
+        val before = source(id).settings
+        val res = frame.send("PATCH", "/api/v1/sources/$id", """{"name":"New","includeSubfolders":"false"}""")
+        assertEquals(400, res.statusCode(), res.body())
+        assertEquals("validation_failed", errorCode(res.body()))
+        assertEquals(setOf("includeSubfolders"), fields(res.body()))
+        val after = source(id).settings
+        assertEquals(before.name, after.name)
+        assertEquals(before.includeSubfolders, after.includeSubfolders)
+    }
+
+    @Test
     fun `An account without a folder syncs nothing and says why`() {
         val id = connect(folder = null)
         clients.remote.put("a.jpg", Fixtures.file("landscape.jpg").readBytes(), "e1")

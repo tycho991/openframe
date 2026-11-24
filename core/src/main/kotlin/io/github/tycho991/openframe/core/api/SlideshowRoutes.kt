@@ -8,7 +8,6 @@ import io.github.tycho991.openframe.core.slideshow.SlideshowAction
 import io.github.tycho991.openframe.core.slideshow.SlideshowController
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
@@ -44,7 +43,7 @@ fun Router.slideshowRoutes(
     }
     post("/api/v1/slideshow") { req ->
         if (safeMode()) throw safeModeRefusal()
-        val body = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
+        val body = req.bodyObject()
         val fields = LinkedHashMap<String, String>()
         body.keys.filter { it != "action" }.forEach { fields[it] = "Unknown field" }
         val name = (body["action"] as? JsonPrimitive)?.takeIf { it.isString }?.content

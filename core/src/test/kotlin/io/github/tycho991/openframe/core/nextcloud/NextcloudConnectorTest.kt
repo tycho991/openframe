@@ -367,6 +367,13 @@ class NextcloudConnectorTest {
     }
 
     @Test
+    fun `A share whose name has a tab is added with that name on one line, not with the host`() {
+        clients.share("Tab1", name = "Summer\t2026")
+        val source = connector.addShare("https://cloud.example.org/s/Tab1", null, null)
+        assertEquals("Summer 2026", source.name)
+    }
+
+    @Test
     fun `A share link and an unknown source start no confirmation`() {
         val share =
             configs.add(

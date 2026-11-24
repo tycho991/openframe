@@ -368,6 +368,8 @@ class LibraryApiTest {
             """{"crop":{"x":0.5,"y":0.5,"zoom":1,"w":1}}""" to "crop.w",
             """{"crop":true}""" to "crop",
             """{"hidden":"yes"}""" to "hidden",
+            """{"hidden":"true"}""" to "hidden",
+            """{"quarantined":"false"}""" to "quarantined",
             """{"rotation":90}""" to "rotation",
         )) {
             val r = patch(id("a.jpg"), body)
@@ -375,6 +377,11 @@ class LibraryApiTest {
             assertEquals(setOf(field), errorFields(r), body)
         }
         assertEquals(400, patch(id("a.jpg"), "{}").statusCode(), "an empty patch")
+        val array = patch(id("a.jpg"), "[true]")
+        assertEquals(400, array.statusCode(), "a body that is no object")
+        val error = Json.parseToJsonElement(array.body()).jsonObject["error"]!!.jsonObject
+        assertEquals("bad_request", error["code"]!!.jsonPrimitive.content)
+        assertEquals("Expected a JSON object", error["message"]!!.jsonPrimitive.content)
         assertEquals(200, patch(id("a.jpg"), """{"crop":{"x":0,"y":1,"zoom":4}}""").statusCode(), "the limits are valid")
     }
 

@@ -378,3 +378,16 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   behaves like an update, which is harmless.
 - Rollback: revert the pull request. Nothing stored needs to change back.
 - After the release, the main session runs the device rows privately (tasks group 8).
+
+## After implementation
+
+- **`PATCH /albums` takes `"hidden":"true"` (task 2.1).** Context and task 2.1 said that the DTO bodies decoded
+  through `bodyAs` refuse a quoted boolean. They do not: `ApiJson.decodeFromJsonElement` reads a `JsonPrimitive`
+  through `booleanOrNull` without the `isString` check that only the streaming decoder applies, so
+  `{"name":"holiday","hidden":"true"}` is answered 200 on `main` and the contract harness reports it as a request-body
+  violation. `AlbumPatchDto.hidden` is the only `Boolean` among the `bodyAs` bodies. The non-goal "No change of the DTO
+  bodies decoded through `bodyAs`" stands, so this change leaves it as it is and drops the guard from
+  `LibraryApiTest`; a later package can make `bodyAs` strict for booleans (or switch the album body to `JsonFields`).
+- **`1e1` counts as the integer 10 (task 2.2).** kotlinx `intOrNull` reads an exponent, so the copies before this
+  change accepted `1e1` wherever an integer is checked, and JSON Schema's `integer` counts it as one as well.
+  `JsonFields.int` keeps that; `JsonFieldsTest` documents it, and `20.5` and `"20"` stay invalid.

@@ -8,6 +8,7 @@ import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import java.io.File
 import java.io.InputStream
 import java.net.SocketTimeoutException
@@ -81,6 +82,10 @@ class HttpRequest(
             throw HttpException.badRequest("Invalid body")
         }
     }
+
+    /** Reads the body as a JSON object, as [bodyJson] does; anything else is a 400 `bad_request` "Expected a JSON object". */
+    fun bodyObject(maxBytes: Long = MAX_JSON_BYTES): JsonObject =
+        bodyJson(maxBytes) as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
 
     fun bodyJson(maxBytes: Long = MAX_JSON_BYTES): JsonElement {
         val type = header("content-type")?.substringBefore(';')?.trim()?.lowercase()

@@ -11,7 +11,6 @@ import io.github.tycho991.openframe.core.sources.SourceErrorCodes
 import io.github.tycho991.openframe.core.sources.SourceRegistry
 import io.github.tycho991.openframe.core.sources.StoredSource
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 
 @Serializable
@@ -183,7 +182,7 @@ fun Router.sourcesRoutes(
 
     patch("/api/v1/sources/{sourceId}") { req ->
         val id = req.pathParam("sourceId")
-        val patch = req.bodyJson() as? JsonObject ?: throw HttpException.badRequest("Expected a JSON object")
+        val patch = req.bodyObject()
         HttpResponse.json(SourceDto.serializer(), dto(sources.patch(id, patch, req.clientId)))
     }
 

@@ -2,6 +2,8 @@ package io.github.tycho991.openframe.core.sources
 
 import io.github.tycho991.openframe.core.ValidationException
 import io.github.tycho991.openframe.core.http.HttpException
+import io.github.tycho991.openframe.core.http.JsonFields
+import io.github.tycho991.openframe.core.singleLine
 import io.github.tycho991.openframe.core.store.JsonStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,8 +13,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.intOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.net.URISyntaxException
@@ -176,15 +176,15 @@ class SourceConfigStore(
                 }
 
                 "enabled" -> {
-                    bool(value, key, errors)?.let { next = next.copy(enabled = it) }
+                    JsonFields.bool(value, key, errors)?.let { next = next.copy(enabled = it) }
                 }
 
                 "includeSubfolders" -> {
-                    bool(value, key, errors)?.let { next = next.copy(includeSubfolders = it) }
+                    JsonFields.bool(value, key, errors)?.let { next = next.copy(includeSubfolders = it) }
                 }
 
                 "removeVanished" -> {
-                    bool(value, key, errors)?.let { next = next.copy(removeVanished = it) }
+                    JsonFields.bool(value, key, errors)?.let { next = next.copy(removeVanished = it) }
                 }
 
                 "folder" -> {
@@ -192,11 +192,11 @@ class SourceConfigStore(
                 }
 
                 "intervalMinutes" -> {
-                    int(value, key, StoredSource.INTERVAL_MINUTES, errors)?.let { next = next.copy(intervalMinutes = it) }
+                    JsonFields.int(value, key, StoredSource.INTERVAL_MINUTES, errors)?.let { next = next.copy(intervalMinutes = it) }
                 }
 
                 "originalsBudgetMb" -> {
-                    int(value, key, StoredSource.BUDGET_MB, errors)?.let { next = next.copy(originalsBudgetMb = it) }
+                    JsonFields.int(value, key, StoredSource.BUDGET_MB, errors)?.let { next = next.copy(originalsBudgetMb = it) }
                 }
 
                 else -> {
@@ -239,30 +239,6 @@ class SourceConfigStore(
         store.save(StoredSources(sources = next))
     }
 
-    private fun bool(
-        value: JsonElement,
-        key: String,
-        errors: MutableMap<String, String>,
-    ): Boolean? =
-        (value as? JsonPrimitive)?.booleanOrNull ?: run {
-            errors[key] = "true or false"
-            null
-        }
-
-    private fun int(
-        value: JsonElement,
-        key: String,
-        range: IntRange,
-        errors: MutableMap<String, String>,
-    ): Int? {
-        val n = (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
-        if (n == null || n !in range) {
-            errors[key] = "${range.first} to ${range.last}"
-            return null
-        }
-        return n
-    }
-
     private fun folder(
         value: JsonElement,
         errors: MutableMap<String, String>,
@@ -296,10 +272,13 @@ class SourceConfigStore(
             return "/" + segments.joinToString("/")
         }
 
-        /** The name trimmed, or `null` if it is empty, too long or has control characters. */
+        /**
+         * The name on one line ([singleLine]: control characters become a space, then trimmed), or `null` if that is
+         * empty or too long (spec `remote-sources`, Source names on one line).
+         */
         fun normalizeName(raw: String): String? {
-            val name = raw.trim()
-            if (name.isEmpty() || name.length > StoredSource.NAME_MAX_LENGTH || name.any { it < ' ' }) return null
+            val name = singleLine(raw)
+            if (name.isEmpty() || name.length > StoredSource.NAME_MAX_LENGTH) return null
             return name
         }
 
