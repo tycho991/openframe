@@ -69,11 +69,11 @@ again before editing.
 
 ## 4. Unused i18n keys
 
-- [ ] 4.1 `webadmin/src/lib/i18n/unusedKeys.test.ts` per design decision 5 (`node:fs`, `*.ts` and `*.svelte` under
+- [x] 4.1 `webadmin/src/lib/i18n/unusedKeys.test.ts` per design decision 5 (`node:fs`, `*.ts` and `*.svelte` under
   `src/` without `*.test.ts`, quoted literals, prefixes from template literals and from `option("…"`). Verify: it fails
   on `main` naming exactly `common.retry` and `photos.source.nextcloud`, and a key added only to `en.json` and `de.json`
   for a moment is reported as well.
-- [ ] 4.2 Delete `common.retry` and `photos.source.nextcloud` from `en.json` and `de.json`. Verify: `npm test`
+- [x] 4.2 Delete `common.retry` and `photos.source.nextcloud` from `en.json` and `de.json`. Verify: `npm test`
   (`unusedKeys.test.ts` and `detect.test.ts` included), `npm run lint` and `npm run typecheck` are green.
 
 ## 5. HOME choice after an update
