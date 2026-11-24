@@ -21,9 +21,11 @@ again before editing.
   - `LibraryApiTest`: `{"hidden":"true"}` added to the table of invalid photo patches; `{"quarantined":"false"}` gives
     400 naming `quarantined`; `PATCH /albums` with `"hidden":"true"` gives 400 (already refused by `ApiJson`, kept as
     a guard);
-  - `PATCH /photos/{id}` with the body `[true]` gives 400 `bad_request` "Expected a JSON object".
+  - `PATCH /photos/{id}` with the body `[true]` gives 400 `bad_request` with the message "Expected a JSON object".
 
-  Verify: the sources cases fail on `main` (as contract violations or 200), the rest pass already.
+  Verify: the sources cases fail on `main` (as contract violations or 200). The `[true]` case fails on `main` only in
+  its message: today it answers 400 `bad_request` "Invalid body" (`Http.kt:70-82` through `LibraryRoutes.kt:325`),
+  and 2.3 changes that. The other cases pass already.
 - [ ] 2.2 `core/.../http/JsonFields.kt` with `internal object JsonFields` (`bool`, `int`, both taking the error map) and
   `HttpRequest.bodyObject()` in `http/Http.kt` (design decision 1). New `JsonFieldsTest`: `bool` for `true`, `false`,
   `"true"`, `"TRUE"`, `1`, `JsonNull`, `[]` and an object; `int` for `20`, `"20"`, `20.5`, `1e1`, both range limits and
@@ -78,18 +80,32 @@ again before editing.
   `HomeChoice.decide(record, installId, status, safeMode, displayShowing)` (design decision 6), `HomeApps.read(pm,
   own)` with `resolveActivity` and `queryIntentActivities` (`MATCH_DEFAULT_ONLY`), and the record in the
   `SharedPreferences` file `home_choice` (`"<installId>|pending"` or `"|done"`, written with `commit()`). New
-  `HomeChoiceTest` (plain JUnit, no Robolectric) with the table of design decision 8. Verify: the test passes;
-  `ManifestTest` and Lint stay green; no AndroidX import.
-- [ ] 5.2 Arming in `FrameApp.startCore`: after the core's start and `logHome`, write `pending` for the current
-  `installId` (`installId()` becomes `internal`) when `health.state.value.previousEnd == RunEnd.REPLACED` and no
-  record for it exists; a seam `homeApps: () -> HomeApps` like `coreFactory`. `BootReceiver`'s KDoc names the choice.
-  Verify, in `HomeChoiceOnDisplayTest` (Robolectric, light `TestCore`, `Health` from a `HealthState`): `REPLACED`
-  writes `pending`, `FIRST` and `REBOOTED` write nothing, a second start of the same installation keeps `done`
-  (`kiosk-host` › HOME choice after an update › Restart without an update).
-- [ ] 5.3 Opening in `DisplayActivity` (design decision 7): evaluated in `onResume` and on every change of
-  `core.display.state` and `core.display.dark` while resumed and the core is ready; on `OPEN` the record becomes `done`,
-  then `core.systemScreenOpened("home choice")`, the log line, and `startActivity` of the HOME intent;
-  `ActivityNotFoundException` closes the record. Verify, `HomeChoiceOnDisplayTest`:
+  `HomeChoiceTest` (plain JUnit, no Robolectric) with the table of design decision 8. `AndroidManifest.xml` gets an
+  `<intent>` with action `MAIN` and category `HOME` in `<queries>` (package visibility from Android 11, design decision
+  6), with a comment naming the spec; `ManifestTest` checks it. Verify: the tests pass; Lint stays green; no AndroidX
+  import. On an Android 17 emulator with a second launcher (main session, since Robolectric does not enforce package
+  visibility): with the other launcher preferred, the start's warning names it; with no preferred HOME app, the
+  warning names the system's resolver, and reinstalling the debug build with `adb install -r` opens the choice with
+  both launchers listed.
+- [ ] 5.2 Arming in `FrameApp.start(processName)`, synchronously, right after `journal.onProcessStart(…)`
+  (`FrameApp.kt:154`) and before anything else of the process runs (design decision 6, "Arming"). Write `pending` with
+  `commit()` for the `installId` passed to the journal when the result is `RunEnd.REPLACED` and no record for it
+  exists. If `commit()` returns false, log to Logcat and write nothing. Add the seams `homeApps: () -> HomeApps` and the
+  record's store, like `coreFactory`. `BootReceiver`'s KDoc names the choice. Verify, Robolectric:
+  - `REPLACED` writes `pending` before any core exists; `FIRST` and `REBOOTED` write nothing; a second start of the
+    same installation keeps `done` (`kiosk-host` › HOME choice after an update › Restart without an update);
+  - with a `coreFactory` whose core throws in `start()`, the record is still `pending` after `FrameApp.start`;
+  - a store whose write fails leaves no record and nothing opens later.
+- [ ] 5.3 Opening in `DisplayActivity` (design decisions 6 and 7): evaluated while resumed and the core is ready, once
+  when `core.ready` turns true, in `onResume`, and on every change of `core.display.state` and `core.display.dark`. On
+  `OPEN`, write `done` with `commit()`. Only if it returns true, call `core.systemScreenOpened("home choice")`, write
+  the log line and `startActivity` the HOME intent; otherwise log `HOME choice not opened: its record could not be
+  written` and open nothing. `ActivityNotFoundException` closes the system-screen record. Verify,
+  `HomeChoiceOnDisplayTest`:
+  - the activity is created and resumed before the core is ready; the core turns ready with the display on and no
+    later change of `DisplayState`: the choice opens at that moment, not at a later resume (› Choice after the update);
+  - the write of `done` fails: nothing is started and the health has no system-screen record;
+  - a dark wake: nothing; display off: nothing (› Dark wake after the update);
   - `ASKS` with the display on: the HOME intent is started, the record is `done`, the health shows an open
     system-screen record and the display is held (› Choice after the update; `kiosk-host` › HOME choice as a system
     screen › Short screen timeout under the choice);
@@ -103,19 +119,26 @@ again before editing.
     HOME preference lost).
 
   `UpdateRestartTest` and `AndroidSettingsMenuTest` pass unchanged. The choice uses the device menu's record, so the
-  existing `RunJournalTest` cases ("Ends under a system screen count as planned however many there are") cover
-  › Firmware ends the app under the choice; a `HomeChoiceOnDisplayTest` case checks that the next start with that
-  record finds the record `done` and opens nothing.
+  existing `RunJournalTest` cases ("Ends under a system screen count as planned however many there are", and the
+  learning within the minute) cover › Firmware ends the app under the choice and › Firmware ends the app right after
+  the choice opens. A `HomeChoiceOnDisplayTest` case checks that the next start with that record finds the record
+  `done` and opens nothing.
 - [ ] 5.4 README, section on the home screen (around line 68): after an update that lost the HOME preference, the
   frame opens Android's choice once; choose openframe with "Always". Verify: the text is there and names no device or
   household detail.
 
 ## 6. Install e2e and update polling
 
-- [ ] 6.1 `FakeAppInstaller.awaitCommitted(timeoutMs)` and `/update/answer` in `TestServerMain` waiting up to 5 s for a
-  committed open session, 409 without one (design decision 9). Verify: a new `TestServerMainTest` case with a fake
-  whose `createSession` pauses 300 ms answers `cancelled` right after `POST /update/install` and `GET /update` reports
-  `ready` with `install_cancelled` within 5 s; it fails before the change; the existing `TestServerMainTest` cases pass.
+- [ ] 6.1 `FakeAppInstaller.awaitCommitted(timeoutMs)` with `committed` as a `ConcurrentHashMap` and a monitor
+  signalled by `commit`, so the control thread sees a commit made on the core's IO thread. `/update/answer` in
+  `TestServerMain` waits up to 5 s and answers the open session committed last, or 409 without one. `TestServerMain`
+  gets an internal `installerFactory` used at start (:67) and on reset (:223) (design decision 9). Verify:
+  - a new `FakeAppInstallerTest`: `awaitCommitted` returns the newest of two committed open sessions, sees a commit
+    made on another thread, and returns `null` after the timeout when none is committed;
+  - a new `TestServerMainTest` case with a slow fake put in through `installerFactory` (its `createSession` pauses
+    300 ms after opening the session): `/update/answer?result=cancelled` right after `POST /update/install`, and
+    `GET /update` reports `ready` with `install_cancelled` within 5 s; it fails before the change;
+  - the existing `TestServerMainTest` cases pass.
 - [ ] 6.2 The update poll in `SettingsView.svelte` through a helper in `src/lib/update.ts` that schedules the next poll
   after every attempt with `updatePollMs(phase)` and stops when the view goes. Verify: a Vitest with fake timers in
   `update.test.ts` (a rejected load, then a successful one, then the next poll at the interval of the new phase);

@@ -46,7 +46,7 @@ Three loose ends are left after 0.14.0, and the owner wants them in one change a
 - **HOME choice after an update** (owner's decision). After a new installation has replaced an earlier one, the frame
   opens Android's HOME choice once if openframe is a HOME app but Android has no preferred HOME app and would ask.
   The person at the frame can then choose openframe with "Always". The frame does this only when the slideshow is in
-  front with the display on and outside safe mode. It does nothing when openframe or another app is the preferred
+  front with the display on, not in a dark wake and outside safe mode. It does nothing when openframe or another app is the preferred
   HOME app. It never opens the choice again for the same installation, whatever the answer. The choice counts as a
   system screen from the device menu: a planned end, the display held, the record withdrawn when the slideshow is
   back. The log line stays.
@@ -88,9 +88,11 @@ spec-level behaviour. The software section's polling after a failed request is a
     test server's `/update/answer` and `FakeAppInstaller`, with a `TestServerMainTest` case.
 - `android`:
   - `HomeChoice.kt` (new): the pure decision, reading the HOME apps and the record per installation.
-  - `FrameApp.kt` (arming after a replacing installation), `DisplayActivity.kt` (opening the choice, `serverState`,
-    `photoFolder`) and `BootReceiver.kt` (KDoc).
-  - Tests: `HomeChoiceTest` (plain JVM) and `HomeChoiceOnDisplayTest` (Robolectric, like `AndroidSettingsMenuTest`).
+  - `FrameApp.kt` (arming at the process start, right after the run journal), `DisplayActivity.kt` (opening the
+    choice, `serverState`, `photoFolder`), `BootReceiver.kt` (KDoc), and `AndroidManifest.xml` (a HOME intent in
+    `<queries>`, so that other launchers are visible from Android 11 on, which today's `logHome` needs as well).
+  - Tests: `HomeChoiceTest` (plain JVM), `HomeChoiceOnDisplayTest` (Robolectric, like `AndroidSettingsMenuTest`) and
+    `ManifestTest`.
 - `webadmin`: `src/lib/i18n/unusedKeys.test.ts` (new), `en.json` and `de.json` (two keys less), the update poll in
   `SettingsView.svelte` with a helper in `src/lib/update.ts`, and its Vitest.
 - No new texts on the frame: the HOME choice is Android's own dialog.

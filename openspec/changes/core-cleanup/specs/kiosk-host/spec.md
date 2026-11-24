@@ -9,12 +9,12 @@ After Android has replaced the app with a new version, the server SHALL be reach
 
 #### Scenario: HOME preference lost
 - **WHEN** Android drops openframe as the chosen HOME app while it installs an update, on a frame with Android 5 and a second HOME app
-- **THEN** the server answers again within 40 seconds, the log has a warning that openframe is not the HOME app, and Android's HOME choice appears over the slideshow
+- **THEN** the server answers again within 40 seconds, the log has a warning that openframe is not the HOME app, and Android's HOME choice appears over the slideshow once the slideshow is in front with the display on and outside a dark wake
 
 ## ADDED Requirements
 
 ### Requirement: HOME choice after an update
-After a new installation of openframe has replaced an earlier one, if openframe is a HOME app but Android has no chosen HOME app and would ask, the frame SHALL open Android's HOME choice, the first time the slideshow is in front with the display on, outside safe mode. It SHALL open it at most once per installation, whatever the answer, also across restarts. It SHALL NOT open it while openframe or another app is the chosen HOME app, nor after a first installation.
+After a new installation of openframe has replaced an earlier one, if openframe is a HOME app but Android has no chosen HOME app and would ask, the frame SHALL open Android's HOME choice, the first time the slideshow is in front with the display on, not in a dark wake and outside safe mode. It SHALL open it at most once per installation, whatever the answer, also across restarts. It SHALL NOT open it while openframe or another app is the chosen HOME app, nor after a first installation.
 
 #### Scenario: Choice after the update
 - **WHEN** Android dropped the HOME preference during an update on a frame with a second HOME app, and the slideshow appears with the display on
@@ -36,6 +36,10 @@ After a new installation of openframe has replaced an earlier one, if openframe 
 - **WHEN** another app is the chosen HOME app after the update
 - **THEN** no choice opens and the log has a warning that openframe is not the HOME app
 
+#### Scenario: Dark wake after the update
+- **WHEN** the frame restarts after the update during an off period and the display wakes dark for the network
+- **THEN** no choice opens, and the display goes off again as without an update
+
 #### Scenario: Display off after the update
 - **WHEN** the frame restarts after the update in an off period of the display schedule, with the display off
 - **THEN** no choice opens and the display stays off, and the choice opens once the display is on again with the slideshow in front, even after a device restart in between
@@ -49,7 +53,7 @@ After a new installation of openframe has replaced an earlier one, if openframe 
 - **THEN** no choice opens, and the log has a warning that openframe is not the HOME app
 
 ### Requirement: HOME choice as a system screen
-The frame SHALL handle the HOME choice it opens like a system screen from the device menu: it SHALL record a planned end before opening it, hold the display and withdraw the record when the slideshow is back in front (see "System screen from the device menu" and "Display while a system screen is open"). When the slideshow is back and openframe is still not the HOME app, the log SHALL say so.
+The HOME choice the frame opens SHALL count as a system screen from the device menu wherever this spec names one: a planned end recorded before it opens, the display held, no self-healing restart over it, the record withdrawn when the slideshow is back, and learning that the firmware ends the app. When the slideshow is back and openframe is still not the HOME app, the log SHALL say so.
 
 #### Scenario: Firmware ends the app under the choice
 - **WHEN** the app process ends without a Java crash while the HOME choice opened by the frame is in front
@@ -58,3 +62,7 @@ The frame SHALL handle the HOME choice it opens like a system screen from the de
 #### Scenario: Short screen timeout under the choice
 - **WHEN** the system's screen timeout is 30 seconds and nobody answers the HOME choice for 5 minutes
 - **THEN** the display stays on with the choice in front for the whole 5 minutes
+
+#### Scenario: Firmware ends the app right after the choice opens
+- **WHEN** the app process ends without a Java crash within a minute after the frame opened the HOME choice, and the app starts again
+- **THEN** the device menu no longer offers Android's settings, until the next installation of the app

@@ -90,6 +90,13 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
 
 ## Decisions
 
+### 0. Owner's defaults confirmed by the coordinator
+
+- When another app is the chosen HOME app after an update, the frame only logs (decision 6).
+- The rare extra opening on Android 10 and later (someone who just chose openframe "just once" through the Home key) is
+  accepted (Risks).
+- Source names are normalised with `singleLine` (decision 3).
+
 ### 1. `JsonFields`, taking the error map
 
 - **What:** `internal object JsonFields` in `core/http/JsonFields.kt`:
@@ -170,11 +177,17 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
 
 - **Test:** `webadmin/src/lib/i18n/unusedKeys.test.ts`, with `node:fs` like `errorCodes.test.ts`. It reads every
   `*.ts` and `*.svelte` under `src/` except `*.test.ts`. A key counts as used if it appears as a quoted literal
-  (`"key"`, `'key'` or `` `key` ``), or starts with a dynamic prefix. Prefixes come from the source itself:
-  template literals `` `prefix.${ `` (today `update.error.`, `update.phase.`, `update.result.`,
-  `settings.brightnessMode.`, `settings.language.`, `settings.display.`, `settings.clockFormat.`, `displaySchedule.`)
-  and the first argument of `option("prefix", …)` in `SettingsView.svelte` (`settings.order`, `.transition`,
-  `.fillMode`, `.orientation`, `.corner`). No list by hand.
+  (`"key"`, `'key'` or `` `key` ``), or starts with a dynamic prefix. Prefixes come from the source itself, and only
+  from places that build a translation key:
+  - template literals inside a `t(` or `tOr(` call, `` t(`prefix.${ `` and `` tOr(`prefix.${ `` (today
+    `update.error.`, `update.phase.` and `update.result.` in `SettingsView.svelte`, `settings.fillMode.` in
+    `PhotoDetail.svelte:167`);
+  - the first argument of `option("prefix", …)` in `SettingsView.svelte` (today `settings.order`, `.transition`,
+    `.fillMode`, `.orientation`, `.corner`, `.brightnessMode`, `.clockFormat`, `.display` and `.language`), whose
+    helper builds `` tOr(`${prefix}.${value}`) `` (:267).
+
+  Other template literals do not count: `` `displaySchedule.${day}.${edge}` `` (:470, :487) is a field path of the API,
+  not a key. A fully dynamic key without a literal prefix, such as the helper's own, adds nothing. No list by hand.
 - **The test fails with the unused keys named**, so a new dynamic key that the patterns miss is fixed in the pattern,
   not by deleting the key.
 - **Probe on `main`:** 420 keys, two unused: `common.retry` and `photos.source.nextcloud`. Both are deleted from
@@ -186,11 +199,29 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   `installId`. The journal decides this at every process start, whichever component Android starts first, and the
   display already reads the app's health; `MY_PACKAGE_REPLACED` is only one of the ways the first start comes about.
 - **Record per installation:** a small `SharedPreferences` file of `:android` (`home_choice`, framework API, no
-  AndroidX) with one value, `"<installId>|pending"` or `"<installId>|done"`. `FrameApp.startCore`, after the core's
-  start and `logHome`, writes `pending` for the current `installId` when this start is `REPLACED` and no record for
-  this `installId` exists. A first installation (`RunEnd.FIRST`) writes nothing.
+  AndroidX) with one value, `"<installId>|pending"` or `"<installId>|done"`. A first installation (`RunEnd.FIRST`)
+  writes nothing.
+- **Arming, before anything else runs:** `FrameApp.start(processName)` writes `pending` for the `installId` it has just
+  handed to the journal, right after `journal.onProcessStart(…)` (`FrameApp.kt:154`) returns `REPLACED` and when no
+  record for this `installId` exists. Android creates the `Application` before any service, receiver or activity of
+  the process, so the record exists before the display can evaluate it. This matters because `FrameCore.start()` sets
+  `ready` (`FrameCore.kt:469`) before it awaits the first server bind (:499-502), and `DisplayActivity.attach` waits
+  only for `ready` (`DisplayActivity.kt:338`). Arming after `core.start()` returns would let the display evaluate
+  first and find no record. A `core.start()` that throws would also lose the arming, and the next start would be
+  `CRASHED`, not `REPLACED`. The write is synchronous (`commit()`) on the main thread, next to the journal's own
+  synchronous write of `runs.json` at the same place. If `commit()` returns false, `start` logs to Logcat and leaves
+  no record, and the choice does not open for this installation (fail closed).
+- **Rejected alternative:** a record the display observes as a flow. With the arming in `start`, the value is final
+  before the display exists, so there is nothing to observe.
 - **HOME state:** `HomeApps.read(pm, ownPackage)` resolves `MAIN`/`HOME` (as `homePackage` does) and lists the
-  candidates through `queryIntentActivities(…, MATCH_DEFAULT_ONLY)`. The pure function
+  candidates through `queryIntentActivities(…, MATCH_DEFAULT_ONLY)`.
+- **Package visibility:** openframe targets SDK 36. From Android 11 on, `queryIntentActivities` and `resolveActivity`
+  see only the apps the manifest declares in `<queries>`, and today's `<queries>` (`AndroidManifest.xml:24-29`) has
+  no HOME intent. Other launchers would then be missing from the candidates, so `ASKS` could never come about. A
+  hidden preferred launcher might also resolve as openframe (`OWN`), which already breaks today's `logHome` warning.
+  The manifest gets `<intent>` with action `MAIN` and category `HOME` in `<queries>`, and `ManifestTest` checks it.
+  Robolectric does not enforce package visibility, so the main session checks it on an Android 17 emulator with a
+  second launcher (task 5.1). The pure function
   `HomeChoice.status(resolved, candidates, own)` gives:
   - `OWN`: openframe is the preferred or the only HOME app;
   - `OTHER`: another candidate resolves, so another app is preferred (or is the only one, if openframe is disabled as a
@@ -205,12 +236,23 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
     `logHome` already);
   - `ASKS`, but in safe mode, or the display off or in a dark wake, or the slideshow not in front: `WAIT`;
   - `ASKS` otherwise: `OPEN`.
-- **Where it is evaluated:** in `DisplayActivity`, only while it is resumed and its core is ready: in `onResume`, and
-  from the activity's scope on every change of `core.display.state` and `core.display.dark`. Starting an activity is
+- **Where it is evaluated:** in `DisplayActivity`, only while it is resumed and its core is ready: once when
+  `core.ready` turns true (the collectors of `core.display.state` and `core.display.dark`, started after `ready` in
+  `attach`, emit their current value at once), in `onResume` when the core is ready, and on every later change of
+  those two flows. The record is already there at all of these moments (see "Arming"). Starting an activity is
   allowed there on every Android version, also from Android 10 on, where a background start is not.
-- **At most once:** before `startActivity`, the record becomes `done` with a synchronous `commit()`. A dismissal, "just
-  once", another launcher, a crash or a firmware end under the choice cannot lead to a second opening for this
-  installation. Only the next installation arms it again.
+- **At most once:** on `OPEN`, the record becomes `done` with `commit()`, and only if `commit()` returns true does the
+  activity record the system screen and start the choice. If it returns false, the activity logs `HOME choice not
+  opened: its record could not be written`, opens nothing and leaves the record as it was. A later evaluation may try
+  again, but it opens only after a successful write, so storage that cannot be written never shows the choice. A
+  dismissal, "just once", another launcher, a crash or a firmware end under the choice therefore cannot lead to a
+  second opening for this installation. Only the next installation arms it again.
+- **The write on the main thread:** one write of a few bytes, once per installation, directly before `startActivity`,
+  which must come after it. The device menu already does the same: `FrameCore.systemScreenOpened` writes the journal
+  synchronously (`AtomicFile` with `fsync`) on the main thread just before it starts a system screen. Moving the write
+  to a background thread would need the activity to check again, after the write, that it is still resumed. If it is
+  not, the record would already be `done` with nothing shown, or it would have to be written back. That costs more
+  than it saves.
 - **Why the display condition:** the system-screen hold (decision 7) would otherwise switch the display on in an off
   period, and a choice nobody can see helps nobody. With `pending` kept across restarts, the choice still comes the
   next time the display is on.
@@ -228,8 +270,8 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
 - **Opening:** `core.systemScreenOpened("home choice")`, then `startActivity(Intent(ACTION_MAIN).addCategory(
   CATEGORY_HOME).addFlags(FLAG_ACTIVITY_NEW_TASK))`, which Android answers with its resolver because no app is
   preferred. Picking "Always" there sets the preferred activity, as after a Home key press. An
-  `ActivityNotFoundException` closes the record again (`systemScreenClosed`) and is logged, like
-  `openAndroidSettings`. Log line: `Opening Android's HOME choice after the update: no HOME app is chosen`.
+  `ActivityNotFoundException` closes the system-screen record again (`systemScreenClosed`) and is logged, like
+  `openAndroidSettings`; the `home_choice` record stays `done`. Log line: `Opening Android's HOME choice after the update: no HOME app is chosen`.
 - **System screen:** the existing record gives a planned end if the firmware ends the app under the choice, renewed
   for 10 minutes at each start; it keeps the self-healing restart from bringing the display back over the choice; and
   the display hold keeps the display on for 10 minutes with a short system timeout. When the time is up, the display
@@ -239,9 +281,14 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   because the screen was opened in this run, `finishSystemScreen` calls `logHome`. So "just once" and a dismissal log
   the warning again, and "always" logs nothing. If the person picks the other launcher, the slideshow stays in the
   background until someone brings it back; the record expires after 10 minutes as for the device menu.
-- **Learning about the firmware:** a start within a minute after the record, without a Java crash, teaches the journal
-  that the firmware ends the app when another activity starts (`systemScreenEndsApp`), and the device menu then hides
-  Android's settings. That is correct for such a device and is reset by the next installation.
+- **Learning about the firmware (decided: the choice teaches it):** a start within a minute after the record, without
+  a Java crash, teaches the journal that the firmware ends the app when another activity starts
+  (`systemScreenEndsApp`, `RunJournal.kt:127-135`). The device menu then hides Android's settings until the next
+  installation. That is right: such a device ends the app for any activity, and the settings would end it as well.
+  Keeping the choice from teaching would need a second kind of record for no gain. The spec says so in "HOME choice as
+  a system screen": the choice counts as a system screen from the device menu wherever `kiosk-host` names one,
+  including "Self-healing" and "Android settings hidden where the firmware ends the app". So those two requirements
+  keep their text; both are close to 500 characters, and a MODIFIED copy with one more clause would be over.
 - **No new texts:** the dialog is Android's; the frame shows nothing of its own.
 
 ### 8. HOME choice: tests on the JVM
@@ -250,9 +297,15 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   package, vendor resolver package, openframe preferred, another app preferred, only openframe, openframe not a
   candidate) and over `decide` (no record, `pending` of another installation, `done`, safe mode, display off, dark
   wake, not resumed, each status).
+- **Arming** (Robolectric): `FrameApp.start("…")` with a journal whose previous run has another `installId` writes
+  `pending` before any core exists; with `FIRST` or the same installation it writes nothing; with a `coreFactory` whose
+  core throws in `start()`, the record is still `pending` after `start`.
 - **`HomeChoiceOnDisplayTest`** (Robolectric, like `AndroidSettingsMenuTest`): `FrameApp` gets a seam `homeApps: () ->
-  HomeApps` (as `coreFactory`), because Robolectric cannot produce Android's resolver. With a `Health` whose state is
-  `REPLACED` and a light `TestCore`:
+  HomeApps` (as `coreFactory`), because Robolectric cannot produce Android's resolver, and a seam for the record's
+  write result. With a `Health` whose state is `REPLACED` and a light `TestCore`:
+  - the display is created and resumed before the core is ready; the core turns ready with the display on and no
+    later change of `DisplayState`: the choice opens at that moment, not at a later resume;
+  - the write of `done` fails: nothing is started and no system-screen record is made;
   - `ASKS` and the display on: the next started activity is the HOME intent, the record is `done`, the health has an
     open system-screen record and the display hold is set;
   - resuming again, and a new `DisplayActivity` with the same `installId`: nothing more is started;
@@ -263,6 +316,7 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   - back in front after the choice with `ASKS` still: one warning `openframe is not the HOME app (android)`, and the
     record and hold are withdrawn.
 - **`UpdateRestartTest`** keeps its two log tests unchanged.
+- **`ManifestTest`**: `<queries>` contains an `<intent>` with action `MAIN` and category `HOME`.
 
 ### 9. Install e2e: answer only an open dialog
 
@@ -270,6 +324,15 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   committed (its `commit` has run), as Android shows the dialog only then. `/update/answer` in `TestServerMain` waits
   for it up to 5 seconds and answers that session; without one it answers 409 "No installation dialog is open", so the
   e2e fails at the step that is wrong instead of 10 seconds later. `confirmed` waits the same way.
+- **Thread safety:** `commit` runs on the core's IO thread, `/update/answer` on the control server's thread. Today
+  `committed` is a plain `mutableMapOf` (`FakeAppInstaller.kt:37`). It becomes a `ConcurrentHashMap`, and committing
+  signals a monitor (`synchronized` with `wait`/`notifyAll`) that `awaitCommitted` waits on with its deadline.
+- **Which session:** the open session committed last. `UpdateManager` keeps one dialog at a time, so normally there is
+  exactly one. An older session that is still open because nobody answered it is skipped, as Android would show only
+  the newest dialog. `openSession()` (`open.single()`) is no longer used by the route.
+- **Seam:** `TestServerMain` creates its installer privately, at start (`TestServerMain.kt:67`) and on reset (:223). It
+  gets an internal `installerFactory: () -> FakeAppInstaller`, used at both places, so the test can put in a slow
+  fake.
 - **Proof:** a `TestServerMainTest` case with a fake whose `createSession` pauses 300 ms after opening the session,
   which widens the window: `POST /update/install`, then at once `/update/answer?result=cancelled`, then `GET /update`
   reports `ready` with the error `install_cancelled` within 5 seconds. Before the fix it fails, with a 500 from
@@ -310,7 +373,8 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
 - One implementation pull request, title in Conventional Commits (for example `feat: HOME choice after an update,
   strict source patches and core cleanup`), shipped through the updater in one release. Its body has the release-note
   line of decision 2.
-- No data migration. The `home_choice` preference file is new; an older version ignores it. On a downgrade the record
-  of the newer installation no longer matches, so nothing opens.
+- No data migration. The `home_choice` preference file is new; a version without this change ignores it. A downgrade
+  to an older version that has this change is a new installation too (`REPLACED`, another `installId`). It arms and
+  behaves like an update, which is harmless.
 - Rollback: revert the pull request. Nothing stored needs to change back.
 - After the release, the main session runs the device rows privately (tasks group 8).
