@@ -20,11 +20,17 @@
 
     <!-- From API 30 the package manager shows other apps only when they are declared here (spec `kiosk-host`, "Android
          settings from the device menu"): the Frameo's frame app for the firmware check, and Android's settings for the
-         device menu's entry. -->
+         device menu's entry. The HOME intent makes the other launchers visible (spec `kiosk-host`, "HOME choice after an
+         update" and "Restart after an update"): without it Android 11 and later would hide them, so the frame could
+         neither tell that Android asks nor name another preferred HOME app in its warning. -->
     <queries>
         <package android:name="net.frameo.frame" />
         <intent>
             <action android:name="android.settings.SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
 

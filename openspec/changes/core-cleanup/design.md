@@ -391,3 +391,11 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
 - **`1e1` counts as the integer 10 (task 2.2).** kotlinx `intOrNull` reads an exponent, so the copies before this
   change accepted `1e1` wherever an integer is checked, and JSON Schema's `integer` counts it as one as well.
   `JsonFields.int` keeps that; `JsonFieldsTest` documents it, and `20.5` and `"20"` stay invalid.
+- **Dark wake on the display (tasks 5.3, decision 8).** A light core cannot enter a real dark wake in Robolectric: it
+  needs an off period, a lost network and ten minutes on the monotonic clock. A dark wake reports the display off in
+  `DisplayController.state` and sets `dark`, and the display treats "on and not dark" as showing. So
+  `HomeChoiceOnDisplayTest` covers the display reported off (a fake `DisplayPower` switched by the system), and
+  `HomeChoiceTest` covers `decide` with the display not showing; the device rows check a real dark wake.
+- **A core that fails to start (task 5.2).** `FrameApp.start` never starts the core (the service does, later), so the
+  test lets `coreFactory` throw and runs the start through `FrameApp.startLogged` after `FrameApp.start`: the record
+  stays `pending`.

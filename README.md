@@ -67,6 +67,11 @@ the debug build on a frame you control, and once releases exist, never install i
 openframe has its own package ID, so it can be installed next to another kiosk app. To have it appear by itself
 after a restart, choose it as the home screen (HOME) in the Android settings.
 
+On some devices with a second home screen app, Android forgets the chosen home screen while it installs an update.
+After such an update the frame opens Android's home screen choice once, as soon as the slideshow is in front with the
+display on: choose openframe there with "Always". The frame never opens it again for the same version, and it opens
+nothing while openframe or another app is the chosen home screen.
+
 ## Updates
 
 A frame running an official release finds new versions by itself. Builds signed with another key never look for

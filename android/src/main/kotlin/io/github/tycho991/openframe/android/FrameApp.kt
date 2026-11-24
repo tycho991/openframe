@@ -76,6 +76,16 @@ class FrameApp : Application() {
 
     private val coreHolder = lazy { coreFactory() }
 
+    /** The HOME state; a test puts in one that Robolectric cannot produce, such as Android's resolver. */
+    internal var homeApps: () -> HomeApps = { HomeApps.read(packageManager, packageName) }
+
+    /** The record of the HOME choice per installation; a test may put in one whose writes fail. */
+    internal var homeChoiceStore: HomeChoice.Store = HomeChoice.PrefsStore(this)
+
+    /** The installation this process runs, as handed to the journal in [start]: version code and `lastUpdateTime`. */
+    @Volatile internal var installId: String = ""
+        private set
+
     /** The run journal of the app process (`state/health/runs.json`), started in [onCreate] before the core exists. */
     internal val journal: RunJournal by lazy { RunJournal(File(filesDir, "state/health/runs.json")) }
 
@@ -152,13 +162,28 @@ class FrameApp : Application() {
             }),
         )
         bootId = bootId()
-        startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId, installId())
+        installId = readInstallId()
+        startState = journal.onProcessStart(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId, installId)
+        armHomeChoice(startState.previousEnd)
         restartDelayAfter(startState)?.let { delayMs ->
             try {
                 scheduleRestart(this, delayMs)
             } catch (e: Exception) {
                 Log.w("openframe/app", "Scheduling the display after an unexplained end failed", e)
             }
+        }
+    }
+
+    /**
+     * Arms the HOME choice for a new installation, synchronously and before anything else of the process runs, so the
+     * record is there before the display can evaluate it (design decision 6 of `core-cleanup`, "Arming"). A record
+     * that cannot be written leaves the choice closed for this installation.
+     */
+    private fun armHomeChoice(previousEnd: RunEnd) {
+        val store = homeChoiceStore
+        if (!HomeChoice.arms(previousEnd, HomeChoice.Record.parse(store.read()), installId)) return
+        if (!store.write(HomeChoice.Record(installId, done = false).encode())) {
+            Log.w("openframe/app", "HOME choice not armed: its record could not be written")
         }
     }
 
@@ -171,7 +196,7 @@ class FrameApp : Application() {
         }
 
     /** Version code and `lastUpdateTime`: a debug build has the version code of the release it was built from. */
-    private fun installId(): String =
+    private fun readInstallId(): String =
         try {
             val info = packageManager.getPackageInfo(packageName, 0)
 

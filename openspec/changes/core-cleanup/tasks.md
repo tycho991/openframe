@@ -89,7 +89,8 @@ again before editing.
   visibility): with the other launcher preferred, the start's warning names it; with no preferred HOME app, the
   warning names the system's resolver, and reinstalling the debug build with `adb install -r` opens the choice with
   both launchers listed.
-- [ ] 5.2 Arming in `FrameApp.start(processName)`, synchronously, right after `journal.onProcessStart(…)`
+  *(Implemented and tested except the Android 17 emulator check, which the main session runs; tick 5.1 after it.)*
+- [x] 5.2 Arming in `FrameApp.start(processName)`, synchronously, right after `journal.onProcessStart(…)`
   (`FrameApp.kt:154`) and before anything else of the process runs (design decision 6, "Arming"). Write `pending` with
   `commit()` for the `installId` passed to the journal when the result is `RunEnd.REPLACED` and no record for it
   exists. If `commit()` returns false, log to Logcat and write nothing. Add the seams `homeApps: () -> HomeApps` and the
@@ -98,7 +99,7 @@ again before editing.
     same installation keeps `done` (`kiosk-host` › HOME choice after an update › Restart without an update);
   - with a `coreFactory` whose core throws in `start()`, the record is still `pending` after `FrameApp.start`;
   - a store whose write fails leaves no record and nothing opens later.
-- [ ] 5.3 Opening in `DisplayActivity` (design decisions 6 and 7): evaluated while resumed and the core is ready, once
+- [x] 5.3 Opening in `DisplayActivity` (design decisions 6 and 7): evaluated while resumed and the core is ready, once
   when `core.ready` turns true, in `onResume`, and on every change of `core.display.state` and `core.display.dark`. On
   `OPEN`, write `done` with `commit()`. Only if it returns true, call `core.systemScreenOpened("home choice")`, write
   the log line and `startActivity` the HOME intent; otherwise log `HOME choice not opened: its record could not be
@@ -125,7 +126,7 @@ again before editing.
   learning within the minute) cover › Firmware ends the app under the choice and › Firmware ends the app right after
   the choice opens. A `HomeChoiceOnDisplayTest` case checks that the next start with that record finds the record
   `done` and opens nothing.
-- [ ] 5.4 README, section on the home screen (around line 68): after an update that lost the HOME preference, the
+- [x] 5.4 README, section on the home screen (around line 68): after an update that lost the HOME preference, the
   frame opens Android's choice once; choose openframe with "Always". Verify: the text is there and names no device or
   household detail.
 
