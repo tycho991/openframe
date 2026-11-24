@@ -19,6 +19,9 @@ Three loose ends are left after 0.14.0, and the owner wants them in one change a
 - **Flaky Firefox e2e.** `update.spec.ts` › "Install on the frame: …" sometimes does not show the cancelled text
   within 10 s; a rerun passes. The test server can hand the dialog's answer to the fake installer before the core has
   linked the session to its dialog. The core then drops the answer as "not the open dialog".
+- **Flaky WebKit e2e.** `update.spec.ts` › "A version change reloads on the photo page as well" polls a marker with
+  `page.evaluate` while the page reloads; an evaluate that runs during the navigation fails with "Execution context
+  was destroyed" instead of being polled again.
 
 ## What Changes
 
@@ -53,7 +56,8 @@ Three loose ends are left after 0.14.0, and the owner wants them in one change a
 - **Flaky install e2e.** The test server answers the installation dialog only once the fake installer has the session
   committed to the open dialog, as on Android. It answers 409 if no dialog opens within a few seconds. The software
   section keeps polling after a failed request, which the spec ("follow changes as in Current state") already
-  requires.
+  requires. The reload test treats an evaluate that fails during the navigation as "not reloaded yet" and polls
+  again.
 - **Not in this change:** owner and guest roles, a later "retry failed" button, a numbers helper for the crop, and the
   `limit` query parsing.
 

@@ -144,6 +144,10 @@ again before editing.
   `update.test.ts` (a rejected load, then a successful one, then the next poll at the interval of the new phase);
   `npm run e2e` with an own `OPENFRAME_E2E_PORT` passes `update.spec.ts` in all configured browsers, and the install
   test passes ten runs in a row in Firefox (`--project=firefox --repeat-each=10`).
+- [ ] 6.3 In `update.spec.ts` › "A version change reloads on the photo page as well", the marker poll catches an
+  evaluate that fails because the page is navigating ("Execution context was destroyed") and returns a value that
+  keeps polling; any other error still fails the test. Verify: the test passes ten runs in a row in WebKit
+  (`--project=webkit --repeat-each=10`).
 
 ## 7. Checks
 
