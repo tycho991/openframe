@@ -103,7 +103,7 @@ class PairingManager(
 
     /** Whether someone can see the screen: the display is on and not in a dark wake. `FrameCore` feeds it. */
     @Synchronized
-    fun setScreenUsable(usable: Boolean) {
+    internal fun setScreenUsable(usable: Boolean) {
         screenUsable = usable
         refresh()
     }
@@ -114,17 +114,17 @@ class PairingManager(
      * locked or paused it shows the QR code alone.
      */
     @Synchronized
-    fun requestDisplay() {
+    internal fun requestDisplay() {
         requestedUntil = clock.monotonicMillis() + REQUEST_WINDOW.toMillis()
         refresh()
     }
 
     /** Once per second: replace expired sessions, close the request window. */
     @Synchronized
-    fun tick() = refresh()
+    internal fun tick() = refresh()
 
-    /** Checks the six-digit [input] and creates a client on success. Returns token and client. */
-    fun pair(
+    /** Checks the six-digit [input] and creates a client on success. Returns token and client. Blocks on fsync; never call on the main thread. */
+    internal fun pair(
         input: String,
         deviceName: String,
     ): Pair<String, StoredClient> {
@@ -149,9 +149,9 @@ class PairingManager(
     /**
      * Checks a secret from the frame's QR code or from an invitation and creates
      * a client on success. Not subject to the lockout or the budget, and a wrong
-     * secret is no failed attempt.
+     * secret is no failed attempt. Blocks on fsync; never call on the main thread.
      */
-    fun pairWithSecret(
+    internal fun pairWithSecret(
         input: String,
         deviceName: String,
     ): Pair<String, StoredClient> {
@@ -186,7 +186,7 @@ class PairingManager(
      * one. [baseUrl] is the admin address the link points to, ending with `/`.
      */
     @Synchronized
-    fun createInvite(
+    internal fun createInvite(
         clientId: String,
         baseUrl: String,
     ): CreatedInvite {
@@ -197,13 +197,13 @@ class PairingManager(
 
     /** The pairing of [clientId] was revoked: its invitation ends. */
     @Synchronized
-    fun dropInvite(clientId: String) {
+    internal fun dropInvite(clientId: String) {
         invites.remove(clientId)
     }
 
     /** Discards session and invitations, e.g. after "Revoke all pairings", and shows a new session. */
     @Synchronized
-    fun reset() {
+    internal fun reset() {
         code = null
         secret = null
         lastExpiredCode = null

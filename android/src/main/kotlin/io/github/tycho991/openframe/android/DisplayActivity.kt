@@ -351,7 +351,7 @@ class DisplayActivity : Activity() {
             launch { core.update.state.collect { updateHint() } }
             launch { followDark(core.display.dark) }
             launch {
-                combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
+                combine(core.settings.localOnly, core.serverState) { _, _ -> }.collect {
                     syncPairingShown()
                     updateHint()
                     updateEmpty()
@@ -528,7 +528,7 @@ class DisplayActivity : Activity() {
 
     /** Why there is no address to show: no network, or the port could not be bound (spec "Server port unavailable"). */
     private fun unreachable(c: FrameCore) =
-        if (c.server.state.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
+        if (c.serverState.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
 
     /** Safe mode: the empty state as a static notice with the address, the pairing code while nobody is paired. */
     private fun showSafeMode() {
@@ -543,14 +543,14 @@ class DisplayActivity : Activity() {
         val c = core ?: return
         val address = c.adminUrl()
         val reachable = address != null && !c.settings.localOnly.value
-        val portTaken = c.server.state.value is ServerState.Failed
+        val portTaken = c.serverState.value is ServerState.Failed
         if (safeMode) {
             emptyBody.text = if (reachable) text(R.string.safe_body, address!!) else text(R.string.safe_body_unreachable)
             updateEmptyPairing(c)
             return
         }
         // The real folder: on shared storage as USB shows it; the internal one is not reachable over USB at all.
-        val root = c.localSource.root
+        val root = c.photoFolder
         val shared = Environment.getExternalStorageDirectory()
         emptyBody.text =
             if (root.absolutePath.startsWith(filesDir.absolutePath)) {

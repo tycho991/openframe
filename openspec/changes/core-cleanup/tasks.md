@@ -49,19 +49,19 @@ again before editing.
 
 ## 3. Visibility in `:core`
 
-- [ ] 3.1 `FrameCore` (design decision 4): `signer`, `localSource`, `trash`, `sources`, `nextcloud`, `cache`, `library`,
+- [x] 3.1 `FrameCore` (design decision 4): `signer`, `localSource`, `trash`, `sources`, `nextcloud`, `cache`, `library`,
   `places`, `visiblePhotos`, `router`, `server`, `reserveBytes` and `requestScan` become `internal`; new public
   `serverState` and `photoFolder`; `DisplayActivity` uses them instead of `server.state` (:354, :531, :546) and
   `localSource.root` (:553). `requestScan` gets the KDoc of decision 4. Verify: `./gradlew check` with the Android SDK
   from `local.properties` (so `:android` compiles) is green; `ScanCadenceTest` and `FrameCoreTest` pass.
-- [ ] 3.2 `HttpRequest.clientId` with `internal set` and the KDoc "Set only by `HttpPipeline`"; `ClientRegistry`'s
+- [x] 3.2 `HttpRequest.clientId` with `internal set` and the KDoc "Set only by `HttpPipeline`"; `ClientRegistry`'s
   `load`, `create`, `authenticate`, `remove`, `rename`, `removeAll`, `flush` and `PairingManager`'s `setScreenUsable`,
   `requestDisplay`, `tick`, `pair`, `pairWithSecret`, `createInvite`, `dropInvite`, `reset` become `internal`; the
   fsync KDoc on `ClientRegistry.create`, `remove`, `rename`, `removeAll`, `PairingManager.pair`, `pairWithSecret`,
   `ImageSigner.rotate`, `load` and `PairingAdmin.resetAll`. Verify: `./gradlew check` with the SDK is green; locally,
   without committing, a call of `core.signer.rotate()`, `core.clients.removeAll()` or `core.pairing.pair(…)` in
   `DisplayActivity` does not compile.
-- [ ] 3.3 `UpdateManager.check`, `start`, `networkChanged` and `flush` and `SlideshowController.start`, `setPaused`,
+- [x] 3.3 `UpdateManager.check`, `start`, `networkChanged` and `flush` and `SlideshowController.start`, `setPaused`,
   `setResting` and `control` become `internal`; `state`, `current()`, `install()` and `onInstallResult()` and the
   display's slideshow members stay public. Verify: `UpdateApiTest`, `SlideshowControllerTest`, `SlideshowApiTest`,
   the `:android` unit tests (`UpdateOnDisplayTest`, `UpdateRestartTest`, `AndroidSettingsMenuTest`) and

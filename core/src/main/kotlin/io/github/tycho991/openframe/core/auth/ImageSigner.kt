@@ -39,6 +39,7 @@ class ImageSigner(
     /**
      * Loads the key, or creates a new one at the first start or when `secret.json` cannot be read. A new key that
      * cannot be written at once, for example on a full disk, is queued for writing, so the start goes on.
+     * Blocks on fsync; never call on the main thread.
      */
     @Synchronized
     fun load() {
@@ -58,6 +59,7 @@ class ImageSigner(
     /**
      * New key: all signatures issued so far become invalid at once. Stored with [JsonStore.saveCritical], so that no
      * earlier signature is valid after a restart, even on a full disk; if even that fails, the key is queued.
+     * Blocks on fsync; never call on the main thread.
      */
     @Synchronized
     fun rotate() {

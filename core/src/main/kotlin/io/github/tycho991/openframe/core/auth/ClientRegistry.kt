@@ -59,16 +59,17 @@ class ClientRegistry(
 
     val clients: StateFlow<List<StoredClient>> = _clients.asStateFlow()
 
-    fun load() {
+    internal fun load() {
         _clients.value = store.load()?.clients ?: emptyList()
     }
 
     /**
      * Creates a client and returns its token. It cannot be retrieved afterwards. The client is
      * published only once it is stored; if storing fails, nothing changes and the exception is passed on.
+     * Blocks on fsync; never call on the main thread.
      */
     @Synchronized
-    fun create(
+    internal fun create(
         name: String,
         pairedVia: String? = null,
         invitedBy: String? = null,
@@ -82,7 +83,7 @@ class ClientRegistry(
     }
 
     /** The client for the token or `null`. Remembers when it was last seen (accurate to a minute). */
-    fun authenticate(token: String): StoredClient? {
+    internal fun authenticate(token: String): StoredClient? {
         val h = hash(token)
         val client =
             _clients.value.firstOrNull { MessageDigest.isEqual(it.tokenHash.toByteArray(), h.toByteArray()) } ?: return null
@@ -95,18 +96,18 @@ class ClientRegistry(
         return client
     }
 
-    /** Revokes a pairing. The token becomes invalid immediately, even if storing fails. */
+    /** Revokes a pairing. The token becomes invalid immediately, even if storing fails. Blocks on fsync; never call on the main thread. */
     @Synchronized
-    fun remove(id: String): Boolean {
+    internal fun remove(id: String): Boolean {
         val remaining = _clients.value.filterNot { it.id == id }
         if (remaining.size == _clients.value.size) return false
         update(remaining, Persist.AFTER_PUBLISH)
         return true
     }
 
-    /** Renames a paired device. Returns the renamed client or `null` for an unknown [id]. */
+    /** Renames a paired device. Returns the renamed client or `null` for an unknown [id]. Blocks on fsync; never call on the main thread. */
     @Synchronized
-    fun rename(
+    internal fun rename(
         id: String,
         name: String,
     ): StoredClient? {
@@ -116,12 +117,13 @@ class ClientRegistry(
         return renamed
     }
 
+    /** Revokes every pairing. Blocks on fsync; never call on the main thread. */
     @Synchronized
-    fun removeAll() {
+    internal fun removeAll() {
         update(emptyList(), Persist.AFTER_PUBLISH)
     }
 
-    suspend fun flush() = store.flush()
+    internal suspend fun flush() = store.flush()
 
     /** When a change is written relative to the moment it takes effect. */
     private enum class Persist {

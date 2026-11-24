@@ -50,8 +50,9 @@ class HttpRequest(
     var pathParams: Map<String, String> = emptyMap()
         internal set
 
-    /** The authenticated client, set by the auth filter. */
+    /** The authenticated client. Set only by `HttpPipeline`. */
     var clientId: String? = null
+        internal set
 
     fun header(name: String): String? = headers[name.lowercase()]
 

@@ -215,13 +215,13 @@ class FrameCore(
         )
 
     val clients = ClientRegistry(JsonStore(File(dirs.state, "clients.json"), StoredClients.serializer(), scope, log), clock)
-    val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
+    internal val signer = ImageSigner(JsonStore(File(dirs.state, "secret.json"), StoredSecret.serializer(), scope, log), clock)
     val pairing = PairingManager(clients, clock, log, ::adminUrl)
     private val admin = PairingAdmin(clients, signer, pairing, log)
 
     /** The storage reserve of the data volume, computed once from the cache folder (design decision 1 of `library-performance`). */
     private val volumeBytes = platform.totalBytes(dirs.cache.apply { mkdirs() })
-    val reserveBytes = StorageReserve.bytes(volumeBytes)
+    internal val reserveBytes = StorageReserve.bytes(volumeBytes)
 
     private val identityStore = JsonStore(File(dirs.state, "identity.json"), FrameIdentity.serializer(), scope, log, backupOnLoad = true)
     private val index =
@@ -230,10 +230,10 @@ class FrameCore(
             log,
             ::photosRemoved,
         )
-    val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
+    internal val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
 
     /** Deleted local photos, for 7 days (spec `photo-library`, "Trash for deleted photos"). */
-    val trash =
+    internal val trash =
         TrashStore(
             dirs.photos,
             JsonStore(File(dirs.state, "trash.json"), StoredTrash.serializer(), scope, log, backupOnLoad = true),
@@ -256,7 +256,7 @@ class FrameCore(
         }
 
     /** The remote sources: settings, status, sync on request, removal. */
-    val sources: SourceRegistry =
+    internal val sources: SourceRegistry =
         SourceRegistry(
             scope,
             sourceConfigs,
@@ -277,12 +277,12 @@ class FrameCore(
         )
 
     /** Adding Nextcloud sources: the login flow for an account, the link of a share, and confirmation logins. */
-    val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock, ::isPaired)
+    internal val nextcloud = NextcloudConnector(sources, this.nextcloudClients, clock, ::isPaired)
 
     private fun isPaired(clientId: String) = clients.clients.value.any { it.id == clientId }
 
     private val originals = SourceOriginals(localSource, sources, trash)
-    val cache: RenderCache =
+    internal val cache: RenderCache =
         RenderCache(
             File(dirs.cache, RenderCache.FOLDER),
             engine,
@@ -299,7 +299,7 @@ class FrameCore(
             clock = clock,
             makeRoom = { dir, bytes -> trash.makeRoom(dir, bytes) },
         )
-    val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, trash, reserveBytes)
+    internal val library = PhotoLibrary(index, localSource, cache, engine, notifier, platform, log, trash, reserveBytes)
 
     /** Updates of the app from GitHub's releases (spec `app-update`). Android reports installation results here. */
     val update =
@@ -318,7 +318,7 @@ class FrameCore(
         )
 
     /** Place names of photo positions, offline; loads its data on the first lookup. */
-    val places = PlaceIndex(log)
+    internal val places = PlaceIndex(log)
 
     /** Reads the GPS position of photos from before it was read, once, after start, scans with changes and syncs. */
     private val backfill: MetadataBackfill = MetadataBackfill(index, engine, { originals.onFrame(it, markUsed = false) }, log)
@@ -332,7 +332,7 @@ class FrameCore(
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
     /** The photos visible to the slideshow, by capture date. */
-    val visiblePhotos: StateFlow<List<PhotoEntry>> =
+    internal val visiblePhotos: StateFlow<List<PhotoEntry>> =
         index.library
             .map { it.visible }
             .distinctUntilChanged()
@@ -367,10 +367,10 @@ class FrameCore(
         }.distinctUntilChanged()
             .stateIn(scope, SharingStarted.Eagerly, null)
 
-    val router = Router()
+    internal val router = Router()
     private val pipeline = HttpPipeline(router, AccessControl(clients, signer), log, StaticAssets(assets)::handle)
     private val localAddresses = LocalAddressFilter(clock, platform::localAddresses)
-    val server =
+    internal val server =
         FrameServer(
             port,
             Dispatchers.IO.limitedParallelism(HANDLER_THREADS),
@@ -378,6 +378,12 @@ class FrameCore(
             pipeline::handle,
             acceptsLocal = localAddresses::accepts,
         )
+
+    /** The state of the HTTP server, for the display's address and notices; read-only. */
+    val serverState: StateFlow<ServerState> get() = server.state
+
+    /** The folder of the local photos, for the media scanner of `:android`; read-only. */
+    val photoFolder: File get() = localSource.root
 
     private val scanSignal = Channel<Unit>(Channel.CONFLATED)
     private val bindSignal = Channel<Unit>(Channel.CONFLATED)
@@ -627,8 +633,11 @@ class FrameCore(
         return ip
     }
 
-    /** Scans the photo folder immediately instead of at the next interval. */
-    fun requestScan() {
+    /**
+     * Scans the photo folder soon: the display turned on, or a client fetched photos (design decision 7 of
+     * `library-performance`). Uploads add their files themselves.
+     */
+    internal fun requestScan() {
         scanSignal.trySend(Unit)
     }
 

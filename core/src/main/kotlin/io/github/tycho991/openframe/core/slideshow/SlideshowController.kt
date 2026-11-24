@@ -221,7 +221,7 @@ class SlideshowController(
      */
     val nextUp: StateFlow<Pair<PhotoEntry, File>?> = _nextUp.asStateFlow()
 
-    fun start() {
+    internal fun start() {
         scope.launch {
             combine(visible, settings.map { it.order }.distinctUntilChanged()) { photos, order -> Command.Library(photos, order) }
                 .collect { commands.send(it) }
@@ -256,7 +256,7 @@ class SlideshowController(
         commands.trySend(Command.Step(-1, manual = true))
     }
 
-    fun setPaused(paused: Boolean) {
+    internal fun setPaused(paused: Boolean) {
         commands.trySend(Command.Pause(paused))
     }
 
@@ -268,7 +268,7 @@ class SlideshowController(
      * A command from the API: the same as the gestures and the hint, but returns only once the command has been
      * handled, so that [state] and [paused] show its effect. A step while resting is ignored as from the display.
      */
-    suspend fun control(action: SlideshowAction) {
+    internal suspend fun control(action: SlideshowAction) {
         val command =
             when (action) {
                 SlideshowAction.NEXT -> Command.Step(+1, manual = true)
@@ -290,7 +290,7 @@ class SlideshowController(
      * Rests while the display is off (spec `display-schedule`): the photo stays and nothing is rendered ahead. When
      * the display comes on, the next photo appears at once, unless the user paused the slideshow.
      */
-    fun setResting(resting: Boolean) {
+    internal fun setResting(resting: Boolean) {
         commands.trySend(Command.Rest(resting))
     }
 

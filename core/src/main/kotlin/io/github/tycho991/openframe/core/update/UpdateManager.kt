@@ -145,7 +145,7 @@ class UpdateManager(
     /** The state with [UpdateState.installAllowed] read afresh, for the API and the device menu. */
     fun current(): UpdateState = _state.value.copy(installAllowed = installer.installAllowed)
 
-    fun start() {
+    internal fun start() {
         startMono = clock.monotonicMillis()
         val h = health.state.value
         firstAtOnce = health.safe || h.recentEarlyEnds > 0
@@ -162,7 +162,7 @@ class UpdateManager(
         }
     }
 
-    suspend fun flush() = store.flush()
+    internal suspend fun flush() = store.flush()
 
     // Loading
 
@@ -359,7 +359,7 @@ class UpdateManager(
     }
 
     /** After a network change: a waiting retry comes within a minute (spec `app-update`, Retry after a failed check). */
-    fun networkChanged() {
+    internal fun networkChanged() {
         synchronized(lock) {
             if (stored.failures == 0) return
             retryWithin = clock.millis()
@@ -371,7 +371,7 @@ class UpdateManager(
      * A check on request (spec `app-update`, Check on request). Not while a check, a download or the dialog runs, within
      * a minute of the last attempt, or before GitHub's rate limit resets; the answer is the state either way.
      */
-    fun check(): UpdateState {
+    internal fun check(): UpdateState {
         synchronized(lock) {
             val now = clock.millis()
             val recent = stored.lastAttemptAt?.let { now - it in 0 until MIN_INTERVAL_MS } == true
