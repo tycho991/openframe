@@ -142,12 +142,12 @@ again before editing.
     300 ms after opening the session): `/update/answer?result=cancelled` right after `POST /update/install`, and
     `GET /update` reports `ready` with `install_cancelled` within 5 s; it fails before the change;
   - the existing `TestServerMainTest` cases pass.
-- [ ] 6.2 The update poll in `SettingsView.svelte` through a helper in `src/lib/update.ts` that schedules the next poll
+- [x] 6.2 The update poll in `SettingsView.svelte` through a helper in `src/lib/update.ts` that schedules the next poll
   after every attempt with `updatePollMs(phase)` and stops when the view goes. Verify: a Vitest with fake timers in
   `update.test.ts` (a rejected load, then a successful one, then the next poll at the interval of the new phase);
   `npm run e2e` with an own `OPENFRAME_E2E_PORT` passes `update.spec.ts` in all configured browsers, and the install
   test passes ten runs in a row in Firefox (`--project=firefox --repeat-each=10`).
-- [ ] 6.3 In `update.spec.ts` › "A version change reloads on the photo page as well", the marker poll catches an
+- [x] 6.3 In `update.spec.ts` › "A version change reloads on the photo page as well", the marker poll catches an
   evaluate that fails because the page is navigating ("Execution context was destroyed") and returns a value that
   keeps polling; any other error still fails the test. Verify: the test passes ten runs in a row in WebKit
   (`--project=webkit --repeat-each=10`).

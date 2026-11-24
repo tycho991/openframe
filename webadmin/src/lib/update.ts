@@ -5,6 +5,32 @@ export function updatePollMs(phase: UpdateState["phase"] | undefined): number {
   return phase === "checking" || phase === "downloading" || phase === "installing" ? 2_000 : 30_000;
 }
 
+/**
+ * Polls the update state with [load] until the returned function is called: the next poll is scheduled after every
+ * attempt, failed or not, at [updatePollMs] of the phase [phase] reports then, so that a failed request does not end
+ * the polling (spec web-admin, "Software update in the interface"; design decision 9 of core-cleanup).
+ */
+export function pollUpdate(
+  load: () => Promise<void>,
+  phase: () => UpdateState["phase"] | undefined,
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      void load()
+        .catch(() => {})
+        .finally(schedule);
+    }, updatePollMs(phase()));
+  };
+  schedule();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}
+
 const VERSION = /^\d+\.\d+\.\d+$/;
 
 /**

@@ -3,7 +3,8 @@
   import { i18n, t, tOr, type Key } from "../lib/i18n/i18n.svelte";
   import { errorText } from "../lib/i18n/errors";
   import { api, refreshState, session } from "../lib/session.svelte";
-  import { markUnsaved, updatePollMs } from "../lib/update";
+  import { untrack } from "svelte";
+  import { markUnsaved, pollUpdate } from "../lib/update";
 
   let saved = $state<Settings | null>(null);
   let form = $state<Settings | null>(null);
@@ -145,10 +146,12 @@
     }
   }
 
+  /** The polling starts again at the new interval when the phase changes, e.g. after "Check now". */
+  const updatePhase = $derived(update?.phase);
   $effect(() => {
-    const ms = updatePollMs(update?.phase);
-    const timer = setTimeout(() => void loadUpdate(), ms);
-    return () => clearTimeout(timer);
+    void updatePhase;
+    // Every attempt schedules the next one, also a failed one (design decision 9 of core-cleanup).
+    return untrack(() => pollUpdate(loadUpdate, () => update?.phase));
   });
   $effect(() => {
     void loadUpdate();

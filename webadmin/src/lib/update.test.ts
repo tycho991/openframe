@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApi, type TokenStore } from "./api/client";
+import { createApi, type TokenStore, type UpdateState } from "./api/client";
 import de from "./i18n/de.json";
 import en from "./i18n/en.json";
 import { errorMessage } from "./i18n/errors";
 import { installRefusalKeys, updateErrorKeys } from "./i18n/errorCodes";
 import { i18n, t, tOr } from "./i18n/i18n.svelte";
 import { ApiError } from "./api/client";
-import { hasUnsavedInput, markUnsaved, reloadAction, updatePollMs } from "./update";
+import { hasUnsavedInput, markUnsaved, pollUpdate, reloadAction, updatePollMs } from "./update";
 
 const tokens: TokenStore = { get: () => "abc", set: () => {} };
 
@@ -118,5 +118,35 @@ describe("Reload after a frame update", () => {
     expect(updatePollMs("installing")).toBe(2_000);
     expect(updatePollMs("ready")).toBe(30_000);
     expect(updatePollMs(undefined)).toBe(30_000);
+  });
+
+  it("polls again after a failed request, at the interval of the phase then, until stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      let phase: UpdateState["phase"] | undefined = "ready";
+      const load = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockImplementationOnce(async () => {
+          phase = "downloading";
+        })
+        .mockResolvedValue(undefined);
+      const stop = pollUpdate(load, () => phase);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(load).toHaveBeenCalledTimes(1);
+      // The failed request scheduled the next one.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(load).toHaveBeenCalledTimes(2);
+      // The successful one reported a download: the next poll comes at its interval.
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(load).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(load).toHaveBeenCalledTimes(3);
+      stop();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(load).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
