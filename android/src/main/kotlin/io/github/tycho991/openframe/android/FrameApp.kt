@@ -176,14 +176,15 @@ class FrameApp : Application() {
 
     /**
      * Arms the HOME choice for a new installation, synchronously and before anything else of the process runs, so the
-     * record is there before the display can evaluate it (design decision 6 of `core-cleanup`, "Arming"). A record
-     * that cannot be written leaves the choice closed for this installation.
+     * record is there before the display can evaluate it (design decision 6 of `core-cleanup`, "Arming"). A failed
+     * `commit()` keeps the value in the preferences' memory for this process (Android does not roll it back), so the
+     * record may be gone at the next start; the choice still opens only after a successful write of `done`.
      */
     private fun armHomeChoice(previousEnd: RunEnd) {
         val store = homeChoiceStore
         if (!HomeChoice.arms(previousEnd, HomeChoice.Record.parse(store.read()), installId)) return
         if (!store.write(HomeChoice.Record(installId, done = false).encode())) {
-            Log.w("openframe/app", "HOME choice not armed: its record could not be written")
+            Log.w("openframe/app", "HOME choice armed for this process only: its record could not be stored")
         }
     }
 

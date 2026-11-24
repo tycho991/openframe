@@ -3,7 +3,6 @@ package io.github.tycho991.openframe.android
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -243,11 +242,17 @@ class DisplayActivity : Activity() {
         val store = app.homeChoiceStore
         val installId = app.installId
         val record = HomeChoice.Record.parse(store.read())
-        // Most starts end here, before the package manager is asked.
-        if (record == null || record.done || record.installId != installId) return
-        val showing = c.display.state.value.on && !c.display.dark.value
-        val status = app.homeApps().status()
-        when (HomeChoice.decide(record, installId, status, c.health.safe, showing)) {
+        val showing = HomeChoice.displayShowing(resumed, c.display.state.value.on, c.display.dark.value)
+        val action =
+            HomeChoice.decide(record, installId, c.health.safe, showing) {
+                try {
+                    app.homeApps().status()
+                } catch (e: RuntimeException) {
+                    c.log.w("app", "HOME choice waits: the HOME apps could not be read: ${e.message}")
+                    null
+                }
+            }
+        when (action) {
             HomeChoice.Action.OPEN -> {
                 openHomeChoice(c, store, installId)
             }
@@ -277,8 +282,9 @@ class DisplayActivity : Activity() {
         c.log.i("app", "Opening Android's HOME choice after the update: no HOME app is chosen")
         try {
             startActivity(HomeChoice.homeIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: ActivityNotFoundException) {
-            // Nothing opened, so nothing is held; the record stays done.
+        } catch (e: RuntimeException) {
+            // No activity, or a vendor's resolver that refuses the start (SecurityException): nothing opened, so
+            // nothing is held; the record stays done.
             c.systemScreenClosed()
             c.log.w("app", "Android's HOME choice could not be opened: ${e.message}")
         }
@@ -745,8 +751,8 @@ class DisplayActivity : Activity() {
         core.systemScreenOpened("android settings")
         try {
             startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            // Gone between the check and the start: nothing opened, so nothing is held.
+        } catch (e: RuntimeException) {
+            // Gone between the check and the start, or refused by the system: nothing opened, so nothing is held.
             core.systemScreenClosed()
             core.log.w("app", "Android's settings could not be opened: ${e.message}")
         }

@@ -61,14 +61,32 @@ class HomeChoiceTest {
                 Triple(pending, Status.OWN, false to true) to Action.DROP,
                 Triple(pending, Status.OTHER, false to true) to Action.DROP,
                 Triple(pending, Status.NONE, false to true) to Action.DROP,
-                Triple(pending, Status.OWN, true to false) to Action.DROP,
+                // Waiting comes first: the package manager is asked only once the display shows the slideshow.
+                Triple(pending, Status.OWN, true to false) to Action.WAIT,
+                Triple(pending, null, false to true) to Action.WAIT,
                 Triple(Record(install, done = true), Status.OWN, false to true) to Action.NOTHING,
             )
         for ((input, expected) in table) {
             val (record, status, flags) = input
             val (safe, showing) = flags
-            assertEquals(input.toString(), expected, HomeChoice.decide(record, install, status, safe, showing))
+            var asked = false
+            val action =
+                HomeChoice.decide(record, install, safe, showing) {
+                    asked = true
+                    status
+                }
+            assertEquals(input.toString(), expected, action)
+            assertEquals("package manager asked for $input", record == pending && !safe && showing, asked)
         }
+    }
+
+    @Test
+    fun `The slideshow shows only in front, with the display on and outside a dark wake`() {
+        assertTrue(HomeChoice.displayShowing(resumed = true, displayOn = true, dark = false))
+        assertFalse("not in front", HomeChoice.displayShowing(resumed = false, displayOn = true, dark = false))
+        assertFalse("display off", HomeChoice.displayShowing(resumed = true, displayOn = false, dark = false))
+        assertFalse("dark wake", HomeChoice.displayShowing(resumed = true, displayOn = true, dark = true))
+        assertFalse("dark wake as the state reports it", HomeChoice.displayShowing(resumed = true, displayOn = false, dark = true))
     }
 
     @Test

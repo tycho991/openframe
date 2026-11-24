@@ -382,7 +382,7 @@ class FrameCore(
     /** The state of the HTTP server, for the display's address and notices; read-only. */
     val serverState: StateFlow<ServerState> get() = server.state
 
-    /** The folder of the local photos, for the media scanner of `:android`; read-only. */
+    /** The folder of the local photos, which the display's empty state names; read-only. */
     val photoFolder: File get() = localSource.root
 
     private val scanSignal = Channel<Unit>(Channel.CONFLATED)

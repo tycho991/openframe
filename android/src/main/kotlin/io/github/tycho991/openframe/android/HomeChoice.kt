@@ -94,22 +94,35 @@ internal object HomeChoice {
     ): Boolean = previousEnd == RunEnd.REPLACED && installId.isNotEmpty() && record?.installId != installId
 
     /**
-     * What the display does with the HOME choice now. [displayShowing]: the slideshow is in front (resumed) with the
-     * display on and not in a dark wake.
+     * What the display does with the HOME choice now. [displayShowing]: see [displayShowing]. [status] asks the
+     * package manager; it runs only once nothing else decides, so no IPC runs on the main thread while the display
+     * waits. `null` (the package manager failed) waits as well.
      */
     fun decide(
         record: Record?,
         installId: String,
-        status: Status,
         safeMode: Boolean,
         displayShowing: Boolean,
-    ): Action =
-        when {
-            record == null || record.done || record.installId != installId -> Action.NOTHING
-            status != Status.ASKS -> Action.DROP
-            safeMode || !displayShowing -> Action.WAIT
-            else -> Action.OPEN
+        status: () -> Status?,
+    ): Action {
+        if (record == null || record.done || record.installId != installId) return Action.NOTHING
+        if (safeMode || !displayShowing) return Action.WAIT
+        return when (status()) {
+            null -> Action.WAIT
+            Status.ASKS -> Action.OPEN
+            else -> Action.DROP
         }
+    }
+
+    /**
+     * The slideshow is in front with the display on and not in a dark wake. A dark wake reports the display off in
+     * `DisplayController.state` already; `dark` is checked as well, because the two flows change one after the other.
+     */
+    fun displayShowing(
+        resumed: Boolean,
+        displayOn: Boolean,
+        dark: Boolean,
+    ): Boolean = resumed && displayOn && !dark
 
     /** Where the record is kept; a failed write returns `false`. */
     interface Store {

@@ -3,6 +3,7 @@ package io.github.tycho991.openframe.android
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Looper
 import android.os.SystemClock
@@ -169,14 +170,19 @@ class HomeChoiceOnDisplayTest {
         assertEquals(Record(app.installId, done = false), record())
     }
 
+    /** As Android's preferences: a failed `commit()` keeps the value in memory for this process, not on disk. */
     @Test
-    fun `A store whose writes fail leaves no record and nothing opens later`() {
-        app.homeChoiceStore = FailingStore(backing = null)
+    fun `A store whose writes fail arms for this process only, and nothing opens`() {
+        val store = FailingStore(backing = null)
+        app.homeChoiceStore = store
         startAfterUpdate()
-        assertNull(record())
+        assertEquals("in memory", Record(app.installId, done = false), record())
+        assertNull("not stored", store.stored)
         startCore()
         display()
         assertEquals(emptyList<Intent>(), startedHomeIntents())
+        assertTrue(logged("HOME choice not opened: its record could not be written").isNotEmpty())
+        assertFalse(app.health.state.value.systemScreenOpen)
     }
 
     // --- Opening on the display
@@ -238,13 +244,40 @@ class HomeChoiceOnDisplayTest {
     @Test
     fun `A record that cannot be written opens nothing and makes no system-screen record`() {
         startAfterUpdate()
-        app.homeChoiceStore = FailingStore(backing = HomeChoice.PrefsStore(app))
+        val store = FailingStore(backing = HomeChoice.PrefsStore(app))
+        app.homeChoiceStore = store
         startCore()
         display()
         assertEquals(emptyList<Intent>(), startedHomeIntents())
         assertFalse(app.health.state.value.systemScreenOpen)
-        assertTrue(logged("HOME choice not opened: its record could not be written").isNotEmpty())
-        assertEquals(Record(app.installId, done = false), record())
+        assertEquals(1, logged("HOME choice not opened: its record could not be written").size)
+        // Done in memory, so this process does not try again; pending on disk, so a later process may open it once.
+        assertEquals(Record(app.installId, done = true), record())
+        assertEquals(Record(app.installId, done = false), Record.parse(store.stored))
+    }
+
+    /** Design decision 7: a choice that cannot be started holds nothing and leaves no system-screen record. */
+    @Test
+    fun `A choice that cannot be started closes the record and releases the hold`() {
+        startAfterUpdate()
+        val c = startCore(start = false)
+        Robolectric
+            .buildActivity(DisplayActivity::class.java)
+            .create()
+            .start()
+            .resume()
+        idle()
+        // No activity answers the HOME intent any more, so the start throws ActivityNotFoundException.
+        shadowOf(app.packageManager).removeActivity(ComponentName(app, DisplayActivity::class.java))
+        shadowOf(app).checkActivities(true)
+        assertNull("nothing resolves the HOME intent", app.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY))
+        runBlocking { c.start() }
+        idle()
+        assertEquals(Record(app.installId, done = true), record())
+        assertFalse(app.health.state.value.systemScreenOpen)
+        assertFalse(app.journal.systemScreenOpen(SystemClock.elapsedRealtime()))
+        waitUntil("the end of the hold") { logged("Display hold ended").isNotEmpty() }
+        assertEquals(1, logged("Android's HOME choice could not be opened").size)
     }
 
     /**
@@ -272,8 +305,17 @@ class HomeChoiceOnDisplayTest {
     @Test
     fun `Nothing in safe mode, the record stays pending`() {
         startAfterUpdate()
+        val store = CountingStore(app.homeChoiceStore)
+        app.homeChoiceStore = store
+        var asked = 0
+        app.homeApps = {
+            asked++
+            homeApps
+        }
         startCore(health = Health.safe(System.currentTimeMillis()))
         display()
+        assertTrue("the display evaluated the record", store.reads > 0)
+        assertEquals("waits before it asks the package manager", 0, asked)
         assertEquals(emptyList<Intent>(), startedHomeIntents())
         assertEquals(Record(app.installId, done = false), record())
     }
@@ -375,12 +417,33 @@ class HomeChoiceOnDisplayTest {
         }
     }
 
-    /** Reads through [backing], refuses every write. */
+    /**
+     * Refuses every write as storage that cannot be written does, but keeps the value in memory, as Android's
+     * `SharedPreferencesImpl` does when `commit()` fails. [stored] is what is on disk.
+     */
     private class FailingStore(
-        private val backing: HomeChoice.Store?,
+        backing: HomeChoice.Store?,
     ) : HomeChoice.Store {
-        override fun read() = backing?.read()
+        val stored: String? = backing?.read()
 
-        override fun write(value: String) = false
+        @Volatile private var memory: String? = stored
+
+        override fun read() = memory
+
+        override fun write(value: String): Boolean {
+            memory = value
+            return false
+        }
+    }
+
+    /** Counts the reads of [backing]. */
+    private class CountingStore(
+        private val backing: HomeChoice.Store,
+    ) : HomeChoice.Store {
+        @Volatile var reads = 0
+
+        override fun read(): String? = backing.read().also { reads++ }
+
+        override fun write(value: String) = backing.write(value)
     }
 }
