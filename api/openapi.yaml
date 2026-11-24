@@ -1250,7 +1250,13 @@ components:
       additionalProperties: false
       required: [name, enabled, folder, includeSubfolders, removeVanished, intervalMinutes, originalsBudgetMb]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64, description: "What the source is called in the list." }
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            What the source is called in the list. Control characters become a space when the name is set, then
+            leading and trailing whitespace is removed; the length applies after this.
         enabled: { type: boolean }
         folder:
           type: string
@@ -1266,7 +1272,7 @@ components:
       type: object
       additionalProperties: false
       properties:
-        name: { type: string }
+        name: { type: string, description: "Control characters become a space, then leading and trailing whitespace is removed; the length applies after this." }
         enabled: { type: boolean }
         folder: { type: string }
         includeSubfolders: { type: boolean }
@@ -1333,7 +1339,11 @@ components:
           type: string
           description: "The link of the share, `http(s)://host[/path][/index.php]/s/<token>`."
         password: { type: string, description: "The password of a protected share. Only given here, never returned." }
-        name: { type: string, description: "Name in the list; if missing, the name of the shared folder (the host of the server if it names none)." }
+        name:
+          type: string
+          description: >-
+            Name in the list; if missing, the name of the shared folder (the host of the server if it names none).
+            Control characters become a space, then leading and trailing whitespace is removed; the length applies after this.
 
     SourceLoginRequest:
       type: object
