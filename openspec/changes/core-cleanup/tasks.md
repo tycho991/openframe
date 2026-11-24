@@ -154,11 +154,12 @@ again before editing.
 
 ## 7. Checks
 
-- [ ] 7.1 `./gradlew check` with the Android SDK, and in `webadmin/` `npm run lint`, `npm run typecheck`, `npm test`
+- [x] 7.1 `./gradlew check` with the Android SDK, and in `webadmin/` `npm run lint`, `npm run typecheck`, `npm test`
   and `npm run e2e` with an own `OPENFRAME_E2E_PORT` (for example 8190) are green. Verify: the command outputs.
-- [ ] 7.2 `openspec validate core-cleanup --strict` exits 0 without warnings. Verify: the output.
-- [ ] 7.3 The pull request body has the release-note line on `PATCH /sources` (design decision 2) and names the HOME
+- [x] 7.2 `openspec validate core-cleanup --strict` exits 0 without warnings. Verify: the output.
+- [x] 7.3 The pull request body has the release-note line on `PATCH /sources` (design decision 2) and names the HOME
   choice as a visible change. Verify: the body.
+  *(Drafted outside the repository for the main session, which opens the pull request.)*
 
 ## 8. Device rows after the release (main session, privately)
 
