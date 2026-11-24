@@ -78,7 +78,7 @@ again before editing.
 
 ## 5. HOME choice after an update
 
-- [ ] 5.1 `android/.../HomeChoice.kt`: the pure `HomeChoice.status(resolved, candidates, own)` and
+- [x] 5.1 `android/.../HomeChoice.kt`: the pure `HomeChoice.status(resolved, candidates, own)` and
   `HomeChoice.decide(record, installId, status, safeMode, displayShowing)` (design decision 6), `HomeApps.read(pm,
   own)` with `resolveActivity` and `queryIntentActivities` (`MATCH_DEFAULT_ONLY`), and the record in the
   `SharedPreferences` file `home_choice` (`"<installId>|pending"` or `"|done"`, written with `commit()`). New
@@ -89,11 +89,13 @@ again before editing.
   visibility): with the other launcher preferred, the start's warning names it; with no preferred HOME app, the
   warning names the system's resolver, and reinstalling the debug build with `adb install -r` opens the choice with
   both launchers listed.
-  *(Implemented and tested except the Android 17 emulator check, which the main session runs; tick 5.1 after it.)*
+  *(Emulator check done by the main session on Android 17 and Android 5; results in design.md, After
+  implementation.)*
 - [x] 5.2 Arming in `FrameApp.start(processName)`, synchronously, right after `journal.onProcessStart(…)`
   (`FrameApp.kt:154`) and before anything else of the process runs (design decision 6, "Arming"). Write `pending` with
   `commit()` for the `installId` passed to the journal when the result is `RunEnd.REPLACED` and no record for it
-  exists. If `commit()` returns false, log to Logcat and write nothing. Add the seams `homeApps: () -> HomeApps` and the
+  exists. If `commit()` returns false, log to Logcat and write nothing (Android keeps the value in memory anyway; see
+  design.md, After implementation). Add the seams `homeApps: () -> HomeApps` and the
   record's store, like `coreFactory`. `BootReceiver`'s KDoc names the choice. Verify, Robolectric:
   - `REPLACED` writes `pending` before any core exists; `FIRST` and `REBOOTED` write nothing; a second start of the
     same installation keeps `done` (`kiosk-host` › HOME choice after an update › Restart without an update);
