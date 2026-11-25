@@ -108,11 +108,14 @@ class SourceConfigTest {
         val id = "s00000001"
         assertEquals(setOf("name"), fieldsOf { store.patch(id, json("""{"name":"  "}""")) }.keys)
         assertEquals(setOf("name"), fieldsOf { store.patch(id, json("""{"name":"${"x".repeat(65)}"}""")) }.keys)
-        assertEquals(setOf("name"), fieldsOf { store.patch(id, json("""{"name":"a\u0007b"}""")) }.keys)
+        assertEquals(setOf("name"), fieldsOf { store.patch(id, json("""{"name":"\u0007\n"}""")) }.keys)
         assertEquals(setOf("name"), fieldsOf { store.patch(id, json("""{"name":42}""")) }.keys)
         assertEquals(setOf("enabled"), fieldsOf { store.patch(id, json("""{"enabled":"yes"}""")) }.keys)
+        assertEquals(setOf("enabled"), fieldsOf { store.patch(id, json("""{"enabled":"true"}""")) }.keys)
         assertEquals(setOf("folder"), fieldsOf { store.patch(id, json("""{"folder":"/a/../b"}""")) }.keys)
         assertEquals("x".repeat(64), store.patch(id, json("""{"name":"${"x".repeat(64)}"}""")).name)
+        // A control character becomes a space (spec `remote-sources`, Source names on one line).
+        assertEquals("a b", store.patch(id, json("""{"name":"a\u0007b"}""")).name)
     }
 
     @Test

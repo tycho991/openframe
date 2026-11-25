@@ -15,7 +15,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 /**
  * Spec `nextcloud-source`: Plain http on every Android version (design decision 13 of `nextcloud-hardening`); spec
  * `kiosk-host`: Android settings from the device menu (the `<queries>` of design decisions 1a and 2 of
- * `open-android-settings`).
+ * `open-android-settings`) and HOME choice after an update (design decision 6 of `core-cleanup`).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -72,6 +72,32 @@ class ManifestTest {
             }
         assertTrue(packages.toString(), "net.frameo.frame" in packages)
         assertTrue(actions.toString(), "android.settings.SETTINGS" in actions)
+    }
+
+    /** Spec `kiosk-host` › HOME choice after an update: other launchers are visible from Android 11 on. */
+    @Test
+    fun `The merged manifest lets the app see the other HOME apps`() {
+        val queries = parsedManifest().getElementsByTagName("queries")
+        val intents =
+            (0 until queries.length).flatMap { q ->
+                (queries.item(q) as org.w3c.dom.Element).getElementsByTagName("intent").let { l ->
+                    (0 until l.length).map { l.item(it) as org.w3c.dom.Element }
+                }
+            }
+
+        fun names(
+            intent: org.w3c.dom.Element,
+            tag: String,
+        ) = intent.getElementsByTagName(tag).let { l ->
+            (0 until l.length).map { (l.item(it) as org.w3c.dom.Element).getAttributeNS(android, "name") }
+        }
+        assertTrue(
+            intents.map { names(it, "action") to names(it, "category") }.toString(),
+            intents.any {
+                names(it, "action") == listOf("android.intent.action.MAIN") &&
+                    "android.intent.category.HOME" in names(it, "category")
+            },
+        )
     }
 
     private fun parsedManifest(): org.w3c.dom.Document =

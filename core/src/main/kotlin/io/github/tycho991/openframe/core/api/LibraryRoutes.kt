@@ -5,6 +5,7 @@ import io.github.tycho991.openframe.core.http.Access
 import io.github.tycho991.openframe.core.http.HttpException
 import io.github.tycho991.openframe.core.http.HttpRequest
 import io.github.tycho991.openframe.core.http.HttpResponse
+import io.github.tycho991.openframe.core.http.JsonFields
 import io.github.tycho991.openframe.core.http.Router
 import io.github.tycho991.openframe.core.library.AlbumPaths
 import io.github.tycho991.openframe.core.library.Comments
@@ -23,7 +24,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import java.time.Instant
 import java.util.Base64
@@ -322,7 +322,7 @@ fun Router.libraryRoutes(
     }
 
     patch("/api/v1/photos/{photoId}") { req ->
-        val change = photoPatch(req.bodyAs(JsonObject.serializer()))
+        val change = photoPatch(req.bodyObject())
         val entry = library.update(req.pathParam("photoId"), change)
         HttpResponse.json(PhotoDto.serializer(), photos.dto(entry, index.library.value, req.clientId!!))
     }
@@ -428,8 +428,7 @@ private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
     for ((key, value) in body) {
         when (key) {
             "hidden" -> {
-                hidden = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
-                if (hidden == null) errors[key] = "Expected true or false"
+                hidden = JsonFields.bool(value, key, errors)
             }
 
             Comments.FIELD -> {
@@ -458,8 +457,8 @@ private fun photoPatch(body: JsonObject): (PhotoEntry) -> PhotoEntry {
             }
 
             "quarantined" -> {
-                val flag = (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
-                if (flag != false) errors[key] = "Only false, to try the photo again"
+                // The message stays this one for any other value, a string or `true` included.
+                if (JsonFields.bool(value, key, errors) != false) errors[key] = "Only false, to try the photo again"
             }
 
             else -> {

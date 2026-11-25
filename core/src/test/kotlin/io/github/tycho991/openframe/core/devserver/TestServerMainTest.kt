@@ -4,6 +4,11 @@ import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import io.github.tycho991.openframe.core.devserver.TestServerMain.CONTROL_HEADER
+import io.github.tycho991.openframe.core.testing.FakeAppInstaller
+import io.github.tycho991.openframe.core.testing.TestHttp
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -12,9 +17,16 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.file.Files
 
-/** The guards of the test server's control port, which a web page open in the same browser could otherwise reach. */
+/**
+ * The guards of the test server's control port, which a web page open in the same browser could otherwise reach, and
+ * its answer to the installation dialog.
+ */
 class TestServerMainTest {
     @TempDir
     lateinit var dir: File
@@ -87,6 +99,68 @@ class TestServerMainTest {
             }
         } finally {
             control.stop()
+        }
+    }
+
+    /** Design decision 9 of `core-cleanup`: the answer reaches the dialog only once its session is committed. */
+    @Test
+    fun `An answer right after the install request reaches the dialog once it is open`() {
+        val free = { ServerSocket(0).use { it.localPort } }
+        val port = free()
+        val controlPort = free()
+        val factory = TestServerMain.installerFactory
+        TestServerMain.installerFactory = { FakeAppInstaller().apply { pauseAfterCreateMs = 300 } }
+        val control =
+            try {
+                TestServerMain.start(port, controlPort, File(dir, "dist").apply { mkdirs() }, File(dir, "servers"))
+            } finally {
+                TestServerMain.installerFactory = factory
+            }
+        val client = HttpClient.newHttpClient()
+
+        fun control(path: String): HttpResponse<String> =
+            client.send(
+                HttpRequest
+                    .newBuilder(URI("http://127.0.0.1:$controlPort$path"))
+                    .header(CONTROL_HEADER, "1")
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+
+        fun json(body: String) = Json.parseToJsonElement(body).jsonObject
+        try {
+            val http = TestHttp("http://127.0.0.1:$port")
+            assertEquals(200, control("/update/publish?version=0.99.0").statusCode())
+            val code = control("/code").body()
+            val paired = http.request("POST", "/api/v1/pairing", """{"code":"$code","deviceName":"Test"}""")
+            assertEquals(201, paired.statusCode(), paired.body())
+            val auth = mapOf("Authorization" to "Bearer ${json(paired.body())["token"]!!.jsonPrimitive.content}")
+            assertEquals(202, http.request("POST", "/api/v1/update/check", headers = auth).statusCode())
+            val ready = System.currentTimeMillis() + 10_000
+            while (control("/update/phase").body() != "ready") {
+                assertTrue(System.currentTimeMillis() < ready, "the update is not ready")
+                Thread.sleep(50)
+            }
+
+            assertEquals(202, http.request("POST", "/api/v1/update/install", headers = auth).statusCode())
+            val answer = control("/update/answer?result=cancelled")
+            assertEquals(200, answer.statusCode(), answer.body())
+            val deadline = System.currentTimeMillis() + 5_000
+            while (true) {
+                val state = json(http.get("/api/v1/update", auth).body())
+                val error = state["error"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonObject
+                if (state["phase"]!!.jsonPrimitive.content == "ready" &&
+                    error?.get("code")?.jsonPrimitive?.content == "install_cancelled"
+                ) {
+                    break
+                }
+                assertTrue(System.currentTimeMillis() < deadline, "not cancelled within 5 s: $state")
+                Thread.sleep(50)
+            }
+            // No dialog is open any more: the next answer is refused instead of being dropped.
+            assertEquals(409, control("/update/answer?result=cancelled").statusCode())
+        } finally {
+            TestServerMain.stop(control)
         }
     }
 }

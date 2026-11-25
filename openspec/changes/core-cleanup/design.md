@@ -209,8 +209,9 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   only for `ready` (`DisplayActivity.kt:338`). Arming after `core.start()` returns would let the display evaluate
   first and find no record. A `core.start()` that throws would also lose the arming, and the next start would be
   `CRASHED`, not `REPLACED`. The write is synchronous (`commit()`) on the main thread, next to the journal's own
-  synchronous write of `runs.json` at the same place. If `commit()` returns false, `start` logs to Logcat and leaves
-  no record, and the choice does not open for this installation (fail closed).
+  synchronous write of `runs.json` at the same place. If `commit()` returns false, `start` logs to Logcat. Android's
+  `SharedPreferencesImpl` has already put the value into its memory and does not roll it back, so `pending` stays
+  readable in this process but may be gone at the next start (see "After implementation").
 - **Rejected alternative:** a record the display observes as a flow. With the arming in `start`, the value is final
   before the display exists, so there is nothing to observe.
 - **HOME state:** `HomeApps.read(pm, ownPackage)` resolves `MAIN`/`HOME` (as `homePackage` does) and lists the
@@ -243,8 +244,9 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   allowed there on every Android version, also from Android 10 on, where a background start is not.
 - **At most once:** on `OPEN`, the record becomes `done` with `commit()`, and only if `commit()` returns true does the
   activity record the system screen and start the choice. If it returns false, the activity logs `HOME choice not
-  opened: its record could not be written`, opens nothing and leaves the record as it was. A later evaluation may try
-  again, but it opens only after a successful write, so storage that cannot be written never shows the choice. A
+  opened: its record could not be written` and opens nothing. In memory the record then reads `done`, on disk it is
+  still `pending`, so a later process may try once more; it opens only after a successful write, so storage that
+  cannot be written never shows the choice. A
   dismissal, "just once", another launcher, a crash or a firmware end under the choice therefore cannot lead to a
   second opening for this installation. Only the next installation arms it again.
 - **The write on the main thread:** one write of a few bytes, once per installation, directly before `startActivity`,
@@ -378,3 +380,59 @@ only when `update` is assigned, so a failed poll (`loadUpdate`'s `catch`) ends t
   behaves like an update, which is harmless.
 - Rollback: revert the pull request. Nothing stored needs to change back.
 - After the release, the main session runs the device rows privately (tasks group 8).
+
+## After implementation
+
+- **`PATCH /albums` takes `"hidden":"true"` (task 2.1).** Context and task 2.1 said that the DTO bodies decoded
+  through `bodyAs` refuse a quoted boolean. They do not: `ApiJson.decodeFromJsonElement` reads a `JsonPrimitive`
+  through `booleanOrNull` without the `isString` check that only the streaming decoder applies, so
+  `{"name":"holiday","hidden":"true"}` is answered 200 on `main` and the contract harness reports it as a request-body
+  violation. `AlbumPatchDto.hidden` is the only `Boolean` among the `bodyAs` bodies. The non-goal "No change of the DTO
+  bodies decoded through `bodyAs`" stands, so this change leaves it as it is and drops the guard from
+  `LibraryApiTest`; a later package can make `bodyAs` strict for booleans (or switch the album body to `JsonFields`).
+- **`1e1` counts as the integer 10 (task 2.2).** kotlinx `intOrNull` reads an exponent, so the copies before this
+  change accepted `1e1` wherever an integer is checked, and JSON Schema's `integer` counts it as one as well.
+  `JsonFields.int` keeps that; `JsonFieldsTest` documents it, and `20.5` and `"20"` stay invalid.
+- **Dark wake on the display (tasks 5.3, decision 8).** A light core cannot enter a real dark wake in Robolectric: it
+  needs an off period, a lost network and ten minutes on the monotonic clock. A dark wake reports the display off in
+  `DisplayController.state` and sets `dark`, and the display treats "on and not dark" as showing. So
+  `HomeChoiceOnDisplayTest` covers the display reported off (a fake `DisplayPower` switched by the system), and
+  `HomeChoiceTest` covers `decide` with the display not showing; the device rows check a real dark wake.
+- **A core that fails to start (task 5.2).** `FrameApp.start` never starts the core (the service does, later), so the
+  test lets `coreFactory` throw and runs the start through `FrameApp.startLogged` after `FrameApp.start`: the record
+  stays `pending`.
+- **A failed `commit()` is not rolled back (review of the pull request).** Decision 6 first said a failed arming
+  "leaves no record" (fail closed). Android's `SharedPreferencesImpl` updates its in-memory map before it writes the
+  file and keeps the new value when `commit()` returns false. So a failed arming leaves `pending` readable in this
+  process, and a failed write of `done` reads `done` in this process and `pending` on disk. The choice still opens at
+  most once per installation, because it opens only after a successful write of `done`. The log line says so ("HOME
+  choice armed for this process only: its record could not be stored"), and the test store keeps written values in
+  memory as Android does.
+- **Waiting before the package manager (review).** `HomeChoice.decide(record, installId, safeMode, displayShowing,
+  status)` now waits in safe mode or while the slideshow is not showing before it asks for the status, which it takes
+  as a function. So no package-manager call runs on the main thread at every display change while the display waits.
+  `OWN`, `OTHER` and `NONE` therefore drop the record at the first evaluation with the slideshow showing, not while it
+  waits; nothing visible changes. A package manager that throws counts as `WAIT` and is logged. `displayShowing` is
+  `HomeChoice.displayShowing(resumed, on, dark)`: a dark wake already reports the display off in `state`, and `dark`
+  is checked as well because the two flows change one after the other; `HomeChoiceTest` fails without it.
+- **Starting the choice catches `RuntimeException` (review).** Not only `ActivityNotFoundException`: a vendor's
+  resolver that refuses the start with a `SecurityException` closes the system-screen record and the hold as well.
+  The device menu's Android settings entry does the same.
+- **Install e2e, details (decision 9).** `FakeAppInstaller.awaitCommitted` waits on a `ReentrantLock` with a
+  `Condition` instead of `synchronized`/`wait`/`notifyAll`; the effect is the same. `/update/answer` waits for the
+  dialog before it takes the test server's lock, so the wait holds up no other control request. The update poll of
+  the software section aborts a request after 10 s (`UPDATE_POLL_TIMEOUT_MS`), so a hanging request counts as failed
+  and the polling goes on.
+- **Emulator check of package visibility (task 5.1, main session).**
+  - Android 17 (API 37), debug build of 45c64e3, the Nexus launcher as second HOME app: with the launcher holding the
+    HOME role, the start's warning names `com.google.android.apps.nexuslauncher`, so the HOME intent in `<queries>`
+    works. With the role holders cleared, Android 17 resolves HOME directly to the system launcher (the role's
+    fallback), so the status is `OTHER` and no choice opens, as decision 0 accepts; `ASKS` cannot come about there
+    with a system launcher.
+  - Android 5 (API 21), AOSP Launcher2 as second HOME app, no preferred HOME app, 0.13.0 installed: `adb install -r`
+    of the debug build logged "openframe is not the HOME app (android)" and "Opening Android's HOME choice after the
+    update: no HOME app is chosen"; Android's resolver appeared over the slideshow offering openframe ("Just once" /
+    "Always"), and the display was held ("Display held on for a system screen (home choice)"). Dismissed with Back,
+    the slideshow came back; a force-stop and start logged only the warning, without a second opening. Another
+    `install -r` opened the choice again; "Always" made openframe the preferred HOME app, the Home key led to the
+    slideshow, the hold ended and no new warning was logged.

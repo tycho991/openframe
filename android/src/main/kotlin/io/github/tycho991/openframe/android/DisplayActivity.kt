@@ -3,7 +3,6 @@ package io.github.tycho991.openframe.android
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -114,6 +113,9 @@ class DisplayActivity : Activity() {
 
     /** … and still checks whether openframe is the HOME app. */
     private var checkHomeAfterSystemScreen = false
+
+    /** Between [onResume] and [onPause]: the slideshow is in front. */
+    private var resumed = false
     private var arrangedPortrait: Boolean? = null
     private var qrUrl: String? = null
     private var qrImage: Bitmap? = null
@@ -215,11 +217,77 @@ class DisplayActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         // First, so that nothing below keeps the record open while the slideshow is in front.
         withdrawSystemScreen()
         enterImmersive()
         // Back from the system's screen for modifying system settings: no event reports the permission.
         core?.display?.recheck()
+        core?.takeIf { it.ready.value }?.let(::evaluateHomeChoice)
+    }
+
+    override fun onPause() {
+        resumed = false
+        super.onPause()
+    }
+
+    /**
+     * Opens Android's HOME choice once per installation after an update that lost the HOME preference (spec
+     * `kiosk-host`, "HOME choice after an update"; design decisions 6 and 7 of `core-cleanup`). Evaluated while
+     * resumed with the core ready: when the core turns ready, in [onResume] and at every change of the display.
+     */
+    private fun evaluateHomeChoice(c: FrameCore) {
+        if (!resumed || !c.ready.value) return
+        val app = application as FrameApp
+        val store = app.homeChoiceStore
+        val installId = app.installId
+        val record = HomeChoice.Record.parse(store.read())
+        val showing = HomeChoice.displayShowing(resumed, c.display.state.value.on, c.display.dark.value)
+        val action =
+            HomeChoice.decide(record, installId, c.health.safe, showing) {
+                try {
+                    app.homeApps().status()
+                } catch (e: RuntimeException) {
+                    c.log.w("app", "HOME choice waits: the HOME apps could not be read: ${e.message}")
+                    null
+                }
+            }
+        when (action) {
+            HomeChoice.Action.OPEN -> {
+                openHomeChoice(c, store, installId)
+            }
+
+            HomeChoice.Action.DROP -> {
+                store.write(HomeChoice.Record(installId, done = true).encode())
+            }
+
+            HomeChoice.Action.WAIT, HomeChoice.Action.NOTHING -> {}
+        }
+    }
+
+    /**
+     * The record becomes `done` first, so that nothing can open the choice a second time for this installation; only
+     * if that write succeeds does the choice open, as a system screen from the device menu (decision 7).
+     */
+    private fun openHomeChoice(
+        c: FrameCore,
+        store: HomeChoice.Store,
+        installId: String,
+    ) {
+        if (!store.write(HomeChoice.Record(installId, done = true).encode())) {
+            c.log.w("app", "HOME choice not opened: its record could not be written")
+            return
+        }
+        c.systemScreenOpened("home choice")
+        c.log.i("app", "Opening Android's HOME choice after the update: no HOME app is chosen")
+        try {
+            startActivity(HomeChoice.homeIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: RuntimeException) {
+            // No activity, or a vendor's resolver that refuses the start (SecurityException): nothing opened, so
+            // nothing is held; the record stays done.
+            c.systemScreenClosed()
+            c.log.w("app", "Android's HOME choice could not be opened: ${e.message}")
+        }
     }
 
     /**
@@ -350,8 +418,10 @@ class DisplayActivity : Activity() {
             launch { core.slideshow.paused.collect { updateHint() } }
             launch { core.update.state.collect { updateHint() } }
             launch { followDark(core.display.dark) }
+            // Emits the current values at once, so the HOME choice is evaluated as soon as the core is ready.
+            launch { combine(core.display.state, core.display.dark) { _, _ -> }.collect { evaluateHomeChoice(core) } }
             launch {
-                combine(core.settings.localOnly, core.server.state) { _, _ -> }.collect {
+                combine(core.settings.localOnly, core.serverState) { _, _ -> }.collect {
                     syncPairingShown()
                     updateHint()
                     updateEmpty()
@@ -528,7 +598,7 @@ class DisplayActivity : Activity() {
 
     /** Why there is no address to show: no network, or the port could not be bound (spec "Server port unavailable"). */
     private fun unreachable(c: FrameCore) =
-        if (c.server.state.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
+        if (c.serverState.value is ServerState.Failed) text(R.string.hint_port_taken) else text(R.string.hint_no_network)
 
     /** Safe mode: the empty state as a static notice with the address, the pairing code while nobody is paired. */
     private fun showSafeMode() {
@@ -543,14 +613,14 @@ class DisplayActivity : Activity() {
         val c = core ?: return
         val address = c.adminUrl()
         val reachable = address != null && !c.settings.localOnly.value
-        val portTaken = c.server.state.value is ServerState.Failed
+        val portTaken = c.serverState.value is ServerState.Failed
         if (safeMode) {
             emptyBody.text = if (reachable) text(R.string.safe_body, address!!) else text(R.string.safe_body_unreachable)
             updateEmptyPairing(c)
             return
         }
         // The real folder: on shared storage as USB shows it; the internal one is not reachable over USB at all.
-        val root = c.localSource.root
+        val root = c.photoFolder
         val shared = Environment.getExternalStorageDirectory()
         emptyBody.text =
             if (root.absolutePath.startsWith(filesDir.absolutePath)) {
@@ -681,8 +751,8 @@ class DisplayActivity : Activity() {
         core.systemScreenOpened("android settings")
         try {
             startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            // Gone between the check and the start: nothing opened, so nothing is held.
+        } catch (e: RuntimeException) {
+            // Gone between the check and the start, or refused by the system: nothing opened, so nothing is held.
             core.systemScreenClosed()
             core.log.w("app", "Android's settings could not be opened: ${e.message}")
         }

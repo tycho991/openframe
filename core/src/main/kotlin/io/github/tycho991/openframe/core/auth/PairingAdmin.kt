@@ -12,7 +12,7 @@ class PairingAdmin(
     /**
      * "Revoke all pairings": tokens and image signatures become invalid, new code on the frame. Each step is guarded,
      * so a write error neither ends the app nor keeps the frame from showing a new code (spec `admin-access`, "Reset
-     * all pairings on the frame").
+     * all pairings on the frame"). Blocks on fsync; never call on the main thread.
      */
     fun resetAll() {
         try {

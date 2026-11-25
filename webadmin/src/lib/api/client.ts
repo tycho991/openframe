@@ -197,7 +197,8 @@ export function createApi(options: ApiOptions) {
      * 409 while the frame may not modify system settings.
      */
     setBrightness: (brightness: number) => call<DisplayState>("PUT", "/display", { brightness }),
-    update: () => call<UpdateState>("GET", "/update"),
+    /** The update state; [signal] aborts it, for example when the poll gives up waiting. */
+    update: (signal?: AbortSignal) => call<UpdateState>("GET", "/update", undefined, true, signal),
     /** Asks for a check now; the answer is the state, also when no check started. */
     checkUpdate: () => call<UpdateState>("POST", "/update/check"),
     /** Opens the installation dialog on the frame. 409 with a code of `InstallRefusal` when refused. */

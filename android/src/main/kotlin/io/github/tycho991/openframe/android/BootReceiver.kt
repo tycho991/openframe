@@ -9,6 +9,8 @@ import android.os.Build
 /**
  * Starts service and display after boot and after Android replaced the app with a new version (spec `kiosk-host`,
  * "Restart after an update"). The start of the core, which follows either, logs when openframe is not the HOME app.
+ * After an update that lost the HOME preference, the display opens Android's HOME choice once ([HomeChoice]); it does
+ * not depend on this broadcast, which is only one of the ways the first start of a new installation comes about.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(

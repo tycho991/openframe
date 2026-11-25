@@ -32,6 +32,20 @@ async function openSoftware(page: Page) {
   return section;
 }
 
+/**
+ * The marker the test set on the page, or -1 while the page is navigating: an evaluate that runs during the reload
+ * fails with "Execution context was destroyed", which means "not reloaded yet" and keeps the poll going. Any other
+ * error still fails the test.
+ */
+async function markerDuringReload(page: Page): Promise<number> {
+  try {
+    return await page.evaluate(() => (window as unknown as { marker?: number }).marker ?? 0);
+  } catch (e) {
+    if (e instanceof Error && /Execution context was destroyed/.test(e.message)) return -1;
+    throw e;
+  }
+}
+
 /** Publishes [LATEST] and lets the frame find it through "Check now". */
 async function readyUpdate(page: Page, notes = "Schneller Start") {
   await publishRelease(LATEST, { notes });
@@ -129,11 +143,7 @@ test("A version change reloads on the photo page as well", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Fotos" })).toBeVisible();
   await page.evaluate(() => ((window as unknown as { marker: number }).marker = 1));
   await installedVersion("9.9.9");
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as { marker?: number }).marker ?? 0), {
-      timeout: 30_000,
-    })
-    .toBe(0);
+  await expect.poll(() => markerDuringReload(page), { timeout: 30_000 }).toBe(0);
   // The test server's interface is still the old one: no second reload, a notice instead.
   await expect(page.getByText("Der Rahmen wurde auf Version 9.9.9 aktualisiert.")).toBeVisible({
     timeout: 15_000,

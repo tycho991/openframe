@@ -6,6 +6,7 @@ import io.github.tycho991.openframe.core.health.Health
 import io.github.tycho991.openframe.core.platform.ApkVerdict
 import io.github.tycho991.openframe.core.platform.AppInstaller
 import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.DisplayPower
 import io.github.tycho991.openframe.core.platform.ImageInfo
 import io.github.tycho991.openframe.core.platform.ImageMetadata
 import io.github.tycho991.openframe.core.platform.MediaEngine
@@ -33,6 +34,7 @@ internal object TestCore {
         installer: AppInstaller = RecordingInstaller(),
         platform: PlatformInfo = Platform(),
         health: Health = Health.normal(),
+        displayPower: DisplayPower = DisplayPower.None,
     ): FrameCore =
         FrameCore(
             FrameDirs(File(dir, "state"), File(dir, "cache"), File(dir, "photos"), File(dir, "update")),
@@ -45,6 +47,7 @@ internal object TestCore {
             installer = installer,
             releases = NoReleases,
             health = health,
+            displayPower = displayPower,
         )
 
     class Platform(
