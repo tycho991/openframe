@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/tycho991/openframe/compare/v0.14.0...v0.15.0) (2026-11-25)
+
+
+### Features
+
+* HOME choice after an update, strict source patches and core cleanup ([#137](https://github.com/tycho991/openframe/issues/137)) ([07f8f02](https://github.com/tycho991/openframe/commit/07f8f027eb5a3985b84c6fac7982a2f7b8329225))
+
 ## [0.14.0](https://github.com/tycho991/openframe/compare/v0.13.0...v0.14.0) (2026-11-23)
 
 
