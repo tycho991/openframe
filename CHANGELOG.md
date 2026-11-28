@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/tycho991/openframe/compare/v0.15.0...v0.15.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* cheaper local scan, vanished files removed, new photos in steps ([#145](https://github.com/tycho991/openframe/issues/145)) ([0c46367](https://github.com/tycho991/openframe/commit/0c46367772d73e8e66f97df297f1f01955eab4b1))
+* drop of files on the photo list adds each file once ([#141](https://github.com/tycho991/openframe/issues/141)) ([f7ebc43](https://github.com/tycho991/openframe/commit/f7ebc43f10fa8d9144cf0e936227c549e811b35d))
+
 ## [0.15.0](https://github.com/tycho991/openframe/compare/v0.14.0...v0.15.0) (2026-11-25)
 
 
