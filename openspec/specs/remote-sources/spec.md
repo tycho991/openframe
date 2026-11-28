@@ -21,7 +21,7 @@ The frame SHALL hold up to eight remote sources at the same time. Each SHALL hav
 - **THEN** the API answers 409 with `too_many_sources`
 
 ### Requirement: Configuration
-Each source SHALL have these settings: name, enabled, folder, subfolders included (default on), remove vanished photos (default on), interval in minutes (5 to 1,440, default 20) and a budget for originals (100 to 50,000 MB, default 2,000 MB). Invalid values SHALL be rejected naming the field; changes SHALL be partial and take effect without a restart.
+Each source SHALL have these settings: name, enabled, folder, subfolders included (default on), remove vanished photos (default on), interval in minutes (5 to 1,440, default 20) and a budget for originals (100 to 50,000 MB, default 2,000 MB). Invalid values SHALL be rejected naming the field; changes SHALL be partial and take effect without a restart. A value of the wrong JSON type, such as the string "true" for a switch, SHALL count as invalid.
 
 #### Scenario: Interval too short
 - **WHEN** a client sets the interval of a source to 2 minutes
@@ -30,6 +30,14 @@ Each source SHALL have these settings: name, enabled, folder, subfolders include
 #### Scenario: Change of the folder
 - **WHEN** the folder of a source is changed
 - **THEN** the next sync reads the new folder and removes the photos of the old one if removal is on
+
+#### Scenario: Switch sent as text
+- **WHEN** a client sets `enabled` of a source to the string "true"
+- **THEN** the API answers 400 `validation_failed` naming the field `enabled`, and the source is unchanged
+
+#### Scenario: Valid and invalid field together
+- **WHEN** a client changes the name of a source and sends `includeSubfolders` as the string "false" in the same request
+- **THEN** the API answers 400 naming `includeSubfolders`, and neither the name nor the switch changes
 
 ### Requirement: Folder before first sync
 A source whose kind needs a choice of folder (an account) SHALL NOT list or download anything until one is chosen, and a request to sync SHALL be answered with 409. A source that already names its folder (a share link) SHALL sync from the start.
@@ -133,7 +141,7 @@ The API SHALL start a sync of one source on request and answer at once. If one i
 - **THEN** the API answers 202 and the status of that source shows that a sync is running
 
 ### Requirement: Storage of the originals
-Downloaded originals SHALL stay within the budget of their source. When it is exceeded, the originals of that source unused for the longest time SHALL be removed. A removed original SHALL be fetched again when a new rendering needs it, unless its source is in the state of rejected access. A download SHALL NOT leave less than 100 MB of free storage, whatever the budgets are.
+Downloaded originals SHALL stay within the budget of their source. When it is exceeded, the originals of that source unused for the longest time SHALL be removed. A removed original SHALL be fetched again when a new rendering needs it, unless its source is in the state of rejected access. A download SHALL NOT leave less free storage than the storage reserve (`photo-library`), whatever the budgets are; one for a rendering someone waits for SHALL leave at least 100 MiB free.
 
 #### Scenario: Budget exceeded
 - **WHEN** the downloaded originals of a source exceed its budget
@@ -141,14 +149,30 @@ Downloaded originals SHALL stay within the budget of their source. When it is ex
 
 #### Scenario: Budgets larger than the storage
 - **WHEN** the budgets of several sources together are more than the free storage
-- **THEN** a download that would leave less than 100 MB free fails with a readable error and nothing is removed from the library
+- **THEN** a download that would leave less free storage than the storage reserve fails with a readable error and nothing is removed from the library
+
+#### Scenario: Removed original on a nearly full frame
+- **WHEN** the free storage is below the storage reserve but more than 100 MiB plus the size of the original, and the slideshow waits for a photo whose original was removed from the cache
+- **THEN** the original is downloaded and the photo is shown, while no original is downloaded for a photo that is only rendered ahead of time
+
+#### Scenario: Storage almost full
+- **WHEN** less than 100 MiB plus the size of the original would remain free and a rendering needs an original that was removed from the cache
+- **THEN** the original is not downloaded, the rendering fails, the photo stays in the library, and the slideshow shows other photos
 
 ### Requirement: Remove a source
-The user SHALL be able to remove a source. The frame SHALL then delete its stored credentials, ask the server to revoke them if the kind has any to revoke and the server has not already refused them, stop syncing it and remove its photos and downloaded originals. Other sources and local photos SHALL be untouched.
+The user SHALL be able to remove a source. The frame SHALL then delete its stored credentials, ask the server to revoke them if the kind has any to revoke and the server has not already refused them, stop syncing it and remove its photos and downloaded originals. The removal SHALL answer without waiting for files to be deleted; files left by a removal that was cut off SHALL be deleted at the next start that can read the list of sources. Other sources and local photos SHALL be untouched.
 
 #### Scenario: Remove
 - **WHEN** the user removes a source
 - **THEN** its credentials and photos are gone and the local photos and the other sources are untouched
+
+#### Scenario: Source with many photos
+- **WHEN** the user removes a source with 10,000 photos whose originals and rendered sizes are on the frame
+- **THEN** the API answers without waiting for the files, the photos are gone from the library at once, and the files are deleted in the background
+
+#### Scenario: App ends during the deletion
+- **WHEN** the app ends while the files of a removed source are being deleted, and starts again with a readable list of sources
+- **THEN** no original and no rendered size of that source is left after the start
 
 ### Requirement: Access to the sources
 All endpoints for sources SHALL require a valid token. For its sources, the frame SHALL send requests only to the servers of its sources, while a login is being set up to the address given for it, and to revoke a leftover app password of version 0.1.0 to the server named with it. Requests for app updates are governed by `app-update`.
@@ -275,3 +299,68 @@ content, not by the file name.
 #### Scenario: JPEG with a HEIC name
 - **WHEN** a file named `.heic` holds a JPEG
 - **THEN** it is downloaded and shown
+
+### Requirement: Widening the folder of an account
+For a source whose kind needs a choice of folder (an account), a change SHALL count as widening when it sets the first folder, switches subfolders on, sets a folder that is neither the old one nor below it, or sets a folder below the old one while subfolders were off. Folders SHALL be compared by path segment and with exact case. Every other change, and every change of a share-link source, SHALL NOT count as widening.
+
+#### Scenario: Whole account
+- **WHEN** a client changes the folder of an account from `/Photos` to `/`
+- **THEN** the change counts as widening
+
+#### Scenario: Deeper folder with subfolders on
+- **WHEN** the folder of an account is `/Photos` with subfolders on and a client sets `/Photos/2024`
+- **THEN** the change does not count as widening
+
+#### Scenario: Deeper folder with subfolders off
+- **WHEN** the folder of an account is `/Photos` with subfolders off and a client sets `/Photos/Private`
+- **THEN** the change counts as widening
+
+#### Scenario: Other case
+- **WHEN** the folder of an account is `/Photos` and a client sets `/photos`
+- **THEN** the change counts as widening
+
+#### Scenario: Share link
+- **WHEN** a client changes the folder of a share-link source to `/`
+- **THEN** the change does not count as widening
+
+### Requirement: Proof for widening an account folder
+A widening change SHALL succeed only if the device that sends it completed a login for exactly this account within the last 30 minutes: one that added the source, renewed its credentials or confirmed it. Otherwise the frame SHALL refuse the whole change with 403 `account_login_required` naming the widening fields, after checking the fields. The proof SHALL live in memory only.
+
+#### Scenario: Visitor widens to the whole account
+- **WHEN** a device that never logged in to the account sets the folder of an account source to `/`
+- **THEN** the API answers 403 with `account_login_required`, the source keeps its folder, and no sync of `/` starts
+
+#### Scenario: After a confirmation login
+- **WHEN** a device confirms the account by a login and sets the folder to `/` 10 minutes later
+- **THEN** the change is applied and the next sync reads the whole account
+
+#### Scenario: Proof expired
+- **WHEN** a device completed a login for the account 31 minutes ago and now widens its folder
+- **THEN** the API answers 403 with `account_login_required`
+
+#### Scenario: Proof of another device
+- **WHEN** a laptop confirmed the account and a phone widens the folder within the 30 minutes
+- **THEN** the API answers 403 with `account_login_required` to the phone
+
+#### Scenario: First folder after connecting
+- **WHEN** a device connects a new account by the login flow and chooses its first folder
+- **THEN** the folder is stored without a further login
+
+#### Scenario: Invalid value and widening together
+- **WHEN** a client sets an invalid interval and a wider folder in one change without a proof
+- **THEN** the API answers 400 naming the interval, and nothing changes
+
+#### Scenario: Narrowing and other settings
+- **WHEN** a device without a proof narrows the folder of an account, renames it or changes its interval
+- **THEN** the change is applied
+
+### Requirement: Source names on one line
+When a source is added or renamed, control characters in its name, line breaks included, SHALL become a space before the name is trimmed and its length is checked, as for the frame name and device names. A name that is empty afterwards SHALL be refused naming the field, as an empty name is today.
+
+#### Scenario: Name with a line break
+- **WHEN** a client renames a source to "Summer" followed by a line break and "2026"
+- **THEN** the source is named "Summer 2026"
+
+#### Scenario: Only control characters
+- **WHEN** a client renames a source to a name that consists only of control characters
+- **THEN** the API answers 400 naming the field `name`, and the source keeps its name

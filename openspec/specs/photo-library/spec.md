@@ -21,14 +21,14 @@ The library SHALL accept JPEG, PNG, WebP and GIF. GIF SHALL be taken over as a s
 - **THEN** it appears in the list of skipped files with the reason "not supported", not as a damaged file
 
 ### Requirement: Local photo folder
-The frame SHALL have a photo folder that is reachable over USB (MTP) without root. Subfolders SHALL be scanned. New, changed and removed files SHALL be in the index 30 seconds after the change at the latest. Files that the frame itself creates or deletes, for example through upload, SHALL afterwards also be visible correctly over USB. While the storage is unavailable, entries SHALL NOT be removed (see "Photo folder kept").
+The frame SHALL have a photo folder that is reachable over USB (MTP) without root. Subfolders SHALL be scanned. New, changed and removed files SHALL be in the index 30 seconds after the change at the latest while the display is on. Files that the frame itself creates or deletes, for example through upload, SHALL afterwards also be visible correctly over USB. While the storage is unavailable, entries SHALL NOT be removed (see "Photo folder kept").
 
 #### Scenario: Photo copied over USB
-- **WHEN** a photo is copied into the photo folder over USB
+- **WHEN** a photo is copied into the photo folder over USB while the display is on
 - **THEN** it is in the index and visible after 30 seconds at the latest
 
 #### Scenario: File removed
-- **WHEN** a file is deleted from the photo folder
+- **WHEN** a file is deleted from the photo folder while the display is on
 - **THEN** its entry disappears from the index after 30 seconds at the latest
 
 #### Scenario: Uploaded photo over USB
@@ -36,7 +36,7 @@ The frame SHALL have a photo folder that is reachable over USB (MTP) without roo
 - **THEN** the photo is visible in the photo folder
 
 ### Requirement: Stable photo IDs
-Every photo SHALL have an ID that derives from its relative path and stays the same across restarts and rescans. If a file is replaced at the same path, the ID SHALL stay the same, but its image version SHALL change so that caches become invalid.
+Every photo SHALL have an ID that derives from its relative path and stays the same across restarts and rescans. If a file is replaced at the same path, the ID SHALL stay the same, but its image version SHALL change so that caches become invalid. If a file appears at the path of a photo that had left the index (deleted, skipped, or gone from its source), it SHALL get the same ID and an image version that this ID never had before.
 
 #### Scenario: Restart
 - **WHEN** the app restarts
@@ -45,6 +45,10 @@ Every photo SHALL have an ID that derives from its relative path and stays the s
 #### Scenario: File replaced
 - **WHEN** `holiday/1.jpg` is replaced by a different file of the same name
 - **THEN** the photo keeps its ID, its image version increases and its hidden state is kept
+
+#### Scenario: Another file at the path of a removed photo
+- **WHEN** `holiday/1.jpg` is deleted, a scan removes it, and then a different photo of the same dimensions is copied to `holiday/1.jpg`
+- **THEN** the photo has the old ID, an image version it never had, a new ETag and a new image URL, and its thumbnail and display size show the new picture
 
 ### Requirement: Metadata
 For every photo the index SHALL contain width and height (after EXIF rotation), capture date (EXIF, falling back to the file date), GPS position (EXIF, if present), file size, album and visibility. Unchanged files SHALL NOT be read again during a rescan, except once for the metadata of photos that are already in the index (see "Metadata of photos already in the index").
@@ -92,7 +96,7 @@ It SHALL be possible to hide and unhide individual photos. A photo is visible to
 - **THEN** the slideshow does not show the photo
 
 ### Requirement: Upload
-It SHALL be possible to upload photos through the API, one or several, optionally into an album. Uploads SHALL be streamed to disk instead of being held in memory. File names and album paths SHALL be sanitized so that no file can end up outside the photo folder. An album path SHALL have one or more folder levels separated by `/` and at most 255 characters. An upload after which less than 100 MB of storage would remain free SHALL be rejected.
+It SHALL be possible to upload photos through the API, one or several, optionally into an album. Uploads SHALL be streamed to disk instead of being held in memory. File names and album paths SHALL be sanitized so that no file can end up outside the photo folder. An album path SHALL have one or more folder levels separated by `/` and at most 255 characters. An upload after which less free storage than the storage reserve would remain SHALL be rejected.
 
 #### Scenario: Upload into album
 - **WHEN** two JPEG files are uploaded with the album `family`
@@ -119,15 +123,15 @@ It SHALL be possible to upload photos through the API, one or several, optionall
 - **THEN** the API answers with 415 and stores nothing
 
 #### Scenario: Storage full
-- **WHEN** less than 100 MB of storage would remain free after an upload
+- **WHEN** less free storage than the storage reserve would remain after an upload
 - **THEN** the API answers with 507, stores nothing and leaves no partial file behind
 
 ### Requirement: Delete
-It SHALL be possible to delete photos through the API. The file and all derived image sizes SHALL be removed in the process. Photos of a source that the frame only reads (Nextcloud) SHALL NOT be deleted: the API refuses with 409 and the error code `read_only_source`, because the photo would come back with the next sync. Hiding it remains possible.
+It SHALL be possible to delete photos through the API. The file of a local photo SHALL move into the trash (see "Trash for deleted photos"), and its index entry and all derived image sizes SHALL be removed. Photos of a source that the frame only reads (Nextcloud) SHALL NOT be deleted: the API refuses with 409 and the error code `read_only_source`, because the photo would come back with the next sync. Hiding it remains possible.
 
 #### Scenario: Delete photo
 - **WHEN** a photo is deleted
-- **THEN** file, index entry and rendered sizes are removed
+- **THEN** its file is in the trash and no longer at its path, and its index entry and rendered sizes are removed
 
 #### Scenario: Delete a photo from Nextcloud
 - **WHEN** a client deletes a photo that comes from Nextcloud
@@ -135,7 +139,7 @@ It SHALL be possible to delete photos through the API. The file and all derived 
 
 #### Scenario: Batch with Nextcloud photos
 - **WHEN** a batch deletes a local photo and a Nextcloud photo together
-- **THEN** the local photo is deleted and the Nextcloud photo is reported as failed
+- **THEN** the local photo is moved to the trash and the Nextcloud photo is reported as failed
 
 ### Requirement: Rendered image sizes
 The library SHALL provide a thumbnail (longest edge 400 px), a display size and a full size for every photo. The display size SHALL be the part of the photo the frame shows, at screen resolution and never larger than that part of the original. The full size SHALL be the uncropped photo with a longest edge of at most 2048 px, never larger than the original. All sizes SHALL be EXIF-rotated and cached. The response SHALL be cacheable for the long term.
@@ -385,7 +389,7 @@ If the decoding process crashes or hangs while a file from the photo folder or f
 - **THEN** the next scan checks it again
 
 ### Requirement: Quarantined photos
-If the decoder crashes or hangs while rendering a photo of the library, that version of the photo SHALL be quarantined: it is never rendered and never shown in the slideshow, but stays in the library with its comment, section and visibility. The photo list SHALL mark it as quarantined. It SHALL be possible to hide it, to delete it if it is a local photo, and to retry it through the API. A new version of the file SHALL lift the quarantine.
+If the decoder crashes or hangs while rendering a photo of the library, that version of the photo SHALL be quarantined: it is never rendered and never shown in the slideshow, but stays in the library with its comment, section and visibility. The photo list SHALL mark it as quarantined. It SHALL be possible to hide it, to delete it if it is a local photo, and to retry it through the API. A new version of the file SHALL lift the quarantine. Restoring it SHALL keep the quarantine.
 
 #### Scenario: Crash while rendering
 - **WHEN** the decoder crashes while rendering the display size of a photo
@@ -401,7 +405,11 @@ If the decoder crashes or hangs while rendering a photo of the library, that ver
 
 #### Scenario: Delete a quarantined photo
 - **WHEN** a paired client deletes a quarantined local photo
-- **THEN** file, index entry and rendered sizes are removed
+- **THEN** its file is in the trash, its index entry and rendered sizes are removed, and its trash entry is marked as quarantined and has no thumbnail
+
+#### Scenario: Restore a quarantined photo
+- **WHEN** a quarantined local photo is restored from the trash
+- **THEN** it is back in the library with a new image version and still quarantined, and the frame does not render it
 
 ### Requirement: Image size limits
 Images of more than 100 megapixels or with an aspect ratio of more than 32:1 SHALL be skipped with the reason `too_large`; an upload of such an image SHALL be rejected with 415 and the error code `image_too_large`. Checking an image SHALL decode at most about one megapixel. A memory error while checking SHALL skip the file as `too_large`, a memory error while rendering only that rendering.
@@ -419,7 +427,7 @@ Images of more than 100 megapixels or with an aspect ratio of more than 32:1 SHA
 - **THEN** it is accepted and shown
 
 ### Requirement: Photo folder kept
-The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT switch to internal storage while the external storage is unavailable. While the storage is not mounted or the folder cannot be listed, a scan SHALL NOT remove entries and uploads SHALL be rejected with 503 and the error code `storage_unavailable`. A folder deleted over USB on mounted storage SHALL be created again, and its entries removed.
+The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT switch to internal storage while the external storage is unavailable. While the storage is not mounted or the folder cannot be listed, a scan SHALL NOT remove entries, and uploads and deletes of local photos SHALL be rejected with 503 and the error code `storage_unavailable`. A folder deleted over USB on mounted storage SHALL be created again, and its entries removed.
 
 #### Scenario: Storage mounted late after a restart
 - **WHEN** the device restarts and its storage is mounted only after the app has started
@@ -428,6 +436,10 @@ The photo folder chosen at the first start SHALL be kept; the frame SHALL NOT sw
 #### Scenario: Upload while the storage is unavailable
 - **WHEN** a photo is uploaded while the storage is not mounted
 - **THEN** the API answers 503 with `storage_unavailable` and stores nothing
+
+#### Scenario: Delete while the storage is unavailable
+- **WHEN** a client deletes a local photo, alone or in a batch, while the storage is not mounted
+- **THEN** the API answers 503 with `storage_unavailable`, and the photo stays in the library
 
 #### Scenario: Folder deleted over USB
 - **WHEN** the whole photo folder is deleted over USB
@@ -473,3 +485,271 @@ The album list SHALL also give the number of photos and of visible photos that b
 #### Scenario: Without an album and an album at once
 - **WHEN** the photos without an album and of the album `holiday` are asked for in one request
 - **THEN** the API answers with a bad request and no photos
+
+### Requirement: Local scan while the display is off
+While the display is off, the frame SHALL scan the photo folder at least every 5 minutes, at once when the display goes on, and at once when a client fetches photos, albums or skipped files and the last scan is more than 15 seconds old. A scan that finds no change SHALL leave the library and its version unchanged.
+
+#### Scenario: Photo copied at night
+- **WHEN** the display is off and a photo is copied into the photo folder over USB
+- **THEN** it is in the index after 5 minutes at the latest
+
+#### Scenario: Display goes on
+- **WHEN** a photo was copied into the photo folder while the display was off, and the display goes on a minute later
+- **THEN** the photo is in the index within a few seconds after the display went on
+
+#### Scenario: Admin interface at night
+- **WHEN** the display is off, a photo was copied over USB a minute ago and a client fetches the photo list
+- **THEN** the photo is in the index within a few seconds, and the client finds it when it fetches the list again
+
+#### Scenario: Nothing changed
+- **WHEN** a scan runs and no file in the photo folder has changed
+- **THEN** the library version stays the same
+
+### Requirement: Storage reserve
+The frame SHALL keep a storage reserve of 10 % of its data volume, at most 500 MiB, plus 100 MiB, based on the low-storage threshold of Android 5 and 6. Uploads, downloads of originals and renderings ahead of time SHALL leave the reserve free, except as "Going below the storage reserve" allows. To keep it, the render cache SHALL remove its entries unused longest, also below its budget, but never those of the photo on screen, of the next photos or ones a request waits for.
+
+#### Scenario: Reference frame
+- **WHEN** the frame's data volume holds 16 GiB
+- **THEN** the storage reserve is 600 MiB, and the log names it at the start
+
+#### Scenario: Small volume
+- **WHEN** the frame's data volume holds 3,000 MiB
+- **THEN** the storage reserve is 400 MiB
+
+#### Scenario: Storage runs short
+- **WHEN** the free storage drops below the reserve while the cache of rendered sizes is within its budget
+- **THEN** the cache removes the renderings unused longest until the reserve is free again or only those of the photo on screen, of the next photos and of waiting requests are left, the photo on screen stays, and the photos stay in the library
+
+### Requirement: Going below the storage reserve
+Only renderings someone waits for, the photo the slideshow shows now or an image a client asks for, SHALL be allowed to go below the storage reserve. Fetching a missing original for such a rendering SHALL be allowed to go below it as well, but SHALL leave at least 100 MiB free. A download of an original for a rendering ahead of time SHALL NOT go below the reserve.
+
+#### Scenario: Local photos below the reserve
+- **WHEN** the free storage is below the reserve and the slideshow shows local photos
+- **THEN** the photos keep changing, each rendered when it is due, and no photo is rendered ahead of time
+
+#### Scenario: Remote photo without its original below the reserve
+- **WHEN** the free storage is below the reserve but more than 100 MiB plus the size of the original, and the slideshow comes to a remote photo whose original is not stored
+- **THEN** its original is downloaded when the photo is due, not ahead of time, and the photo is shown
+
+#### Scenario: Storage almost full
+- **WHEN** less than 100 MiB plus the size of the original would remain free, and the slideshow comes to a remote photo whose original is not stored
+- **THEN** its original is not downloaded, the photo is not shown, it stays in the library, and the slideshow shows other photos
+
+### Requirement: Rendered sizes follow the index
+When a photo leaves the index for any reason (deleted through the API, removed from the photo folder, skipped, gone from its source, or its source removed), its rendered sizes SHALL be removed, and a rendering of it that finishes afterwards SHALL be discarded. Rendered sizes of an older image version of a photo that stays SHALL be removed at the latest when its new version is rendered.
+
+#### Scenario: File deleted over USB
+- **WHEN** a file whose sizes are rendered is deleted from the photo folder and a scan runs
+- **THEN** none of its rendered sizes is left on the frame
+
+#### Scenario: File replaced by a damaged one
+- **WHEN** a rendered photo is replaced by a damaged file at the same path and a scan lists it as skipped
+- **THEN** none of its rendered sizes is left on the frame
+
+#### Scenario: Removed while rendering
+- **WHEN** a photo is deleted while one of its sizes is being rendered
+- **THEN** that rendering is discarded and leaves no file
+
+#### Scenario: Renderings from before the update
+- **WHEN** the app starts with rendered sizes of photos that are not in the index
+- **THEN** those rendered sizes are deleted, and those of photos in the index stay
+
+### Requirement: Batch changes
+A batch that hides, shows or deletes photos SHALL change the library in one step: the library version SHALL change at most once, however many IDs the batch has, and exactly once if the batch changed a photo. Every ID SHALL still end in exactly one of the lists processed, missing or failed.
+
+#### Scenario: Large batch
+- **WHEN** a client hides 1,000 photos in one batch
+- **THEN** all of them are hidden, `processed` is 1,000, and the library version changed once
+
+#### Scenario: Mixed batch
+- **WHEN** a batch deletes a local photo, a Nextcloud photo and an unknown ID
+- **THEN** the local photo is deleted and listed as processed, the Nextcloud photo as failed and the unknown ID as missing, and the library version changed once
+
+#### Scenario: Nothing to change
+- **WHEN** a client hides 10 photos in one batch that are all hidden already
+- **THEN** `processed` is 10, and the library version is unchanged
+
+### Requirement: Names of uploaded files
+The name of an uploaded file SHALL be shortened to at most 200 bytes in UTF-8 without splitting a code point, keeping its image extension. If a level of the album path exists as a file, the API SHALL answer with 400 `invalid_album` naming the field `album`. If one file of an upload of several cannot be stored, no file of the request SHALL stay and the library SHALL be unchanged.
+
+#### Scenario: Long name in another script
+- **WHEN** a file named with 90 Japanese characters and `.jpg` is uploaded
+- **THEN** it is stored with a name of at most 200 bytes that ends in `.jpg`
+
+#### Scenario: Emoji at the cut
+- **WHEN** a file is uploaded whose name has an emoji of one code point where it would be cut
+- **THEN** the stored name has the whole emoji or none of it, and is valid UTF-8
+
+#### Scenario: Album level is a file
+- **WHEN** a file is uploaded into the album `family/2025` and `family` is a file in the photo folder
+- **THEN** the API answers with 400 `invalid_album` naming the field `album` and stores nothing
+
+#### Scenario: Second file fails
+- **WHEN** two files are uploaded and the second cannot be put in place
+- **THEN** neither file is in the photo folder or in the index, and the library version is unchanged
+
+### Requirement: Upload into an album in another letter case
+An upload into an album whose levels differ from existing local folders only in letter case SHALL go into those folders and SHALL be indexed under their names, because the photo folder of the reference devices does not tell letter case apart. Albums of remote sources SHALL stay case-sensitive.
+
+#### Scenario: Album in lower case
+- **WHEN** the photo folder has the folder `Holiday` and a file `x.jpg` is uploaded into the album `holiday`
+- **THEN** it lies in `Holiday/`, belongs to the album `Holiday`, and keeps its ID after the next scan
+
+### Requirement: Implausible capture dates
+An EXIF capture date that is not a valid calendar date, such as `0000:00:00 00:00:00`, or that lies before the year 1800, SHALL count as missing, and the file date SHALL be the capture date. Photos in the index with such a date SHALL get their file date at the next start, and the library version SHALL change with it.
+
+#### Scenario: Camera without a set clock
+- **WHEN** a photo whose EXIF date is `0000:00:00 00:00:00` is imported
+- **THEN** its capture date is the file date, and the photo list gives it as a valid date
+
+#### Scenario: Index from before the update
+- **WHEN** the app starts with a photo in the index whose capture date lies before 1800
+- **THEN** the photo has its file date as capture date, and the library version is higher than before
+
+### Requirement: Trash for deleted photos
+A deleted local photo SHALL be kept in a hidden folder `.trash` inside the photo folder, below which the file keeps its path relative to the photo folder. The library SHALL NOT scan the trash, so a photo in it is in neither the index, the photo list nor the slideshow, and a rescan does not bring it back. The API SHALL offer no way to empty the trash.
+
+#### Scenario: Deleted photo leaves the slideshow
+- **WHEN** a local photo in the album `holiday` is deleted
+- **THEN** the slideshow no longer shows it, the photo list no longer lists it, and it is still in the trash after the next scan
+
+#### Scenario: No way to empty the trash
+- **WHEN** a paired client sends `DELETE` to the trash or to one of its entries
+- **THEN** the API answers 404 or 405, and the trash keeps all its entries
+
+### Requirement: Entries of the trash
+Only a folder directly in `.trash` whose name has the form of a trash entry SHALL count as one; the frame SHALL leave every other file and folder in `.trash` alone, never list, move or delete it, and SHALL NOT follow symbolic links there. An entry SHALL hold exactly one image file; an entry with none or several SHALL be listed as damaged and SHALL NOT be restorable.
+
+#### Scenario: A folder of the user's own
+- **WHEN** the user has copied a folder `.Trash` with files into `.trash` over USB
+- **THEN** the trash does not list it, and no purge or restore touches it
+
+#### Scenario: Entry with two files
+- **WHEN** a second image file is copied into the folder of a trash entry over USB
+- **THEN** the trash lists the entry as damaged, and restoring it reports it as failed and moves nothing
+
+### Requirement: Retention of the trash
+An entry SHALL stay in the trash for 7 days after it was deleted and SHALL then be deleted for good, checked after start and at least once an hour. An entry whose deletion time lies before a fixed date in the past, from a clock that was not yet set, SHALL get the current time as its deletion time, and with it a new ID, once the clock is past that date, instead of being deleted at once.
+
+#### Scenario: After 7 days
+- **WHEN** a photo was deleted 7 days and 1 hour ago
+- **THEN** its file is gone from the trash and the trash no longer lists it
+
+#### Scenario: Clock not yet set at the deletion
+- **WHEN** a photo is deleted while the device's clock still shows a date years in the past, and the clock is set to the right date later
+- **THEN** the photo stays in the trash for 7 days from when the clock was set
+
+### Requirement: Trash under storage pressure
+Under storage pressure the frame SHALL delete only trash entries deleted more than 24 hours ago, the oldest first, and only as many as the need requires. If deleting all such entries would still not meet the need, it SHALL delete none and refuse as before. Entries deleted within the last 24 hours SHALL stay.
+
+#### Scenario: Upload makes room
+- **WHEN** an upload would leave less free storage than the storage reserve and the trash holds photos deleted two days ago that free enough storage
+- **THEN** those photos are deleted from the trash, oldest first, only as many as needed, and the upload succeeds
+
+#### Scenario: Not enough to gain
+- **WHEN** an upload would leave less free storage than the storage reserve, and deleting every trash entry older than 24 hours would not free enough
+- **THEN** the API answers 507 and the trash keeps all its entries
+
+#### Scenario: Only recent entries
+- **WHEN** an upload would leave less free storage than the storage reserve and every photo in the trash was deleted within the last 24 hours
+- **THEN** the API answers 507 and the trash keeps all its entries
+
+### Requirement: Where storage pressure frees the trash
+Storage pressure SHALL mean: an upload that would leave less than the storage reserve free while it is written; the render cache or a download of an original below the storage reserve after the render cache has trimmed itself; and an update that would be refused for lack of storage. The trash SHALL be used only when it is on the same volume as the storage that is short.
+
+#### Scenario: Update on a full frame
+- **WHEN** an update is found, the free storage is short of what its download needs, and trash entries older than 24 hours would free enough
+- **THEN** those entries are deleted and the update is downloaded
+
+#### Scenario: Announced size of an upload
+- **WHEN** an upload announces a body larger than the free storage above the storage reserve
+- **THEN** no trash entry is deleted before the body is written
+
+### Requirement: Trash list through the API
+Every paired device SHALL be able to list the trash. Each entry SHALL contain its ID, the photo's former ID and path (`null` when damaged), album, size, deletion time, the time after which it is deleted (`null` while the clock is not yet set), the deleting device's ID or `null`, whether it is quarantined or damaged, and a signed thumbnail URL or `null`. The list SHALL give the total size. While the photo folder is unavailable, listing SHALL answer 503 `storage_unavailable`.
+
+#### Scenario: List after a delete
+- **WHEN** a phone deletes the local photo `holiday/beach.jpg` and a laptop lists the trash
+- **THEN** the list has an entry with the path `holiday/beach.jpg`, the album `holiday`, the phone's ID, the deletion time and a time 7 days later
+
+#### Scenario: Storage unavailable
+- **WHEN** a client lists the trash while the storage of the photo folder is not mounted
+- **THEN** the API answers 503 with `storage_unavailable`
+
+### Requirement: Thumbnails in the trash
+A trash entry SHALL have a thumbnail URL signed like the image URLs of the photo list, valid for that entry only. An entry that is quarantined, damaged or without its saved state SHALL have no thumbnail URL, and a request for its thumbnail SHALL answer 503 without decoding. If the decoder crashes or hangs while rendering a trash thumbnail, the entry SHALL become quarantined.
+
+#### Scenario: Thumbnail of a deleted photo
+- **WHEN** a paired client lists the trash and fetches the thumbnail URL of an entry without a token
+- **THEN** the frame serves a thumbnail of the deleted photo as long as the signature is valid
+
+#### Scenario: Signature of a photo for a trash entry
+- **WHEN** a client attaches the signature of a photo's image URL to the thumbnail URL of a trash entry
+- **THEN** the API answers 401
+
+#### Scenario: Crash on a trash thumbnail
+- **WHEN** the decoder crashes while rendering the thumbnail of a trash entry
+- **THEN** the entry is listed as quarantined without a thumbnail URL, its thumbnail is not rendered again, and restoring it gives a quarantined photo
+
+### Requirement: Restore from the trash
+Every paired device SHALL be able to restore one or several trash entries. A restored photo SHALL return to its path with its ID, a new image version, its hidden state, comment, section and quarantine, and SHALL be in the index at once. A missing album folder SHALL be created again. On a taken path the photo SHALL get a unique name and so a new ID, keeping its state. An entry that cannot be restored SHALL stay in the trash. In safe mode restoring SHALL answer 503 `safe_mode`.
+
+#### Scenario: Restore a hidden photo with a comment
+- **WHEN** a hidden photo with a comment and a section is deleted and then restored
+- **THEN** it has its old ID, a new image version, is hidden, and has its comment and section, and the slideshow never showed it in between
+
+#### Scenario: Path taken meanwhile
+- **WHEN** `holiday/beach.jpg` is deleted, a new `holiday/beach.jpg` is uploaded, and the deleted one is restored
+- **THEN** the upload keeps its name, and the restored photo is `holiday/beach (1).jpg` with a new ID and its old state
+
+#### Scenario: Album folder gone
+- **WHEN** the only photo of the album `trip/2024` is deleted, the empty folder is removed over USB, and the photo is restored
+- **THEN** the folder `trip/2024` exists again and the photo belongs to the album `trip/2024`
+
+#### Scenario: Album folder in another letter case
+- **WHEN** the only photo of `Trip` is deleted, the folder is removed, a photo is uploaded into the album `trip`, and the deleted photo is restored
+- **THEN** it lies in the folder `trip` and belongs to the album `trip`
+
+#### Scenario: Restore after a restart
+- **WHEN** a photo is deleted and the frame restarts before it is restored
+- **THEN** it is still in the trash and is restored with its ID and state
+
+#### Scenario: Safe mode
+- **WHEN** a client restores a trash entry while the frame is in safe mode
+- **THEN** the API answers 503 with `safe_mode` and the entry stays in the trash
+
+### Requirement: Album state of a restored photo
+A restored photo SHALL take the current state of its album, by the album's own setting or by inheritance, as a photo copied there would. Restoring SHALL NOT change any album setting. An album that lost its last photo to the trash SHALL keep its own setting while it is empty.
+
+#### Scenario: Hidden album that lost its last photo
+- **WHEN** the album `holiday/2024` is shown inside the hidden album `holiday`, which holds other photos, and the only photo of `holiday/2024` is deleted and then restored
+- **THEN** `holiday/2024` is still shown with a setting of its own, and the restored photo is visible
+
+#### Scenario: Parent switched while the photo was in the trash
+- **WHEN** `holiday/2024` is shown inside the hidden `holiday`, which holds other photos, the only photo of `holiday/2024` is deleted, `holiday` is shown and hidden again, and the photo is restored
+- **THEN** `holiday/2024` has no setting of its own and the restored photo is not visible
+
+### Requirement: Restore during a scan
+A scan that runs while a photo is restored or uploaded SHALL NOT replace the entry the frame has just put in place: an entry in the index whose file size and modification time match the file SHALL be kept as it is, with its version, state and quarantine.
+
+#### Scenario: Restore while the folder is scanned
+- **WHEN** a quarantined photo is restored while a scan of the photo folder is running
+- **THEN** after the scan the photo has the version the restore gave it and is still quarantined
+
+### Requirement: Trash without its saved state
+The files in the trash SHALL be the source of truth. If the saved state of an entry is missing, the entry SHALL still be listed, purged and restorable; restoring it SHALL check the file like a photo copied over USB and add it as a hidden photo without comment or section. A file removed from the trash over USB SHALL leave the list without an error.
+
+#### Scenario: State file lost
+- **WHEN** a photo is deleted and the frame's record of the trash is lost before the next start
+- **THEN** the trash still lists the entry without a deleting device and without a thumbnail, and restoring it adds the photo as a hidden photo
+
+#### Scenario: Deleted from the trash over USB
+- **WHEN** the file of a trash entry is deleted over USB
+- **THEN** the trash no longer lists it after the next check at the latest, and restoring it reports it as missing
+
+### Requirement: Log of trash actions
+The frame SHALL write one info line to its log for each photo moved to the trash and each photo restored, naming the photo's path and the ID of the device that acted, and one line for each purge with the number of entries and bytes deleted.
+
+#### Scenario: Deleted and restored by two devices
+- **WHEN** a phone deletes a photo and a laptop restores it
+- **THEN** the log has a line with the path and the phone's ID, and one with the path and the laptop's ID

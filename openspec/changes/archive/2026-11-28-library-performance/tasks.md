@@ -244,12 +244,12 @@
 
 ## 14. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 14.1 Before the release, read-only on both frames: `df` of the data volume and of the photo folder,
+- [x] 14.1 Before the release, read-only on both frames: `df` of the data volume and of the photo folder,
   `dumpsys devicestoragemonitor`, and `settings get global sys_storage_threshold_percentage` and
   `settings get global sys_storage_threshold_max_bytes`. Verify: the values are noted in the private checklist, with
   whether either frame has between 100 and 600 MiB free, whether the two `df` values match, and whether the threshold
   and the trimming points match design decision 1 (design, Risks).
-- [ ] 14.2 The main session adds rows to the private device checklist, each with its spec reference:
+- [x] 14.2 The main session adds rows to the private device checklist, each with its spec reference:
   - Frameo with 5,000 to 10,000 synthetic photos from `scripts/generate-test-fixtures.py` and a cleared render cache:
     after the first photo only about 10 renderings appear; scan time from the log and CPU of the app and the storage
     daemon with `dumpsys cpuinfo`; memory with `dumpsys meminfo`; the time of the render cache's first listing from the

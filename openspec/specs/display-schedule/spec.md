@@ -157,6 +157,10 @@ While the display is off, the slideshow SHALL NOT change photos and SHALL NOT re
 - **WHEN** the user paused the slideshow in the evening and the display goes on in the morning
 - **THEN** the same photo is shown and the slideshow is still paused
 
+#### Scenario: Renderings queued before the night
+- **WHEN** the display goes off while display sizes of upcoming photos wait to be rendered
+- **THEN** none of them is rendered and none of their originals is downloaded until the display goes on again
+
 ### Requirement: Reachable while the display is off
 While the display is off, the admin interface SHALL stay reachable from the LAN, and the remote sources SHALL keep syncing on their schedule.
 
@@ -165,7 +169,7 @@ While the display is off, the admin interface SHALL stay reachable from the LAN,
 - **THEN** the admin interface answers from the LAN at once, and a photo uploaded then appears in the slideshow after the display goes on
 
 ### Requirement: Asking for the network while the display is off
-When the network is lost while the display is off by the schedule or the manual switch, the frame SHALL ask the system once a minute to reconnect to the Wi-Fi, without switching the display on, until the network is back or the display goes on.
+When the network is lost while the display is off by the schedule or the manual switch, the frame SHALL ask the system once a minute to reconnect to the Wi-Fi, without switching the display on, until the network is back or the display goes on. Only a Wi-Fi or Ethernet connection SHALL count as the network, here and for the dark wake; mobile data, a VPN or any other kind of connection SHALL NOT.
 
 #### Scenario: Router drops the frame at night
 - **WHEN** the display is off by the schedule and the access point drops the frame's Wi-Fi
@@ -174,6 +178,14 @@ When the network is lost while the display is off by the schedule or the manual 
 #### Scenario: Network back
 - **WHEN** the network comes back after a reconnect request
 - **THEN** the frame asks for nothing more and the admin interface answers again
+
+#### Scenario: Mobile data stays on
+- **WHEN** the display is off by the schedule and the frame's Wi-Fi drops while its mobile data stays connected
+- **THEN** the frame asks for a reconnect within a minute, and ten minutes after the loss it starts a dark wake
+
+#### Scenario: Mobile data only
+- **WHEN** the device has mobile data but no Wi-Fi or Ethernet connection and the display is off by the schedule
+- **THEN** the frame treats the network as missing, as on a device without any network: it asks for a reconnect every minute and starts a dark wake every ten minutes
 
 ### Requirement: Dark wake for the network
 If the network is still missing ten minutes after it was lost while the display was off by the schedule or the manual switch, the frame SHALL switch the display on with a black picture at the lowest brightness it can set, and off again once the network is back or after one minute; then it SHALL try again ten minutes later. The display state SHALL report the display as off meanwhile; a touch SHALL count as waking it.
