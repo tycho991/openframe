@@ -1,5 +1,6 @@
 package io.github.tycho991.openframe.core.testing
 
+import io.github.tycho991.openframe.core.platform.FolderLister
 import io.github.tycho991.openframe.core.platform.PlatformInfo
 import java.io.File
 import java.util.Locale
@@ -30,4 +31,9 @@ class FakePlatform(
     override fun freeBytes(dir: File): Long = freeOf?.invoke(dir) ?: free ?: super.freeBytes(dir)
 
     override fun totalBytes(dir: File): Long = total ?: super.totalBytes(dir)
+
+    /** The platform's own lister of the photo folder; `null` for the JVM default. Read when the core starts. */
+    var lister: FolderLister? = null
+
+    override val folderLister: FolderLister get() = lister ?: super.folderLister
 }
