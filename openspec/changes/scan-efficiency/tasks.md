@@ -86,7 +86,7 @@ before editing. No contract or web UI change.
 
 Each persistent device change only with the owner's consent at that moment.
 
-- [ ] 6.1 The main session adds rows to the private device checklist, each with its spec reference. Verify: the rows
+- [x] 6.1 The main session adds rows to the private device checklist, each with its spec reference. Verify: the rows
   exist with their references.
   - **Both frames:** no "fast folder listing gives other file times" line after the update, and no known photo
     probed again (no "Scan: … updated=" line at the first scan) (`photo-library` › Cost of an unchanged scan › Times
