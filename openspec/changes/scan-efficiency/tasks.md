@@ -79,7 +79,7 @@ before editing. No contract or web UI change.
 
 - [x] 5.1 `./gradlew check` is green (formatting, tests, API 21 check, Android Lint). Verify: the command output.
 - [x] 5.2 `openspec validate scan-efficiency --strict` exits 0 without warnings. Verify: the output.
-- [ ] 5.3 In the pull request body, name the device rows of group 6 and the numbers of 28 Nov they compare with.
+- [x] 5.3 In the pull request body, name the device rows of group 6 and the numbers of 28 Nov they compare with.
   Verify: the body.
 
 ## 6. Device rows after the release (main session, privately)
