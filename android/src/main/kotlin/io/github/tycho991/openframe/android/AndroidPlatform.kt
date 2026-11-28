@@ -15,6 +15,7 @@ import android.view.WindowManager
 import io.github.tycho991.openframe.core.platform.AddressCandidate
 import io.github.tycho991.openframe.core.platform.AssetSource
 import io.github.tycho991.openframe.core.platform.ConnectionKind
+import io.github.tycho991.openframe.core.platform.FolderLister
 import io.github.tycho991.openframe.core.platform.InterfaceAddress
 import io.github.tycho991.openframe.core.platform.LocalAddresses
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
@@ -90,6 +91,9 @@ class AndroidPlatformInfo(
     override fun storageMounted(dir: File): Boolean =
         dir.absolutePath.startsWith(context.filesDir.absolutePath) ||
             Environment.getExternalStorageState(dir) == Environment.MEDIA_MOUNTED
+
+    /** One `stat` per entry of the photo folder instead of `java.io`'s four (design decision 1 of `scan-efficiency`). */
+    override val folderLister: FolderLister = AndroidFolderLister()
 
     /**
      * Every address of the device, IPv4 and IPv6, with the kind of connection it is on. The system says what a network is

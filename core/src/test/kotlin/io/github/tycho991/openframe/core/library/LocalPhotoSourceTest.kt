@@ -4,6 +4,7 @@ import io.github.tycho991.openframe.core.api.PhotoPageDto
 import io.github.tycho991.openframe.core.http.ApiJson
 import io.github.tycho991.openframe.core.log.AppLog
 import io.github.tycho991.openframe.core.platform.ImageInfo
+import io.github.tycho991.openframe.core.platform.JvmFolderLister
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.SkipReason
 import io.github.tycho991.openframe.core.store.JsonStore
@@ -68,7 +69,7 @@ class LocalPhotoSourceTest {
         val late = File(photos, "late.jpg")
         val racing =
             LocalPhotoSource(photos, engine, index, log) { root ->
-                LocalPhotoSource.listImageFiles(root).also {
+                JvmFolderLister.list(root)!!.also {
                     Fixtures.copy("landscape.jpg", late)
                     source.add(late)
                 }
@@ -89,7 +90,7 @@ class LocalPhotoSourceTest {
             LocalPhotoSource(photos, engine, index, log) { root ->
                 a.delete()
                 index.edit { it.remove(PhotoEntry.idFor(LocalPhotoSource.SOURCE_ID, "a.jpg")) }
-                LocalPhotoSource.listImageFiles(root).also {
+                JvmFolderLister.list(root)!!.also {
                     Fixtures.copy("landscape.jpg", a)
                     source.add(a)
                 }
@@ -211,9 +212,9 @@ class LocalPhotoSourceTest {
         val clock = TestClock()
         val log = AppLog(clock)
         val slow =
-            LocalPhotoSource(photos, engine, index, log, listFiles = { root ->
+            LocalPhotoSource(photos, engine, index, log, lister = { root ->
                 clock.advance(java.time.Duration.ofMillis(1_500))
-                LocalPhotoSource.listImageFiles(root)
+                JvmFolderLister.list(root)!!
             }, clock = clock)
         photos.mkdirs()
 
@@ -571,7 +572,7 @@ class LocalPhotoSourceTest {
         val held = Fixtures.copy("landscape.jpg", File(dir, "held/a.jpg"))
         var restoredVersion = 0
         val racing =
-            LocalPhotoSource(photos, engine, index, log, listFiles = { root ->
+            LocalPhotoSource(photos, engine, index, log, lister = { root ->
                 // What PhotoLibrary.restore does in its one edit: the file into place and its saved entry with a new version.
                 index.edit { edit ->
                     val target = File(root, "a.jpg")
@@ -594,7 +595,7 @@ class LocalPhotoSourceTest {
                         ),
                     )
                 }
-                LocalPhotoSource.listImageFiles(root)
+                JvmFolderLister.list(root)!!
             })
         val probes = engine.probes.get()
         runBlocking { racing.scan() }

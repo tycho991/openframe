@@ -56,8 +56,10 @@ import io.github.tycho991.openframe.core.nextcloud.OkHttpNextcloudClients
 import io.github.tycho991.openframe.core.places.PlaceIndex
 import io.github.tycho991.openframe.core.platform.AppInstaller
 import io.github.tycho991.openframe.core.platform.AssetSource
+import io.github.tycho991.openframe.core.platform.CheckedFolderLister
 import io.github.tycho991.openframe.core.platform.Clock
 import io.github.tycho991.openframe.core.platform.DisplayPower
+import io.github.tycho991.openframe.core.platform.JvmFolderLister
 import io.github.tycho991.openframe.core.platform.MediaEngine
 import io.github.tycho991.openframe.core.platform.MediaStoreNotifier
 import io.github.tycho991.openframe.core.platform.NetworkLink
@@ -230,7 +232,17 @@ class FrameCore(
             log,
             ::photosRemoved,
         )
-    internal val localSource = LocalPhotoSource(dirs.photos, engine, index, log, platform::storageMounted, clock = clock)
+    internal val localSource =
+        LocalPhotoSource(
+            dirs.photos,
+            engine,
+            index,
+            log,
+            platform::storageMounted,
+            clock = clock,
+            // A platform's own lister is checked once against java.io's file times (design decision 2 of `scan-efficiency`).
+            lister = platform.folderLister.let { if (it === JvmFolderLister) it else CheckedFolderLister(it, JvmFolderLister, log) },
+        )
 
     /** Deleted local photos, for 7 days (spec `photo-library`, "Trash for deleted photos"). */
     internal val trash =

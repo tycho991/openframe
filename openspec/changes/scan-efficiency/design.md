@@ -199,3 +199,19 @@ with the same rules as today's edit, then clears them.
 
 Nothing is stored differently. After the update the first scan lists with the new lister; thanks to the self-check
 it finds the known photos unchanged. Rollback is the previous APK; the index is the same.
+
+## After implementation
+
+- **`FolderListing` instead of a bare map** (decision 1): `FolderLister.list` returns the files together with the
+  number of entries that could not be read for another reason than being gone. The scan logs that count in one line
+  per scan, so the Android lister needs no log of its own. Both listers share one walk, `walkFolder` in
+  `platform/FolderLister.kt`.
+- **The self-check is set up in `FrameCore`** (decision 2, task 4.2): `AndroidPlatformInfo.folderLister` hands out the
+  plain `AndroidFolderLister`, and `FrameCore` wraps every lister that is not `JvmFolderLister` in
+  `CheckedFolderLister`, since the frame's log lives there. A test frame with a lister that is 500 ms off checks this
+  end to end (`ScanEfficiencyTest`).
+- **The JVM lister treats size 0 and time 0 of a missing file as gone**, the case between `isFile` and `length()`.
+- **Robolectric runs `Os.stat` for real**, so `AndroidFolderListerTest` also compares the Android lister with the JVM
+  lister on a real folder, besides the pure mapping of mode, time and errno.
+- **`LocalPhotoSource.listImageFiles` is gone**; `FolderListerTest` keeps the old `walkTopDown` listing as the reference
+  the JVM lister is compared with.

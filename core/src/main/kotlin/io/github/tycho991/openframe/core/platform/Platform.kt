@@ -76,6 +76,9 @@ interface PlatformInfo {
 
     /** Whether the storage that holds [dir] is mounted; internal storage always is. */
     fun storageMounted(dir: File): Boolean = true
+
+    /** Lists the photo folder for a scan ([FolderLister]); `java.io` unless the platform has a faster way. */
+    val folderLister: FolderLister get() = JvmFolderLister
 }
 
 /** The web UI's files, from the APK assets in :android. */
