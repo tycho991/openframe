@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import fs from "node:fs/promises";
 import path from "node:path";
 import {
   albumContent,
@@ -162,6 +163,36 @@ test("Partial failure on upload", async ({ page }) => {
   // The album the photos went to is open, although the overview started folded.
   await expect(foldButton(page, "family")).toHaveAttribute("aria-expanded", "true");
   await expect(albumTiles(page, "family")).toHaveCount(4);
+});
+
+test("Files dropped on the photo list or the upload dialog are listed once each", async ({ page }) => {
+  await pairInUi(page);
+  const files = await Promise.all(
+    ["landscape.jpg", "rotated6.jpg"].map(async (f) => ({
+      name: f,
+      data: (await fs.readFile(path.join(FIXTURES, f))).toString("base64"),
+    })),
+  );
+  const drop = (selector: string) =>
+    page.locator(selector).evaluate((target, list) => {
+      const transfer = new DataTransfer();
+      for (const { name, data } of list) {
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+        transfer.items.add(new File([bytes], name, { type: "image/jpeg" }));
+      }
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        target.dispatchEvent(
+          new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }),
+        );
+      }
+    }, files);
+  const listed = page.getByRole("dialog").locator(".files li");
+  // On the photo list: the panel opens with the two files, and the list stays at two.
+  await drop(".photos");
+  await expect(listed).toHaveCount(2);
+  // In the open panel: the same two once more.
+  await drop(".drop");
+  await expect(listed).toHaveCount(4);
 });
 
 test("Nested albums: own photos before the sub-albums, photos without an album last", async ({ page }) => {
