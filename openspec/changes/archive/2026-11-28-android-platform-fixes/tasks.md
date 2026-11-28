@@ -127,7 +127,7 @@
 
 ## 7. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 7.1 The main session adds rows to the private device checklist, each with its spec reference: right after the
+- [x] 7.1 The main session adds rows to the private device checklist, each with its spec reference: right after the
   update on the Lenovo (Android 5.0.1) and the Frameo (Android 6.0.1), "LAN network available" in `GET /api/v1/logs`
   within seconds (› Asking for the network while the display is off); one night with Wi-Fi up without "Network lost
   while the display is off" and without a dark wake; the orientation switch on the Frameo as a regression check (›

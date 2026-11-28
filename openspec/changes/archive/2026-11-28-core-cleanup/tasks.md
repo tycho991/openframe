@@ -167,7 +167,7 @@ again before editing.
 
 Each persistent device change only with the owner's consent at that moment.
 
-- [ ] 8.1 The main session adds rows to the private device checklist, each with its spec reference: the update to this
+- [x] 8.1 The main session adds rows to the private device checklist, each with its spec reference: the update to this
   release through the updater on a frame with a second HOME app, and the later updates until Android has dropped the
   preference once, with
   the choice appearing over the slideshow and "Always" restoring the Home key (`kiosk-host` › HOME choice after an

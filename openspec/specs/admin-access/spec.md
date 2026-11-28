@@ -28,7 +28,7 @@ The frame's server SHALL be reachable on the local network on a fixed port (defa
 - **THEN** the frame shows the Wi-Fi address without a restart
 
 ### Requirement: Protected endpoints
-All endpoints that read or change photos or settings SHALL require a valid token. Without a valid token they SHALL answer with 401. Only the frame's info, pairing (including the request to show a code on the frame) and the static files of the admin interface SHALL be freely accessible. Image requests MAY carry a server-issued signature instead of the token, valid for that one photo only, for at most two hours, and only while the device it was issued to stays paired.
+All endpoints that read or change photos or settings SHALL require a valid token. Without a valid token they SHALL answer with 401. Only the frame's info, pairing (including the request to show a code on the frame) and the static files of the admin interface SHALL be freely accessible. Image requests MAY carry a server-issued signature instead of the token, valid for that one photo or that one trash entry only, for at most two hours, and only while the device it was issued to stays paired.
 
 #### Scenario: Without token
 - **WHEN** a client without a token fetches the photo list
@@ -49,6 +49,10 @@ All endpoints that read or change photos or settings SHALL require a valid token
 #### Scenario: Signature after the device was removed
 - **WHEN** a device is removed under "Paired devices" and one of its image URLs is fetched again within the two hours
 - **THEN** the API answers with 401
+
+#### Scenario: Signed thumbnail of a trash entry
+- **WHEN** a browser fetches the thumbnail URL of a trash entry without a token, and later the same signature with the ID of another trash entry
+- **THEN** the API serves the first while the signature is valid and answers the second with 401
 
 ### Requirement: Pairing by code
 A client SHALL be able to pair by entering a code that the frame shows. The code SHALL have six digits, be valid for 5 minutes and be usable only once. After successful pairing the client SHALL receive a token. If a code expires while the frame is showing it, the frame SHALL replace it together with the QR code by new ones.
@@ -267,7 +271,7 @@ The body of `POST /pairing` SHALL be limited to 4 KiB; a larger body SHALL get 4
 - **THEN** `GET /api/v1/info` and the web UI answer within a second meanwhile
 
 ### Requirement: Code only while shown on the frame
-The frame SHALL create a pairing code only while it visibly shows the pairing hint or the empty state and its display is on, not during a dark wake. A request to show a code while the display is off SHALL create none until then. A code once shown SHALL stay valid for its 5 minutes, also after the hint was hidden.
+The frame SHALL create a pairing code only while it visibly shows the pairing hint or the empty state and its display is on, not during a dark wake, and not while local-only mode is on, in which neither of them shows a code. A request to show a code while the display is off SHALL create none until then. A code once shown SHALL stay valid for its 5 minutes, also after the hint was hidden.
 
 #### Scenario: Display off
 - **WHEN** the display is off by the schedule and a client posts to `/api/v1/pairing/code`
@@ -276,6 +280,10 @@ The frame SHALL create a pairing code only while it visibly shows the pairing hi
 #### Scenario: Code entered after the hint was hidden
 - **WHEN** the frame showed a code and its hint was hidden again a minute later
 - **THEN** entering that code within its 5 minutes pairs the device
+
+#### Scenario: Local-only mode
+- **WHEN** local-only mode is on, no device is paired, and the frame shows the empty state or the hint
+- **THEN** neither shows a code or QR code, and the frame creates no new pairing code while the mode stays on
 
 ### Requirement: Daily budget for pairing by code
 After 20 wrong codes within 24 hours the frame SHALL pause pairing by code until the oldest of these attempts is 24 hours old, a device pairs, or all pairings are reset on the frame. Meanwhile `POST /pairing` with a code SHALL answer 429 `code_paused` with `Retry-After`. Pairing by QR code and by invitation SHALL keep working.
@@ -350,3 +358,33 @@ The frame SHALL write one info line to its log for each pairing, and for each re
 #### Scenario: Renamed
 - **WHEN** a paired device renames another device
 - **THEN** the log has a line with both IDs and the new name
+
+### Requirement: Equal rights of paired devices
+Every paired device SHALL have the same rights through the API, whether it paired with the code, the QR code or an invitation, including renaming, revoking and inviting other devices. Beyond what no device may do through the API, such as local-only mode, the only guards SHALL be the trash for deleted local photos and the login needed to widen the folder of an account (`remote-sources`). "Unpair all devices" on the frame SHALL stay the remedy against a hostile paired device.
+
+#### Scenario: Invited device revokes another one
+- **WHEN** a device paired by invitation revokes the pairing of the device that invited it
+- **THEN** the revoked device receives 401 on its next request, and the log names both devices
+
+#### Scenario: A hostile device keeps revoking
+- **WHEN** a paired device revokes every new pairing as soon as it appears
+- **THEN** "Unpair all devices" on the frame invalidates its token as well, and the next pairing stays
+
+### Requirement: Origin of a pairing
+Each pairing SHALL record whether it was made with the code shown on the frame, with the frame's QR code or with an invitation, and for an invitation the ID of the inviting device, also after that device is revoked. The list of paired devices SHALL give both. A pairing made before this was recorded, or with a value this version does not know, SHALL be listed without an origin, and the list of paired devices SHALL stay readable.
+
+#### Scenario: Paired with the code
+- **WHEN** a device pairs with the code shown on the frame
+- **THEN** the list of paired devices gives the origin "code" and no inviting device for it, also after a restart
+
+#### Scenario: Paired by invitation
+- **WHEN** a phone creates an invitation and a tablet redeems it, and the phone is revoked later
+- **THEN** the list gives the tablet the origin "invitation" and the phone's ID as the inviting device
+
+#### Scenario: Pairing from before the update
+- **WHEN** the frame is updated with devices that paired before
+- **THEN** they stay paired and are listed without an origin
+
+#### Scenario: Origin from a newer version
+- **WHEN** the stored list of paired devices holds an origin value that this version does not know
+- **THEN** every device stays paired, and that device is listed without an origin

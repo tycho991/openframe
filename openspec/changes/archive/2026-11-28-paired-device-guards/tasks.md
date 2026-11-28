@@ -240,7 +240,7 @@ removal notification, image versions and tombstones, scan apply step and upload 
 
 ## 9. Devices (each persistent device change only with the owner's consent at that moment)
 
-- [ ] 9.1 The main session adds rows to the private device checklist, each with its spec reference, for the Lenovo and
+- [x] 9.1 The main session adds rows to the private device checklist, each with its spec reference, for the Lenovo and
   the Frameo:
   - delete a test photo uploaded for the row: it leaves the slideshow and its folder in the USB (MTP) view
     (`photo-library` › Trash for deleted photos › Deleted photo leaves the slideshow);
