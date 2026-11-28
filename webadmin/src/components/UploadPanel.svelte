@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { albumOptions } from "../lib/albums";
   import { ApiError, type Album } from "../lib/api/client";
   import { t } from "../lib/i18n/i18n.svelte";
@@ -47,8 +48,11 @@
     dialog.showModal();
   });
 
+  // Depends on initialFiles only: add() reads and writes items, and tracking that would run this effect again for
+  // every file it adds, thousands of times for one drop.
   $effect(() => {
-    if (initialFiles.length > 0) add(initialFiles);
+    const files = initialFiles;
+    if (files.length > 0) untrack(() => add(files));
   });
 
   function add(files: Iterable<File>) {
